@@ -37,9 +37,9 @@ print(cubicalv2.__version__)
 on_rtd = os.environ.get('READTHEDOCS') == 'True'
 
 if on_rtd:
-    requirements = []
+    requirements = ["ruamel.yaml"]
 else:
-    requirements = []
+    requirements = ["ruamel.yaml"]
 
 setup(name='cubicalv2',
       version=cubicalv2.__version__,
@@ -51,6 +51,7 @@ setup(name='cubicalv2',
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: POSIX :: Linux",
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.6",
         "Topic :: Scientific/Engineering :: Astronomy"],
       author='Jonathan Kenyon',
       author_email='jonosken@gmail.com',
