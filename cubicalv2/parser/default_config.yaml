@@ -1,0 +1,17 @@
+input:
+    ms: 
+        name: ms_name
+        type: str
+        help: Path to input measurement set.
+        required: True
+    sm:
+        name: sm_name
+        nargs: +
+        type: str
+output:
+    ms: 
+        name: ms_name
+        type: str
+        help: Path to output measurement set.
+    sm:
+        name: sm_name
