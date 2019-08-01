@@ -1,6 +1,7 @@
 import argparse
 import ruamel.yaml
 import sys
+from pathlib import Path
 from collections import abc
 
 def get_builtin(type_str):
@@ -11,13 +12,15 @@ def get_builtin(type_str):
 def build_args(parser, argdict, base_name="-", depth=0):
     """Recursively traverses a nested dictionary and configures the parser. 
     
-    Traverses a nested dictionary (such as the output of a .yaml file) in a recursive fashion and adds discovered
-    argument groups and arguments to the parser object.
+    Traverses a nested dictionary (such as the output of a .yaml file) in a 
+    recursive fashion and adds discovered argument groups and arguments to the 
+    parser object.
 
     Args:
         parser: An ArgumentParser object.
         argdict: A (nested) dictionary of arguments.
-        base_name: An optional string prefix to which the current argument name can be appended.
+        base_name: An optional string prefix to which the current argument 
+            name can be appended.
         depth: The current recursion depth.
     """
 
@@ -32,15 +35,17 @@ def build_args(parser, argdict, base_name="-", depth=0):
         if isinstance(contents, abc.Mapping):
             build_args(group, contents, base_name + "-" + name, depth)
         else:
-            group.add_argument(base_name + "-" + name,
-                               action=argdict.get("action", "store"),
-                               nargs=argdict.get("nargs", "?"),
-                               const=argdict.get("const", None),
-                               default=argdict.get("default", None),
-                               type=get_builtin(argdict.get("type", None)),
-                               choices=argdict.get("choices", None),
-                               required=argdict.get("required", False),
-                               help=argdict.get("help", "Undocumented option."))
+
+            kwargs = {"action"   : argdict.get("action", "store"),
+                      "nargs"    : argdict.get("nargs", "?"),
+                      "const"    : argdict.get("const", None),
+                      "default"  : argdict.get("default", None),
+                      "type"     : get_builtin(argdict.get("type", None)),
+                      "choices"  : argdict.get("choices", None),
+                      "required" : argdict.get("required", False),
+                      "help"     : argdict.get("help", "Undocumented option.")}
+
+            group.add_argument(base_name + "-" + name, **kwargs)
             
             return
 
@@ -52,12 +57,15 @@ def generate_command_line_parser():
         description="Suite of calibration routines.",
         usage="""gocubical [<args>]
         
-        Performs calibration in accordance with args. If the first argument is positional, it is assumed to be a 
-        user-defined config file in .yaml format. See user_config.yaml for an example. 
+        Performs calibration in accordance with args. If the first argument is 
+        positional, it is assumed to be a user-defined config file in .yaml 
+        format. See user_config.yaml for an example. 
         """
     )
-    
-    with open("default_config.yaml", 'r') as stream:
+
+    path_to_default = Path(__file__).parent.joinpath("default_config.yaml")
+
+    with open(path_to_default, 'r') as stream:
         defaults_dict = ruamel.yaml.safe_load(stream)
 
     build_args(parser, defaults_dict)
@@ -67,8 +75,9 @@ def generate_command_line_parser():
 def argdict_to_arglist(argdict, arglist=[], base_name=""):
     """Converts a nested dictionary to a list of option and value strings.
 
-    Given a nested dictionary of options, recusively builds a list of names and values in the style of sys.argv. This 
-    list can be consumed by parse_args, triggering the relevant type checks.
+    Given a nested dictionary of options, recusively builds a list of names 
+    and values in the style of sys.argv. This list can be consumed by 
+    parse_args, triggering the relevant type checks.
 
     Args:
         argdict: A (nested) dictionary of arguments.

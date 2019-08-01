@@ -4,11 +4,12 @@
 # CubiCalV2: a radio interferometric calibration suite
 # (c) 2019 Rhodes University & Jonathan S. Kenyon
 # http://github.com/ratt-ru/CubiCal
-# This code is distributed under the terms of GPLv2, see LICENSE.md for details
+# This code is distributed under the terms of GPLv2, see LICENSE.md for 
+# details.
 #
 # Copyright (c) 2019 SKA South Africa
 #
-# This file is part of CubiCal.
+# This file is part of CubiCalV2.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -30,8 +31,6 @@ from setuptools import setup, find_packages
 with open('README.md') as f:
     long_description = f.read()
 
-print(cubicalv2.__version__)
-
 # Check for readthedocs environment variable.
 
 on_rtd = os.environ.get('READTHEDOCS') == 'True'
@@ -41,11 +40,12 @@ if on_rtd:
 else:
     requirements = ["ruamel.yaml"]
 
-setup(name='cubicalv2',
-      version=cubicalv2.__version__,
-      description='Fast calibration implementation exploiting complex optimisation.',
-      url='https://github.com/JSKenyon/CubiCalV2',
-      classifiers=[
+setup(name = 'cubicalv2',
+      version = cubicalv2.__version__,
+      description = """Fast calibration implementation exploiting complex 
+                        optimisation.""",
+      url = 'https://github.com/JSKenyon/CubiCalV2',
+      classifiers = [
         "Development Status :: 1 - Planning",
         "Intended Audience :: Science/Research",
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
@@ -53,16 +53,16 @@ setup(name='cubicalv2',
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.6",
         "Topic :: Scientific/Engineering :: Astronomy"],
-      author='Jonathan Kenyon',
-      author_email='jonosken@gmail.com',
-      license='GNU GPL v3',
-      long_description=long_description,
-      long_description_content_type='text/markdown',
-      packages=find_packages(),
-      python_requires=">=3.6",
-      install_requires=requirements,
-      include_package_data=True,
-      zip_safe=False,
+      author = 'Jonathan Kenyon',
+      author_email = 'jonosken@gmail.com',
+      license = 'GNU GPL v3',
+      long_description = long_description,
+      long_description_content_type = 'text/markdown',
+      packages = find_packages(),
+      python_requires = ">=3.6",
+      install_requires = requirements,
+      include_package_data = True,
+      zip_safe = False,
     #   scripts = ['cubical/bin/print-cubical-stats'],
     #   entry_points={'console_scripts': ['gocubical = cubical.main:main']},
     #   extras_require={
