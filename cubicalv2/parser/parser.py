@@ -3,6 +3,12 @@ import ruamel.yaml
 import sys
 from pathlib import Path
 from collections import abc
+# from loguru import logger
+
+# logger.add(sys.stderr, 
+#            format="{time} {level} {message}", 
+#            filter="parser", 
+#            level="INFO")
 
 def get_builtin(type_str):
     """ Converts type string to a type. """
@@ -30,11 +36,14 @@ def build_args(parser, argdict, base_name="-", depth=0):
 
     for name, contents in argdict.items():
         if depth == 1:
-            group = parser.add_argument_group(name)        
+            group = parser.add_argument_group(name, 
+                                              contents.get("description", ""))        
 
         if isinstance(contents, abc.Mapping):
+        
             build_args(group, contents, base_name + "-" + name, depth)
-        else:
+        
+        elif name != "description":
 
             kwargs = {"action"   : argdict.get("action", "store"),
                       "nargs"    : argdict.get("nargs", "?"),
@@ -45,7 +54,7 @@ def build_args(parser, argdict, base_name="-", depth=0):
                       "required" : argdict.get("required", False),
                       "help"     : argdict.get("help", "Undocumented option.")}
 
-            group.add_argument(base_name + "-" + name, **kwargs)
+            group.add_argument(base_name, **kwargs)
             
             return
 
@@ -54,7 +63,6 @@ def generate_command_line_parser():
     """Instantiates and populates a parser from default_config.yaml."""
 
     parser = argparse.ArgumentParser(
-        description="Suite of calibration routines.",
         usage="""gocubical [<args>]
         
         Performs calibration in accordance with args. If the first argument is 

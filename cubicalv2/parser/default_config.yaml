@@ -1,17 +1,53 @@
-input:
-    ms: 
-        name: ms_name
+input-ms:
+    description: Arguments pertaining to the input measurement set. 
+    name:
         type: str
         help: Path to input measurement set.
         required: True
-    sm:
-        name: sm_name
+    column:
+        type: str
+        help: Name of input measurement set column.
+        default: DATA
+    rebin-time:
+        type: str
+        help: Rebin data in time on the fly. Specify as a number of 
+              timeslots to average together, or a value with a unit 
+              (e.g. '5s').
+        default: "1"
+    rebin-freq:
+        type: str
+        help: Rebin data in frequency on the fly. Specify as a number of 
+              channels to average together, or a value with a unit 
+              (e.g. '4MHz').
+        default: "1"
+    chunk-on:
         nargs: +
         type: str
+        help: If set, chunking strategy will insert boundaries based on  
+              where the named column(s) jumps by >--input-ms-chunk-jump. 
+              Multiple column names may be given, separated by spaces. Use 
+              None to disable.
+        default: SCAN_NUMBER
+    chunk-jump:
+        nargs: +
+        type: int
+        help: The jump size used in conjunction with --input-ms-chunk-on. 
+              If 0, then any change in value is a jump. If n, then the 
+              change must be >n. 
+        default: 1
+input-model:
+    description: Arguments pertaining to input model parameters.
+    recipe:
+        nargs: +
+        type: str
+        help: Input model recipe. Add syntactic examples.
+        required: True
+    
 output:
+    description: Arguments pertaining to output products.
     ms: 
-        name: ms_name
+        name: name
         type: str
         help: Path to output measurement set.
     sm:
-        name: sm_name
+        name: name
