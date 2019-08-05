@@ -1,5 +1,5 @@
 input-ms:
-    description: Arguments pertaining to the input measurement set. 
+    _description: Arguments pertaining to the input measurement set. 
     name:
         type: str
         help: Path to input measurement set.
@@ -36,18 +36,15 @@ input-ms:
               change must be >n. 
         default: 1
 input-model:
-    description: Arguments pertaining to input model parameters.
+    _description: Arguments pertaining to input model parameters.
     recipe:
         nargs: +
         type: str
         help: Input model recipe. Add syntactic examples.
         required: True
     
-output:
-    description: Arguments pertaining to output products.
-    ms: 
-        name: name
+output-ms:
+    _description: Arguments pertaining to output products.
+    name:
         type: str
         help: Path to output measurement set.
-    sm:
-        name: name

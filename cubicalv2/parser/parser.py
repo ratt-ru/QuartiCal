@@ -43,7 +43,7 @@ def build_args(parser, argdict, base_name="-", depth=0):
         
             build_args(group, contents, base_name + "-" + name, depth)
         
-        elif name != "description":
+        elif not name.startswith("_"):
 
             kwargs = {"action"   : argdict.get("action", "store"),
                       "nargs"    : argdict.get("nargs", "?"),
@@ -80,6 +80,52 @@ def generate_command_line_parser():
 
     return parser
 
+def strip_dict(argdict):
+    """Recursively traverses and strips a nested dictionary. 
+    
+    Traverses a nested dictionary (such as the output of a .yaml file) in a 
+    recursive fashion and replaces the deepest nested dicitonary with the
+    contents of its default field. This is used to produce a basic user config
+    file.
+
+    Args:
+        argdict: A (nested) dictionary of arguments.
+    """
+
+    for name, contents in argdict.items():
+
+        if isinstance(contents, abc.Mapping): 
+
+            max_depth_reached = strip_dict(contents)
+
+            if max_depth_reached:
+                argdict[name] = contents.get("default", None)
+                max_depth_reached = False
+
+        elif not name.startswith("_"):
+
+            return True
+
+
+def generate_user_config():
+    """Creates a blank .yaml file with up-to-date field names and defaults."""
+
+    path_to_default = Path(__file__).parent.joinpath("default_config.yaml")
+
+    with open(path_to_default, 'r') as stream:
+        defaults_dict = ruamel.yaml.safe_load(stream)
+
+    strip_dict(defaults_dict)
+
+    with open("user_config.yaml", 'w') as outfile:
+        ruamel.yaml.round_trip_dump(defaults_dict, 
+                                    outfile, 
+                                    default_flow_style=False, 
+                                    width=60, 
+                                    indent=4)
+
+    return
+
 def argdict_to_arglist(argdict, arglist=[], base_name=""):
     """Converts a nested dictionary to a list of option and value strings.
 
@@ -98,17 +144,19 @@ def argdict_to_arglist(argdict, arglist=[], base_name=""):
     
     for name, contents in argdict.items():
         new_key = base_name + "-" + name if base_name else "--" + name
-        if isinstance(contents, abc.Mapping):
+        if name.startswith("_"):
+            pass
+        elif isinstance(contents, abc.Mapping):
             argdict_to_arglist(contents, arglist, new_key)
         elif isinstance(contents, list):
             arglist.append(new_key)
 
             for arg in contents:
-                arglist.append(arg)
+                arglist.append(str(arg))
 
         else:
             arglist.append(new_key)
-            arglist.append(contents)
+            arglist.append(str(contents))
 
     return arglist
 
@@ -117,6 +165,8 @@ if __name__=="__main__":
     # Firstly we generate our argparse from the defaults.
 
     cl_parser = generate_command_line_parser()
+
+    generate_user_config()
 
     # Determine if we have positional arguments. May be possible to replace
     # this with a try except.
@@ -140,6 +190,8 @@ if __name__=="__main__":
             cf_args = argdict_to_arglist(ruamel.yaml.safe_load(stream))
 
         cf_args.extend(remaining_args)
+
+        print(cf_args)
 
         cl_args, _ = cl_parser.parse_known_args(cf_args)
 
