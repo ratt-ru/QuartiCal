@@ -3,17 +3,18 @@ import ruamel.yaml
 import sys
 from pathlib import Path
 from collections import abc
-# from loguru import logger
+import builtins
+from loguru import logger
 
-# logger.add(sys.stderr, 
-#            format="{time} {level} {message}", 
-#            filter="parser", 
-#            level="INFO")
+logger.add(sys.stderr, 
+           format="{time} {level} {message}", 
+           filter="parser", 
+           level="INFO")
 
 def get_builtin(type_str):
     """ Converts type string to a type. """
-        
-    return None if type_str is None else getattr(__builtins__, type_str)
+
+    return None if type_str is None else getattr(builtins, type_str)
 
 def build_args(parser, argdict, base_name="-", depth=0):
     """Recursively traverses a nested dictionary and configures the parser. 
@@ -59,7 +60,7 @@ def build_args(parser, argdict, base_name="-", depth=0):
             return
 
 
-def generate_command_line_parser():
+def create_command_line_parser():
     """Instantiates and populates a parser from default_config.yaml."""
 
     parser = argparse.ArgumentParser(
@@ -84,9 +85,9 @@ def strip_dict(argdict):
     """Recursively traverses and strips a nested dictionary. 
     
     Traverses a nested dictionary (such as the output of a .yaml file) in a 
-    recursive fashion and replaces the deepest nested dicitonary with the
-    contents of its default field. This is used to produce a basic user config
-    file.
+    recursive fashion and replaces the per-argument dicitonaries with the
+    contents of the associated default field. This is used to produce a basic 
+    user config .yaml file.
 
     Args:
         argdict: A (nested) dictionary of arguments.
@@ -107,7 +108,7 @@ def strip_dict(argdict):
             return True
 
 
-def generate_user_config():
+def create_user_config():
     """Creates a blank .yaml file with up-to-date field names and defaults."""
 
     path_to_default = Path(__file__).parent.joinpath("default_config.yaml")
@@ -160,42 +161,49 @@ def argdict_to_arglist(argdict, arglist=[], base_name=""):
 
     return arglist
 
-if __name__=="__main__":
+def parse_inputs():
 
     # Firstly we generate our argparse from the defaults.
 
-    cl_parser = generate_command_line_parser()
+    cl_parser = create_command_line_parser()
 
-    generate_user_config()
+    # This generates a default user config file in the current directory - 
+    # add this as a script to the the package.
 
-    # Determine if we have positional arguments. May be possible to replace
-    # this with a try except.
+    # create_user_config()
 
-    has_args = len(sys.argv) > 1
-    first_arg = sys.argv[1] if has_args else '-'
-    has_positional_arg = not first_arg.startswith('-')  
+    # Determine if we have a user defined config file. This is assumed to be
+    # positional. Arguments to the left of the config file name will be 
+    # ignored.
 
-    # If we have a positional argument, we assume that it is a config file.
-    # We consume this file name and load its contents into a list of options
+    config_file_name = None
+
+    for arg_ind, arg in enumerate(sys.argv):
+        if arg.endswith('.yaml'):
+            config_file_name = arg
+            remaining_args = sys.argv[arg_ind + 1:]
+            logger.info("Used defined config file: {}", config_file_name)
+            break       
+
+    # If a config file is given, we load its contents into a list of options
     # and values. We then add the remaining command line options. Finally,
     # we submit the resulting list to the parser. This handles validation 
     # for us. In the absence of a positional argument, we assume all
     # arguments are specified via the command line.
 
-    if has_positional_arg:
-
-        remaining_args = sys.argv[2:] 
-             
-        with open(sys.argv[1], 'r') as stream:
+    if config_file_name:
+            
+        with open(config_file_name, 'r') as stream:
             cf_args = argdict_to_arglist(ruamel.yaml.safe_load(stream))
 
         cf_args.extend(remaining_args)
 
-        print(cf_args)
-
-        cl_args, _ = cl_parser.parse_known_args(cf_args)
+        args, _ = cl_parser.parse_known_args(cf_args)
 
     else:
-        cl_args, _ = cl_parser.parse_known_args() 
+        args, _ = cl_parser.parse_known_args() 
 
-    print(cl_args)
+    return args
+
+if __name__ == "__main__":
+    print(parse_inputs())
