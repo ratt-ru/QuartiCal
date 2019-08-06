@@ -8,6 +8,15 @@ input-ms:
         type: str
         help: Name of input measurement set column.
         default: DATA
+    time-chunk:
+        type: str
+        help: Chunk data up by this number of timeslots. This limits the amount
+              of data processed at once. Smaller chunks allow for a smaller RAM
+              footprint and greater parallelism, but this sets an upper limit
+              on the solution intervals that may be employed. Specify as an
+              integer number of timeslots, or a value with a unit
+              (e.g. '300s'). 0 means use full time axis.
+        default: "32"    
     rebin-time:
         type: str
         help: Rebin data in time on the fly. Specify as a number of 

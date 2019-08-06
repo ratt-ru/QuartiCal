@@ -36,9 +36,15 @@ with open('README.md') as f:
 on_rtd = os.environ.get('READTHEDOCS') == 'True'
 
 if on_rtd:
-    requirements = ["ruamel.yaml"]
+    requirements = ["ruamel.yaml",
+                    "numpy",
+                    "dask",
+                    "xarray-ms"]
 else:
-    requirements = ["ruamel.yaml"]
+    requirements = ["ruamel.yaml",
+                    "numpy",
+                    "dask",
+                    "xarray-ms"]
 
 setup(name = 'cubicalv2',
       version = cubicalv2.__version__,

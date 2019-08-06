@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 from cubicalv2.parser import parser, preprocess
+from cubicalv2.data_handling import data_handler
+
 
 def execute():
     """Runs the application."""
@@ -11,10 +13,12 @@ def execute():
     # of operation. The idea is that all our configuration state lives in this
     # options dictionary. Down with OOP!
 
-    # preprocess.preprocess(opts) 
+    preprocess.preprocess_opts(opts)
 
-    # Give opts to the data handler, which in turn should return some dask 
+    # Give opts to the data handler, which in turn should return some dask
     # arrays. This needs to be implemented and will require further thought.
 
-if __name__ == "__main__":
-    pass
+    data_handler.handle_ms(opts)
+
+# if __name__ == "__main__":
+#     pass

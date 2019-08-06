@@ -6,27 +6,29 @@ from collections import abc
 import builtins
 from loguru import logger
 
-logger.add(sys.stderr, 
-           format="{time} {level} {message}", 
-           filter="parser", 
+logger.add(sys.stderr,
+           format="{time} {level} {message}",
+           filter="parser",
            level="INFO")
+
 
 def get_builtin(type_str):
     """ Converts type string to a type. """
 
     return None if type_str is None else getattr(builtins, type_str)
 
+
 def build_args(parser, argdict, base_name="-", depth=0):
-    """Recursively traverses a nested dictionary and configures the parser. 
-    
-    Traverses a nested dictionary (such as the output of a .yaml file) in a 
-    recursive fashion and adds discovered argument groups and arguments to the 
+    """Recursively traverses a nested dictionary and configures the parser.
+
+    Traverses a nested dictionary (such as the output of a .yaml file) in a
+    recursive fashion and adds discovered argument groups and arguments to the
     parser object.
 
     Args:
         parser: An ArgumentParser object.
         argdict: A (nested) dictionary of arguments.
-        base_name: An optional string prefix to which the current argument 
+        base_name: An optional string prefix to which the current argument
             name can be appended.
         depth: The current recursion depth.
     """
@@ -37,26 +39,26 @@ def build_args(parser, argdict, base_name="-", depth=0):
 
     for name, contents in argdict.items():
         if depth == 1:
-            group = parser.add_argument_group(name, 
-                                              contents.get("description", ""))        
+            group = parser.add_argument_group(name,
+                                              contents.get("description", ""))
 
         if isinstance(contents, abc.Mapping):
-        
+
             build_args(group, contents, base_name + "-" + name, depth)
-        
+
         elif not name.startswith("_"):
 
-            kwargs = {"action"   : argdict.get("action", "store"),
-                      "nargs"    : argdict.get("nargs", "?"),
-                      "const"    : argdict.get("const", None),
-                      "default"  : argdict.get("default", None),
-                      "type"     : get_builtin(argdict.get("type", None)),
-                      "choices"  : argdict.get("choices", None),
-                      "required" : argdict.get("required", False),
-                      "help"     : argdict.get("help", "Undocumented option.")}
+            kwargs = {"action": argdict.get("action", "store"),
+                      "nargs": argdict.get("nargs", "?"),
+                      "const": argdict.get("const", None),
+                      "default": argdict.get("default", None),
+                      "type": get_builtin(argdict.get("type", None)),
+                      "choices": argdict.get("choices", None),
+                      "required": argdict.get("required", False),
+                      "help": argdict.get("help", "Undocumented option.")}
 
             group.add_argument(base_name, **kwargs)
-            
+
             return
 
 
@@ -65,10 +67,10 @@ def create_command_line_parser():
 
     parser = argparse.ArgumentParser(
         usage="""gocubical [<args>]
-        
-        Performs calibration in accordance with args. If the first argument is 
-        positional, it is assumed to be a user-defined config file in .yaml 
-        format. See user_config.yaml for an example. 
+
+        Performs calibration in accordance with args. If the first argument is
+        positional, it is assumed to be a user-defined config file in .yaml
+        format. See user_config.yaml for an example.
         """
     )
 
@@ -81,12 +83,13 @@ def create_command_line_parser():
 
     return parser
 
+
 def strip_dict(argdict):
-    """Recursively traverses and strips a nested dictionary. 
-    
-    Traverses a nested dictionary (such as the output of a .yaml file) in a 
+    """Recursively traverses and strips a nested dictionary.
+
+    Traverses a nested dictionary (such as the output of a .yaml file) in a
     recursive fashion and replaces the per-argument dicitonaries with the
-    contents of the associated default field. This is used to produce a basic 
+    contents of the associated default field. This is used to produce a basic
     user config .yaml file.
 
     Args:
@@ -95,7 +98,7 @@ def strip_dict(argdict):
 
     for name, contents in argdict.items():
 
-        if isinstance(contents, abc.Mapping): 
+        if isinstance(contents, abc.Mapping):
 
             max_depth_reached = strip_dict(contents)
 
@@ -119,19 +122,20 @@ def create_user_config():
     strip_dict(defaults_dict)
 
     with open("user_config.yaml", 'w') as outfile:
-        ruamel.yaml.round_trip_dump(defaults_dict, 
-                                    outfile, 
-                                    default_flow_style=False, 
-                                    width=60, 
+        ruamel.yaml.round_trip_dump(defaults_dict,
+                                    outfile,
+                                    default_flow_style=False,
+                                    width=60,
                                     indent=4)
 
     return
 
+
 def argdict_to_arglist(argdict, arglist=[], base_name=""):
     """Converts a nested dictionary to a list of option and value strings.
 
-    Given a nested dictionary of options, recusively builds a list of names 
-    and values in the style of sys.argv. This list can be consumed by 
+    Given a nested dictionary of options, recusively builds a list of names
+    and values in the style of sys.argv. This list can be consumed by
     parse_args, triggering the relevant type checks.
 
     Args:
@@ -142,7 +146,7 @@ def argdict_to_arglist(argdict, arglist=[], base_name=""):
     Returns:
         arglist: A list of strings which can consumed by parse_args.
     """
-    
+
     for name, contents in argdict.items():
         new_key = base_name + "-" + name if base_name else "--" + name
         if name.startswith("_"):
@@ -161,19 +165,20 @@ def argdict_to_arglist(argdict, arglist=[], base_name=""):
 
     return arglist
 
+
 def parse_inputs():
 
     # Firstly we generate our argparse from the defaults.
 
     cl_parser = create_command_line_parser()
 
-    # This generates a default user config file in the current directory - 
+    # This generates a default user config file in the current directory -
     # add this as a script to the the package.
 
     # create_user_config()
 
     # Determine if we have a user defined config file. This is assumed to be
-    # positional. Arguments to the left of the config file name will be 
+    # positional. Arguments to the left of the config file name will be
     # ignored.
 
     config_file_name = None
@@ -183,16 +188,16 @@ def parse_inputs():
             config_file_name = arg
             remaining_args = sys.argv[arg_ind + 1:]
             logger.info("Used defined config file: {}", config_file_name)
-            break       
+            break
 
     # If a config file is given, we load its contents into a list of options
     # and values. We then add the remaining command line options. Finally,
-    # we submit the resulting list to the parser. This handles validation 
+    # we submit the resulting list to the parser. This handles validation
     # for us. In the absence of a positional argument, we assume all
     # arguments are specified via the command line.
 
     if config_file_name:
-            
+
         with open(config_file_name, 'r') as stream:
             cf_args = argdict_to_arglist(ruamel.yaml.safe_load(stream))
 
@@ -201,9 +206,10 @@ def parse_inputs():
         args, _ = cl_parser.parse_known_args(cf_args)
 
     else:
-        args, _ = cl_parser.parse_known_args() 
+        args, _ = cl_parser.parse_known_args()
 
     return args
+
 
 if __name__ == "__main__":
     print(parse_inputs())
