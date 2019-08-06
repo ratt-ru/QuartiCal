@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 from cubicalv2.parser import parser, preprocess
 
-
 def execute():
+    """Runs the application."""
 
     opts = parser.parse_inputs()
 
