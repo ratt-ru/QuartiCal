@@ -64,7 +64,8 @@ setup(name = 'cubicalv2',
       include_package_data = True,
       zip_safe = False,
     #   scripts = ['cubical/bin/print-cubical-stats'],
-    #   entry_points={'console_scripts': ['gocubical = cubical.main:main']},
+      entry_points={'console_scripts': 
+                        ['gocubical = cubicalv2.executor:execute']},
     #   extras_require={
     #       'lsm-support': ['montblanc @git+https://github.com/ska-sa/montblanc.git@0.6.1'],
     #       'degridder-support': ['ddfacet >= 0.4.0','regions>=0.4']
