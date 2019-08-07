@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
 import numpy as np
-from xarrayms import xds_from_table, xds_to_table
+from xarrayms import xds_from_table
 from loguru import logger
 import sys
 
@@ -19,7 +19,9 @@ def handle_ms(opts):
     # option.
 
     indexing_xds = xds_from_table(opts.input_ms_name,
-                                  columns=("TIME", "INTERVAL", "SCAN_NUMBER"))
+                                  columns=("TIME", "INTERVAL"),
+                                  index_cols=("TIME",),
+                                  group_cols=("SCAN_NUMBER",))
 
     time_col = indexing_xds[0].TIME.data
 
@@ -58,6 +60,15 @@ def handle_ms(opts):
     row_chunks = np.add.reduceat(utime_counts, cum_utime_per_chunk)
 
     logger.info("Found {} row_chunks.", row_chunks.size)
+    print(row_chunks)
+
+    data_columns = ("TIME",)#, "ANTENNA1", "ANTENNA2", "DATA", "MODEL_DATA")
+
+    data_xds = xds_from_table(opts.input_ms_name,
+                              columns=data_columns,
+                              index_cols=("TIME",),
+                              group_cols=("SCAN_NUMBER",),
+                              chunks={'row': row_chunks.tolist()})
 
 
 def handle_model(opts):
