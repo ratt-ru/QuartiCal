@@ -6,20 +6,18 @@ from pathlib import Path
 from collections import abc
 import builtins
 from loguru import logger
-
-logger.add(sys.stderr,
-           format="{time} {level} {message}",
-           filter="parser",
-           level="INFO")
+import cubicalv2.parser.custom_types as custom_types
 
 
-def get_builtin(type_str):
+def to_type(type_str):
     """Converts type string to a type."""
 
-    print(getattr(sys.modules[__name__], "get_builtin"))
-    print(globals()["get_builtin"])
-
-    return None if type_str is None else getattr(builtins, type_str)
+    if type_str is None:
+        return None
+    elif type_str in custom_types.custom_types.keys():
+        return custom_types.custom_types[type_str]
+    else:
+        return getattr(builtins, type_str)
 
 
 def build_args(parser, argdict, base_name="-", depth=0):
@@ -56,7 +54,7 @@ def build_args(parser, argdict, base_name="-", depth=0):
                       "nargs": argdict.get("nargs", "?"),
                       "const": argdict.get("const", None),
                       "default": argdict.get("default", None),
-                      "type": get_builtin(argdict.get("type", None)),
+                      "type": to_type(argdict.get("type", None)),
                       "choices": argdict.get("choices", None),
                       "required": argdict.get("required", False),
                       "help": argdict.get("help", "Undocumented option.")}

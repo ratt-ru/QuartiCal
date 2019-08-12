@@ -1,5 +1,5 @@
 input-ms:
-    _description: Arguments pertaining to the input measurement set. 
+    _description: Arguments pertaining to the input measurement set.
     name:
         type: str
         help: Path to input measurement set.
@@ -9,40 +9,40 @@ input-ms:
         help: Name of input measurement set column.
         default: DATA
     time-chunk:
-        type: str
+        type: TIME
         help: Chunk data up by this number of timeslots. This limits the amount
               of data processed at once. Smaller chunks allow for a smaller RAM
               footprint and greater parallelism, but this sets an upper limit
               on the solution intervals that may be employed. Specify as an
               integer number of timeslots, or a value with a unit
               (e.g. '300s'). 0 means use full time axis.
-        default: "32"    
+        default: "32"
     rebin-time:
-        type: str
-        help: Rebin data in time on the fly. Specify as a number of 
-              timeslots to average together, or a value with a unit 
+        type: TIME
+        help: Rebin data in time on the fly. Specify as a number of
+              timeslots to average together, or a value with a unit
               (e.g. '5s').
         default: "1"
     rebin-freq:
         type: str
-        help: Rebin data in frequency on the fly. Specify as a number of 
-              channels to average together, or a value with a unit 
+        help: Rebin data in frequency on the fly. Specify as a number of
+              channels to average together, or a value with a unit
               (e.g. '4MHz').
         default: "1"
     chunk-on:
         nargs: +
         type: str
-        help: If set, chunking strategy will insert boundaries based on  
-              where the named column(s) jumps by >--input-ms-chunk-jump. 
-              Multiple column names may be given, separated by spaces. Use 
+        help: If set, chunking strategy will insert boundaries based on
+              where the named column(s) jumps by >--input-ms-chunk-jump.
+              Multiple column names may be given, separated by spaces. Use
               None to disable.
         default: SCAN_NUMBER
     chunk-jump:
         nargs: +
         type: int
-        help: The jump size used in conjunction with --input-ms-chunk-on. 
-              If 0, then any change in value is a jump. If n, then the 
-              change must be >n. 
+        help: The jump size used in conjunction with --input-ms-chunk-on.
+              If 0, then any change in value is a jump. If n, then the
+              change must be >n.
         default: 1
 input-model:
     _description: Arguments pertaining to input model parameters.
@@ -51,7 +51,7 @@ input-model:
         type: str
         help: Input model recipe. Add syntactic examples.
         required: True
-    
+
 output-ms:
     _description: Arguments pertaining to output products.
     name:
