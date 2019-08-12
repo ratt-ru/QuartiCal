@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # Sets up logger - hereafter import logger from Loguru.
-import cubicalv2.logging.init_logger  # noqa.
+import cubicalv2.logging.init_logger  # noqa
 from cubicalv2.parser import parser
 from cubicalv2.data_handling import data_handler
-import numpy as np
+from cubicalv2.calibration.calibrate import calibrate
 
 
 def execute():
@@ -22,18 +22,5 @@ def execute():
 
     data_xds = data_handler.read_ms(opts)
 
-    for xds in data_xds:
+    calibrate(data_xds, opts)
 
-        # Submit the xds
-
-        data_col = xds.DATA.data
-        model_col = xds.MODEL_DATA.data
-        ant1_col = xds.ANTENNA1.data
-        ant2_col = xds.ANTENNA2.data
-        time_col = xds.TIME.data
-        utime_ind = \
-            time_col.map_blocks(lambda d: np.unique(d, return_inverse=True)[1])
-        utime_per_chunk = \
-            utime_ind.map_blocks(lambda f: np.max(f, keepdims=True) + 1,
-                                 chunks=(1,),
-                                 dtype=utime_ind.dtype)
