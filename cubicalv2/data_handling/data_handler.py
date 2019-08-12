@@ -19,6 +19,10 @@ def read_ms(opts):
                                   index_cols=("TIME",),
                                   group_cols=("SCAN_NUMBER",))
 
+    # antenna_xds = xds_from_table(opts.input_ms_name+"::ANTENNA")
+
+    # print(antenna_xds[0].dims["row"])
+
     # row_chunks is a dictionary containing row chunks per data set.
 
     row_chunks_per_xds = []
