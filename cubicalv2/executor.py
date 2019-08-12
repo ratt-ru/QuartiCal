@@ -8,6 +8,7 @@ import logging
 
 
 class InterceptHandler(logging.Handler):
+    """Intercept log messages are reroute them to the loguru logger."""
     def emit(self, record):
         # Retrieve context where the logging call occurred, this happens to be
         # in the 7th frame upward.
@@ -15,7 +16,10 @@ class InterceptHandler(logging.Handler):
         logger_opt.log(record.levelname, record.getMessage())
 
 
-logging.basicConfig(handlers=[InterceptHandler()], level=0)
+logging.basicConfig(handlers=[InterceptHandler()], level="WARNING")
+
+# Put together a formatting string for the logger. Split into pieces in order
+# to improve legibility.
 
 tim_fmt = "<green>{time:YYYY-MM-DD HH:mm:ss}</green>"
 lvl_fmt = "<level>{level}</level>"
@@ -29,9 +33,8 @@ config = {
         {"sink": sys.stderr,
          "level": "INFO",
          "format": fmt},
-        {"sink": "cubicalv2.log",
+        {"sink": "{time:YYYYMMDD_HHmmss}_cubicalv2.log",
          "level": "DEBUG",
-         "rotation": "100 MB",
          "format": fmt}
     ],
 }

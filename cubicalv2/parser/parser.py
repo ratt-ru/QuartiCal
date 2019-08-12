@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import argparse
 import ruamel.yaml
 import sys
@@ -13,7 +14,10 @@ logger.add(sys.stderr,
 
 
 def get_builtin(type_str):
-    """ Converts type string to a type. """
+    """Converts type string to a type."""
+
+    print(getattr(sys.modules[__name__], "get_builtin"))
+    print(globals()["get_builtin"])
 
     return None if type_str is None else getattr(builtins, type_str)
 

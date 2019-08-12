@@ -14,14 +14,23 @@ def read_ms(opts):
     # data. Figure out chunking based on a memory budget rather than as an
     # option.
 
+    logger.debug("Setting up indexing xarray dataset.")
+
     indexing_xds = xds_from_table(opts.input_ms_name,
                                   columns=("TIME", "INTERVAL"),
                                   index_cols=("TIME",),
                                   group_cols=("SCAN_NUMBER",))
 
-    # antenna_xds = xds_from_table(opts.input_ms_name+"::ANTENNA")
+    # Read the antenna table and add the number of antennas to the options
+    # namespace/dictionary. Leading underscore indiciates that this option is
+    # private.
 
-    # print(antenna_xds[0].dims["row"])
+    antenna_xds = xds_from_table(opts.input_ms_name+"::ANTENNA")
+
+    opts._n_ant = antenna_xds[0].dims["row"]
+
+    logger.info("Antenna table indicates {} antennas were present for this "
+                "observation.", opts._n_ant)
 
     # row_chunks is a dictionary containing row chunks per data set.
 
