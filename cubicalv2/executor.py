@@ -22,5 +22,7 @@ def execute():
 
     data_xds = data_handler.read_ms(opts)
 
+    import time
+    t0 = time.time()
     calibrate(data_xds, opts)
-
+    print(time.time() - t0)

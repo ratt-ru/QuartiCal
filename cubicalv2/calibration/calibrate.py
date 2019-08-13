@@ -129,6 +129,8 @@ def calibrate(data_xds, opts):
     # Calibrate per xds. This list will likely consist of an xds per SPW per
     # scan. This behaviour can be changed.
 
+    gains_per_xds = []
+
     for xds in data_xds:
 
         # Unpack the data on the xds into variables with understandable names.
@@ -207,7 +209,7 @@ def calibrate(data_xds, opts):
                 chunks=utime_ind.chunks,
                 dtype=np.uint32)
 
-        for i in range(20):
+        for i in range(10):
             # Compute the jhj and jhr components of the GN/CubiCal update.
             jhj_and_jhr = \
                 da.blockwise(
@@ -231,15 +233,21 @@ def calibrate(data_xds, opts):
                     dtype=gains.dtype,
                     align_arrays=False)
 
+            # Update the gains.
             gains = (gains + upd)/2
 
-        # with Profiler() as prof, ResourceProfiler(dt=0.25) as rprof, \
-        #     CacheProfiler() as cprof:
-        #     out = gains.compute()
+        # Append the per-xds gains to a list.
+        gains_per_xds.append(gains)
 
-        # visualize([prof, rprof, cprof])
+    # Call compute on the resulting graph.
+    da.compute(gains_per_xds)
 
-        # Call compute to execute the graph.
-        gains.compute()
+    # gains_per_xds[0].visualize("graph.pdf")
 
-        # gains.visualize("graph.pdf")
+    # with Profiler() as prof, \
+    #      ResourceProfiler(dt=0.25) as rprof, \
+    #      CacheProfiler() as cprof:
+
+    #      out = da.compute(gains_per_xds)
+
+    # visualize([prof, rprof, cprof])
