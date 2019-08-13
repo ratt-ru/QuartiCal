@@ -3,7 +3,7 @@ import numpy as np
 import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import solver
-from cubicalv2.kernels.gjones import compute_jhj_and_jhr, compute_update
+from cubicalv2.kernels.gjones import update_func_factory
 # from dask.diagnostics import Profiler, ResourceProfiler, CacheProfiler
 # from dask.diagnostics import visualize
 # from dask.optimization import fuse
@@ -101,21 +101,24 @@ def calibrate(data_xds, opts):
                 chunks=utime_ind.chunks,
                 dtype=np.uint32)
 
-        gains = da.blockwise(
-                        solver, ("rowlike", "chan", "ant", "corr"),
-                        model_col, ("rowlike", "chan", "corr"),
-                        gains, ("rowlike", "chan", "ant", "corr"),
-                        data_col, ("rowlike", "chan", "corr"),
-                        ant1_col, ("rowlike",),
-                        ant2_col, ("rowlike",),
-                        time_mapping, ("rowlike",),
-                        freq_mapping, ("rowlike",),
-                        compute_jhj_and_jhr, None,
-                        compute_update, None,
-                        adjust_chunks={"rowlike": np_t_int_per_chunk,
-                                       "chan": atomic_f_int},
-                        dtype=model_col.dtype,
-                        align_arrays=False)
+        mode = "full-full"
+
+        compute_jhj_and_jhr, compute_update = update_func_factory(mode)
+
+        gains = da.blockwise(solver, ("rowlike", "chan", "ant", "corr"),
+                             model_col, ("rowlike", "chan", "corr"),
+                             gains, ("rowlike", "chan", "ant", "corr"),
+                             data_col, ("rowlike", "chan", "corr"),
+                             ant1_col, ("rowlike",),
+                             ant2_col, ("rowlike",),
+                             time_mapping, ("rowlike",),
+                             freq_mapping, ("rowlike",),
+                             compute_jhj_and_jhr, None,
+                             compute_update, None,
+                             adjust_chunks={"rowlike": np_t_int_per_chunk,
+                                            "chan": atomic_f_int},
+                             dtype=model_col.dtype,
+                             align_arrays=False)
 
         # Append the per-xds gains to a list.
         gains_per_xds.append(gains)
@@ -123,7 +126,7 @@ def calibrate(data_xds, opts):
     # Call compute on the resulting graph.
     da.compute(gains_per_xds, num_workers=6)
 
-    # gains_per_xds[0].visualize("graph.pdf")
+    # gains_per_xds[0].visualize("graph.pdf", optimize_graph=True)
 
     # with Profiler() as prof, \
     #      ResourceProfiler(dt=0.25) as rprof, \

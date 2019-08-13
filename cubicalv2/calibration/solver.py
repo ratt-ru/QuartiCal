@@ -4,10 +4,8 @@ from numba import jit
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
-def solver(model, gains, residual, a1, a2, t_map, f_map, f1, f2):
-
-    compute_jhj_and_jhr = f1
-    compute_update = f2
+def solver(model, gains, residual, a1, a2, t_map, f_map, compute_jhj_and_jhr,
+           compute_update):
 
     for i in range(10):
 

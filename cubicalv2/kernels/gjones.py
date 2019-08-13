@@ -3,8 +3,25 @@ import numpy as np
 from numba import jit, prange
 
 
+class ModeError(Exception):
+    """Raised when solver mode is not understood."""
+    pass
+
+
+def update_func_factory(mode):
+
+    if mode == "full-full":
+        return jhj_and_jhr_full, update_full
+    elif mode == "diag-full":
+        pass
+    elif mode == "diag-diag":
+        pass
+    else:
+        raise ModeError("Undefined calibration mode.")
+
+
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
-def compute_jhj_and_jhr(model, gains, residual, a1, a2, t_map, f_map):
+def jhj_and_jhr_full(model, gains, residual, a1, a2, t_map, f_map):
 
     n_rows, n_chan, _ = model.shape
 
@@ -22,7 +39,8 @@ def compute_jhj_and_jhr(model, gains, residual, a1, a2, t_map, f_map):
             r = residual[row, f]
 
             g00, g01, g10, g11 = gb[0], gb[1], gb[2], gb[3]
-            mh00, mh01, mh10, mh11 = m[0].conjugate(), m[2].conjugate(), m[1].conjugate(), m[3].conjugate()
+            mh00, mh01, mh10, mh11 = (m[0].conjugate(), m[2].conjugate(),
+                                      m[1].conjugate(), m[3].conjugate())
             r00, r01, r10, r11 = r[0], r[1], r[2], r[3]
 
             jh00 = (g00*mh00 + g01*mh10)
@@ -47,8 +65,8 @@ def compute_jhj_and_jhr(model, gains, residual, a1, a2, t_map, f_map):
 
             g00, g01, g10, g11 = ga[0], ga[1], ga[2], ga[3]
             m00, m01, m10, m11 = m[0], m[1], m[2], m[3]
-            r00, r01, r10, r11 = r[0].conjugate(), r[2].conjugate(), \
-                                 r[1].conjugate(), r[3].conjugate()  # noqa
+            r00, r01, r10, r11 = (r[0].conjugate(), r[2].conjugate(),
+                                  r[1].conjugate(), r[3].conjugate())
 
             jh00 = (g00*m00 + g01*m10)
             jh01 = (g00*m01 + g01*m11)
@@ -72,8 +90,9 @@ def compute_jhj_and_jhr(model, gains, residual, a1, a2, t_map, f_map):
 
     return jhj, jhr
 
+
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
-def compute_update(jhj, jhr):
+def update_full(jhj, jhr):
 
     n_tint, n_fint, n_ant, n_corr = jhj.shape
 
