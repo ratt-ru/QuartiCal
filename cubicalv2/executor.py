@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Sets up logger - hereafter import logger from Loguru.
 import cubicalv2.logging.init_logger  # noqa
+from loguru import logger
 from cubicalv2.parser import parser
 from cubicalv2.data_handling import data_handler
 from cubicalv2.calibration.calibrate import calibrate
@@ -25,4 +26,4 @@ def execute():
     import time
     t0 = time.time()
     calibrate(data_xds, opts)
-    print(time.time() - t0)
+    logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
