@@ -246,7 +246,6 @@ parallel:
 (gain):
     _description: Arguments pertaining to a labelled (gain). (gain) should be
                   replaced with the labels specified by SOLVER_GAIN_TERMS.
-    # _label: G
     type:
         type: str
         help: Type of gain matrix to solve for.
@@ -256,5 +255,15 @@ parallel:
             - robust
             - parametric
         default: complex
+    parametrisation:
+        type: str
+        help: If the gain is parametric, this determines the type of
+              parametrisation.
+        choices:
+            - f-slope
+            - t-slope
+            - tf-plane
+        default: f-slope
+
 
 
