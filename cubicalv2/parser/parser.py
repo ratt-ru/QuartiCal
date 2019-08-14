@@ -41,8 +41,10 @@ def build_args(parser, argdict, base_name="-", depth=0):
 
     for name, contents in argdict.items():
         if depth == 1:
+            gain_label = contents.get("_label", None)
+            name = gain_label if gain_label is not None else name
             group = parser.add_argument_group(name,
-                                              contents.get("description", ""))
+                                              contents.get("_description", ""))
 
         if isinstance(contents, abc.Mapping):
 
@@ -50,14 +52,19 @@ def build_args(parser, argdict, base_name="-", depth=0):
 
         elif not name.startswith("_"):
 
-            kwargs = {"action": argdict.get("action", "store"),
+            # Removing these for now - for the most part I think actions are
+            # more likely to cause problems than solve them, as they require
+            # certain arguments to receive special treatment.
+
+            kwargs = {  # "action": argdict.get("action", "store"),
                       "nargs": argdict.get("nargs", "?"),
-                      "const": argdict.get("const", None),
+                        # "const": argdict.get("const", None),
                       "default": argdict.get("default", None),
                       "type": to_type(argdict.get("type", None)),
                       "choices": argdict.get("choices", None),
                       "required": argdict.get("required", False),
-                      "help": argdict.get("help", "Undocumented option.")}
+                      "help": argdict.get("help", "Undocumented option."),
+                      "metavar": argdict.get("metavar", None)}
 
             group.add_argument(base_name, **kwargs)
 
@@ -73,7 +80,8 @@ def create_command_line_parser():
         Performs calibration in accordance with args. If the first argument is
         positional, it is assumed to be a user-defined config file in .yaml
         format. See user_config.yaml for an example.
-        """
+        """,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     path_to_default = Path(__file__).parent.joinpath("default_config.yaml")
@@ -189,7 +197,7 @@ def parse_inputs():
         if arg.endswith('.yaml'):
             config_file_name = arg
             remaining_args = sys.argv[arg_ind + 1:]
-            logger.info("Used defined config file: {}", config_file_name)
+            logger.info("User defined config file: {}", config_file_name)
             break
 
     # If a config file is given, we load its contents into a list of options

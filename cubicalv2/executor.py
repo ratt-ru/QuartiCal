@@ -12,6 +12,8 @@ def execute():
 
     opts = parser.parse_inputs()
 
+    # print(opts.G_type)
+
     # Add this functionality - should check opts for problems in addition
     # to interpreting weird options. Can also raise flags for different modes
     # of operation. The idea is that all our configuration state lives in this

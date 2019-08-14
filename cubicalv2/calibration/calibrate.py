@@ -124,7 +124,7 @@ def calibrate(data_xds, opts):
         gains_per_xds.append(gains)
 
     # Call compute on the resulting graph.
-    da.compute(gains_per_xds, num_workers=6)
+    da.compute(gains_per_xds, num_workers=opts.parallel_nthread)
 
     # gains_per_xds[0].visualize("graph.pdf", optimize_graph=True)
 

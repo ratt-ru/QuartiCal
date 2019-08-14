@@ -8,6 +8,11 @@ input-ms:
         type: str
         help: Name of input measurement set column.
         default: DATA
+    weight-column:
+        type: str
+        help: Column to read weights from. Weights are applied by default.
+              Specify an empty string to disable.
+        default: WEIGHT_SPECTRUM
     time-chunk:
         type: TIME
         help: Chunk data up by this number of timeslots. This limits the amount
@@ -17,14 +22,19 @@ input-ms:
               integer number of timeslots, or a value with a unit
               (e.g. '300s'). 0 means use full time axis.
         default: "32"
+    freq-chunk:
+        type: FREQ
+        help:  Chunk data by this number of channels. See time-chunk for info.
+               Specify as an integer number of channels, or a value with a unit
+               (e.g. '128MHz'). 0 means use full frequency axis.
+        default: "32"
     rebin-time:
         type: TIME
-        help: Rebin data in time on the fly. Specify as a number of
-              timeslots to average together, or a value with a unit
-              (e.g. '5s').
+        help: Rebin data in time on the fly. Specify as a number of timeslots
+              to average together, or a value with a unit (e.g. '5s').
         default: "1"
     rebin-freq:
-        type: str
+        type: FREQ
         help: Rebin data in frequency on the fly. Specify as a number of
               channels to average together, or a value with a unit
               (e.g. '4MHz').
@@ -44,6 +54,24 @@ input-ms:
               If 0, then any change in value is a jump. If n, then the
               change must be >n.
         default: 1
+    field:
+        type: int
+        help: FIELD_ID to read from the MS.
+        default: 0
+    ddid:
+        type: DDID
+        help: DATA_DESC_IDs to read from the MS. Default reads all. Can be
+              specified in any one of the following formats - "5", "5,6,7",
+              "5:8" (exclusive range), "5:" (from 5 to last).
+        default: None
+    chan:
+        type: CHAN
+        help: Channels to read (within each DDID). Default reads all. Can be
+              specified in any one of the following formats - "5", "10:21"
+              (exclusive range), "10:" (from 10 to last), ":10:2" (0 to 9
+              inclusive, stepped by 2).
+        default: None
+
 input-model:
     _description: Arguments pertaining to input model parameters.
     recipe:
@@ -51,9 +79,182 @@ input-model:
         type: str
         help: Input model recipe. Add syntactic examples.
         required: True
-
-output-ms:
-    _description: Arguments pertaining to output products.
-    name:
+    beam:
         type: str
-        help: Path to output measurement set.
+        help: Path to beams. Apply beams during predict if specified eg.
+              'beam_$(corr)_$(reim).fits' or 'beam_$(CORR)_$(REIM).fits'.
+        default: None
+
+
+output:
+    _description: Arguments pertaining to output products.
+    directory:
+        type: str
+        help: Base name of directory for output files. The suffix .cc-out will
+              be implicitly appended, unless OUTDIR ends with a slash.
+        default: cubical
+    file-name:
+        type: str
+        help: Base name for output files. Full base path will be
+              OUTPUT_DIRECTORY[.cc-out]/OUTPUT_FILE_NAMExxx, unless
+              OUTPUT_FILE_NAME contains a slash, in which case OUTPUT_DIRECTORY
+              is ignored and OUTPUT_FILE_NAME is taken to be a full base path.
+        default: cc
+    overwrite:
+        type: bool
+        help: Allow overwriting of existing output files. If this is set, and
+              the output parset file exists, will raise an exception.
+        default: False
+    backup:
+        type: bool
+        help: Allow automatic backup of existing output directories. Automatic
+              backup is only used when OUTPUT_DIRECTORY is used (i.e.
+              OUTPUT_FILE_NAME doesn't contain any slashes), and it ends with
+              .cc-out (implicitly or explicitly). In this case, existing
+              output directories are renamed to .cc.out.0, .1, etc.
+        default: True
+    solver-mode:
+        type: str
+        choices:
+            - solve
+            - apply
+        help: Solver operational mode. Determines whether gains are solved for
+              or merely applied from stored solutions.
+        default: solve
+    data-product:
+        type: str
+        choices:
+            - solve_only
+            - corr_data
+            - corr_residual
+            - uncorr_residual
+        help: The desired output data product. Using solve_only will not
+              produce a data product.
+        default: solve_only
+    solver-flags:
+        type: bool
+        help: Apply solver flags when writing data to measurement set.
+        default: False
+    column:
+        type: str
+        help: Output MS column name (if applicable).
+        default: CORRECTED_DATA
+    model-column:
+        type: str
+        help: If set, model visibilities will be written to the specified
+              column.
+        default: None
+    weight-column:
+        type: str
+        help: If set, robust solver weights will be written to the specified
+              column.
+        default: None
+    subtract-model:
+        type: int
+        help: Which model to subtract, if generating residuals.
+        default: 0
+    subtract-directions:
+        type: DIRECTIONS
+        help: Which model directions to subtract, if generating residuals. ":"
+              subtracts all. Can also be specified as "N", "N:M", ":N", "N:",
+              "N,M,K".
+        default: 0
+    plots:
+        type: bool
+        help: Generate output plots.
+        default: False
+    casa-tables:
+        type: bool
+        help: Export gaintables to CASA caltable format. Tables are exported to
+              same directory as set for cubical databases.
+
+flags:
+    _description: Arguments pertaining to flagging behaviour.
+    apply-precal:
+        type: str
+        help: Which flagsets will be applied prior to calibration. Use a
+              comma-separated list of flagset name to use bitflags. Use
+              "~FLAGSET" to apply all bitflags except the named flagset
+              ("~cubical" is useful, to ignore the flags of a previous CubiCal
+              run). Use "FLAG" to just apply FLAG/FLAG_ROW. This needs to be
+              updated.
+        default: "~cubical"
+    add-bitflags:
+        type: bool
+        help: If True, will automatically insert a BITFLAG column if one is not
+              already present. Will automatically populate the legacy bitflag
+              from FLAG and FLAG_ROW.
+    reinit-bitflags:
+        type: bool
+        help: If true, reinitializes BITFLAG column from scratch. Useful if the
+              existing BITFLAG column has been corrupted. Be careful with the
+              state of the FLAG/FLAG_ROW colum when you use this option.
+        default: False
+    save-flagset:
+        type: str
+        help: Save solver flags to the named flagset. If None or zero, the
+              solver flags will not be saved.
+        default: cubical
+
+solver:
+    _description: Arguments pertaining to solver behaviour.
+    gain-terms:
+        nargs: +
+        type: str
+        help: Gain terms for which we are solving. Multiple terms can be
+              specified as --solver-gain-terms G B dE.
+        default: G
+    precision:
+        type: str
+        help: Solver precision.
+        choices:
+            - single
+            - double
+        default: single
+    chisq-interval:
+        type: int
+        help: Number of iterations to perform between chi-squared checks. This
+              is done to avoid computing the expensive chi-squared test evey
+              iteration.
+        default: 5
+    stall-fraction:
+        type: float
+        help: Minimum percentage of solutions which must have stalled (the
+              gains/chi-squared values are no longer improving) before
+              terminating the solver.
+        default: 0.99
+    iteration-recipe:
+        nargs: +
+        type: str
+        help: If multiple gain terms have been specified, this option describes
+              the manner in which we iterate over terms. For input
+              --solver-iteration-recipe G dE G, G would be solved to
+              convergence/maximum iterations, then dE and finally G once again.
+              The number of iterations per term is based on their individual
+              settings. If set to None, will solve each each term in
+              SOLVER_GAIN_TERMS once.
+        default: None
+
+parallel:
+    _description: Arguments pertaining to parallelism and distribution.
+    nthread:
+        type: int
+        help: Number of threads to use in the dask scheduler. Setting to zero
+              (the default) will use all available resources.
+        default: 0
+
+(gain):
+    _description: Arguments pertaining to a labelled (gain). (gain) should be
+                  replaced with the labels specified by SOLVER_GAIN_TERMS.
+    # _label: G
+    type:
+        type: str
+        help: Type of gain matrix to solve for.
+        choices:
+            - complex
+            - phase
+            - robust
+            - parametric
+        default: complex
+
+
