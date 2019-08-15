@@ -167,6 +167,7 @@ output:
         type: bool
         help: Export gaintables to CASA caltable format. Tables are exported to
               same directory as set for cubical databases.
+        default: False
 
 flags:
     _description: Arguments pertaining to flagging behaviour.
@@ -246,8 +247,9 @@ parallel:
         default: 0
 
 (gain):
-    _description: Arguments pertaining to a labelled (gain). (gain) should be
-                  replaced with the labels specified by SOLVER_GAIN_TERMS.
+    _description: Arguments pertaining to a labelled (gain). (gain) MUST be
+                  replaced with the labels specified by SOLVER_GAIN_TERMS. This
+                  config section can be replicated for each gain term.
     type:
         type: str
         help: Type of gain matrix to solve for.

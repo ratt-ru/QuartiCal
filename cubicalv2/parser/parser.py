@@ -43,8 +43,6 @@ def build_args(parser, argdict, base_name="-", depth=0):
 
     for name, contents in argdict.items():
         if depth == 1:
-            gain_label = contents.get("_label", None)
-            name = gain_label if gain_label is not None else name
             group = parser.add_argument_group(name,
                                               contents.get("_description", ""))
 
@@ -54,19 +52,21 @@ def build_args(parser, argdict, base_name="-", depth=0):
 
         elif not name.startswith("_"):
 
-            # Removing these for now - for the most part I think actions are
-            # more likely to cause problems than solve them, as they require
-            # certain arguments to receive special treatment.
+            # Removing action and const for now - for the most part I think
+            # actions are more likely to cause problems than solve them, as
+            # they require certain arguments to receive special treatment.
 
-            kwargs = {  # "action": argdict.get("action", "store"),
-                      "nargs": argdict.get("nargs", "?"),
-                        # "const": argdict.get("const", None),
-                      "default": argdict.get("default", None),
-                      "type": to_type(argdict.get("type", None)),
-                      "choices": argdict.get("choices", None),
-                      "required": argdict.get("required", False),
-                      "help": argdict.get("help", "Undocumented option."),
-                      "metavar": argdict.get("metavar", None)}
+            kwargs = {}
+
+            kwargs["nargs"] = argdict.get("nargs", "?")
+            kwargs["default"] = argdict.get("default", None)
+            kwargs["default"] = \
+                None if kwargs["default"] == "None" else kwargs["default"]
+            kwargs["type"] = to_type(argdict.get("type", None))
+            kwargs["choices"] = argdict.get("choices", None)
+            kwargs["required"] = argdict.get("required", False)
+            kwargs["help"] = argdict.get("help", "Undocumented option.")
+            kwargs["metavar"] = argdict.get("metavar", None)
 
             group.add_argument(base_name, **kwargs)
 
@@ -101,7 +101,8 @@ def create_and_merge_gain_parsers(args, remaining_args):
     were not understood by the main parser, dynamically creates additional
     parsers by inspecting the contents of args.solver_gain_terms. These are
     the popluated with any remaining, understood arguments and merged into
-    the args namespace.
+    the args namespace. This function also removes the base (gain) options
+    which only serve as a template.
 
     Args:
         opts: A namespace object.
@@ -110,12 +111,18 @@ def create_and_merge_gain_parsers(args, remaining_args):
     with open(path_to_default, 'r') as stream:
         gain_defaults = ruamel.yaml.safe_load(stream)["(gain)"]
 
+    argdict = vars(args)
+
+    for key in list(argdict.keys()):
+        if key.startswith("(gain)"):
+            del argdict[key]
+
     for term in args.solver_gain_terms:
         gain_parser = argparse.ArgumentParser()
         build_args(gain_parser, {term: gain_defaults})
         gain_args, remaining_opts = \
             gain_parser.parse_known_args(remaining_args)
-        vars(args).update(vars(gain_args))
+        argdict.update(vars(gain_args))
 
 
 def strip_dict(argdict):
@@ -138,6 +145,8 @@ def strip_dict(argdict):
 
             if max_depth_reached:
                 argdict[name] = contents.get("default", None)
+                argdict[name] = \
+                    None if argdict[name] == "None" else argdict[name]
                 max_depth_reached = False
 
         elif not name.startswith("_"):
@@ -148,19 +157,27 @@ def strip_dict(argdict):
 def create_user_config():
     """Creates a blank .yaml file with up-to-date field names and defaults."""
 
-    path_to_default = Path(__file__).parent.joinpath("default_config.yaml")
+    if not sys.argv[-1].endswith("gocubical-config"):
+        config_file_path = sys.argv[-1]
+    else:
+        config_file_path = "user_config.yaml"
+
+    logger.info("Output config file path: {}", config_file_path)
 
     with open(path_to_default, 'r') as stream:
         defaults_dict = ruamel.yaml.safe_load(stream)
 
     strip_dict(defaults_dict)
 
-    with open("user_config.yaml", 'w') as outfile:
+    with open(config_file_path, 'w') as outfile:
         ruamel.yaml.round_trip_dump(defaults_dict,
                                     outfile,
                                     default_flow_style=False,
                                     width=60,
                                     indent=4)
+
+    logger.success("{} successfully generated. Go forth and calibrate!",
+                   config_file_path)
 
     return
 
@@ -206,11 +223,6 @@ def parse_inputs():
 
     cl_parser = create_command_line_parser()
 
-    # This generates a default user config file in the current directory -
-    # add this as a script to the the package.
-
-    # create_user_config()
-
     # Determine if we have a user defined config file. This is assumed to be
     # positional. Arguments to the left of the config file name will be
     # ignored.
@@ -246,6 +258,14 @@ def parse_inputs():
     # is necessary to support arbitrary gain specifications.
 
     create_and_merge_gain_parsers(args, remaining_args)
+
+    # Finally, due to the merging of various argument sources, we can end up
+    # with "None" strings. We convert these all to None types here so we can
+    # safely check for None in the code.
+
+    for key, value in vars(args).items():
+        if value == "None":
+            vars(args)[key] = None
 
     return args
 

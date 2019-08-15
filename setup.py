@@ -69,4 +69,6 @@ setup(name='cubicalv2',
       include_package_data=True,
       zip_safe=False,
       entry_points={'console_scripts':
-                    ['gocubical = cubicalv2.executor:execute']},)
+                    ['gocubical = cubicalv2.executor:execute',
+                     'gocubical-config ='
+                        'cubicalv2.parser.parser:create_user_config']},)
