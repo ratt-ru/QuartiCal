@@ -8,6 +8,8 @@ import builtins
 from loguru import logger
 import cubicalv2.parser.custom_types as custom_types
 
+path_to_default = Path(__file__).parent.joinpath("default_config.yaml")
+
 
 def to_type(type_str):
     """Converts type string to a type."""
@@ -84,14 +86,36 @@ def create_command_line_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
-    path_to_default = Path(__file__).parent.joinpath("default_config.yaml")
-
     with open(path_to_default, 'r') as stream:
         defaults_dict = ruamel.yaml.safe_load(stream)
 
     build_args(parser, defaults_dict)
 
     return parser
+
+
+def create_and_merge_gain_parsers(args, remaining_args):
+    """Dynamically creates and merges gain parsers into an existing namespace.
+
+    Given an existing namespace and a list of sys.argv-like arguments which
+    were not understood by the main parser, dynamically creates additional
+    parsers by inspecting the contents of args.solver_gain_terms. These are
+    the popluated with any remaining, understood arguments and merged into
+    the args namespace.
+
+    Args:
+        opts: A namespace object.
+    """
+
+    with open(path_to_default, 'r') as stream:
+        gain_defaults = ruamel.yaml.safe_load(stream)["(gain)"]
+
+    for term in args.solver_gain_terms:
+        gain_parser = argparse.ArgumentParser()
+        build_args(gain_parser, {term: gain_defaults})
+        gain_args, remaining_opts = \
+            gain_parser.parse_known_args(remaining_args)
+        vars(args).update(vars(gain_args))
 
 
 def strip_dict(argdict):
@@ -218,21 +242,10 @@ def parse_inputs():
     else:
         args, remaining_args = cl_parser.parse_known_args()
 
-    # TODO: Move this to a function. This is a piece of dark magic which
-    # creates new parsers on the fly. This is necessary to support arbitrary
-    # gain specifications.
+    # This is a piece of dark magic which creates new parsers on the fly. This
+    # is necessary to support arbitrary gain specifications.
 
-    path_to_default = Path(__file__).parent.joinpath("default_config.yaml")
-
-    with open(path_to_default, 'r') as stream:
-        gain_defaults = ruamel.yaml.safe_load(stream)["(gain)"]
-
-    for term in args.solver_gain_terms:
-        gain_parser = argparse.ArgumentParser()
-        build_args(gain_parser, {term: gain_defaults})
-        gain_args, remaining_args = \
-            gain_parser.parse_known_args(remaining_args)
-        vars(args).update(vars(gain_args))
+    create_and_merge_gain_parsers(args, remaining_args)
 
     return args
 
