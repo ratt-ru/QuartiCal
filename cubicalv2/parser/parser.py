@@ -2,6 +2,7 @@
 import argparse
 import ruamel.yaml
 import sys
+import os
 from pathlib import Path
 from collections import abc
 import builtins
@@ -217,7 +218,45 @@ def argdict_to_arglist(argdict, arglist=[], base_name=""):
     return arglist
 
 
+def log_final_config(args):
+    """Logs the final state of the args Namespace.
+
+    Given the overlapping nature of the various configuration options, this
+    produces a pretty log message describing the final configuration state
+    of the args Namespace.
+
+    Args:
+        args: A Namespace object.
+    """
+    columns, _ = os.get_terminal_size(0)
+    left_column = columns//2
+    right_column = columns - left_column
+
+    log_message = "Final configuration state:"
+
+    section = None
+
+    for key, value in vars(args).items():
+        current_section = key.split('_')[0]
+
+        if current_section != section:
+            log_message += "" if section is None \
+                else "<blue>{0:-^{1}}</blue>\n".format("", columns)
+            log_message += "\n<blue>{0:-^{1}}</blue>\n".format(
+                current_section.upper(), columns)
+            section = current_section
+
+        log_message += \
+            "{0:<{1}}".format("--" + key.replace('_', '-'), left_column)
+        log_message += "{0:>{1}}".format(str(value), right_column) + "\n"
+
+    log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
+
+    logger.opt(ansi=True).info(log_message)
+
+
 def parse_inputs():
+    """Combines command line and config files to produce a Namespace."""
 
     # Firstly we generate our argparse from the defaults.
 
@@ -261,11 +300,18 @@ def parse_inputs():
 
     # Finally, due to the merging of various argument sources, we can end up
     # with "None" strings. We convert these all to None types here so we can
-    # safely check for None in the code.
+    # safely check for None in the code. Lists require special treatment.
 
     for key, value in vars(args).items():
-        if value == "None":
+        if isinstance(value, list):
+            vars(args)[key] = [v if v != "None" else None for v in value]
+        elif value == "None":
             vars(args)[key] = None
+
+    # Log the final state of the Namespace object so that users are aware
+    # of what the ultimate configuration was.
+
+    log_final_config(args)
 
     return args
 

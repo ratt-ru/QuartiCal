@@ -352,8 +352,7 @@ parallel:
     save-to:
         type: str
         help: Save solutions to given database.
-        default: >
-              "{out[name]}-{JONES}-field_{sel[field]}-ddid_{sel[ddid]}.parmdb"
+        default: None
 
 
 
