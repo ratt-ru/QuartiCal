@@ -31,6 +31,10 @@ def calibrate(data_xds, opts):
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         time_col = xds.TIME.data
+        flag_col = xds.FLAG.data
+        flag_row_col = xds.FLAG_ROW.data
+        bitflag_col = xds.BITFLAG.data
+        bitflag_row_col = xds.BITFLAG_ROW.data
 
         # Convert the time column data into indices.
         utime_ind = \

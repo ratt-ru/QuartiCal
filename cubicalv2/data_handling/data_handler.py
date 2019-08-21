@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
 import numpy as np
-from xarrayms import xds_from_table
+from xarrayms import xds_from_ms, xds_from_table
 from loguru import logger
+import warnings
 
 
 def read_ms(opts):
@@ -16,10 +17,10 @@ def read_ms(opts):
 
     logger.debug("Setting up indexing xarray dataset.")
 
-    indexing_xds = xds_from_table(opts.input_ms_name,
-                                  columns=("TIME", "INTERVAL"),
-                                  index_cols=("TIME",),
-                                  group_cols=("SCAN_NUMBER",))
+    indexing_xds = xds_from_ms(opts.input_ms_name,
+                               columns=("TIME", "INTERVAL"),
+                               index_cols=("TIME",),
+                               group_cols=("SCAN_NUMBER",))
 
     # Read the antenna table and add the number of antennas to the options
     # namespace/dictionary. Leading underscore indiciates that this option is
@@ -31,6 +32,24 @@ def read_ms(opts):
 
     logger.info("Antenna table indicates {} antennas were present for this "
                 "observation.", opts._n_ant)
+
+    # Check whether the BITFLAG column exists - if not, we will need to add it
+    # or ignore it. We suppress xarray_ms warnings here as the columns may not
+    # exist. TODO: Add the column, or re-add it if we think the column is
+    # dodgy.
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        bitflag_xds = xds_from_ms(opts.input_ms_name,
+                                  columns=("BITFLAG", "BITFLAG_ROW"))[0]
+
+    vars(opts)["_bitflag_exists"] = "BITFLAG" in bitflag_xds
+    vars(opts)["_bitflagrow_exists"] = "BITFLAG_ROW" in bitflag_xds
+
+    logger.info("BITFLAG column {} present.",
+                "is" if opts._bitflag_exists else "isn't")
+    logger.info("BITFLAG_ROW column {} present.",
+                "is" if opts._bitflagrow_exists else "isn't")
 
     # row_chunks is a dictionary containing row chunks per data set.
 
@@ -86,13 +105,36 @@ def read_ms(opts):
     # up an xarray data set for the data. Note that we will reload certain
     # indexing columns so that they are consistent with the chunking strategy.
 
-    data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "MODEL_DATA")
+    extra_columns = ()
+    extra_columns += ("BITFLAG",) if opts._bitflag_exists else ()
+    extra_columns += ("BITFLAG_ROW",) if opts._bitflagrow_exists else ()
 
-    data_xds = xds_from_table(opts.input_ms_name,
-                              columns=data_columns,
-                              index_cols=("TIME",),
-                              group_cols=("SCAN_NUMBER",),
-                              chunks=row_chunks_per_xds)
+    data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "MODEL_DATA",
+                    "FLAG", "FLAG_ROW") + extra_columns
+
+    data_xds = xds_from_ms(opts.input_ms_name,
+                           columns=data_columns,
+                           index_cols=("TIME",),
+                           group_cols=("SCAN_NUMBER",),
+                           chunks=row_chunks_per_xds)
+
+    # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
+    # appropriately sized dask arrays to the data sets. These are initialised
+    # from the existing flag data. If required, these can be written back to
+    # the MS at the end. TODO: Add writing functionality.
+
+    for xds_ind, xds in enumerate(data_xds):
+        xds_updates = {}
+        if not opts._bitflag_exists:
+            data = xds.FLAG.data.astype(np.int32) << 1
+            schema = ("row", "chan", "corr")
+            xds_updates["BITFLAG"] = (schema, data)
+        if not opts._bitflagrow_exists:
+            data = xds.FLAG_ROW.data.astype(np.int32) << 1
+            schema = ("row",)
+            xds_updates["BITFLAG_ROW"] = (schema, data)
+        if xds_updates:
+            data_xds[xds_ind] = xds.assign(xds_updates)
 
     return data_xds
 
