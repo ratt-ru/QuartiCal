@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
 import numpy as np
-from xarrayms import xds_from_ms, xds_from_table
+from daskms import xds_from_ms, xds_from_table, xds_to_table
 from loguru import logger
 import warnings
 
@@ -137,6 +137,11 @@ def read_ms(opts):
             data_xds[xds_ind] = xds.assign(xds_updates)
 
     return data_xds
+
+
+def write_ms(xds_list, opts):
+
+    return xds_to_table(xds_list, opts.input_ms_name, column="BITFLAG")
 
 
 def handle_model(opts):

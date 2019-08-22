@@ -37,13 +37,15 @@ on_rtd = os.environ.get('READTHEDOCS') == 'True'
 if on_rtd:
     requirements = ["ruamel.yaml",
                     "numpy",
-                    "dask",
-                    "xarray-ms"]
+                    "dask-ms[xarray]==0.2.0a2",
+                    "loguru",
+                    "numba"]
 else:
     requirements = ["ruamel.yaml",
                     "numpy",
-                    "dask",
-                    "xarray-ms"]
+                    "dask-ms[xarray]==0.2.0a2",
+                    "loguru",
+                    "numba"]
 
 setup(name='cubicalv2',
       version=cubicalv2.__version__,

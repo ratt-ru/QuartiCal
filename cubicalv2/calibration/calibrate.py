@@ -23,7 +23,7 @@ def calibrate(data_xds, opts):
 
     gains_per_xds = []
 
-    for xds in data_xds:
+    for xds_ind, xds in enumerate(data_xds):
 
         # Unpack the data on the xds into variables with understandable names.
         data_col = xds.DATA.data
@@ -127,8 +127,15 @@ def calibrate(data_xds, opts):
         # Append the per-xds gains to a list.
         gains_per_xds.append(gains)
 
+        # This is an example of updateing the contents of and xds. TODO: Use
+        # this for writing out data.
+        bitflag_col = da.ones_like(bitflag_col)
+        data_xds[xds_ind] = \
+            xds.assign({"BITFLAG": (xds.BITFLAG.dims, bitflag_col)})
+
     # Call compute on the resulting graph.
-    da.compute(gains_per_xds, num_workers=opts.parallel_nthread)
+    return gains_per_xds, data_xds
+
 
     # gains_per_xds[0].visualize("graph.pdf", optimize_graph=True)
 
