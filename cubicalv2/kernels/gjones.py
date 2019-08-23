@@ -13,9 +13,9 @@ def update_func_factory(mode):
     if mode == "full-full":
         return jhj_and_jhr_full, update_full
     elif mode == "diag-full":
-        pass
+        raise NotImplementedError("diag-full solver mode not yet supported.")
     elif mode == "diag-diag":
-        pass
+        raise NotImplementedError("diag-diag solver mode not yet supported.")
     else:
         raise ModeError("Undefined calibration mode.")
 

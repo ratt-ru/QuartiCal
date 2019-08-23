@@ -207,6 +207,22 @@ solver:
               here has its own set of arguments which can be specified as
               --(gain)-(option).
         default: G
+    mode:
+        type: str
+        help: The mode in which the solver should operate. This is assumed to
+              be the same for all terms specified by --solver-gain-terms. The
+              first part of each option refers to the gain and the second to
+              the visibilities. Thus, "full-full" means both the gains and
+              the visibilities have four correlations, "diag-full" has diagonal
+              gains and "diag-diag" implies that both the gains and
+              visibilities are diagonal. Specifying "scalar" will assume both
+              gains and visibilitites are scalar.
+        choices:
+            - full-full
+            - diag-full
+            - diag-diag
+            - scalar
+        default: full-full
     precision:
         type: str
         help: Solver precision.

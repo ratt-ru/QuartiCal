@@ -33,6 +33,19 @@ def read_ms(opts):
     logger.info("Antenna table indicates {} antennas were present for this "
                 "observation.", opts._n_ant)
 
+    # Determine the number of correlations present in the measurement set.
+
+    polarization_xds = xds_from_table(opts.input_ms_name + "::POLARIZATION")
+
+    opts._ms_ncorr = polarization_xds[0].dims["corr"]
+
+    if opts._ms_ncorr not in (1, 2, 4):
+        raise ValueError("Measurement set contains {} correlations - this "
+                         "is not supported.".format(opts._ms_ncorr))
+
+    logger.info("Polarization table indicates {} correlations are present in "
+                "the measurement set.", opts._ms_ncorr)
+
     # Check whether the BITFLAG column exists - if not, we will need to add it
     # or ignore it. We suppress xarray_ms warnings here as the columns may not
     # exist. TODO: Add the column, or re-add it if we think the column is
@@ -43,8 +56,8 @@ def read_ms(opts):
         bitflag_xds = xds_from_ms(opts.input_ms_name,
                                   columns=("BITFLAG", "BITFLAG_ROW"))[0]
 
-    vars(opts)["_bitflag_exists"] = "BITFLAG" in bitflag_xds
-    vars(opts)["_bitflagrow_exists"] = "BITFLAG_ROW" in bitflag_xds
+    opts._bitflag_exists = "BITFLAG" in bitflag_xds
+    opts._bitflagrow_exists = "BITFLAG_ROW" in bitflag_xds
 
     logger.info("BITFLAG column {} present.",
                 "is" if opts._bitflag_exists else "isn't")
@@ -141,7 +154,11 @@ def read_ms(opts):
 
 def write_ms(xds_list, opts):
 
-    return xds_to_table(xds_list, opts.input_ms_name, column="BITFLAG")
+    import daskms.descriptors.ratt_ms  # noqa
+
+    return xds_to_table(xds_list, opts.input_ms_name,
+                        columns="BITFLAG",
+                        descriptor="ratt_ms(fixed=False)")
 
 
 def handle_model(opts):

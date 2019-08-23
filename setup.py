@@ -43,7 +43,9 @@ if on_rtd:
 else:
     requirements = ["ruamel.yaml",
                     "numpy",
-                    "dask-ms[xarray]==0.2.0a2",
+                    "dask-ms[xarray] @"
+                    "git+https://github.com/ska-sa/dask-ms.git"
+                    "@fixes-for-0.2.0-alpha2",
                     "loguru",
                     "numba"]
 

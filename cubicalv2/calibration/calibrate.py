@@ -4,9 +4,24 @@ import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import solver
 from cubicalv2.kernels.gjones import update_func_factory
+from loguru import logger  # noqa
 # from dask.diagnostics import Profiler, ResourceProfiler, CacheProfiler
 # from dask.diagnostics import visualize
 # from dask.optimization import fuse
+
+# Defines which solver modes are supported given the number of correlations
+# in the measurement set. If a mode is supported, this dictionary contains
+# the slice object which will make the measurement set data compatible with
+# the solver. TODO: Make it possible to select off diagonal entries/specific
+# correlations.
+
+slice_scheme = {1: {"scalar": slice(None)},
+                2: {"diag-diag": slice(None),
+                    "scalar": slice(0, 1)},
+                4: {"full-full": slice(None),
+                    "diag-full": slice(None),
+                    "diag-diag": slice(None, None, 3),
+                    "scalar": slice(0, 1)}}
 
 
 def initialize_gains(gains):
@@ -21,19 +36,26 @@ def calibrate(data_xds, opts):
     # Calibrate per xds. This list will likely consist of an xds per SPW per
     # scan. This behaviour can be changed.
 
+    corr_slice = slice_scheme[opts._ms_ncorr].get(opts.solver_mode, None)
+
+    if not isinstance(corr_slice, slice):
+        raise ValueError("{} solver mode incompatible with measurement set "
+                         "containing {} correlations.".format(
+                             opts.solver_mode, opts._ms_ncorr, ))
+
     gains_per_xds = []
 
     for xds_ind, xds in enumerate(data_xds):
 
         # Unpack the data on the xds into variables with understandable names.
-        data_col = xds.DATA.data
-        model_col = xds.MODEL_DATA.data
+        data_col = xds.DATA.data[..., corr_slice]
+        model_col = xds.MODEL_DATA.data[..., corr_slice]
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         time_col = xds.TIME.data
-        flag_col = xds.FLAG.data
+        flag_col = xds.FLAG.data[..., corr_slice]
         flag_row_col = xds.FLAG_ROW.data
-        bitflag_col = xds.BITFLAG.data
+        bitflag_col = xds.BITFLAG.data[..., corr_slice]
         bitflag_row_col = xds.BITFLAG_ROW.data
 
         # Convert the time column data into indices.
@@ -105,9 +127,8 @@ def calibrate(data_xds, opts):
                 chunks=utime_ind.chunks,
                 dtype=np.uint32)
 
-        mode = "full-full"
-
-        compute_jhj_and_jhr, compute_update = update_func_factory(mode)
+        compute_jhj_and_jhr, compute_update = \
+            update_func_factory(opts.solver_mode)
 
         gains = da.blockwise(solver, ("rowlike", "chan", "ant", "corr"),
                              model_col, ("rowlike", "chan", "corr"),
@@ -129,7 +150,7 @@ def calibrate(data_xds, opts):
 
         # This is an example of updateing the contents of and xds. TODO: Use
         # this for writing out data.
-        bitflag_col = da.ones_like(bitflag_col)
+        bitflag_col = da.ones_like(bitflag_col)*10
         data_xds[xds_ind] = \
             xds.assign({"BITFLAG": (xds.BITFLAG.dims, bitflag_col)})
 

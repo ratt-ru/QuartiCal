@@ -32,7 +32,8 @@ config = {
          "format": fmt},
         {"sink": "{time:YYYYMMDD_HHmmss}_cubicalv2.log",
          "level": "DEBUG",
-         "format": fmt}
+         "format": fmt,
+         }
     ],
 }
 
