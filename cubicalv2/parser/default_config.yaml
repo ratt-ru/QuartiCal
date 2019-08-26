@@ -84,7 +84,10 @@ input-model:
         help: Path to beams. Apply beams during predict if specified eg.
               'beam_$(corr)_$(reim).fits' or 'beam_$(CORR)_$(REIM).fits'.
         default: None
-
+    invert-uvw:
+        type: bool
+        help: The UVW coordinates will be negated if this option is specified.
+        default: False
 
 output:
     _description: Arguments pertaining to output products.

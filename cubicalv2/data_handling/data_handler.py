@@ -20,7 +20,9 @@ def read_ms(opts):
     indexing_xds = xds_from_ms(opts.input_ms_name,
                                columns=("TIME", "INTERVAL"),
                                index_cols=("TIME",),
-                               group_cols=("SCAN_NUMBER",))
+                               group_cols=("SCAN_NUMBER",
+                                           "FIELD_ID",
+                                           "DATA_DESC_ID"))
 
     # Read the antenna table and add the number of antennas to the options
     # namespace/dictionary. Leading underscore indiciates that this option is
@@ -149,12 +151,14 @@ def read_ms(opts):
     extra_columns += ("BITFLAG_ROW",) if opts._bitflagrow_exists else ()
 
     data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "MODEL_DATA",
-                    "FLAG", "FLAG_ROW") + extra_columns
+                    "FLAG", "FLAG_ROW", "UVW") + extra_columns
 
     data_xds = xds_from_ms(opts.input_ms_name,
                            columns=data_columns,
                            index_cols=("TIME",),
-                           group_cols=("SCAN_NUMBER",),
+                           group_cols=("SCAN_NUMBER",
+                                       "FIELD_ID",
+                                       "DATA_DESC_ID"),
                            chunks=row_chunks_per_xds)
 
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add

@@ -8,6 +8,11 @@ from cubicalv2.calibration.calibrate import calibrate
 from cubicalv2.data_handling.predict import predict
 import dask.array as da
 import time
+from dask.diagnostics import ProgressBar
+# from dask.distributed import Client
+# client = Client()
+
+# print(client.cluster)
 
 
 @logger.catch
@@ -33,11 +38,14 @@ def execute():
 
     predict_xds = predict(data_xds, opts)
 
-    gains_per_xds, updated_data_xds = calibrate(data_xds, opts)
+    gains_per_xds, updated_data_xds = calibrate(predict_xds, opts)
 
     write_columns = data_handler.write_ms(updated_data_xds, opts)
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()
-    gains, _ = da.compute(gains_per_xds, write_columns)
+    with ProgressBar():
+        gains, _ = da.compute(gains_per_xds,
+                              write_columns,
+                              num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)

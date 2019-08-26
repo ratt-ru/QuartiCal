@@ -1,14 +1,13 @@
-import dask
+from loguru import logger
 import dask.array as da
 import Tigger
-from daskms import xds_from_ms, xds_from_table, xds_to_table
+from daskms import xds_from_table
 
 from africanus.coordinates.dask import radec_to_lm
 from africanus.rime.dask import phase_delay, predict_vis
 from africanus.model.coherency.dask import convert
 from africanus.model.spectral.dask import spectral_model
 from africanus.model.shape.dask import gaussian as gaussian_shape
-from africanus.util.requirements import requires_optional
 
 from collections import namedtuple
 
@@ -16,6 +15,7 @@ from collections import namedtuple
 _einsum_corr_indices = 'ijkl'
 
 _empty_spectrum = object()
+
 
 def _brightness_schema(corrs, index):
     if corrs == 4:
@@ -50,6 +50,7 @@ _rime_term_map = {
     'gauss_shape': _gauss_shape_schema,
 }
 
+
 def parse_sky_model(opts):
     """Parses a Tigger sky model.
 
@@ -65,7 +66,7 @@ def parse_sky_model(opts):
     # Currently, we hard code the model chunks to include all sources. TODO:
     # Make this dynamic if necessary.
 
-    chunks = -1
+    chunks = 10
 
     # The code is currently only suitable for a direction independent predict.
     # TODO: Add clustering behaviour.
@@ -94,11 +95,10 @@ def parse_sky_model(opts):
         spectrum = (getattr(source, "spectrum", _empty_spectrum)
                     or _empty_spectrum)
 
-        try:
-            # Extract reference frequency
-            ref_freq = spectrum.freq0
-        except AttributeError:
-            ref_freq = sky_model.freq0
+        # Attempts to grab the source reference frequency. Failing that, the
+        # skymodel reference frequency is used. If that isn't set, defaults to
+        # 1e9.
+        ref_freq = getattr(spectrum, "freq0", sky_model.freq0) or 1e9
 
         try:
             # Extract SPI for I.
@@ -183,7 +183,7 @@ def corr_schema(pol):
     """
 
     corrs = pol.NUM_CORR.values
-    corr_types = pol.CORR_TYPE.values
+    corr_types = da.squeeze(pol.CORR_TYPE.values)
 
     if corrs == 4:
         return [[corr_types[0], corr_types[1]],
@@ -225,7 +225,7 @@ def baseline_jones_multiply(corrs, *args):
     return da.einsum(schema, *arrays)
 
 
-def vis_factory(args, source_type, sky_model, time_index,
+def vis_factory(opts, source_type, sky_model, time_index,
                 ms, field, spw, pol):
     try:
         source = sky_model[source_type]
@@ -234,9 +234,17 @@ def vis_factory(args, source_type, sky_model, time_index,
 
     corrs = pol.NUM_CORR.values
 
-    lm = radec_to_lm(source.radec, field.PHASE_DIR.data[0])
-    uvw = -ms.UVW.data if args.invert_uvw else ms.UVW.data
-    frequency = spw.CHAN_FREQ.data
+    # Added the squeeze - no idea if this is correct. TODO: Ask Simon.
+    # The phase direction has dimensions (row, poly, 2). Currently we assume
+    # that both row and poly are size one and can be squeezed out. Similarly,
+    # we squeeze the row dimension out of the spectral window.
+
+    if field.NUM_POLY.data != 0:
+        raise ValueError("Polynomials in FIELD table currently unsupported.")
+
+    lm = radec_to_lm(source.radec, field.PHASE_DIR.data[0][0])
+    uvw = -ms.UVW.data if opts.input_model_invert_uvw else ms.UVW.data
+    frequency = spw.CHAN_FREQ.data[0]
 
     # (source, row, frequency)
     phase = phase_delay(lm, uvw, frequency)
@@ -281,7 +289,7 @@ def predict(data_xds, opts):
     pol_ds = tables["POLARIZATION"]
 
     # List of write operations
-    writes = []
+    predict_xds = []
 
     # Construct a graph for each DATA_DESC_ID
     for xds in data_xds:
@@ -290,8 +298,9 @@ def predict(data_xds, opts):
         # with this data descriptor id
         field = field_ds[xds.attrs['FIELD_ID']]
         ddid = ddid_ds[xds.attrs['DATA_DESC_ID']]
-        spw = spw_ds[ddid.SPECTRAL_WINDOW_ID.values]
-        pol = pol_ds[ddid.POLARIZATION_ID.values]
+
+        spw = spw_ds[ddid.SPECTRAL_WINDOW_ID.values[0]]
+        pol = pol_ds[ddid.POLARIZATION_ID.values[0]]
 
         corrs = opts._ms_ncorr
 
@@ -310,12 +319,9 @@ def predict(data_xds, opts):
             vis = vis.reshape(vis.shape[:2] + (4,))
 
         # Assign visibilities to MODEL_DATA array on the dataset
-        xds = xds.assign(MODEL_DATA=(("row", "chan", "corr"), vis))
-        # Create a write to the table
-        write = xds_to_table(xds, args.ms, ['MODEL_DATA'])
-        # Add to the list of writes
-        writes.append(write)
+        xds = xds.assign({"MODEL_DATA": (("row", "chan", "corr"), vis)})
 
-    # Submit all graph computations in parallel
-    with ProgressBar():
-        dask.compute(writes)
+        # Add to the list of predicts.
+        predict_xds.append(xds)
+
+    return predict_xds
