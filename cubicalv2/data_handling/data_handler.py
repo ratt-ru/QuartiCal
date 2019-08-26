@@ -46,10 +46,36 @@ def read_ms(opts):
     logger.info("Polarization table indicates {} correlations are present in "
                 "the measurement set.", opts._ms_ncorr)
 
+    # Determine the feed types present in the measurement set.
+
+    feed_xds = xds_from_table(opts.input_ms_name + "::FEED")
+
+    feeds = feed_xds[0].POLARIZATION_TYPE.data.compute()
+    unique_feeds = np.unique(feeds)
+
+    if np.all([feed in "XxYy" for feed in unique_feeds]):
+        opts._feed_type = "linear"
+    elif np.all([feed in "LlRr" for feed in unique_feeds]):
+        opts._feed_type = "circular"
+    else:
+        raise ValueError("Unsupported feed type/configuration.")
+
+    logger.info("Feed table indicates {} ({}) feeds are present in the "
+                "measurement set.", unique_feeds, opts._feed_type)
+
+    # Determine the phase direction from the measurement set. TODO: This will
+    # probably need to be done on a per xds basis. Can probably be accomplished
+    # by merging the field xds grouped by DDID into data grouped by DDID.
+
+    field_xds = xds_from_table(opts.input_ms_name + "::FIELD")[0]
+    opts._phase_dir = np.squeeze(field_xds.PHASE_DIR.data.compute())
+
+    logger.info("Field table indicates phase centre is at ({} {}).",
+                opts._phase_dir[0], opts._phase_dir[1])
+
     # Check whether the BITFLAG column exists - if not, we will need to add it
-    # or ignore it. We suppress xarray_ms warnings here as the columns may not
-    # exist. TODO: Add the column, or re-add it if we think the column is
-    # dodgy.
+    # or ignore it. We suppress dask_ms warnings here as the columns may not
+    # exist.
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -64,7 +90,7 @@ def read_ms(opts):
     logger.info("BITFLAG_ROW column {} present.",
                 "is" if opts._bitflagrow_exists else "isn't")
 
-    # row_chunks is a dictionary containing row chunks per data set.
+    # row_chunks is a list containing row chunks per data set.
 
     row_chunks_per_xds = []
 

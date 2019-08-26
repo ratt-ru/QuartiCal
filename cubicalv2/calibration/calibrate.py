@@ -154,9 +154,8 @@ def calibrate(data_xds, opts):
         data_xds[xds_ind] = \
             xds.assign({"BITFLAG": (xds.BITFLAG.dims, bitflag_col)})
 
-    # Call compute on the resulting graph.
+    # Return the resulting graphs for the gains and updated xds.
     return gains_per_xds, data_xds
-
 
     # gains_per_xds[0].visualize("graph.pdf", optimize_graph=True)
 

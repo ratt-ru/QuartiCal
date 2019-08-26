@@ -59,15 +59,18 @@ def FREQ(arg):
     logger.critical("Custom type FREQ not implemented.")
     return str(arg)
 
+
 @custom_type
 def DDID(arg):
     logger.critical("Custom type DDID not implemented.")
     return str(arg)
 
+
 @custom_type
 def CHAN(arg):
     logger.critical("Custom type CHAN not implemented.")
     return str(arg)
+
 
 @custom_type
 def DIRECTIONS(arg):

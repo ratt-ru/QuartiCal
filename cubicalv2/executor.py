@@ -8,6 +8,7 @@ from cubicalv2.calibration.calibrate import calibrate
 import dask.array as da
 import time
 
+
 @logger.catch
 def execute():
     """Runs the application."""

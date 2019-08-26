@@ -7,7 +7,7 @@ from numba import jit
 def solver(model, gains, residual, a1, a2, t_map, f_map, compute_jhj_and_jhr,
            compute_update):
 
-    for i in range(20):
+    for i in range(5):
 
         jhj, jhr = compute_jhj_and_jhr(model, gains, residual, a1, a2, t_map,
                                        f_map)
