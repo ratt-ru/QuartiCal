@@ -5,6 +5,7 @@ from loguru import logger
 from cubicalv2.parser import parser
 from cubicalv2.data_handling import data_handler
 from cubicalv2.calibration.calibrate import calibrate
+from cubicalv2.data_handling.predict import predict
 import dask.array as da
 import time
 
@@ -29,6 +30,8 @@ def execute():
 
     t0 = time.time()
     data_xds = data_handler.read_ms(opts)
+
+    predict_xds = predict(data_xds, opts)
 
     gains_per_xds, updated_data_xds = calibrate(data_xds, opts)
 

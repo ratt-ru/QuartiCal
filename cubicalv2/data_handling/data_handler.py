@@ -90,7 +90,7 @@ def read_ms(opts):
     logger.info("BITFLAG_ROW column {} present.",
                 "is" if opts._bitflagrow_exists else "isn't")
 
-    # row_chunks is a list containing row chunks per data set.
+    # row_chunks is a list of dictionaries containing row chunks per data set.
 
     row_chunks_per_xds = []
 
