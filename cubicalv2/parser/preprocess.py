@@ -16,14 +16,23 @@ def preprocess_opts(opts):
         Namespace: An updated namespace object.
     """
 
-    if opts.input_ms_time_chunk.isnumeric():
-        opts.input_ms_time_chunk = int(opts.input_ms_time_chunk)
-    elif opts.input_ms_time_chunk.endswith('s'):
-        opts.input_ms_time_chunk = float(opts.input_ms_time_chunk.rstrip('s'))
-    else:
-        raise ValueError("--input-ms-time-chunk must be either an integer \
-                          number of intergrations or a duration in seconds.")
+    opts._model_columns = []
+    opts._sky_models = []
+    opts._predict = False
 
-    if opts.input_ms_time_chunk == 0:
-        opts.input_ms_time_chunk = int(1e99)
-        logger.warning("--input-ms-time-chunk is zero: not chunking on rows.")
+    for model in opts.input_model_recipe:
+        if ".lsm.html" in model:
+            opts._sky_models.append(model)
+            opts._predict = True
+        else:
+            opts._model_columns.append(model)
+
+    logger.info("The following model sources were obtained from "
+                "--input-model-recipe: \n"
+                "   Columns: {} \n"
+                "   Sky Models: {}",
+                opts._model_columns,
+                opts._sky_models)
+
+    if opts._predict:
+        logger.info("Enabling prediction step.")

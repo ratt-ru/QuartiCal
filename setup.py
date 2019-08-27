@@ -45,7 +45,7 @@ else:
                     "numpy",
                     "dask-ms[xarray]"
                         "@git+https://github.com/ska-sa/dask-ms.git"
-                        "@fixes-for-0.2.0-alpha2",
+                        "@master",
                     "codex-africanus[complete]",
                     "astro-tigger-lsm",
                     "loguru",

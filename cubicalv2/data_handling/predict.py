@@ -222,7 +222,7 @@ def baseline_jones_multiply(corrs, *args):
     output_schema = _bl_jones_output_schema(corrs, corr_index)
     schema = ",".join(input_einsum_schemas) + output_schema
 
-    return da.einsum(schema, *arrays)
+    return da.einsum(schema, *arrays, optimize=True)
 
 
 def vis_factory(opts, source_type, sky_model, time_index,

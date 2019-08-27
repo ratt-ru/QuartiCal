@@ -20,7 +20,7 @@ def update_func_factory(mode):
         raise ModeError("Undefined calibration mode.")
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def jhj_and_jhr_full(model, gains, residual, a1, a2, t_map, f_map):
 
     n_rows, n_chan, _ = model.shape
@@ -91,7 +91,7 @@ def jhj_and_jhr_full(model, gains, residual, a1, a2, t_map, f_map):
     return jhj, jhr
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def update_full(jhj, jhr):
 
     n_tint, n_fint, n_ant, n_corr = jhj.shape
