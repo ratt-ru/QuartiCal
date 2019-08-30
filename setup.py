@@ -46,10 +46,13 @@ else:
                     "dask-ms[xarray]"
                         "@git+https://github.com/ska-sa/dask-ms.git"
                         "@master",
-                    "codex-africanus[complete]",
+                    "codex-africanus[complete]"
+                        "@git+https://github.com/ska-sa/codex-africanus.git"
+                        "@master",
                     "astro-tigger-lsm",
                     "loguru",
-                    "numba"]
+                    "numba",
+                    "distributed"]
 
 setup(name='cubicalv2',
       version=cubicalv2.__version__,

@@ -10,6 +10,7 @@ import dask.array as da
 import time
 from dask.diagnostics import ProgressBar
 import dask
+from dask.distributed import Client
 
 
 @logger.catch
@@ -27,6 +28,12 @@ def execute():
     # possible.
 
     preprocess.preprocess_opts(opts)
+
+    if opts.parallel_scheduler == "distributed":
+        client = Client(processes=False,                            # noqa
+                        n_workers=opts.parallel_nworker,
+                        threads_per_worker=opts.parallel_nthread)
+        logger.info("Initializing distributed client.")
 
     # Give opts to the data handler, which returns a list of xarray data sets.
 

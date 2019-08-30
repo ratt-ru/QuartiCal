@@ -264,6 +264,19 @@ parallel:
         help: Number of threads to use in the dask scheduler. Setting to zero
               (the default) will use all available resources.
         default: 0
+    nworker:
+        type: int
+        help: Number of workers to use in the dask distributed scheduler.
+              Advanced users only.
+        default: 1
+    scheduler:
+        type: str
+        help: Which dask scheduler to use. The default, multithreaded, is the
+              most appropriate for non-server use.
+        choices:
+            - multithreaded
+            - distributed
+        default: multithreaded
 
 (gain):
     _description: Arguments pertaining to a labelled (gain). (gain) MUST be
