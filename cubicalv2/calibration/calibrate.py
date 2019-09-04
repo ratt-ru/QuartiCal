@@ -26,7 +26,7 @@ slice_scheme = {1: {"scalar": slice(None)},
 
 def initialize_gains(gains):
 
-    gains[:, :, :] = np.eye(2).ravel()
+    gains[:, :, :, :] = np.eye(2).ravel()
 
     return gains
 
@@ -75,6 +75,7 @@ def calibrate(data_xds, opts):
         t_int = da.full_like(utime_per_chunk, atomic_t_int)
         f_int = da.full_like(utime_per_chunk, atomic_f_int)
         n_ant = opts._n_ant
+        n_dir = model_col.shape[-2]
 
         freqs_per_chunk = da.full_like(utime_per_chunk, model_col.shape[1])
 
@@ -104,9 +105,9 @@ def calibrate(data_xds, opts):
 
         # Create and initialise the gain array. Dask makes this a two-step
         # process.
-        gains = da.empty([n_t_int, n_f_int, n_ant, 4],
+        gains = da.empty([n_t_int, n_f_int, n_ant, n_dir, 4],
                          dtype=np.complex128,
-                         chunks=(np_t_int_per_chunk, -1, -1, -1))
+                         chunks=(np_t_int_per_chunk, -1, -1, -1, -1))
 
         gains = da.map_blocks(initialize_gains, gains, dtype=gains.dtype)
 
@@ -130,9 +131,9 @@ def calibrate(data_xds, opts):
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
 
-        gains = da.blockwise(solver, ("rowlike", "chan", "ant", "corr"),
-                             model_col, ("rowlike", "chan", "corr"),
-                             gains, ("rowlike", "chan", "ant", "corr"),
+        gains = da.blockwise(solver, ("rowlike", "chan", "ant", "dir", "corr"),
+                             model_col, ("rowlike", "chan", "dir", "corr"),
+                             gains, ("rowlike", "chan", "ant", "dir", "corr"),
                              data_col, ("rowlike", "chan", "corr"),
                              ant1_col, ("rowlike",),
                              ant2_col, ("rowlike",),

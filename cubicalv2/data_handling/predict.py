@@ -9,8 +9,7 @@ from africanus.model.coherency.dask import convert
 from africanus.model.spectral.dask import spectral_model
 from africanus.model.shape.dask import gaussian as gaussian_shape
 
-from collections import namedtuple
-
+from collections import namedtuple, defaultdict
 
 _einsum_corr_indices = 'ijkl'
 
@@ -61,92 +60,136 @@ def parse_sky_model(opts):
     """
 
     # This is naive. TODO: Add support for arbitrary recipes.
-    sky_model = Tigger.load(opts.input_model_recipe[0], verbose=False)
 
-    # Currently, we hard code the model chunks to include all sources. TODO:
-    # Make this dynamic if necessary.
+    def dict_factory():
 
-    chunks = 10
+        return dict(point=dict(radec=[],
+                               stokes=[],
+                               spi=[],
+                               ref_freq=[],
+                               n_src=0),
+                    gauss=dict(radec=[],
+                               stokes=[],
+                               spi=[],
+                               ref_freq=[],
+                               shape=[],
+                               n_src=0))
 
-    # The code is currently only suitable for a direction independent predict.
-    # TODO: Add clustering behaviour.
+    # Currently looping over multiple sky models will not work as expected.
+    # TODO: Fix this behaviour.
 
-    point_radec = []
-    point_stokes = []
-    point_spi = []
-    point_ref_freq = []
+    for sky_model_name in opts._sky_models:
 
-    gauss_radec = []
-    gauss_stokes = []
-    gauss_spi = []
-    gauss_ref_freq = []
-    gauss_shape = []
+        sky_model = Tigger.load(sky_model_name, verbose=False)
 
-    for source in sky_model.sources:
-        ra = source.pos.ra
-        dec = source.pos.dec
-        typecode = source.typecode.lower()
+        sources = sky_model.sources
 
-        I = source.flux.I  # noqa
-        Q = source.flux.Q
-        U = source.flux.U
-        V = source.flux.V
+        groups = defaultdict(dict_factory)
 
-        spectrum = (getattr(source, "spectrum", _empty_spectrum)
-                    or _empty_spectrum)
+        for source in sources:
 
-        # Attempts to grab the source reference frequency. Failing that, the
-        # skymodel reference frequency is used. If that isn't set, defaults to
-        # 1e9.
-        ref_freq = getattr(spectrum, "freq0", sky_model.freq0) or 1e9
+            parent_group = source.getTag("cluster") if source.getTag("dE") \
+                                else "DIE"
 
-        try:
-            # Extract SPI for I.
-            # Zero Q, U and V to get 1 on the exponential
-            spi = [[spectrum.spi, 0, 0, 0]]
-        except AttributeError:
-            # Default I SPI to -0.7
-            spi = [[-0.7, 0, 0, 0]]
+            gauss_params = groups[parent_group]["gauss"]
+            point_params = groups[parent_group]["point"]
 
-        if typecode == "gau":
-            emaj = source.shape.ex
-            emin = source.shape.ey
-            pa = source.shape.pa
+            ra = source.pos.ra
+            dec = source.pos.dec
+            typecode = source.typecode.lower()
 
-            gauss_radec.append([ra, dec])
-            gauss_stokes.append([I, Q, U, V])
-            gauss_spi.append(spi)
-            gauss_ref_freq.append(ref_freq)
-            gauss_shape.append([emaj, emin, pa])
+            I = source.flux.I  # noqa
+            Q = source.flux.Q
+            U = source.flux.U
+            V = source.flux.V
 
-        elif typecode == "pnt":
-            point_radec.append([ra, dec])
-            point_stokes.append([I, Q, U, V])
-            point_spi.append(spi)
-            point_ref_freq.append(ref_freq)
-        else:
-            raise ValueError("Unknown source morphology %s" % typecode)
+            spectrum = (getattr(source, "spectrum", _empty_spectrum)
+                        or _empty_spectrum)
 
-    Point = namedtuple("Point", ["radec", "stokes", "spi", "ref_freq"])
-    Gauss = namedtuple("Gauss", ["radec", "stokes", "spi", "ref_freq",
-                                 "shape"])
+            # Attempts to grab the source reference frequency. Failing that,
+            # the skymodel reference frequency is used. If that isn't set,
+            # defaults to 1e9.
+            ref_freq = getattr(spectrum, "freq0", sky_model.freq0) or 1e9
 
-    source_data = {}
+            try:
+                # Extract SPI for I.
+                # Zero Q, U and V to get 1 on the exponential
+                spi = [[spectrum.spi, 0, 0, 0]]
+            except AttributeError:
+                # Default I SPI to -0.7
+                spi = [[-0.7, 0, 0, 0]]
 
-    if len(point_radec) > 0:
-        source_data['point'] = Point(
-                    da.from_array(point_radec, chunks=(chunks, -1)),
-                    da.from_array(point_stokes, chunks=(chunks, -1)),
-                    da.from_array(point_spi, chunks=(chunks, 1, -1)),
-                    da.from_array(point_ref_freq, chunks=chunks))
+            if typecode == "gau":
+                emaj = source.shape.ex
+                emin = source.shape.ey
+                pa = source.shape.pa
 
-    if len(gauss_radec) > 0:
-        source_data['gauss'] = Gauss(
-                    da.from_array(gauss_radec, chunks=(chunks, -1)),
-                    da.from_array(gauss_stokes, chunks=(chunks, -1)),
-                    da.from_array(gauss_spi, chunks=(chunks, 1, -1)),
-                    da.from_array(gauss_ref_freq, chunks=chunks),
-                    da.from_array(gauss_shape, chunks=(chunks, -1)))
+                gauss_params["radec"].append([ra, dec])
+                gauss_params["stokes"].append([I, Q, U, V])
+                gauss_params["spi"].append(spi)
+                gauss_params["ref_freq"].append(ref_freq)
+                gauss_params["shape"].append([emaj, emin, pa])
+                gauss_params["n_src"] += 1
+
+            elif typecode == "pnt":
+                point_params["radec"].append([ra, dec])
+                point_params["stokes"].append([I, Q, U, V])
+                point_params["spi"].append(spi)
+                point_params["ref_freq"].append(ref_freq)
+                point_params["n_src"] += 1
+            else:
+                raise ValueError("Unknown source morphology %s" % typecode)
+
+        logger.info("Source groups/clusters for {}:{}",
+                    sky_model_name,
+                    "".join("\n  {:<8}: {} point source/s, "
+                            "{} Gaussian source/s".format(
+                                key,
+                                value["point"]["n_src"],
+                                value["gauss"]["n_src"])
+                            for key, value in groups.items()))
+
+        # # Currently, we hard code the model chunks to include 10 sources.
+        # # TODO: Make this dynamic if necessary.
+
+        chunks = 10
+
+        # # The code is currently only suitable for a direction independent
+        # # predict. TODO: Add clustering behaviour.
+
+        Point = namedtuple("Point", ["radec", "stokes", "spi", "ref_freq"])
+        Gauss = namedtuple("Gauss", ["radec", "stokes", "spi", "ref_freq",
+                                     "shape"])
+
+        source_data = {key: {} for key in groups.keys()}
+
+        for name, params in groups.items():
+
+            gauss_params = params["gauss"]
+            point_params = params["point"]
+
+            if point_params["n_src"] > 0:
+                source_data[name]['point'] = \
+                    Point(da.from_array(point_params["radec"],
+                                        chunks=(chunks, -1)),
+                          da.from_array(point_params["stokes"],
+                                        chunks=(chunks, -1)),
+                          da.from_array(point_params["spi"],
+                                        chunks=(chunks, 1, -1)),
+                          da.from_array(point_params["ref_freq"],
+                                        chunks=chunks))
+            if gauss_params["n_src"] > 0:
+                source_data[name]['gauss'] = \
+                    Gauss(da.from_array(gauss_params["radec"],
+                                        chunks=(chunks, -1)),
+                          da.from_array(gauss_params["stokes"],
+                                        chunks=(chunks, -1)),
+                          da.from_array(gauss_params["spi"],
+                                        chunks=(chunks, 1, -1)),
+                          da.from_array(point_params["ref_freq"],
+                                        chunks=chunks),
+                          da.from_array(gauss_params["shape"],
+                                        chunks=(chunks, -1)))
 
     return source_data
 
@@ -288,10 +331,9 @@ def predict(data_xds, opts):
     spw_ds = tables["SPECTRAL_WINDOW"]
     pol_ds = tables["POLARIZATION"]
 
-    # List of write operations
+    # List of predict operations
     predict_xds = []
 
-    # Construct a graph for each DATA_DESC_ID
     for xds in data_xds:
 
         # Extract frequencies from the spectral window associated
@@ -306,20 +348,26 @@ def predict(data_xds, opts):
 
         _, time_index = da.unique(xds.TIME.data, return_inverse=True)
 
-        # Generate visibility expressions for each source type
-        source_vis = [vis_factory(opts, stype, sky_model, time_index,
-                                  xds, field, spw, pol)
-                      for stype in sky_model.keys()]
+        vis = []
 
-        # Sum visibilities together
-        vis = sum(source_vis)
+        # Generate visibility expressions for each source type
+        for name, sources in sky_model.items():
+
+            source_vis = [vis_factory(opts, stype, sources, time_index,
+                                  xds, field, spw, pol)
+                      for stype in sources.keys()]
+
+            # Sum visibilities together
+            vis.append(sum(source_vis))
+
+        vis = da.stack(vis, axis=2).rechunk({2:len(sky_model)})
 
         # Reshape (2, 2) correlation to shape (4,)
         if corrs == 4:
-            vis = vis.reshape(vis.shape[:2] + (4,))
+            vis = vis.reshape(vis.shape[:3] + (4,))
 
         # Assign visibilities to MODEL_DATA array on the dataset
-        xds = xds.assign({"MODEL_DATA": (("row", "chan", "corr"), vis)})
+        xds = xds.assign({"MODEL_DATA": (("row", "chan", "dir", "corr"), vis)})
 
         # Add to the list of predicts.
         predict_xds.append(xds)
