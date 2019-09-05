@@ -78,7 +78,7 @@ def parse_sky_model(opts):
     # Currently looping over multiple sky models will not work as expected.
     # TODO: Fix this behaviour.
 
-    for sky_model_name in opts._sky_models:
+    for sky_model_name, sky_model_tag in opts._sky_models.items():
 
         sky_model = Tigger.load(sky_model_name, verbose=False)
 
@@ -88,8 +88,8 @@ def parse_sky_model(opts):
 
         for source in sources:
 
-            parent_group = source.getTag("cluster") if source.getTag("dE") \
-                                else "DIE"
+            parent_group = source.getTag("cluster") \
+                if source.getTag(sky_model_tag) else "DIE"
 
             gauss_params = groups[parent_group]["gauss"]
             point_params = groups[parent_group]["point"]
@@ -354,13 +354,13 @@ def predict(data_xds, opts):
         for name, sources in sky_model.items():
 
             source_vis = [vis_factory(opts, stype, sources, time_index,
-                                  xds, field, spw, pol)
-                      for stype in sources.keys()]
+                                      xds, field, spw, pol)
+                          for stype in sources.keys()]
 
             # Sum visibilities together
             vis.append(sum(source_vis))
 
-        vis = da.stack(vis, axis=2).rechunk({2:len(sky_model)})
+        vis = da.stack(vis, axis=2).rechunk({2: len(sky_model)})
 
         # Reshape (2, 2) correlation to shape (4,)
         if corrs == 4:

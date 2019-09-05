@@ -75,7 +75,7 @@ input-ms:
 input-model:
     _description: Arguments pertaining to input model parameters.
     recipe:
-        nargs: +
+        #nargs: +
         type: str
         help: Input model recipe. Add syntactic examples.
         required: True

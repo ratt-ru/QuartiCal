@@ -17,12 +17,19 @@ def preprocess_opts(opts):
     """
 
     opts._model_columns = []
-    opts._sky_models = []
+    opts._sky_models = {}
     opts._predict = False
 
-    for model in opts.input_model_recipe:
+    models = opts.input_model_recipe.split(":")
+
+    # TODO: Consider how to implement operations on model sources. This will
+    # require a stacking and rechunking approach in addition to adding and
+    # subtracting visibilities.
+
+    for model in models:
         if ".lsm.html" in model:
-            opts._sky_models.append(model)
+            filename, _, tags = model.partition("@")
+            opts._sky_models[filename] = tags
             opts._predict = True
         else:
             opts._model_columns.append(model)
@@ -32,7 +39,7 @@ def preprocess_opts(opts):
                 "   Columns: {} \n"
                 "   Sky Models: {}",
                 opts._model_columns,
-                opts._sky_models)
+                list(opts._sky_models.keys()))
 
     if opts._predict:
         logger.info("Enabling prediction step.")
