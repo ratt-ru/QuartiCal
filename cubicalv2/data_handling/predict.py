@@ -59,8 +59,6 @@ def parse_sky_model(opts):
         source_data: A dictionary of source data.
     """
 
-    # This is naive. TODO: Add support for arbitrary recipes.
-
     def dict_factory():
 
         return dict(point=dict(radec=[],
@@ -75,8 +73,7 @@ def parse_sky_model(opts):
                                shape=[],
                                n_src=0))
 
-    # Currently looping over multiple sky models will not work as expected.
-    # TODO: Fix this behaviour.
+    sky_model_dict = {}
 
     for sky_model_name, sky_model_tags in opts._sky_models.items():
 
@@ -141,6 +138,8 @@ def parse_sky_model(opts):
             else:
                 raise ValueError("Unknown source morphology %s" % typecode)
 
+        sky_model_dict[sky_model_name] = groups
+
         logger.info("Source groups/clusters for {}:{}",
                     sky_model_name,
                     "".join("\n  {:<8}: {} point source/s, "
@@ -150,51 +149,52 @@ def parse_sky_model(opts):
                                 value["gauss"]["n_src"])
                             for key, value in groups.items()))
 
-        # # Currently, we hard code the model chunks to include 10 sources.
-        # # TODO: Make this dynamic if necessary.
+    # Currently, we hard code the model chunks to include 10 sources.
+    # TODO: Make this dynamic if necessary.
 
-        chunks = 10
+    chunks = 10
 
-        # # The code is currently only suitable for a direction independent
-        # # predict. TODO: Add clustering behaviour.
+    Point = namedtuple("Point", ["radec", "stokes", "spi", "ref_freq"])
+    Gauss = namedtuple("Gauss", ["radec", "stokes", "spi", "ref_freq",
+                                 "shape"])
 
-        Point = namedtuple("Point", ["radec", "stokes", "spi", "ref_freq"])
-        Gauss = namedtuple("Gauss", ["radec", "stokes", "spi", "ref_freq",
-                                     "shape"])
+    for model_name, model_group in sky_model_dict.items():
+        for group_name, group_sources in model_group.items():
 
-        source_data = {key: {} for key in groups.keys()}
-
-        for name, params in groups.items():
-
-            gauss_params = params["gauss"]
-            point_params = params["point"]
+            gauss_params = group_sources["gauss"]
+            point_params = group_sources["point"]
 
             if point_params["n_src"] > 0:
-                source_data[name]['point'] = \
-                    Point(da.from_array(point_params["radec"],
-                                        chunks=(chunks, -1)),
-                          da.from_array(point_params["stokes"],
-                                        chunks=(chunks, -1)),
-                          da.from_array(point_params["spi"],
-                                        chunks=(chunks, 1, -1)),
-                          da.from_array(point_params["ref_freq"],
-                                        chunks=chunks))
+                sky_model_dict[model_name][group_name]['point'] = \
+                    Point(
+                        da.from_array(
+                            point_params["radec"], chunks=(chunks, -1)),
+                        da.from_array(
+                            point_params["stokes"], chunks=(chunks, -1)),
+                        da.from_array(
+                            point_params["spi"], chunks=(chunks, 1, -1)),
+                        da.from_array(
+                            point_params["ref_freq"], chunks=chunks))
+            else:
+                del sky_model_dict[model_name][group_name]['point']
+
             if gauss_params["n_src"] > 0:
-                source_data[name]['gauss'] = \
-                    Gauss(da.from_array(gauss_params["radec"],
-                                        chunks=(chunks, -1)),
-                          da.from_array(gauss_params["stokes"],
-                                        chunks=(chunks, -1)),
-                          da.from_array(gauss_params["spi"],
-                                        chunks=(chunks, 1, -1)),
-                          da.from_array(point_params["ref_freq"],
-                                        chunks=chunks),
-                          da.from_array(gauss_params["shape"],
-                                        chunks=(chunks, -1)))
+                sky_model_dict[model_name][group_name]['gauss'] = \
+                    Gauss(
+                        da.from_array(
+                            gauss_params["radec"], chunks=(chunks, -1)),
+                        da.from_array(
+                            gauss_params["stokes"], chunks=(chunks, -1)),
+                        da.from_array(
+                            gauss_params["spi"], chunks=(chunks, 1, -1)),
+                        da.from_array(
+                            gauss_params["ref_freq"], chunks=chunks),
+                        da.from_array(
+                            gauss_params["shape"], chunks=(chunks, -1)))
+            else:
+                del sky_model_dict[model_name][group_name]['gauss']
 
-    print(source_data)
-
-    return source_data
+    return sky_model_dict
 
 
 def support_tables(opts, tables):
@@ -322,10 +322,11 @@ def vis_factory(opts, source_type, sky_model, time_index,
 
 
 def predict(data_xds, opts):
-    # Convert source data into dask arrays
-    sky_model = parse_sky_model(opts)
+    # Convert source data into a dictionary of per-model (per-direction) dask
+    # arrays.
+    sky_model_dict = parse_sky_model(opts)
 
-    # Get the support tables
+    # Get the support tables.
     tables = support_tables(opts, ["FIELD", "DATA_DESCRIPTION",
                                    "SPECTRAL_WINDOW", "POLARIZATION"])
 
@@ -335,7 +336,7 @@ def predict(data_xds, opts):
     pol_ds = tables["POLARIZATION"]
 
     # List of predict operations
-    predict_xds = []
+    predict_list = []
 
     for xds in data_xds:
 
@@ -351,28 +352,26 @@ def predict(data_xds, opts):
 
         _, time_index = da.unique(xds.TIME.data, return_inverse=True)
 
-        vis = []
+        model_vis = defaultdict(list)
 
-        # Generate visibility expressions for each source type
-        for name, sources in sky_model.items():
+        # Generate visibility expressions per model, per direction for each
+        # source type.
+        for model_name, model_group in sky_model_dict.items():
+            for group_name, group_sources in model_group.items():
 
-            source_vis = [vis_factory(opts, stype, sources, time_index,
-                                      xds, field, spw, pol)
-                          for stype in sources.keys()]
+                # Sum the contributions from the different source types into
+                # a single visibility.
+                group_vis = sum([vis_factory(opts, stype, group_sources,
+                                             time_index, xds, field, spw, pol)
+                                for stype in group_sources.keys()])
 
-            # Sum visibilities together
-            vis.append(sum(source_vis))
+                # Reshape (2, 2) correlation to shape (4,)
+                if corrs == 4:
+                    group_vis = group_vis.reshape(group_vis.shape[:-2] + (4,))
 
-        vis = da.stack(vis, axis=2).rechunk({2: len(sky_model)})
+                # Append group_vis to the appropriate list.
+                model_vis[model_name].append(group_vis)
 
-        # Reshape (2, 2) correlation to shape (4,)
-        if corrs == 4:
-            vis = vis.reshape(vis.shape[:3] + (4,))
+        predict_list.append(model_vis)
 
-        # Assign visibilities to MODEL_DATA array on the dataset
-        xds = xds.assign({"MODEL_DATA": (("row", "chan", "dir", "corr"), vis)})
-
-        # Add to the list of predicts.
-        predict_xds.append(xds)
-
-    return predict_xds
+    return predict_list
