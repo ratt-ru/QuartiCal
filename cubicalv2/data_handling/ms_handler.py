@@ -146,12 +146,12 @@ def read_ms(opts):
     # up an xarray data set for the data. Note that we will reload certain
     # indexing columns so that they are consistent with the chunking strategy.
 
-    extra_columns = ()
+    extra_columns = tuple(opts._model_columns)
     extra_columns += ("BITFLAG",) if opts._bitflag_exists else ()
     extra_columns += ("BITFLAG_ROW",) if opts._bitflagrow_exists else ()
 
-    data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "MODEL_DATA",
-                    "FLAG", "FLAG_ROW", "UVW") + extra_columns
+    data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "FLAG", "FLAG_ROW",
+                    "UVW") + extra_columns
 
     data_xds = xds_from_ms(opts.input_ms_name,
                            columns=data_columns,
@@ -190,7 +190,3 @@ def write_ms(xds_list, opts):
                         columns="BITFLAG",
                         descriptor="ratt_ms(fixed=False)")
 
-
-def handle_model(opts):
-
-    pass

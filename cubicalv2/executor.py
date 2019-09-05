@@ -3,9 +3,8 @@
 import cubicalv2.logging.init_logger  # noqa
 from loguru import logger
 from cubicalv2.parser import parser, preprocess
-from cubicalv2.data_handling import data_handler
+from cubicalv2.data_handling import ms_handler, model_handler
 from cubicalv2.calibration.calibrate import calibrate
-from cubicalv2.data_handling.predict import predict
 import dask.array as da
 import time
 from dask.diagnostics import ProgressBar
@@ -38,13 +37,13 @@ def execute():
     # Give opts to the data handler, which returns a list of xarray data sets.
 
     t0 = time.time()
-    data_xds = data_handler.read_ms(opts)
+    ms_xds = ms_handler.read_ms(opts)
 
-    predict_xds = predict(data_xds, opts) if opts._predict else data_xds
+    model_xds = model_handler.make_model(ms_xds, opts)
 
-    gains_per_xds, updated_data_xds = calibrate(predict_xds, opts)
+    gains_per_xds, updated_data_xds = calibrate(model_xds, opts)
 
-    write_columns = data_handler.write_ms(updated_data_xds, opts)
+    write_columns = ms_handler.write_ms(updated_data_xds, opts)
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()

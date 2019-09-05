@@ -78,7 +78,7 @@ def parse_sky_model(opts):
     # Currently looping over multiple sky models will not work as expected.
     # TODO: Fix this behaviour.
 
-    for sky_model_name, sky_model_tag in opts._sky_models.items():
+    for sky_model_name, sky_model_tags in opts._sky_models.items():
 
         sky_model = Tigger.load(sky_model_name, verbose=False)
 
@@ -88,8 +88,9 @@ def parse_sky_model(opts):
 
         for source in sources:
 
-            parent_group = source.getTag("cluster") \
-                if source.getTag(sky_model_tag) else "DIE"
+            tagged = any([source.getTag(tag) for tag in sky_model_tags])
+
+            parent_group = source.getTag("cluster") if tagged else "DIE"
 
             gauss_params = groups[parent_group]["gauss"]
             point_params = groups[parent_group]["point"]
@@ -190,6 +191,8 @@ def parse_sky_model(opts):
                                         chunks=chunks),
                           da.from_array(gauss_params["shape"],
                                         chunks=(chunks, -1)))
+
+    print(source_data)
 
     return source_data
 
