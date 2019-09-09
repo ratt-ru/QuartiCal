@@ -3,12 +3,12 @@ import dask.array as da
 import numpy as np
 from cubicalv2.data_handling.predict import predict
 from loguru import logger
-import xarray
+from xarray import DataArray
 
 
 def make_model(ms_xds, opts):
 
-    xds_predicts = predict(ms_xds, opts) if opts._predict else ms_xds
+    xds_predicts = predict(ms_xds, opts) if opts._predict else [{}]*len(ms_xds)
 
     model_xds = []
 
@@ -22,22 +22,12 @@ def make_model(ms_xds, opts):
             operations = recipe[1::2]
 
             if not operations:
-                # try:
-                #     result  = getattr(xds_predict, ingredients[0])
-                # except AttributeError:
-                #     result = getattr(xds, ingredients[0])
-                # else:
-                #     if isinstance(result, array.DataArray)
-                #         result = [result.data]
-                #     elif not isinstance(result, list):
-                #         result = [result]
-                #     else:
-                #         raise TypeError("blah")
 
-                result = xds_predict.get(ingredients[0],
-                                         xds.get(ingredients[0]))
-                result = result.data if isinstance(result, xarray.DataArray) else result
-                result = [result] if not isinstance(result, list) else result
+                if ingredients[0] in xds_predict.keys():
+                    result = xds_predict.get(ingredients[0])
+                else:
+                    result = [xds.get(ingredients[0]).data]
+
                 recipe_model.extend(result)
 
                 continue
@@ -45,17 +35,15 @@ def make_model(ms_xds, opts):
             for op_idx, op in enumerate(operations):
 
                 if op_idx == 0:
-                    result = xds_predict.get(ingredients[op_idx],
-                                             [xds.get(ingredients[op_idx],
-                                                      None)])
+                    if ingredients[op_idx] in xds_predict.keys():
+                        result = xds_predict.get(ingredients[op_idx])
+                    else:
+                        result = [xds.get(ingredients[op_idx]).data]
 
-                in_b = xds_predict.get(ingredients[op_idx + 1],
-                                       [xds.get(ingredients[op_idx + 1],
-                                                None)])
-
-                # TODO: Currently this assumes that the first ingredient can
-                # be a list. This needs to be changed to work even if a
-                # column/untagged lsm is the first input.
+                if ingredients[op_idx + 1] in xds_predict.keys():
+                    in_b = xds_predict.get(ingredients[op_idx + 1])
+                else:
+                    in_b = [xds.get(ingredients[op_idx + 1]).data]
 
                 if len(in_b) > 1 and len(result) > 1:
                     raise(ValueError("Model recipes do not support add or "

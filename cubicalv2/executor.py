@@ -41,7 +41,7 @@ def execute():
 
     model_xds = model_handler.make_model(ms_xds, opts)
 
-    print(model_xds[0].MODEL_DATA.compute()[0,0,:,:])
+    # print(model_xds[0].MODEL_DATA.compute()[0,0,:,:])
     # print(model_xds[0].PREDICTED_DATA.compute())
 
     gains_per_xds, updated_data_xds = calibrate(model_xds, opts)
