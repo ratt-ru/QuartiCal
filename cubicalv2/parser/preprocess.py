@@ -57,7 +57,8 @@ def preprocess_opts(opts):
                 tags = tags.split(",")
                 opts._sky_models[filename] = tags
                 opts._predict = True
-                opts._internal_recipe[recipe_index].append({filename: tags})
+                # opts._internal_recipe[recipe_index].append({filename: tags})
+                opts._internal_recipe[recipe_index].append(filename)
 
             elif ingredient != "":
                 opts._model_columns.append(ingredient)
