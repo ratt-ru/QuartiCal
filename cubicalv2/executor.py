@@ -3,9 +3,8 @@
 import cubicalv2.logging.init_logger  # noqa
 from loguru import logger
 from cubicalv2.parser import parser, preprocess
-from cubicalv2.data_handling import data_handler
+from cubicalv2.data_handling import ms_handler, model_handler
 from cubicalv2.calibration.calibrate import calibrate
-from cubicalv2.data_handling.predict import predict
 import dask.array as da
 import time
 from dask.diagnostics import ProgressBar
@@ -38,20 +37,28 @@ def execute():
     # Give opts to the data handler, which returns a list of xarray data sets.
 
     t0 = time.time()
-    data_xds = data_handler.read_ms(opts)
+    ms_xds = ms_handler.read_ms(opts)
 
-    predict_xds = predict(data_xds, opts) if opts._predict else data_xds
+    # Model xds is a list of xdss onto which appropriate model data has been
+    # assigned.
 
-    gains_per_xds, updated_data_xds = calibrate(predict_xds, opts)
+    model_xds = model_handler.make_model(ms_xds, opts)
 
-    write_columns = data_handler.write_ms(updated_data_xds, opts)
+    # print(model_xds[0].MODEL_DATA.compute()[0,0,:,:])
+    # print(model_xds[0].PREDICTED_DATA.compute())
+
+    gains_per_xds, updated_data_xds = calibrate(model_xds, opts)
+
+    write_columns = ms_handler.write_ms(updated_data_xds, opts)
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()
     with ProgressBar():
-        gains, _ = da.compute(gains_per_xds,
-                              write_columns,
+        gains, _ = da.compute(gains_per_xds[0],
+                              write_columns[0],
                               num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
-    # dask.visualize(gains_per_xds[0], filename='graph.pdf')
+    # dask.visualize(gains_per_xds[0],
+    #                filename='graph.pdf',
+    #                optimize_graph=True)
