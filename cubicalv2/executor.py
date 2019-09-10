@@ -39,6 +39,9 @@ def execute():
     t0 = time.time()
     ms_xds = ms_handler.read_ms(opts)
 
+    # Model xds is a list of xdss onto which appropriate model data has been
+    # assigned.
+
     model_xds = model_handler.make_model(ms_xds, opts)
 
     # print(model_xds[0].MODEL_DATA.compute()[0,0,:,:])

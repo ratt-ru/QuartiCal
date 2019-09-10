@@ -25,10 +25,6 @@ def preprocess_opts(opts):
 
     model_recipes = opts.input_model_recipe.split(":")
 
-    # TODO: Consider how to implement operations on model sources. This will
-    # require a stacking and rechunking approach in addition to adding and
-    # subtracting visibilities.
-
     # TODO: Repeated .lsm files overwrite dictionary contents. This needs to
     # be fixed.
 
@@ -42,13 +38,18 @@ def preprocess_opts(opts):
         ingredients = re.split(r'([\+~])', model_recipe)
 
         # Behaviour of re.split guaratees every second term is either a column
-        # or .lsm.
+        # or .lsm. This may lead to the first element being an empty string.
+
+        # Split the ingredients into operations and model sources. We preserve
+        # empty strings in the recipe to avoid more complicated code elsewhere.
+
+        # TODO: The recipe building is currently ignorant of tags. This
+        # functionality may later be necessary.
 
         for ingredient in ingredients:
 
-            if ingredient == "":
-                continue
-            elif ingredient in "~+":
+            if ingredient in "~+" and ingredient != "":
+
                 operation = da.add if ingredient == "+" else da.subtract
                 opts._internal_recipe[recipe_index].append(operation)
 
@@ -62,6 +63,8 @@ def preprocess_opts(opts):
 
             elif ingredient != "":
                 opts._model_columns.append(ingredient)
+                opts._internal_recipe[recipe_index].append(ingredient)
+            else:
                 opts._internal_recipe[recipe_index].append(ingredient)
 
     logger.info("The following model sources were obtained from "
