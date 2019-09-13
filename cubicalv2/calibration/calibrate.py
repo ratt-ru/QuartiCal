@@ -2,12 +2,10 @@
 import numpy as np
 import dask.array as da
 from math import ceil
-from cubicalv2.calibration.solver import solver
+from cubicalv2.calibration.solver import solver, chain_solver
 from cubicalv2.kernels.gjones import update_func_factory
 from loguru import logger  # noqa
-# from dask.diagnostics import Profiler, ResourceProfiler, CacheProfiler
-# from dask.diagnostics import visualize
-# from dask.optimization import fuse
+from numba.typed import List
 
 # Defines which solver modes are supported given the number of correlations
 # in the measurement set. If a mode is supported, this dictionary contains
@@ -43,7 +41,7 @@ def calibrate(data_xds, opts):
                          "containing {} correlations.".format(
                              opts.solver_mode, opts._ms_ncorr, ))
 
-    gains_per_xds = []
+    gains_per_xds = {name: [] for name in opts.solver_gain_terms}
 
     for xds_ind, xds in enumerate(data_xds):
 
@@ -69,85 +67,129 @@ def calibrate(data_xds, opts):
                                  dtype=utime_ind.dtype)
 
         # Time/frquency solution intervals. These will ultimately live on opts.
-        atomic_t_int = 1
-        atomic_f_int = 1
+        # This needs to be modified to work for a Jones chain. I want to crate
+        # time and frequency mapppings per gain term.
 
-        t_int = da.full_like(utime_per_chunk, atomic_t_int)
-        f_int = da.full_like(utime_per_chunk, atomic_f_int)
         n_ant = opts._n_ant
         n_dir = model_col.shape[-2]
+        n_freq = model_col.shape[1]
 
-        freqs_per_chunk = da.full_like(utime_per_chunk, model_col.shape[1])
+        time_maps = []
+        freq_maps = []
+        gain_list = []
 
-        # Number of time intervals per data chunk.
-        t_int_per_chunk = \
-            utime_per_chunk.map_blocks(lambda t, t_i: int(ceil(t/t_i)),
-                                       t_int,
-                                       chunks=(1,),
-                                       dtype=utime_per_chunk.dtype)
+        for term in opts.solver_gain_terms:
 
-        # Number of frequency intervals per data chunk.
-        f_int_per_chunk = \
-            freqs_per_chunk.map_blocks(lambda f, f_i: int(ceil(f/f_i)),
-                                       f_int,
-                                       chunks=(1,),
-                                       dtype=freqs_per_chunk.dtype)
+            atomic_t_int = getattr(opts, "{}_time_interval".format(term))
+            atomic_f_int = getattr(opts, "{}_freq_interval".format(term))
 
-        # These values need to be computed early as they are needed to
-        # create the gain matrix.
-        n_t_int, n_f_int = da.compute(t_int_per_chunk, f_int_per_chunk)
+            t_int = da.full_like(utime_per_chunk, atomic_t_int)
+            f_int = da.full_like(utime_per_chunk, atomic_f_int)
 
-        np_t_int_per_chunk = n_t_int if isinstance(n_t_int, int) \
-            else tuple(n_t_int)
-        n_t_int = n_t_int if isinstance(n_t_int, int) else np.sum(n_t_int)
+            freqs_per_chunk = da.full_like(utime_per_chunk, model_col.shape[1])
 
-        n_f_int = n_f_int if isinstance(n_f_int, int) else n_f_int[0]
+            # Number of time intervals per data chunk.
+            t_int_per_chunk = \
+                utime_per_chunk.map_blocks(lambda t, t_i: int(ceil(t/t_i)),
+                                           t_int,
+                                           chunks=(1,),
+                                           dtype=utime_per_chunk.dtype)
 
-        # Create and initialise the gain array. Dask makes this a two-step
-        # process.
-        gains = da.empty([n_t_int, n_f_int, n_ant, n_dir, 4],
-                         dtype=np.complex128,
-                         chunks=(np_t_int_per_chunk, -1, -1, -1, -1))
+            # Number of frequency intervals per data chunk.
+            f_int_per_chunk = \
+                freqs_per_chunk.map_blocks(lambda f, f_i: int(ceil(f/f_i)),
+                                           f_int,
+                                           chunks=(1,),
+                                           dtype=freqs_per_chunk.dtype)
 
-        gains = da.map_blocks(initialize_gains, gains, dtype=gains.dtype)
+            # These values need to be computed early as they are needed to
+            # create the gain matrix.
+            n_t_int, n_f_int = da.compute(t_int_per_chunk, f_int_per_chunk)
 
-        # Generate a mapping between frequency at data resolution and frequency
-        # intervals.
-        freq_mapping = \
-            freqs_per_chunk.map_blocks(
-                lambda f, f_i: np.array([i//f_i[0] for i in range(f[0])]),
-                f_int,
-                chunks=(model_col.shape[1],),
-                dtype=np.uint32)
+            np_t_int_per_chunk = n_t_int if isinstance(n_t_int, int) \
+                else tuple(n_t_int)
+            n_t_int = n_t_int if isinstance(n_t_int, int) else np.sum(n_t_int)
 
-        # Generate a mapping between time at data resolution and time
-        # intervals.
-        time_mapping = \
-            utime_ind.map_blocks(
-                lambda t, t_i: t//t_i, t_int,
-                chunks=utime_ind.chunks,
-                dtype=np.uint32)
+            # This currently presumes that we don't chunk in frequency. BEWARE!
+            n_f_int = n_f_int if isinstance(n_f_int, int) else n_f_int[0]
+
+            # Create and initialise the gain array. Dask makes this a two-step
+            # process.
+            gains = da.empty([n_t_int, n_f_int, n_ant, n_dir, 4],
+                             dtype=np.complex128,
+                             chunks=(np_t_int_per_chunk, -1, -1, -1, -1))
+
+            gains = da.map_blocks(initialize_gains, gains, dtype=gains.dtype)
+            gain_list.append(gains)
+
+            # Generate a mapping between frequency at data resolution and
+            # frequency intervals. This currently presumes that we don't chunk
+            # in frequency. BEWARE!
+            freq_mapping = \
+                freqs_per_chunk.map_blocks(
+                    lambda f, f_i: np.array([i//f_i[0] for i in range(n_freq)]),
+                    f_int,
+                    chunks=(n_freq,),
+                    dtype=np.uint32)
+            freq_maps.append(freq_mapping)
+
+            # Generate a mapping between time at data resolution and time
+            # intervals.
+            time_mapping = \
+                utime_ind.map_blocks(
+                    lambda t, t_i: t//t_i, t_int,
+                    chunks=utime_ind.chunks,
+                    dtype=np.uint32)
+            time_maps.append(time_mapping)
+
+        def combinator(*mappings):
+
+            out = List()
+
+            for m in mappings:
+                out.append(m)
+
+            return out
+
+        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
+        gain_args = [combinator, gain_schema]
+
+        for gain in gain_list:
+            gain_args.append(gain)
+            gain_args.append(gain_schema)
+
+        meta = np.empty((0,)*len(gain_schema), dtype=np.object)
+
+        gain_list = da.blockwise(*gain_args,
+                                #  meta=meta,
+                                 align_arrays=False,
+                                 dtype=np.object)
 
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
 
-        gains = da.blockwise(solver, ("rowlike", "chan", "ant", "dir", "corr"),
-                             model_col, ("rowlike", "chan", "dir", "corr"),
-                             gains, ("rowlike", "chan", "ant", "dir", "corr"),
-                             data_col, ("rowlike", "chan", "corr"),
-                             ant1_col, ("rowlike",),
-                             ant2_col, ("rowlike",),
-                             time_mapping, ("rowlike",),
-                             freq_mapping, ("rowlike",),
-                             compute_jhj_and_jhr, None,
-                             compute_update, None,
-                             adjust_chunks={"rowlike": np_t_int_per_chunk,
-                                            "chan": atomic_f_int},
-                             dtype=model_col.dtype,
-                             align_arrays=False)
+        gains = da.blockwise(
+            chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
+            model_col, ("rowlike", "chan", "dir", "corr"),
+            gain_list, ("rowlike", "chan", "ant", "dir", "corr"),
+            data_col, ("rowlike", "chan", "corr"),
+            ant1_col, ("rowlike",),
+            ant2_col, ("rowlike",),
+            time_mapping, ("rowlike",),
+            freq_mapping, ("rowlike",),
+            compute_jhj_and_jhr, None,
+            compute_update, None,
+            adjust_chunks={"rowlike": np_t_int_per_chunk,
+                           "chan": atomic_f_int},
+            dtype=model_col.dtype,
+            align_arrays=False,)
+
+        for ind, term in enumerate(opts.solver_gain_terms):
+            gains_per_xds[term].append(gains.map_blocks(
+                lambda g, i=None: g[i], i=ind, dtype=np.complex128))
 
         # Append the per-xds gains to a list.
-        gains_per_xds.append(gains)
+        # gains_per_xds.append(gains)
 
         # This is an example of updateing the contents of and xds. TODO: Use
         # this for writing out data.
