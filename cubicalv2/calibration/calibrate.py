@@ -29,7 +29,7 @@ def initialize_gains(gains):
     return gains
 
 
-def combinator(*mappings):
+def combine(*mappings):
 
     out = List()
 
@@ -146,7 +146,10 @@ def calibrate(data_xds, opts):
                 dtype=np.uint32)
             t_maps.append(t_map)
 
-        t_map_args = [combinator, ("rowlike",)]
+        # For each chunk, create a numba typed list containing the per-gain
+        # information. This is all done using the combine function.
+
+        t_map_args = [combine, ("rowlike",)]
 
         for t_map in t_maps:
             t_map_args.append(t_map)
@@ -156,7 +159,7 @@ def calibrate(data_xds, opts):
                                   align_arrays=False,
                                   dtype=np.int32)
 
-        f_map_args = [combinator, ("rowlike",)]
+        f_map_args = [combine, ("rowlike",)]
 
         for f_map in f_maps:
             f_map_args.append(f_map)
@@ -166,7 +169,7 @@ def calibrate(data_xds, opts):
                                   align_arrays=False,
                                   dtype=np.int32)
 
-        g_shape_args = [combinator, ("rowlike",)]
+        g_shape_args = [combine, ("rowlike",)]
 
         for g_shape in g_shapes:
             g_shape_args.append(g_shape)
@@ -208,13 +211,3 @@ def calibrate(data_xds, opts):
 
     # Return the resulting graphs for the gains and updated xds.
     return gains_per_xds, data_xds
-
-    # gains_per_xds[0].visualize("graph.pdf", optimize_graph=True)
-
-    # with Profiler() as prof, \
-    #      ResourceProfiler(dt=0.25) as rprof, \
-    #      CacheProfiler() as cprof:
-
-    #      out = da.compute(gains_per_xds)
-
-    # visualize([prof, rprof, cprof])
