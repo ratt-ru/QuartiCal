@@ -29,6 +29,18 @@ def initialize_gains(gains):
     return gains
 
 
+def combinator(*mappings):
+
+    out = List()
+
+    for m in mappings:
+        out.append(m)
+
+    print("\n", out[0].shape, out[1].shape, id(out[0]), id(out[1]))
+
+    return out
+
+
 def calibrate(data_xds, opts):
 
     # Calibrate per xds. This list will likely consist of an xds per SPW per
@@ -120,6 +132,7 @@ def calibrate(data_xds, opts):
                              chunks=(np_t_int_per_chunk, -1, -1, -1, -1))
 
             gains = da.map_blocks(initialize_gains, gains, dtype=gains.dtype)
+            print(gains.name)
             gain_list.append(gains)
 
             # Generate a mapping between frequency at data resolution and
@@ -142,28 +155,39 @@ def calibrate(data_xds, opts):
                     dtype=np.uint32)
             time_maps.append(time_mapping)
 
-        def combinator(*mappings):
-
-            out = List()
-
-            for m in mappings:
-                out.append(m)
-
-            return out
-
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
         gain_args = [combinator, gain_schema]
 
         for gain in gain_list:
-            gain_args.append(gain)
+            gain_args.append(gain.copy())
             gain_args.append(gain_schema)
 
-        meta = np.empty((0,)*len(gain_schema), dtype=np.object)
-
         gain_list = da.blockwise(*gain_args,
-                                #  meta=meta,
                                  align_arrays=False,
-                                 dtype=np.object)
+                                 dtype=np.complex128)
+
+        tmap_args = [combinator, ("rowlike",)]
+
+        for tmap in time_maps:
+            tmap_args.append(tmap)
+            tmap_args.append(("rowlike",))
+
+        tmap_list = da.blockwise(*tmap_args,
+                                 align_arrays=False,
+                                 dtype=np.int32)
+
+        fmap_args = [combinator, ("rowlike",)]
+
+        for fmap in freq_maps:
+            fmap_args.append(fmap)
+            fmap_args.append(("rowlike",))
+
+        fmap_list = da.blockwise(*fmap_args,
+                                 align_arrays=False,
+                                 dtype=np.int32)
+
+        # out_tmap = tmap_list.map_blocks(lambda tl: tl[0], dtype=np.int32)
+        # print(out_tmap.compute())
 
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
@@ -175,8 +199,8 @@ def calibrate(data_xds, opts):
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
-            time_mapping, ("rowlike",),
-            freq_mapping, ("rowlike",),
+            tmap_list, ("rowlike",),
+            fmap_list, ("rowlike",),
             compute_jhj_and_jhr, None,
             compute_update, None,
             adjust_chunks={"rowlike": np_t_int_per_chunk,
