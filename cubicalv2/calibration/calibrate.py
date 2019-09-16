@@ -36,8 +36,6 @@ def combinator(*mappings):
     for m in mappings:
         out.append(m)
 
-    print("\n", out[0].shape, out[1].shape, id(out[0]), id(out[1]))
-
     return out
 
 
@@ -86,9 +84,9 @@ def calibrate(data_xds, opts):
         n_dir = model_col.shape[-2]
         n_freq = model_col.shape[1]
 
-        time_maps = []
-        freq_maps = []
-        gain_list = []
+        t_maps = []
+        f_maps = []
+        g_shapes = []
 
         for term in opts.solver_gain_terms:
 
@@ -114,97 +112,87 @@ def calibrate(data_xds, opts):
                                            chunks=(1,),
                                            dtype=freqs_per_chunk.dtype)
 
-            # These values need to be computed early as they are needed to
-            # create the gain matrix.
-            n_t_int, n_f_int = da.compute(t_int_per_chunk, f_int_per_chunk)
-
-            np_t_int_per_chunk = n_t_int if isinstance(n_t_int, int) \
-                else tuple(n_t_int)
-            n_t_int = n_t_int if isinstance(n_t_int, int) else np.sum(n_t_int)
-
-            # This currently presumes that we don't chunk in frequency. BEWARE!
-            n_f_int = n_f_int if isinstance(n_f_int, int) else n_f_int[0]
-
-            # Create and initialise the gain array. Dask makes this a two-step
-            # process.
-            gains = da.empty([n_t_int, n_f_int, n_ant, n_dir, 4],
-                             dtype=np.complex128,
-                             chunks=(np_t_int_per_chunk, -1, -1, -1, -1))
-
-            gains = da.map_blocks(initialize_gains, gains, dtype=gains.dtype)
-            print(gains.name)
-            gain_list.append(gains)
+            # Determine the per-chunk gain shapes from the time a frequency
+            # intervals per chunk. Note that this used the number of
+            # correlations in the measurement set. TODO: This should depend
+            # on the solver mode.
+            g_shape = \
+                da.map_blocks(
+                    lambda t, f, na=None, nd=None, nc=None: (t, f, na, nd, nc),
+                    t_int_per_chunk,
+                    f_int_per_chunk,
+                    na=n_ant,
+                    nd=n_dir,
+                    nc=opts._ms_ncorr,
+                    meta=np.empty((0, 0, 0, 0, 0), dtype=np.int32),
+                    dtype=np.int32)
+            g_shapes.append(g_shape)
 
             # Generate a mapping between frequency at data resolution and
             # frequency intervals. This currently presumes that we don't chunk
             # in frequency. BEWARE!
-            freq_mapping = \
-                freqs_per_chunk.map_blocks(
-                    lambda f, f_i: np.array([i//f_i[0] for i in range(n_freq)]),
-                    f_int,
-                    chunks=(n_freq,),
-                    dtype=np.uint32)
-            freq_maps.append(freq_mapping)
+            f_map = freqs_per_chunk.map_blocks(
+                lambda f, f_i: np.array([i//f_i[0] for i in range(n_freq)]),
+                f_int,
+                chunks=(n_freq,),
+                dtype=np.uint32)
+            f_maps.append(f_map)
 
             # Generate a mapping between time at data resolution and time
             # intervals.
-            time_mapping = \
-                utime_ind.map_blocks(
-                    lambda t, t_i: t//t_i, t_int,
-                    chunks=utime_ind.chunks,
-                    dtype=np.uint32)
-            time_maps.append(time_mapping)
+            t_map = utime_ind.map_blocks(
+                lambda t, t_i: t//t_i, t_int,
+                chunks=utime_ind.chunks,
+                dtype=np.uint32)
+            t_maps.append(t_map)
 
-        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
-        gain_args = [combinator, gain_schema]
+        t_map_args = [combinator, ("rowlike",)]
 
-        for gain in gain_list:
-            gain_args.append(gain.copy())
-            gain_args.append(gain_schema)
+        for t_map in t_maps:
+            t_map_args.append(t_map)
+            t_map_args.append(("rowlike",))
 
-        gain_list = da.blockwise(*gain_args,
-                                 align_arrays=False,
-                                 dtype=np.complex128)
+        t_map_list = da.blockwise(*t_map_args,
+                                  align_arrays=False,
+                                  dtype=np.int32)
 
-        tmap_args = [combinator, ("rowlike",)]
+        f_map_args = [combinator, ("rowlike",)]
 
-        for tmap in time_maps:
-            tmap_args.append(tmap)
-            tmap_args.append(("rowlike",))
+        for f_map in f_maps:
+            f_map_args.append(f_map)
+            f_map_args.append(("rowlike",))
 
-        tmap_list = da.blockwise(*tmap_args,
-                                 align_arrays=False,
-                                 dtype=np.int32)
+        f_map_list = da.blockwise(*f_map_args,
+                                  align_arrays=False,
+                                  dtype=np.int32)
 
-        fmap_args = [combinator, ("rowlike",)]
+        g_shape_args = [combinator, ("rowlike",)]
 
-        for fmap in freq_maps:
-            fmap_args.append(fmap)
-            fmap_args.append(("rowlike",))
+        for g_shape in g_shapes:
+            g_shape_args.append(g_shape)
+            g_shape_args.append(("rowlike",))
 
-        fmap_list = da.blockwise(*fmap_args,
-                                 align_arrays=False,
-                                 dtype=np.int32)
-
-        # out_tmap = tmap_list.map_blocks(lambda tl: tl[0], dtype=np.int32)
-        # print(out_tmap.compute())
+        g_shape_list = da.blockwise(*g_shape_args,
+                                    align_arrays=False,
+                                    dtype=np.int32)
 
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
 
+        # Gains will not report its size or chunks correctly - this is because
+        # we do not know their shapes in advance.
         gains = da.blockwise(
             chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
-            gain_list, ("rowlike", "chan", "ant", "dir", "corr"),
+            g_shape_list, ("rowlike",),
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
-            tmap_list, ("rowlike",),
-            fmap_list, ("rowlike",),
+            t_map_list, ("rowlike",),
+            f_map_list, ("rowlike",),
             compute_jhj_and_jhr, None,
             compute_update, None,
-            adjust_chunks={"rowlike": np_t_int_per_chunk,
-                           "chan": atomic_f_int},
+            new_axes={"ant": n_ant},
             dtype=model_col.dtype,
             align_arrays=False,)
 
@@ -212,10 +200,7 @@ def calibrate(data_xds, opts):
             gains_per_xds[term].append(gains.map_blocks(
                 lambda g, i=None: g[i], i=ind, dtype=np.complex128))
 
-        # Append the per-xds gains to a list.
-        # gains_per_xds.append(gains)
-
-        # This is an example of updateing the contents of and xds. TODO: Use
+        # This is an example of updating the contents of and xds. TODO: Use
         # this for writing out data.
         bitflag_col = da.ones_like(bitflag_col)*10
         data_xds[xds_ind] = \
