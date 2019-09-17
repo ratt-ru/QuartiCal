@@ -3,7 +3,7 @@ import numpy as np
 import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import solver, chain_solver
-from cubicalv2.kernels.gjones import update_func_factory
+from cubicalv2.kernels.gjones_chain import update_func_factory
 from loguru import logger  # noqa
 from numba.typed import List
 
