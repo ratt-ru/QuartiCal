@@ -82,6 +82,7 @@ def calibrate(data_xds, opts):
 
         n_ant = opts._n_ant
         n_dir = model_col.shape[-2]
+        n_row = model_col.shape[0]
         n_freq = model_col.shape[1]
 
         t_maps = []
@@ -93,8 +94,11 @@ def calibrate(data_xds, opts):
             atomic_t_int = getattr(opts, "{}_time_interval".format(term))
             atomic_f_int = getattr(opts, "{}_freq_interval".format(term))
 
-            t_int = da.full_like(utime_per_chunk, atomic_t_int)
-            f_int = da.full_like(utime_per_chunk, atomic_f_int)
+            # The or handles intervals specified as zero. These are assumed to
+            # be solved aross an entire chunk. n_row is >> number of unique
+            # times, but that value is unavaible at this point.
+            t_int = da.full_like(utime_per_chunk, atomic_t_int or n_row)
+            f_int = da.full_like(utime_per_chunk, atomic_f_int or n_freq)
 
             freqs_per_chunk = da.full_like(utime_per_chunk, model_col.shape[1])
 
@@ -155,9 +159,11 @@ def calibrate(data_xds, opts):
             t_map_args.append(t_map)
             t_map_args.append(("rowlike",))
 
-        t_map_list = da.blockwise(*t_map_args,
-                                  align_arrays=False,
-                                  dtype=np.int32)
+        # t_map_list = da.blockwise(*t_map_args,
+        #                           align_arrays=False,
+        #                           dtype=np.int32)
+
+        t_map_list = da.stack(t_maps, axis=1).rechunk({1: len(t_maps)})
 
         f_map_args = [combine, ("rowlike",)]
 
@@ -165,9 +171,11 @@ def calibrate(data_xds, opts):
             f_map_args.append(f_map)
             f_map_args.append(("rowlike",))
 
-        f_map_list = da.blockwise(*f_map_args,
-                                  align_arrays=False,
-                                  dtype=np.int32)
+        # f_map_list = da.blockwise(*f_map_args,
+        #                           align_arrays=False,
+        #                           dtype=np.int32)
+
+        f_map_list = da.stack(f_maps, axis=1).rechunk({1: len(f_maps)})
 
         g_shape_args = [combine, ("rowlike",)]
 
@@ -191,10 +199,11 @@ def calibrate(data_xds, opts):
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
-            t_map_list, ("rowlike",),
-            f_map_list, ("rowlike",),
+            t_map_list, ("rowlike", "term"),
+            f_map_list, ("rowlike", "term"),
             compute_jhj_and_jhr, None,
             compute_update, None,
+            concatenate=True,
             new_axes={"ant": n_ant},
             dtype=model_col.dtype,
             align_arrays=False,)
