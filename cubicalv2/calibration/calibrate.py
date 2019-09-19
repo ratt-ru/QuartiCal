@@ -176,8 +176,7 @@ def calibrate(data_xds, opts):
                                    new_axes={"chan": n_freq,
                                              "ant": n_ant,
                                              "dir": n_dir,
-                                             "corr": opts._ms_ncorr},
-                                   adjust_chunks={"rowlike": (np.nan,)})
+                                             "corr": opts._ms_ncorr},)
 
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
