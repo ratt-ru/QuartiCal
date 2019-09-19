@@ -39,7 +39,7 @@ def init_gains(gain_shapes, dtype=np.complex128):
 def chain_solver(model, gain_shapes, residual, a1, a2, t_map_list, f_map_list,
                  compute_jhj_and_jhr, compute_update):
 
-    gain_list = init_gains(gain_shapes)
+    gain_list = gain_shapes
 
     for gain_ind in range(len(gain_list)):
 

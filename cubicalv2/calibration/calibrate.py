@@ -22,11 +22,16 @@ slice_scheme = {1: {"scalar": slice(None)},
                     "scalar": slice(0, 1)}}
 
 
-def initialize_gains(gains):
+def initialize_gains(*shapes):
 
-    gains[:, :, :, :] = np.eye(2).ravel()
+    dtype = np.complex128
 
-    return gains
+    gain_tuple = tuple(map(lambda s: np.zeros(s, dtype=dtype), shapes))
+
+    for gain in gain_tuple:
+        gain[..., ::3] = 1
+
+    return gain_tuple
 
 
 def combine(*mappings):
@@ -122,7 +127,7 @@ def calibrate(data_xds, opts):
             # on the solver mode.
             g_shape = \
                 da.map_blocks(
-                    lambda t, f, na=None, nd=None, nc=None: (t, f, na, nd, nc),
+                    lambda t, f, na=None, nd=None, nc=None: np.array([t, f, na, nd, nc]),
                     t_int_per_chunk,
                     f_int_per_chunk,
                     na=n_ant,
@@ -150,42 +155,29 @@ def calibrate(data_xds, opts):
                 dtype=np.uint32)
             t_maps.append(t_map)
 
-        # For each chunk, create a numba typed list containing the per-gain
-        # information. This is all done using the combine function.
+        # For each chunk, stack the per-gain mappingings into a single array.
 
-        t_map_args = [combine, ("rowlike",)]
+        t_map_arr = da.stack(t_maps, axis=1).rechunk({1: len(t_maps)})
 
-        for t_map in t_maps:
-            t_map_args.append(t_map)
-            t_map_args.append(("rowlike",))
+        f_map_arr = da.stack(f_maps, axis=1).rechunk({1: len(f_maps)})
 
-        # t_map_list = da.blockwise(*t_map_args,
-        #                           align_arrays=False,
-        #                           dtype=np.int32)
+        # Create a tuple of gain arrays per chunk.
 
-        t_map_list = da.stack(t_maps, axis=1).rechunk({1: len(t_maps)})
-
-        f_map_args = [combine, ("rowlike",)]
-
-        for f_map in f_maps:
-            f_map_args.append(f_map)
-            f_map_args.append(("rowlike",))
-
-        # f_map_list = da.blockwise(*f_map_args,
-        #                           align_arrays=False,
-        #                           dtype=np.int32)
-
-        f_map_list = da.stack(f_maps, axis=1).rechunk({1: len(f_maps)})
-
-        g_shape_args = [combine, ("rowlike",)]
+        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
+        gain_args = [initialize_gains, gain_schema]
 
         for g_shape in g_shapes:
-            g_shape_args.append(g_shape)
-            g_shape_args.append(("rowlike",))
+            gain_args.append(g_shape)
+            gain_args.append(("rowlike",))
 
-        g_shape_list = da.blockwise(*g_shape_args,
-                                    align_arrays=False,
-                                    dtype=np.int32)
+        g_shape_arr = da.blockwise(*gain_args,
+                                   align_arrays=False,
+                                   dtype=np.complex128,
+                                   new_axes={"chan": n_freq,
+                                             "ant": n_ant,
+                                             "dir": n_dir,
+                                             "corr": opts._ms_ncorr},
+                                   adjust_chunks={"rowlike": (np.nan,)})
 
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
@@ -195,12 +187,12 @@ def calibrate(data_xds, opts):
         gains = da.blockwise(
             chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
-            g_shape_list, ("rowlike",),
+            g_shape_arr, ("rowlike", "chan", "ant", "dir", "corr"),
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
-            t_map_list, ("rowlike", "term"),
-            f_map_list, ("rowlike", "term"),
+            t_map_arr, ("rowlike", "term"),
+            f_map_arr, ("rowlike", "term"),
             compute_jhj_and_jhr, None,
             compute_update, None,
             concatenate=True,
