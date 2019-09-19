@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import jit, prange, objmode
-from numba.typed import List
-import time
+from numba import jit, prange
 
 
 class ModeError(Exception):
@@ -56,15 +54,15 @@ def invert_gains(gain_tuple, inverse_gain_tuple):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
-                     f_map_list, active_term, inverse_gain_list):
+def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
+                     t_map_arr, f_map_arr, active_term):
 
     n_rows, n_chan, n_dir, _ = model.shape
 
-    jhr = np.zeros_like(gain_list[active_term])
-    jhj = np.zeros_like(gain_list[active_term])
+    jhr = np.zeros_like(gain_tuple[active_term])
+    jhj = np.zeros_like(gain_tuple[active_term])
 
-    n_gains = len(gain_list)
+    n_gains = len(gain_tuple)
 
     for row in prange(n_rows):
 
@@ -100,9 +98,9 @@ def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
 
                 for g in range(n_gains):
 
-                    t_m = t_map_list[row, g]
-                    f_m = f_map_list[f, g]
-                    gb = gain_list[g][t_m, f_m, a2_m, d]
+                    t_m = t_map_arr[row, g]
+                    f_m = f_map_arr[f, g]
+                    gb = gain_tuple[g][t_m, f_m, a2_m, d]
 
                     g00 = gb[0]
                     g01 = gb[1]
@@ -121,9 +119,9 @@ def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
 
                 for g in range(n_gains - 1, active_term, -1):
 
-                    t_m = t_map_list[row, g]
-                    f_m = f_map_list[f, g]
-                    ga = gain_list[g][t_m, f_m, a1_m, d]
+                    t_m = t_map_arr[row, g]
+                    f_m = f_map_arr[f, g]
+                    ga = gain_tuple[g][t_m, f_m, a1_m, d]
 
                     gh00 = ga[0].conjugate()
                     gh01 = ga[2].conjugate()
@@ -142,9 +140,9 @@ def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
 
                 for g in range(active_term - 1, -1, -1):
 
-                    t_m = t_map_list[row, g]
-                    f_m = f_map_list[f, g]
-                    gai = inverse_gain_list[g][t_m, f_m, a1_m, d]
+                    t_m = t_map_arr[row, g]
+                    f_m = f_map_arr[f, g]
+                    gai = inverse_gain_tuple[g][t_m, f_m, a1_m, d]
 
                     ginv00 = gai[0]
                     ginv01 = gai[1]
@@ -161,8 +159,8 @@ def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
                     r10 = jhr10
                     r11 = jhr11
 
-                t_m = t_map_list[row, active_term]
-                f_m = f_map_list[f, active_term]
+                t_m = t_map_arr[row, active_term]
+                f_m = f_map_arr[f, active_term]
 
                 j00 = jh00.conjugate()
                 j01 = jh10.conjugate()
@@ -181,9 +179,9 @@ def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
 
                 for g in range(n_gains):
 
-                    t_m = t_map_list[row, g]
-                    f_m = f_map_list[f, g]
-                    ga = gain_list[g][t_m, f_m, a1_m, d]
+                    t_m = t_map_arr[row, g]
+                    f_m = f_map_arr[f, g]
+                    ga = gain_tuple[g][t_m, f_m, a1_m, d]
 
                     g00 = ga[0]
                     g01 = ga[1]
@@ -202,9 +200,9 @@ def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
 
                 for g in range(n_gains - 1, active_term, -1):
 
-                    t_m = t_map_list[row, g]
-                    f_m = f_map_list[f, g]
-                    gb = gain_list[g][t_m, f_m, a2_m, d]
+                    t_m = t_map_arr[row, g]
+                    f_m = f_map_arr[f, g]
+                    gb = gain_tuple[g][t_m, f_m, a2_m, d]
 
                     gh00 = gb[0].conjugate()
                     gh01 = gb[2].conjugate()
@@ -223,9 +221,9 @@ def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
 
                 for g in range(active_term - 1, -1, -1):
 
-                    t_m = t_map_list[row, g]
-                    f_m = f_map_list[f, g]
-                    gbi = inverse_gain_list[g][t_m, f_m, a2_m, d]
+                    t_m = t_map_arr[row, g]
+                    f_m = f_map_arr[f, g]
+                    gbi = inverse_gain_tuple[g][t_m, f_m, a2_m, d]
 
                     ginv00 = gbi[0]
                     ginv01 = gbi[1]
@@ -242,8 +240,8 @@ def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
                     rh10 = jhr10
                     rh11 = jhr11
 
-                t_m = t_map_list[row, active_term]
-                f_m = f_map_list[f, active_term]
+                t_m = t_map_arr[row, active_term]
+                f_m = f_map_arr[f, active_term]
 
                 j00 = jh00.conjugate()
                 j01 = jh10.conjugate()
@@ -259,9 +257,6 @@ def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
                 jhj[t_m, f_m, a2_m, d, 1] += (j00*jh01 + j01*jh11)
                 jhj[t_m, f_m, a2_m, d, 2] += (j10*jh00 + j11*jh10)
                 jhj[t_m, f_m, a2_m, d, 3] += (j10*jh01 + j11*jh11)
-
-    # with objmode():
-    #     print("1", time.time())
 
     return jhj, jhr
 

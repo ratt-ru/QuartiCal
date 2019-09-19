@@ -34,25 +34,6 @@ def initialize_gains(*shapes):
     return gain_tuple
 
 
-def initialize_inverse_gains(*shapes):
-
-    dtype = np.complex128
-
-    inverse_gain_tuple = tuple(map(lambda s: np.empty(s, dtype=dtype), shapes))
-
-    return inverse_gain_tuple
-
-
-def combine(*mappings):
-
-    out = List()
-
-    for m in mappings:
-        out.append(m)
-
-    return out
-
-
 def calibrate(data_xds, opts):
 
     # Calibrate per xds. This list will likely consist of an xds per SPW per
@@ -198,27 +179,11 @@ def calibrate(data_xds, opts):
                            "chan": (np.nan,)})
 
         # Initialise the inverse gains. This is basically the same as the
-        # gains, but we init them as empty.
-        gain_args[0] = initialize_inverse_gains
-
-        inverse_gain_tuple = da.blockwise(
-            *gain_args,
-            align_arrays=False,
-            dtype=np.complex128,
-            new_axes={"chan": n_freq,
-                      "ant": n_ant,
-                      "dir": n_dir,
-                      "corr": opts._ms_ncorr},
-            adjust_chunks={"rowlike": (np.nan,)*n_chunks,
-                           "chan": (np.nan,)})
-
-        # inverse_gain_tuple = gain_tuple.map_blocks(
-        #     lambda gt: tuple(map(da.empty_like, gt)), dtype=np.complex128)
-
-        # blah = inverse_gain_tuple.map_blocks(
-        #     lambda igt: igt[1], dtype=np.complex128
-        # )
-        # print(blah.compute().shape)
+        # gains, but we init them as empty. We init these outsid ethe solver
+        # as tuples are notoriously difficult to contruct in nopython mode.
+        inverse_gain_tuple = gain_tuple.map_blocks(
+            lambda gt: tuple(map(np.empty_like, gt)),
+            dtype=np.complex128)
 
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
