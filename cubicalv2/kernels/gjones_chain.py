@@ -23,15 +23,13 @@ def update_func_factory(mode):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def invert_gains(gain_list):
+def invert_gains(gain_tuple, inverse_gain_tuple):
 
-    inverse_gain_list = []#List()
-
-    for gain in gain_list:
+    for gain_ind, gain in enumerate(gain_tuple):
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-        inverse_gain = np.empty_like(gain)
+        inverse_gain = inverse_gain_tuple[gain_ind]
 
         for t in range(n_tint):
             for f in range(n_fint):
@@ -56,10 +54,6 @@ def invert_gains(gain_list):
                             inverse_gain[t, f, a, d, 2] = -g10/det
                             inverse_gain[t, f, a, d, 3] = g00/det
 
-        inverse_gain_list.append(inverse_gain)
-
-    return inverse_gain_list
-
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
@@ -71,9 +65,6 @@ def jhj_and_jhr_full(model, gain_list, residual, a1, a2, t_map_list,
     jhj = np.zeros_like(gain_list[active_term])
 
     n_gains = len(gain_list)
-
-    # with objmode():
-    #     print("0", time.time())
 
     for row in prange(n_rows):
 

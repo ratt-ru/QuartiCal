@@ -2,7 +2,7 @@
 import numpy as np
 import dask.array as da
 from math import ceil
-from cubicalv2.calibration.solver import solver, chain_solver
+from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory
 from loguru import logger  # noqa
 from numba.typed import List
@@ -32,6 +32,15 @@ def initialize_gains(*shapes):
         gain[..., ::3] = 1
 
     return gain_tuple
+
+
+def initialize_inverse_gains(*shapes):
+
+    dtype = np.complex128
+
+    inverse_gain_tuple = tuple(map(lambda s: np.empty(s, dtype=dtype), shapes))
+
+    return inverse_gain_tuple
 
 
 def combine(*mappings):
@@ -89,6 +98,8 @@ def calibrate(data_xds, opts):
         n_dir = model_col.shape[-2]
         n_row = model_col.shape[0]
         n_freq = model_col.shape[1]
+        n_chunks = data_col.numblocks[0]  # Number of chunks in row/time.
+        n_term = len(opts.solver_gain_terms)  # Number of gain terms.
 
         t_maps = []
         f_maps = []
@@ -122,12 +133,13 @@ def calibrate(data_xds, opts):
                                            dtype=freqs_per_chunk.dtype)
 
             # Determine the per-chunk gain shapes from the time a frequency
-            # intervals per chunk. Note that this used the number of
+            # intervals per chunk. Note that this uses the number of
             # correlations in the measurement set. TODO: This should depend
             # on the solver mode.
             g_shape = \
                 da.map_blocks(
-                    lambda t, f, na=None, nd=None, nc=None: np.array([t, f, na, nd, nc]),
+                    lambda t, f, na=None, nd=None, nc=None:
+                        np.array([t, f, na, nd, nc]),
                     t_int_per_chunk,
                     f_int_per_chunk,
                     na=n_ant,
@@ -155,11 +167,11 @@ def calibrate(data_xds, opts):
                 dtype=np.uint32)
             t_maps.append(t_map)
 
-        # For each chunk, stack the per-gain mappingings into a single array.
+        # For each chunk, stack the per-gain mappings into a single array.
 
-        t_map_arr = da.stack(t_maps, axis=1).rechunk({1: len(t_maps)})
+        t_map_arr = da.stack(t_maps, axis=1).rechunk({1: n_term})
 
-        f_map_arr = da.stack(f_maps, axis=1).rechunk({1: len(f_maps)})
+        f_map_arr = da.stack(f_maps, axis=1).rechunk({1: n_term})
 
         # Create a tuple of gain arrays per chunk.
 
@@ -170,13 +182,43 @@ def calibrate(data_xds, opts):
             gain_args.append(g_shape)
             gain_args.append(("rowlike",))
 
-        g_shape_arr = da.blockwise(*gain_args,
-                                   align_arrays=False,
-                                   dtype=np.complex128,
-                                   new_axes={"chan": n_freq,
-                                             "ant": n_ant,
-                                             "dir": n_dir,
-                                             "corr": opts._ms_ncorr},)
+        # We set the time and frequency chunks to nan - this is done to encode
+        # the fact that we do not know the shapes of the gains during the
+        # graph construction step.
+
+        gain_tuple = da.blockwise(
+            *gain_args,
+            align_arrays=False,
+            dtype=np.complex128,
+            new_axes={"chan": n_freq,
+                      "ant": n_ant,
+                      "dir": n_dir,
+                      "corr": opts._ms_ncorr},
+            adjust_chunks={"rowlike": (np.nan,)*n_chunks,
+                           "chan": (np.nan,)})
+
+        # Initialise the inverse gains. This is basically the same as the
+        # gains, but we init them as empty.
+        gain_args[0] = initialize_inverse_gains
+
+        inverse_gain_tuple = da.blockwise(
+            *gain_args,
+            align_arrays=False,
+            dtype=np.complex128,
+            new_axes={"chan": n_freq,
+                      "ant": n_ant,
+                      "dir": n_dir,
+                      "corr": opts._ms_ncorr},
+            adjust_chunks={"rowlike": (np.nan,)*n_chunks,
+                           "chan": (np.nan,)})
+
+        # inverse_gain_tuple = gain_tuple.map_blocks(
+        #     lambda gt: tuple(map(da.empty_like, gt)), dtype=np.complex128)
+
+        # blah = inverse_gain_tuple.map_blocks(
+        #     lambda igt: igt[1], dtype=np.complex128
+        # )
+        # print(blah.compute().shape)
 
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
@@ -186,7 +228,8 @@ def calibrate(data_xds, opts):
         gains = da.blockwise(
             chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
-            g_shape_arr, ("rowlike", "chan", "ant", "dir", "corr"),
+            gain_tuple, ("rowlike", "chan", "ant", "dir", "corr"),
+            inverse_gain_tuple, ("rowlike", "chan", "ant", "dir", "corr"),
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
@@ -195,7 +238,6 @@ def calibrate(data_xds, opts):
             compute_jhj_and_jhr, None,
             compute_update, None,
             concatenate=True,
-            new_axes={"ant": n_ant},
             dtype=model_col.dtype,
             align_arrays=False,)
 
