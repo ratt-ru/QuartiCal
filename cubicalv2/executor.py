@@ -3,8 +3,9 @@
 import cubicalv2.logging.init_logger  # noqa
 from loguru import logger
 from cubicalv2.parser import parser, preprocess
-from cubicalv2.data_handling import ms_handler, model_handler
-from cubicalv2.calibration.calibrate import calibrate
+from cubicalv2.data_handling.ms_handler import read_ms
+from cubicalv2.data_handling.model_handler import add_model_graph
+from cubicalv2.calibration.calibrate import add_calibration_graph
 import dask.array as da
 import time
 from dask.diagnostics import ProgressBar
@@ -29,35 +30,32 @@ def execute():
     preprocess.preprocess_opts(opts)
 
     if opts.parallel_scheduler == "distributed":
+        logger.info("Initializing distributed client.")
         client = Client(processes=False,                            # noqa
                         n_workers=opts.parallel_nworker,
                         threads_per_worker=opts.parallel_nthread)
-        logger.info("Initializing distributed client.")
-
-    # Give opts to the data handler, which returns a list of xarray data sets.
+        logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
-    ms_xds = ms_handler.read_ms(opts)
+
+    # Reads the measurement set using the relavant configuration from opts.
+    ms_xds = read_ms(opts)
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
+    model_xds = add_model_graph(ms_xds, opts)
 
-    model_xds = model_handler.make_model(ms_xds, opts)
+    gains_per_xds = add_calibration_graph(model_xds, opts)
 
-    # print(model_xds[0].MODEL_DATA.compute()[0,0,:,:])
-    # print(model_xds[0].PREDICTED_DATA.compute())
-
-    gains_per_xds, updated_data_xds = calibrate(model_xds, opts)
-
-    write_columns = ms_handler.write_ms(updated_data_xds, opts)
+    # write_columns = ms_handler.write_ms(updated_data_xds, opts)
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()
     with ProgressBar():
-        gains, _ = da.compute(gains_per_xds,
-                              write_columns,
-                              # scheduler="sync")
-                              num_workers=opts.parallel_nthread)
+        gains = da.compute(gains_per_xds,
+                           # write_columns,
+                           # scheduler="sync")
+                           num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
     # print(gains, gains[0].shape)

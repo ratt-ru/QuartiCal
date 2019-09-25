@@ -5,7 +5,6 @@ from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory
 from loguru import logger  # noqa
-from numba.typed import List
 
 # Defines which solver modes are supported given the number of correlations
 # in the measurement set. If a mode is supported, this dictionary contains
@@ -34,9 +33,22 @@ def initialize_gains(*shapes):
     return gain_tuple
 
 
-def calibrate(data_xds, opts):
+def add_calibration_graph(data_xds, opts):
+    """Given data graph and options, adds the steps necessary for calibration.
 
-    # Calibrate per xds. This list will likely consist of an xds per SPW per
+    Extends the data graph with the steps necessary to perform gain
+    calibration and in accordance with the options Namespace.
+
+    Args:
+        data_xds: A list of xarray data sets/graphs providing input data.
+        opts: A Namespace object containing all necessary configuration.
+
+    Returns:
+        A dictionary of lists containing graphs which prodcuce a gain array
+        per gain term per xarray dataset.
+    """
+
+    # Calibrate per xds. This list will likely consist of an xds per SPW, per
     # scan. This behaviour can be changed.
 
     corr_slice = slice_scheme[opts._ms_ncorr].get(opts.solver_mode, None)
@@ -71,17 +83,14 @@ def calibrate(data_xds, opts):
                                  chunks=(1,),
                                  dtype=utime_ind.dtype)
 
-        # Time/frquency solution intervals. These will ultimately live on opts.
-        # This needs to be modified to work for a Jones chain. I want to crate
-        # time and frequency mapppings per gain term.
-
+        # Set up some values relating to problem dimensions.
         n_ant = opts._n_ant
-        n_dir = model_col.shape[-2]
-        n_row = model_col.shape[0]
-        n_freq = model_col.shape[1]
+        n_row, n_freq, n_dir, _ = model_col.shape
         n_chunks = data_col.numblocks[0]  # Number of chunks in row/time.
         n_term = len(opts.solver_gain_terms)  # Number of gain terms.
 
+        # Initialise some empty lists onto which we can append associated
+        # mappings/dimensions.
         t_maps = []
         f_maps = []
         g_shapes = []
@@ -90,6 +99,7 @@ def calibrate(data_xds, opts):
 
             atomic_t_int = getattr(opts, "{}_time_interval".format(term))
             atomic_f_int = getattr(opts, "{}_freq_interval".format(term))
+            dd_term = getattr(opts, "{}_direction_dependent".format(term))
 
             # The or handles intervals specified as zero. These are assumed to
             # be solved aross an entire chunk. n_row is >> number of unique
@@ -97,7 +107,7 @@ def calibrate(data_xds, opts):
             t_int = da.full_like(utime_per_chunk, atomic_t_int or n_row)
             f_int = da.full_like(utime_per_chunk, atomic_f_int or n_freq)
 
-            freqs_per_chunk = da.full_like(utime_per_chunk, model_col.shape[1])
+            freqs_per_chunk = da.full_like(utime_per_chunk, n_freq)
 
             # Number of time intervals per data chunk.
             t_int_per_chunk = \
@@ -113,7 +123,7 @@ def calibrate(data_xds, opts):
                                            chunks=(1,),
                                            dtype=freqs_per_chunk.dtype)
 
-            # Determine the per-chunk gain shapes from the time a frequency
+            # Determine the per-chunk gain shapes from the time and frequency
             # intervals per chunk. Note that this uses the number of
             # correlations in the measurement set. TODO: This should depend
             # on the solver mode.
@@ -124,11 +134,19 @@ def calibrate(data_xds, opts):
                     t_int_per_chunk,
                     f_int_per_chunk,
                     na=n_ant,
-                    nd=n_dir,
+                    nd=n_dir if dd_term else 1,
                     nc=opts._ms_ncorr,
                     meta=np.empty((0, 0, 0, 0, 0), dtype=np.int32),
                     dtype=np.int32)
             g_shapes.append(g_shape)
+
+            # Generate a mapping between time at data resolution and time
+            # intervals.
+            t_map = utime_ind.map_blocks(
+                lambda t, t_i: t//t_i, t_int,
+                chunks=utime_ind.chunks,
+                dtype=np.uint32)
+            t_maps.append(t_map)
 
             # Generate a mapping between frequency at data resolution and
             # frequency intervals. This currently presumes that we don't chunk
@@ -140,22 +158,11 @@ def calibrate(data_xds, opts):
                 dtype=np.uint32)
             f_maps.append(f_map)
 
-            # Generate a mapping between time at data resolution and time
-            # intervals.
-            t_map = utime_ind.map_blocks(
-                lambda t, t_i: t//t_i, t_int,
-                chunks=utime_ind.chunks,
-                dtype=np.uint32)
-            t_maps.append(t_map)
-
         # For each chunk, stack the per-gain mappings into a single array.
-
         t_map_arr = da.stack(t_maps, axis=1).rechunk({1: n_term})
-
         f_map_arr = da.stack(f_maps, axis=1).rechunk({1: n_term})
 
         # Create a tuple of gain arrays per chunk.
-
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
         gain_args = [initialize_gains, gain_schema]
 
@@ -166,7 +173,6 @@ def calibrate(data_xds, opts):
         # We set the time and frequency chunks to nan - this is done to encode
         # the fact that we do not know the shapes of the gains during the
         # graph construction step.
-
         gain_tuple = da.blockwise(
             *gain_args,
             align_arrays=False,
@@ -179,17 +185,20 @@ def calibrate(data_xds, opts):
                            "chan": (np.nan,)})
 
         # Initialise the inverse gains. This is basically the same as the
-        # gains, but we init them as empty. We init these outsid ethe solver
-        # as tuples are notoriously difficult to contruct in nopython mode.
+        # gains, but we init them as empty. We init these outside the solver
+        # as tuples are notoriously difficult to construct in nopython mode.
         inverse_gain_tuple = gain_tuple.map_blocks(
             lambda gt: tuple(map(np.empty_like, gt)),
             dtype=np.complex128)
 
+        # We use a factory function to produce appropraite update functions
+        # for use in the solver. TODO: Investigate using generated jit for this
+        # purpose.
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
 
         # Gains will not report its size or chunks correctly - this is because
-        # we do not know their shapes in advance.
+        # we do not know their shapes during graph construction.
         gains = da.blockwise(
             chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
@@ -212,9 +221,9 @@ def calibrate(data_xds, opts):
 
         # This is an example of updating the contents of and xds. TODO: Use
         # this for writing out data.
-        bitflag_col = da.ones_like(bitflag_col)*10
-        data_xds[xds_ind] = \
-            xds.assign({"BITFLAG": (xds.BITFLAG.dims, bitflag_col)})
+        # bitflag_col = da.ones_like(bitflag_col)*10
+        # data_xds[xds_ind] = \
+        #     xds.assign({"BITFLAG": (xds.BITFLAG.dims, bitflag_col)})
 
     # Return the resulting graphs for the gains and updated xds.
-    return gains_per_xds, data_xds
+    return gains_per_xds

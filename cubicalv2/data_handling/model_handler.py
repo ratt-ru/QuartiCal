@@ -4,7 +4,7 @@ from cubicalv2.data_handling.predict import predict
 from loguru import logger
 
 
-def make_model(ms_xds, opts):
+def add_model_graph(ms_xds, opts):
     """Creates the graph necessary to produce a model per xds.
 
     Given a list of input xarray data sets and the options, constructs a graph
