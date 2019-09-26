@@ -55,7 +55,7 @@ def invert_gains(gain_tuple, inverse_gain_tuple):
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
-                     t_map_arr, f_map_arr, active_term):
+                     t_map_arr, f_map_arr, d_map_arr, active_term):
 
     n_rows, n_chan, n_dir, _ = model.shape
 
@@ -73,6 +73,8 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
             r = residual[row, f]
 
             for d in range(n_dir):
+
+                out_d = d_map_arr[active_term, d]
 
                 r00 = r[0]
                 r01 = r[1]
@@ -98,9 +100,10 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
 
                 for g in range(n_gains):
 
+                    d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    gb = gain_tuple[g][t_m, f_m, a2_m, d]
+                    gb = gain_tuple[g][t_m, f_m, a2_m, d_m]
 
                     g00 = gb[0]
                     g01 = gb[1]
@@ -119,9 +122,10 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
 
                 for g in range(n_gains - 1, active_term, -1):
 
+                    d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    ga = gain_tuple[g][t_m, f_m, a1_m, d]
+                    ga = gain_tuple[g][t_m, f_m, a1_m, d_m]
 
                     gh00 = ga[0].conjugate()
                     gh01 = ga[2].conjugate()
@@ -140,9 +144,10 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
 
                 for g in range(active_term - 1, -1, -1):
 
+                    d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    gai = inverse_gain_tuple[g][t_m, f_m, a1_m, d]
+                    gai = inverse_gain_tuple[g][t_m, f_m, a1_m, d_m]
 
                     ginv00 = gai[0]
                     ginv01 = gai[1]
@@ -167,21 +172,22 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
                 j10 = jh01.conjugate()
                 j11 = jh11.conjugate()
 
-                jhr[t_m, f_m, a1_m, d, 0] += (r00*jh00 + r01*jh10)
-                jhr[t_m, f_m, a1_m, d, 1] += (r00*jh01 + r01*jh11)
-                jhr[t_m, f_m, a1_m, d, 2] += (r10*jh00 + r11*jh10)
-                jhr[t_m, f_m, a1_m, d, 3] += (r10*jh01 + r11*jh11)
+                jhr[t_m, f_m, a1_m, out_d, 0] += (r00*jh00 + r01*jh10)
+                jhr[t_m, f_m, a1_m, out_d, 1] += (r00*jh01 + r01*jh11)
+                jhr[t_m, f_m, a1_m, out_d, 2] += (r10*jh00 + r11*jh10)
+                jhr[t_m, f_m, a1_m, out_d, 3] += (r10*jh01 + r11*jh11)
 
-                jhj[t_m, f_m, a1_m, d, 0] += (j00*jh00 + j01*jh10)
-                jhj[t_m, f_m, a1_m, d, 1] += (j00*jh01 + j01*jh11)
-                jhj[t_m, f_m, a1_m, d, 2] += (j10*jh00 + j11*jh10)
-                jhj[t_m, f_m, a1_m, d, 3] += (j10*jh01 + j11*jh11)
+                jhj[t_m, f_m, a1_m, out_d, 0] += (j00*jh00 + j01*jh10)
+                jhj[t_m, f_m, a1_m, out_d, 1] += (j00*jh01 + j01*jh11)
+                jhj[t_m, f_m, a1_m, out_d, 2] += (j10*jh00 + j11*jh10)
+                jhj[t_m, f_m, a1_m, out_d, 3] += (j10*jh01 + j11*jh11)
 
                 for g in range(n_gains):
 
+                    d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    ga = gain_tuple[g][t_m, f_m, a1_m, d]
+                    ga = gain_tuple[g][t_m, f_m, a1_m, d_m]
 
                     g00 = ga[0]
                     g01 = ga[1]
@@ -200,9 +206,10 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
 
                 for g in range(n_gains - 1, active_term, -1):
 
+                    d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    gb = gain_tuple[g][t_m, f_m, a2_m, d]
+                    gb = gain_tuple[g][t_m, f_m, a2_m, d_m]
 
                     gh00 = gb[0].conjugate()
                     gh01 = gb[2].conjugate()
@@ -221,9 +228,10 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
 
                 for g in range(active_term - 1, -1, -1):
 
+                    d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    gbi = inverse_gain_tuple[g][t_m, f_m, a2_m, d]
+                    gbi = inverse_gain_tuple[g][t_m, f_m, a2_m, d_m]
 
                     ginv00 = gbi[0]
                     ginv01 = gbi[1]
@@ -248,15 +256,15 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
                 j10 = jh01.conjugate()
                 j11 = jh11.conjugate()
 
-                jhr[t_m, f_m, a2_m, d, 0] += (rh00*jh00 + rh01*jh10)
-                jhr[t_m, f_m, a2_m, d, 1] += (rh00*jh01 + rh01*jh11)
-                jhr[t_m, f_m, a2_m, d, 2] += (rh10*jh00 + rh11*jh10)
-                jhr[t_m, f_m, a2_m, d, 3] += (rh10*jh01 + rh11*jh11)
+                jhr[t_m, f_m, a2_m, out_d, 0] += (rh00*jh00 + rh01*jh10)
+                jhr[t_m, f_m, a2_m, out_d, 1] += (rh00*jh01 + rh01*jh11)
+                jhr[t_m, f_m, a2_m, out_d, 2] += (rh10*jh00 + rh11*jh10)
+                jhr[t_m, f_m, a2_m, out_d, 3] += (rh10*jh01 + rh11*jh11)
 
-                jhj[t_m, f_m, a2_m, d, 0] += (j00*jh00 + j01*jh10)
-                jhj[t_m, f_m, a2_m, d, 1] += (j00*jh01 + j01*jh11)
-                jhj[t_m, f_m, a2_m, d, 2] += (j10*jh00 + j11*jh10)
-                jhj[t_m, f_m, a2_m, d, 3] += (j10*jh01 + j11*jh11)
+                jhj[t_m, f_m, a2_m, out_d, 0] += (j00*jh00 + j01*jh10)
+                jhj[t_m, f_m, a2_m, out_d, 1] += (j00*jh01 + j01*jh11)
+                jhj[t_m, f_m, a2_m, out_d, 2] += (j10*jh00 + j11*jh10)
+                jhj[t_m, f_m, a2_m, out_d, 3] += (j10*jh01 + j11*jh11)
 
     return jhj, jhr
 
@@ -302,3 +310,60 @@ def update_full(jhj, jhr):
                     update[t, f, a, d, 3] = (jhr10*jhjinv01 + jhr11*jhjinv11)
 
     return update
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def residual_full(data, model, gain_tuple, a1, a2, t_map_arr, f_map_arr,
+                  d_map_arr):
+
+    residual = data.copy()
+
+    n_rows, n_chan, n_dir, _ = model.shape
+    n_gains = len(gain_tuple)
+
+    for row in prange(n_rows):
+
+        a1_m, a2_m = a1[row], a2[row]
+
+        for f in range(n_chan):
+            for d in range(n_dir):
+
+                m00 = model[row, f, d, 0]
+                m01 = model[row, f, d, 1]
+                m10 = model[row, f, d, 2]
+                m11 = model[row, f, d, 3]
+
+                for g in range(n_gains):
+
+                    d_m = d_map_arr[g, d]  # Broadcast dir.
+                    t_m = t_map_arr[row, g]
+                    f_m = f_map_arr[f, g]
+
+                    gain = gain_tuple[g]
+
+                    g00 = gain[t_m, f_m, a1_m, d_m, 0]
+                    g01 = gain[t_m, f_m, a1_m, d_m, 1]
+                    g10 = gain[t_m, f_m, a1_m, d_m, 2]
+                    g11 = gain[t_m, f_m, a1_m, d_m, 3]
+
+                    gh00 = gain[t_m, f_m, a2_m, d_m, 0].conjugate()
+                    gh01 = gain[t_m, f_m, a2_m, d_m, 2].conjugate()
+                    gh10 = gain[t_m, f_m, a2_m, d_m, 1].conjugate()
+                    gh11 = gain[t_m, f_m, a2_m, d_m, 3].conjugate()
+
+                    r00 = ((g00*m00 + g01*m10)*gh00 + (g00*m01 + g01*m11)*gh10)
+                    r01 = ((g00*m00 + g01*m10)*gh01 + (g00*m01 + g01*m11)*gh11)
+                    r10 = ((g10*m00 + g11*m10)*gh00 + (g10*m01 + g11*m11)*gh10)
+                    r11 = ((g10*m00 + g11*m10)*gh01 + (g10*m01 + g11*m11)*gh11)
+
+                    m00 = r00
+                    m01 = r01
+                    m10 = r10
+                    m11 = r11
+
+                residual[row, f, 0] -= r00
+                residual[row, f, 1] -= r01
+                residual[row, f, 2] -= r10
+                residual[row, f, 3] -= r11
+
+    return residual

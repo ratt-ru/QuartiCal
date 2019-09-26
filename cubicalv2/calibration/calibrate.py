@@ -64,7 +64,7 @@ def add_calibration_graph(data_xds, opts):
 
         # Unpack the data on the xds into variables with understandable names.
         data_col = xds.DATA.data[..., corr_slice]
-        model_col = xds.MODEL_DATA.data[..., corr_slice]
+        raw_model_col = xds.MODEL_DATA.data[..., corr_slice]
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         time_col = xds.TIME.data
@@ -72,6 +72,11 @@ def add_calibration_graph(data_xds, opts):
         flag_row_col = xds.FLAG_ROW.data
         bitflag_col = xds.BITFLAG.data[..., corr_slice]
         bitflag_row_col = xds.BITFLAG_ROW.data
+
+        data_col = data_col.map_blocks(
+            lambda d, f: np.where(f == 1, 0, d), flag_col)
+        model_col = raw_model_col.map_blocks(
+            lambda m, f: np.where(f == 1, 0, m), flag_col[:, :, None, :])
 
         # Convert the time column data into indices.
         utime_ind = \
@@ -94,6 +99,7 @@ def add_calibration_graph(data_xds, opts):
         t_maps = []
         f_maps = []
         g_shapes = []
+        d_maps = []
 
         for term in opts.solver_gain_terms:
 
@@ -158,9 +164,12 @@ def add_calibration_graph(data_xds, opts):
                 dtype=np.uint32)
             f_maps.append(f_map)
 
+            d_maps.append(list(range(n_dir)) if dd_term else [0]*n_dir)
+
         # For each chunk, stack the per-gain mappings into a single array.
         t_map_arr = da.stack(t_maps, axis=1).rechunk({1: n_term})
         f_map_arr = da.stack(f_maps, axis=1).rechunk({1: n_term})
+        d_map_arr = np.array(d_maps, dtype=np.uint32)
 
         # Create a tuple of gain arrays per chunk.
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
@@ -209,6 +218,7 @@ def add_calibration_graph(data_xds, opts):
             ant2_col, ("rowlike",),
             t_map_arr, ("rowlike", "term"),
             f_map_arr, ("rowlike", "term"),
+            d_map_arr, None,
             compute_jhj_and_jhr, None,
             compute_update, None,
             concatenate=True,
