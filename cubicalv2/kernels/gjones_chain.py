@@ -351,10 +351,15 @@ def residual_full(data, model, gain_tuple, a1, a2, t_map_arr, f_map_arr,
                     gh10 = gain[t_m, f_m, a2_m, d_m, 1].conjugate()
                     gh11 = gain[t_m, f_m, a2_m, d_m, 3].conjugate()
 
-                    r00 = ((g00*m00 + g01*m10)*gh00 + (g00*m01 + g01*m11)*gh10)
-                    r01 = ((g00*m00 + g01*m10)*gh01 + (g00*m01 + g01*m11)*gh11)
-                    r10 = ((g10*m00 + g11*m10)*gh00 + (g10*m01 + g11*m11)*gh10)
-                    r11 = ((g10*m00 + g11*m10)*gh01 + (g10*m01 + g11*m11)*gh11)
+                    gm00 = (g00*m00 + g01*m10)
+                    gm01 = (g00*m01 + g01*m11)
+                    gm10 = (g10*m00 + g11*m10)
+                    gm11 = (g10*m01 + g11*m11)
+
+                    r00 = (gm00*gh00 + gm01*gh10)
+                    r01 = (gm00*gh01 + gm01*gh11)
+                    r10 = (gm10*gh00 + gm11*gh10)
+                    r11 = (gm10*gh01 + gm11*gh11)
 
                     m00 = r00
                     m01 = r01

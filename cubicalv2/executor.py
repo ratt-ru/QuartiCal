@@ -54,8 +54,8 @@ def execute():
     with ProgressBar():
         gains = da.compute(gains_per_xds,
                            # write_columns,
-                           scheduler="sync")
-                        #    num_workers=opts.parallel_nthread)
+                           # scheduler="sync")
+                           num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
     # print(gains[0]["G"][0])
