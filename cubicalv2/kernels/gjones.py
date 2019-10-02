@@ -111,7 +111,7 @@ def update_full(jhj, jhr):
 
                     det = (jhj00*jhj11 - jhj01*jhj10)
 
-                    if det == 0:
+                    if det.real < 1e-6:
                         jhjinv00 = 0
                         jhjinv01 = 0
                         jhjinv10 = 0
