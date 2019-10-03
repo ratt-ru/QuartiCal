@@ -11,7 +11,7 @@ input-ms:
     weight-column:
         type: str
         help: Column to read weights from. Weights are applied by default.
-              Specify an empty string to disable.
+              Specify UNITY to disable.
         default: WEIGHT_SPECTRUM
     time-chunk:
         type: TIME

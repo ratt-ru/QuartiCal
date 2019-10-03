@@ -6,7 +6,7 @@ import numpy as np
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
-def chain_solver(model, gain_tuple, inverse_gain_tuple, data, a1, a2,
+def chain_solver(model, gain_tuple, inverse_gain_tuple, data, a1, a2, weights,
                  t_map_arr, f_map_arr, d_map_arr, compute_jhj_and_jhr,
                  compute_update):
 
@@ -30,6 +30,7 @@ def chain_solver(model, gain_tuple, inverse_gain_tuple, data, a1, a2,
                                            residual,
                                            a1,
                                            a2,
+                                           weights,
                                            t_map_arr,
                                            f_map_arr,
                                            d_map_arr,
