@@ -5,6 +5,7 @@ from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory
 from loguru import logger  # noqa
+from numba.typed import List
 
 # Defines which solver modes are supported given the number of correlations
 # in the measurement set. If a mode is supported, this dictionary contains
@@ -25,12 +26,12 @@ def initialize_gains(*shapes):
 
     dtype = np.complex128
 
-    gain_tuple = tuple(map(lambda s: np.zeros(s, dtype=dtype), shapes))
+    gain_list = list(map(lambda s: np.zeros(s, dtype=dtype), shapes))
 
-    for gain in gain_tuple:
+    for gain in gain_list:
         gain[..., ::3] = 1
 
-    return gain_tuple
+    return gain_list
 
 
 def add_calibration_graph(data_xds, opts):
@@ -189,7 +190,7 @@ def add_calibration_graph(data_xds, opts):
         # We set the time and frequency chunks to nan - this is done to encode
         # the fact that we do not know the shapes of the gains during the
         # graph construction step.
-        gain_tuple = da.blockwise(
+        gain_list = da.blockwise(
             *gain_args,
             align_arrays=False,
             dtype=np.complex128,
@@ -203,8 +204,8 @@ def add_calibration_graph(data_xds, opts):
         # Initialise the inverse gains. This is basically the same as the
         # gains, but we init them as empty. We init these outside the solver
         # as tuples are notoriously difficult to construct in nopython mode.
-        inverse_gain_tuple = gain_tuple.map_blocks(
-            lambda gt: tuple(map(np.empty_like, gt)),
+        inverse_gain_list = gain_list.map_blocks(
+            lambda gt: list(map(np.empty_like, gt)),
             dtype=np.complex128)
 
         # We use a factory function to produce appropraite update functions
@@ -218,8 +219,8 @@ def add_calibration_graph(data_xds, opts):
         gains = da.blockwise(
             chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
-            gain_tuple, ("rowlike", "chan", "ant", "dir", "corr"),
-            inverse_gain_tuple, ("rowlike", "chan", "ant", "dir", "corr"),
+            gain_list, ("rowlike", "chan", "ant", "dir", "corr"),
+            inverse_gain_list, ("rowlike", "chan", "ant", "dir", "corr"),
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
