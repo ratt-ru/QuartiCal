@@ -55,12 +55,15 @@ def invert_gains(gain_tuple, inverse_gain_tuple):
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
-                     t_map_arr, f_map_arr, d_map_arr, active_term):
+                     weights, t_map_arr, f_map_arr, d_map_arr, active_term):
 
     n_rows, n_chan, n_dir, _ = model.shape
 
     jhr = np.zeros_like(gain_tuple[active_term])
     jhj = np.zeros_like(gain_tuple[active_term])
+
+    n_weight_chan = weights.shape[1]
+    weight_f_map = [i % n_weight_chan for i in range(n_chan)]
 
     n_gains = len(gain_tuple)
 
@@ -71,20 +74,26 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
         for f in range(n_chan):
 
             r = residual[row, f]
+            w = weights[row, weight_f_map[f]]  # Consider a map?
+
+            w0 = w[0]
+            # w1 = w[1]  # We do not use the off diagonal weights.
+            # w2 = w[2]  # We do not use the off diagonal weights.
+            w3 = w[3]
 
             for d in range(n_dir):
 
                 out_d = d_map_arr[active_term, d]
 
-                r00 = r[0]
-                r01 = r[1]
-                r10 = r[2]
-                r11 = r[3]
+                r00 = w0*r[0]
+                r01 = w0*r[1]
+                r10 = w3*r[2]
+                r11 = w3*r[3]
 
-                rh00 = r[0].conjugate()
-                rh01 = r[2].conjugate()
-                rh10 = r[1].conjugate()
-                rh11 = r[3].conjugate()
+                rh00 = r00.conjugate()
+                rh01 = r10.conjugate()
+                rh10 = r01.conjugate()
+                rh11 = r11.conjugate()
 
                 m = model[row, f, d]
 
@@ -177,10 +186,10 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
                 jhr[t_m, f_m, a1_m, out_d, 2] += (r10*jh00 + r11*jh10)
                 jhr[t_m, f_m, a1_m, out_d, 3] += (r10*jh01 + r11*jh11)
 
-                jhj[t_m, f_m, a1_m, out_d, 0] += (j00*jh00 + j01*jh10)
-                jhj[t_m, f_m, a1_m, out_d, 1] += (j00*jh01 + j01*jh11)
-                jhj[t_m, f_m, a1_m, out_d, 2] += (j10*jh00 + j11*jh10)
-                jhj[t_m, f_m, a1_m, out_d, 3] += (j10*jh01 + j11*jh11)
+                jhj[t_m, f_m, a1_m, out_d, 0] += (j00*w0*jh00 + j01*w3*jh10)
+                jhj[t_m, f_m, a1_m, out_d, 1] += (j00*w0*jh01 + j01*w3*jh11)
+                jhj[t_m, f_m, a1_m, out_d, 2] += (j10*w0*jh00 + j11*w3*jh10)
+                jhj[t_m, f_m, a1_m, out_d, 3] += (j10*w0*jh01 + j11*w3*jh11)
 
                 for g in range(n_gains):
 
@@ -261,10 +270,10 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
                 jhr[t_m, f_m, a2_m, out_d, 2] += (rh10*jh00 + rh11*jh10)
                 jhr[t_m, f_m, a2_m, out_d, 3] += (rh10*jh01 + rh11*jh11)
 
-                jhj[t_m, f_m, a2_m, out_d, 0] += (j00*jh00 + j01*jh10)
-                jhj[t_m, f_m, a2_m, out_d, 1] += (j00*jh01 + j01*jh11)
-                jhj[t_m, f_m, a2_m, out_d, 2] += (j10*jh00 + j11*jh10)
-                jhj[t_m, f_m, a2_m, out_d, 3] += (j10*jh01 + j11*jh11)
+                jhj[t_m, f_m, a2_m, out_d, 0] += (j00*w0*jh00 + j01*w3*jh10)
+                jhj[t_m, f_m, a2_m, out_d, 1] += (j00*w0*jh01 + j01*w3*jh11)
+                jhj[t_m, f_m, a2_m, out_d, 2] += (j10*w0*jh00 + j11*w3*jh10)
+                jhj[t_m, f_m, a2_m, out_d, 3] += (j10*w0*jh01 + j11*w3*jh11)
 
     return jhj, jhr
 

@@ -92,6 +92,20 @@ def read_ms(opts):
     logger.info("BITFLAG_ROW column {} present.",
                 "is" if opts._bitflagrow_exists else "isn't")
 
+    # Check whether the specified weight column exists. If not, log a warning
+    # and fall back to unity weights.
+
+    opts._unity_weights = opts.input_ms_weight_column.lower() == "unity"
+
+    if not opts._unity_weights:
+        try:
+            xds_from_ms(opts.input_ms_name,
+                        columns=(opts.input_ms_weight_column))
+        except RuntimeError:
+            logger.warning("Specified weight column was not found/understood. "
+                           "Falling back to unity weights.")
+            opts._unity_weights = True
+
     # row_chunks is a list of dictionaries containing row chunks per data set.
 
     row_chunks_per_xds = []
@@ -149,6 +163,8 @@ def read_ms(opts):
     extra_columns = tuple(opts._model_columns)
     extra_columns += ("BITFLAG",) if opts._bitflag_exists else ()
     extra_columns += ("BITFLAG_ROW",) if opts._bitflagrow_exists else ()
+    extra_columns += (opts.input_ms_weight_column,) if \
+        not opts._unity_weights else ()
 
     data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "FLAG", "FLAG_ROW",
                     "UVW") + extra_columns

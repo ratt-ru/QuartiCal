@@ -5,6 +5,7 @@ from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory
 from loguru import logger  # noqa
+from numba.typed import List
 
 # Defines which solver modes are supported given the number of correlations
 # in the measurement set. If a mode is supported, this dictionary contains
@@ -25,12 +26,12 @@ def initialize_gains(*shapes):
 
     dtype = np.complex128
 
-    gain_tuple = tuple(map(lambda s: np.zeros(s, dtype=dtype), shapes))
+    gain_list = list(map(lambda s: np.zeros(s, dtype=dtype), shapes))
 
-    for gain in gain_tuple:
+    for gain in gain_list:
         gain[..., ::3] = 1
 
-    return gain_tuple
+    return gain_list
 
 
 def add_calibration_graph(data_xds, opts):
@@ -72,11 +73,18 @@ def add_calibration_graph(data_xds, opts):
         flag_row_col = xds.FLAG_ROW.data
         bitflag_col = xds.BITFLAG.data[..., corr_slice]
         bitflag_row_col = xds.BITFLAG_ROW.data
+        if opts._unity_weights:
+            weight_col = da.ones_like(data_col[:, :1, :], dtype=np.float32)
+        else:
+            weight_col = xds[opts.input_ms_weight_column].data[..., corr_slice]
 
         data_col = data_col.map_blocks(
             lambda d, f: np.where(f == 1, 0, d), flag_col)
         model_col = raw_model_col.map_blocks(
             lambda m, f: np.where(f == 1, 0, m), flag_col[:, :, None, :])
+        if weight_col.ndim == 2:
+            weight_col = weight_col.map_blocks(
+                lambda w: np.expand_dims(w, 1), new_axis=1)
 
         # Convert the time column data into indices.
         utime_ind = \
@@ -182,7 +190,7 @@ def add_calibration_graph(data_xds, opts):
         # We set the time and frequency chunks to nan - this is done to encode
         # the fact that we do not know the shapes of the gains during the
         # graph construction step.
-        gain_tuple = da.blockwise(
+        gain_list = da.blockwise(
             *gain_args,
             align_arrays=False,
             dtype=np.complex128,
@@ -196,8 +204,8 @@ def add_calibration_graph(data_xds, opts):
         # Initialise the inverse gains. This is basically the same as the
         # gains, but we init them as empty. We init these outside the solver
         # as tuples are notoriously difficult to construct in nopython mode.
-        inverse_gain_tuple = gain_tuple.map_blocks(
-            lambda gt: tuple(map(np.empty_like, gt)),
+        inverse_gain_list = gain_list.map_blocks(
+            lambda gt: list(map(np.empty_like, gt)),
             dtype=np.complex128)
 
         # We use a factory function to produce appropraite update functions
@@ -211,11 +219,12 @@ def add_calibration_graph(data_xds, opts):
         gains = da.blockwise(
             chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
-            gain_tuple, ("rowlike", "chan", "ant", "dir", "corr"),
-            inverse_gain_tuple, ("rowlike", "chan", "ant", "dir", "corr"),
+            gain_list, ("rowlike", "chan", "ant", "dir", "corr"),
+            inverse_gain_list, ("rowlike", "chan", "ant", "dir", "corr"),
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
+            weight_col, ("rowlike", "chan", "corr"),
             t_map_arr, ("rowlike", "term"),
             f_map_arr, ("rowlike", "term"),
             d_map_arr, None,
