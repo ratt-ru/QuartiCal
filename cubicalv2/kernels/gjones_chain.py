@@ -21,13 +21,13 @@ def update_func_factory(mode):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def invert_gains(gain_tuple, inverse_gain_tuple):
+def invert_gains(gain_list, inverse_gain_list):
 
-    for gain_ind, gain in enumerate(gain_tuple):
+    for gain_ind, gain in enumerate(gain_list):
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-        inverse_gain = inverse_gain_tuple[gain_ind]
+        inverse_gain = inverse_gain_list[gain_ind]
 
         for t in range(n_tint):
             for f in range(n_fint):
@@ -54,18 +54,15 @@ def invert_gains(gain_tuple, inverse_gain_tuple):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
+def jhj_and_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
                      weights, t_map_arr, f_map_arr, d_map_arr, active_term):
 
     n_rows, n_chan, n_dir, _ = model.shape
 
-    jhr = np.zeros_like(gain_tuple[active_term])
-    jhj = np.zeros_like(gain_tuple[active_term])
+    jhr = np.zeros_like(gain_list[active_term])
+    jhj = np.zeros_like(gain_list[active_term])
 
-    n_weight_chan = weights.shape[1]
-    weight_f_map = [i % n_weight_chan for i in range(n_chan)]
-
-    n_gains = len(gain_tuple)
+    n_gains = len(gain_list)
 
     for row in prange(n_rows):
 
@@ -74,7 +71,7 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
         for f in range(n_chan):
 
             r = residual[row, f]
-            w = weights[row, weight_f_map[f]]  # Consider a map?
+            w = weights[row, f]  # Consider a map?
 
             w0 = w[0]
             # w1 = w[1]  # We do not use the off diagonal weights.
@@ -112,7 +109,7 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    gb = gain_tuple[g][t_m, f_m, a2_m, d_m]
+                    gb = gain_list[g][t_m, f_m, a2_m, d_m]
 
                     g00 = gb[0]
                     g01 = gb[1]
@@ -134,7 +131,7 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    ga = gain_tuple[g][t_m, f_m, a1_m, d_m]
+                    ga = gain_list[g][t_m, f_m, a1_m, d_m]
 
                     gh00 = ga[0].conjugate()
                     gh01 = ga[2].conjugate()
@@ -156,7 +153,7 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    gai = inverse_gain_tuple[g][t_m, f_m, a1_m, d_m]
+                    gai = inverse_gain_list[g][t_m, f_m, a1_m, d_m]
 
                     ginv00 = gai[0]
                     ginv01 = gai[1]
@@ -196,7 +193,7 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    ga = gain_tuple[g][t_m, f_m, a1_m, d_m]
+                    ga = gain_list[g][t_m, f_m, a1_m, d_m]
 
                     g00 = ga[0]
                     g01 = ga[1]
@@ -218,7 +215,7 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    gb = gain_tuple[g][t_m, f_m, a2_m, d_m]
+                    gb = gain_list[g][t_m, f_m, a2_m, d_m]
 
                     gh00 = gb[0].conjugate()
                     gh01 = gb[2].conjugate()
@@ -240,7 +237,7 @@ def jhj_and_jhr_full(model, gain_tuple, inverse_gain_tuple, residual, a1, a2,
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
-                    gbi = inverse_gain_tuple[g][t_m, f_m, a2_m, d_m]
+                    gbi = inverse_gain_list[g][t_m, f_m, a2_m, d_m]
 
                     ginv00 = gbi[0]
                     ginv01 = gbi[1]
@@ -322,13 +319,13 @@ def update_full(jhj, jhr):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def residual_full(data, model, gain_tuple, a1, a2, t_map_arr, f_map_arr,
+def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                   d_map_arr):
 
     residual = data.copy()
 
     n_rows, n_chan, n_dir, _ = model.shape
-    n_gains = len(gain_tuple)
+    n_gains = len(gain_list)
 
     for row in prange(n_rows):
 
@@ -348,7 +345,7 @@ def residual_full(data, model, gain_tuple, a1, a2, t_map_arr, f_map_arr,
                     t_m = t_map_arr[row, g]
                     f_m = f_map_arr[f, g]
 
-                    gain = gain_tuple[g]
+                    gain = gain_list[g]
 
                     g00 = gain[t_m, f_m, a1_m, d_m, 0]
                     g01 = gain[t_m, f_m, a1_m, d_m, 1]

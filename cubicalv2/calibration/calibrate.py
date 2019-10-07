@@ -65,26 +65,42 @@ def add_calibration_graph(data_xds, opts):
 
         # Unpack the data on the xds into variables with understandable names.
         data_col = xds.DATA.data[..., corr_slice]
-        raw_model_col = xds.MODEL_DATA.data[..., corr_slice]
+        model_col = xds.MODEL_DATA.data[..., corr_slice]
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         time_col = xds.TIME.data
         flag_col = xds.FLAG.data[..., corr_slice]
-        flag_row_col = xds.FLAG_ROW.data
+        flag_row_col = xds.FLAG_ROW.data[..., corr_slice]
         bitflag_col = xds.BITFLAG.data[..., corr_slice]
-        bitflag_row_col = xds.BITFLAG_ROW.data
+        bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice]
         if opts._unity_weights:
             weight_col = da.ones_like(data_col[:, :1, :], dtype=np.float32)
         else:
             weight_col = xds[opts.input_ms_weight_column].data[..., corr_slice]
 
-        data_col = data_col.map_blocks(
-            lambda d, f: np.where(f == 1, 0, d), flag_col)
-        model_col = raw_model_col.map_blocks(
-            lambda m, f: np.where(f == 1, 0, m), flag_col[:, :, None, :])
+        # The following handles the fact that the chosen weight column might
+        # not have a frequency axis.
+
         if weight_col.ndim == 2:
             weight_col = weight_col.map_blocks(
                 lambda w: np.expand_dims(w, 1), new_axis=1)
+
+        # Anywhere we have input data flags (or invalid data), set the weights
+        # to zero. Due to the fact np.inf*0 = np.nan (very annoying), we also
+        # set the data to zero at these locations. These operation implicitly
+        # broadcast the weights to the same frequency dimension as the data.
+        # This unavoidable as we want to exploit the weights to effectively
+        # flag.
+
+        data_col[~da.isfinite(data_col)] = 0
+
+        weight_col[flag_col == 1] = 0
+        weight_col[data_col == 0] = 0
+
+        missing_diag = da.logical_or(data_col[..., 0:1] == 0,
+                                     data_col[..., 3:4] == 0)
+
+        weight_col[missing_diag] = 0
 
         # Convert the time column data into indices.
         utime_ind = \

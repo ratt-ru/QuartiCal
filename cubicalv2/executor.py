@@ -58,7 +58,10 @@ def execute():
                            num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
-    # print(gains[0]["G"][0])
+    # for gain in gains[0]["G"]:
+    #     print(np.max(np.abs(gain)))
+    # for gain in gains[0]["dE"]:
+    #     print(np.max(np.abs(gain)))
 
     # dask.visualize(gains_per_xds[0],
     #                filename='graph.pdf',

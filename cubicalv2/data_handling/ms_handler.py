@@ -182,14 +182,16 @@ def read_ms(opts):
     # from the existing flag data. If required, these can be written back to
     # the MS at the end. TODO: Add writing functionality.
 
+    bitflag_dtype = np.int16
+
     for xds_ind, xds in enumerate(data_xds):
         xds_updates = {}
         if not opts._bitflag_exists:
-            data = xds.FLAG.data.astype(np.int32) << 1
+            data = xds.FLAG.data.astype(bitflag_dtype) << 1
             schema = ("row", "chan", "corr")
             xds_updates["BITFLAG"] = (schema, data)
         if not opts._bitflagrow_exists:
-            data = xds.FLAG_ROW.data.astype(np.int32) << 1
+            data = xds.FLAG_ROW.data.astype(bitflag_dtype) << 1
             schema = ("row",)
             xds_updates["BITFLAG_ROW"] = (schema, data)
         if xds_updates:
