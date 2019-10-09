@@ -169,13 +169,14 @@ def read_ms(opts):
     data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "FLAG", "FLAG_ROW",
                     "UVW") + extra_columns
 
-    data_xds = xds_from_ms(opts.input_ms_name,
-                           columns=data_columns,
-                           index_cols=("TIME",),
-                           group_cols=("SCAN_NUMBER",
-                                       "FIELD_ID",
-                                       "DATA_DESC_ID"),
-                           chunks=row_chunks_per_xds)
+    data_xds, col_kwrds = xds_from_ms(opts.input_ms_name,
+                                      columns=data_columns,
+                                      index_cols=("TIME",),
+                                      group_cols=("SCAN_NUMBER",
+                                                  "FIELD_ID",
+                                                  "DATA_DESC_ID"),
+                                      chunks=row_chunks_per_xds,
+                                      column_keywords=True)
 
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
     # appropriately sized dask arrays to the data sets. These are initialised
@@ -197,7 +198,7 @@ def read_ms(opts):
         if xds_updates:
             data_xds[xds_ind] = xds.assign(xds_updates)
 
-    return data_xds
+    return data_xds, col_kwrds
 
 
 def write_ms(xds_list, opts):
@@ -208,3 +209,12 @@ def write_ms(xds_list, opts):
                         columns="BITFLAG",
                         descriptor="ratt_ms(fixed=False)")
 
+
+def write_column(xds_list, col_kwrds, opts):
+
+    import daskms.descriptors.ratt_ms  # noqa
+
+    return xds_to_table(xds_list, opts.input_ms_name,
+                        columns="BITFLAG",
+                        column_keywords={"BITFLAG": col_kwrds["BITFLAG"]},
+                        descriptor="ratt_ms(fixed=False)")

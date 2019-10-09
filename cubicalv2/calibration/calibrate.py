@@ -4,8 +4,19 @@ import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory
+from cubicalv2.flagging.dask_flagging import set_bitflag, unset_bitflag
 from loguru import logger  # noqa
 from numba.typed import List
+
+# The following supresses the egregious numba pending deprecation warnings.
+# TODO: Make sure that the code doesn't break when they finally decprecate
+# reflected lists.
+from numba.errors import NumbaDeprecationWarning
+from numba.errors import NumbaPendingDeprecationWarning
+import warnings
+
+warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
+warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
 
 # Defines which solver modes are supported given the number of correlations
 # in the measurement set. If a mode is supported, this dictionary contains
@@ -34,7 +45,7 @@ def initialize_gains(*shapes):
     return gain_list
 
 
-def add_calibration_graph(data_xds, opts):
+def add_calibration_graph(data_xds, col_kwrds, opts):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -59,6 +70,11 @@ def add_calibration_graph(data_xds, opts):
                          "containing {} correlations.".format(
                              opts.solver_mode, opts._ms_ncorr, ))
 
+    # This is rudimentary - move out of calibration code and do relevant
+    # checking.
+    col_kwrds["BITFLAG"].update(FLAGSET_cubical=2)
+    col_kwrds["BITFLAG"]["FLAGSETS"] += ',cubical'
+
     gains_per_xds = {name: [] for name in opts.solver_gain_terms}
 
     for xds_ind, xds in enumerate(data_xds):
@@ -73,6 +89,11 @@ def add_calibration_graph(data_xds, opts):
         flag_row_col = xds.FLAG_ROW.data[..., corr_slice]
         bitflag_col = xds.BITFLAG.data[..., corr_slice]
         bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice]
+
+        cubical_bitflags = da.zeros_like(bitflag_col, dtype=np.int16)
+        cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_col)
+        cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_row_col)
+
         if opts._unity_weights:
             weight_col = da.ones_like(data_col[:, :1, :], dtype=np.float32)
         else:
@@ -257,8 +278,14 @@ def add_calibration_graph(data_xds, opts):
         # This is an example of updating the contents of and xds. TODO: Use
         # this for writing out data.
         # bitflag_col = da.ones_like(bitflag_col)*10
-        # data_xds[xds_ind] = \
-        #     xds.assign({"BITFLAG": (xds.BITFLAG.dims, bitflag_col)})
+
+        # This is not correct at the moment, as the cubical internal bitflags
+        # are not what is ultimately written to the MS. TODO: The final
+        # internal bitflags need to reduced to a single bitflag entry, based
+        # on a user specified mask/sensible default. This corersponds to the
+        # old propagate options. The BITFLAG column keywords also need to be
+        # approprately adjusted.
+        data_xds[xds_ind].BITFLAG.data = cubical_bitflags
 
     # Return the resulting graphs for the gains and updated xds.
-    return gains_per_xds
+    return gains_per_xds, col_kwrds
