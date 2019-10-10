@@ -7,6 +7,7 @@ from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.flagging.dask_flagging import set_bitflag, unset_bitflag
 from loguru import logger  # noqa
 from numba.typed import List
+from itertools import chain, repeat
 
 # The following supresses the egregious numba pending deprecation warnings.
 # TODO: Make sure that the code doesn't break when they finally decprecate
@@ -31,6 +32,15 @@ slice_scheme = {1: {"scalar": slice(None)},
                     "diag-full": slice(None),
                     "diag-diag": slice(None, None, 3),
                     "scalar": slice(0, 1)}}
+
+
+def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
+                  *gains):
+
+    gain_list = [g for g in gains]
+
+    return residual_full(data, model, gain_list, a1, a2, t_map_arr,
+                         f_map_arr, d_map_arr)
 
 
 def initialize_gain(shape):
@@ -269,37 +279,35 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             dtype=model_col.dtype,
             align_arrays=False,)
 
-        def dask_residual(*args):
+        # Gains are in dask limbo at this point - we have returned a list
+        # which is not understood by the array interface. We take the list of
+        # gains per chunk and explicitly unpack them using map_blocks.
 
-            new_args = list(args)
-            new_args[1] = new_args[1][0]
-            new_args[2] = new_args[2][0][0]
-            new_args[5] = new_args[5][0]
-            new_args[6] = new_args[6][0]
-            new_args = tuple(new_args)
+        unpacked_gains = [gains.map_blocks(lambda g, i=None: g[i], i=ind,
+                          dtype=np.complex128) for ind in range(n_term)]
 
-            return residual_full(*new_args)
+        gain_zipper = zip(unpacked_gains, repeat(gain_schema, n_term))
+
+        gain_list = list(chain.from_iterable(gain_zipper))
 
         residuals = da.blockwise(
             dask_residual, ("rowlike", "chan", "corr"),
             data_col, ("rowlike", "chan", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
-            gains, ("rowlike", "chan", "ant", "dir", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             t_map_arr, ("rowlike", "term"),
             f_map_arr, ("rowlike", "term"),
             d_map_arr, None,
+            *gain_list,
             dtype=model_col.dtype,
             align_arrays=False,
-            # concatenate=True,
+            concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
-                           "chan": data_col.chunks[1]},
-        )
+                           "chan": data_col.chunks[1]})
 
         for ind, term in enumerate(opts.solver_gain_terms):
-            gains_per_xds[term].append(gains.map_blocks(
-                lambda g, i=None: g[i], i=ind, dtype=np.complex128))
+            gains_per_xds[term].append(unpacked_gains[ind])
 
         # This is an example of updating the contents of and xds. TODO: Use
         # this for writing out data.

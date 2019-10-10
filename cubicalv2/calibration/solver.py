@@ -43,6 +43,8 @@ def chain_solver(model, data, a1, a2, weights,
 
             if dd_term:
                 gain_list[gain_ind][:] = gain_list[gain_ind][:] + update/2
+            elif i % 2 == 0:
+                gain_list[gain_ind][:] = update
             else:
                 gain_list[gain_ind][:] = (gain_list[gain_ind] + update)/2
 
