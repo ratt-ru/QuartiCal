@@ -64,7 +64,7 @@ def execute():
 
     # import numpy as np
     # for gain in gains["G"]:
-    #     print(np.min(np.abs(gain)))
+    #     print(np.max(np.abs(gain)))
     #     np.save("example_gains.npy", gain)
     #     break
     # for gain in gains[0]["dE"]:

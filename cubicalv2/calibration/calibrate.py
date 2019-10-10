@@ -33,16 +33,14 @@ slice_scheme = {1: {"scalar": slice(None)},
                     "scalar": slice(0, 1)}}
 
 
-def initialize_gains(*shapes):
+def initialize_gain(shape):
 
     dtype = np.complex128
 
-    gain_list = list(map(lambda s: np.zeros(s, dtype=dtype), shapes))
+    gain = np.zeros(shape, dtype=dtype)
+    gain[..., ::3] = 1
 
-    for gain in gain_list:
-        gain[..., ::3] = 1
-
-    return gain_list
+    return gain
 
 
 def add_calibration_graph(data_xds, col_kwrds, opts):
@@ -224,34 +222,27 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         f_map_arr = da.stack(f_maps, axis=1).rechunk({1: n_term})
         d_map_arr = np.array(d_maps, dtype=np.uint32)
 
-        # Create a tuple of gain arrays per chunk.
-        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
-        gain_args = [initialize_gains, gain_schema]
-
-        for g_shape in g_shapes:
-            gain_args.append(g_shape)
-            gain_args.append(("rowlike",))
-
         # We set the time and frequency chunks to nan - this is done to encode
         # the fact that we do not know the shapes of the gains during the
         # graph construction step.
-        gain_list = da.blockwise(
-            *gain_args,
-            align_arrays=False,
-            dtype=np.complex128,
-            new_axes={"chan": n_freq,
-                      "ant": n_ant,
-                      "dir": n_dir,
-                      "corr": opts._ms_ncorr},
-            adjust_chunks={"rowlike": (np.nan,)*n_chunks,
-                           "chan": (np.nan,)})
 
-        # Initialise the inverse gains. This is basically the same as the
-        # gains, but we init them as empty. We init these outside the solver
-        # as tuples are notoriously difficult to construct in nopython mode.
-        inverse_gain_list = gain_list.map_blocks(
-            lambda gt: list(map(np.empty_like, gt)),
-            dtype=np.complex128)
+        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
+        gain_list = []
+
+        for g_shape in g_shapes:
+            gain = da.blockwise(
+                initialize_gain, gain_schema,
+                g_shape, ("rowlike",),
+                align_arrays=False,
+                dtype=np.complex128,
+                new_axes={"chan": n_freq,
+                          "ant": n_ant,
+                          "dir": n_dir,
+                          "corr": opts._ms_ncorr},
+                adjust_chunks={"rowlike": (np.nan,)*n_chunks,
+                               "chan": (np.nan,)})
+            gain_list.append(gain)
+            gain_list.append(gain_schema)
 
         # We use a factory function to produce appropraite update functions
         # for use in the solver. TODO: Investigate using generated jit for this
@@ -264,8 +255,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         gains = da.blockwise(
             chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
-            gain_list, ("rowlike", "chan", "ant", "dir", "corr"),
-            inverse_gain_list, ("rowlike", "chan", "ant", "dir", "corr"),
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
@@ -275,6 +264,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             d_map_arr, None,
             compute_jhj_and_jhr, None,
             compute_update, None,
+            *gain_list,
             concatenate=True,
             dtype=model_col.dtype,
             align_arrays=False,)
@@ -321,7 +311,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # on a user specified mask/sensible default. This corersponds to the
         # old propagate options. The BITFLAG column keywords also need to be
         # approprately adjusted.
-        data_xds[xds_ind].BITFLAG.data = cubical_bitflags
 
         data_xds[xds_ind] = \
             xds.assign({"RESIDUAL": (xds.DATA.dims, residuals),
