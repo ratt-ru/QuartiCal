@@ -3,7 +3,7 @@ import numpy as np
 import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import chain_solver
-from cubicalv2.kernels.gjones_chain import update_func_factory
+from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.flagging.dask_flagging import set_bitflag, unset_bitflag
 from loguru import logger  # noqa
 from numba.typed import List
@@ -90,6 +90,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         bitflag_col = xds.BITFLAG.data[..., corr_slice]
         bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice]
 
+        # TODO: Do something sensible with existing bitflags.
         cubical_bitflags = da.zeros_like(bitflag_col, dtype=np.int16)
         cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_col)
         cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_row_col)
@@ -113,15 +114,22 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # This unavoidable as we want to exploit the weights to effectively
         # flag.
 
-        data_col[~da.isfinite(data_col)] = 0
+        invalid_points = ~da.isfinite(data_col)
+        data_col[invalid_points] = 0  # Set nasty data points to zero.
 
-        weight_col[flag_col == 1] = 0
-        weight_col[data_col == 0] = 0
+        cubical_bitflags = set_bitflag(cubical_bitflags,
+                                       "INVALID",
+                                       invalid_points)
 
-        missing_diag = da.logical_or(data_col[..., 0:1] == 0,
-                                     data_col[..., 3:4] == 0)
+        missing_points = da.logical_or(data_col[..., 0:1] == 0,
+                                       data_col[..., 3:4] == 0)
+        missing_points = da.logical_or(missing_points, data_col == 0)
 
-        weight_col[missing_diag] = 0
+        cubical_bitflags = set_bitflag(cubical_bitflags,
+                                       "MISSING",
+                                       missing_points)
+
+        weight_col[cubical_bitflags] = 0
 
         # Convert the time column data into indices.
         utime_ind = \
@@ -271,6 +279,34 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             dtype=model_col.dtype,
             align_arrays=False,)
 
+        def dask_residual(*args):
+
+            new_args = list(args)
+            new_args[1] = new_args[1][0]
+            new_args[2] = new_args[2][0][0]
+            new_args[5] = new_args[5][0]
+            new_args[6] = new_args[6][0]
+            new_args = tuple(new_args)
+
+            return residual_full(*new_args)
+
+        residuals = da.blockwise(
+            dask_residual, ("rowlike", "chan", "corr"),
+            data_col, ("rowlike", "chan", "corr"),
+            model_col, ("rowlike", "chan", "dir", "corr"),
+            gains, ("rowlike", "chan", "ant", "dir", "corr"),
+            ant1_col, ("rowlike",),
+            ant2_col, ("rowlike",),
+            t_map_arr, ("rowlike", "term"),
+            f_map_arr, ("rowlike", "term"),
+            d_map_arr, None,
+            dtype=model_col.dtype,
+            align_arrays=False,
+            # concatenate=True,
+            adjust_chunks={"rowlike": data_col.chunks[0],
+                           "chan": data_col.chunks[1]},
+        )
+
         for ind, term in enumerate(opts.solver_gain_terms):
             gains_per_xds[term].append(gains.map_blocks(
                 lambda g, i=None: g[i], i=ind, dtype=np.complex128))
@@ -286,6 +322,10 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # old propagate options. The BITFLAG column keywords also need to be
         # approprately adjusted.
         data_xds[xds_ind].BITFLAG.data = cubical_bitflags
+
+        data_xds[xds_ind] = \
+            xds.assign({"RESIDUAL": (xds.DATA.dims, residuals),
+                        "BITFLAG": (xds.BITFLAG.dims, cubical_bitflags)})
 
     # Return the resulting graphs for the gains and updated xds.
     return gains_per_xds, col_kwrds

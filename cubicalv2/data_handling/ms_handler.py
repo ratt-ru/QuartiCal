@@ -215,6 +215,6 @@ def write_column(xds_list, col_kwrds, opts):
     import daskms.descriptors.ratt_ms  # noqa
 
     return xds_to_table(xds_list, opts.input_ms_name,
-                        columns="BITFLAG",
+                        columns=("BITFLAG", "RESIDUAL"),
                         column_keywords={"BITFLAG": col_kwrds["BITFLAG"]},
                         descriptor="ratt_ms(fixed=False)")

@@ -45,7 +45,9 @@ def execute():
     # assigned.
     model_xds = add_model_graph(ms_xds, opts)
 
-    gains_per_xds, col_kwrds = add_calibration_graph(model_xds, col_kwrds, opts)
+    gains_per_xds, col_kwrds = add_calibration_graph(model_xds,
+                                                     col_kwrds,
+                                                     opts)
 
     writes = write_column(model_xds, col_kwrds, opts)
 
@@ -55,13 +57,16 @@ def execute():
     t0 = time.time()
     with ProgressBar():
         gains, _ = da.compute(gains_per_xds, writes,
-                           # write_columns,
-                           # scheduler="sync")
-                           num_workers=opts.parallel_nthread)
+                              #  write_columns,
+                              #  scheduler="sync")
+                              num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
-    # for gain in gains[0]["G"]:
-    #     print(np.max(np.abs(gain)))
+    # import numpy as np
+    # for gain in gains["G"]:
+    #     print(np.min(np.abs(gain)))
+    #     np.save("example_gains.npy", gain)
+    #     break
     # for gain in gains[0]["dE"]:
     #     print(np.max(np.abs(gain)))
 
