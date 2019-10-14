@@ -45,11 +45,10 @@ def execute():
     # assigned.
     model_xds = add_model_graph(ms_xds, opts)
 
-    gains_per_xds, col_kwrds = add_calibration_graph(model_xds,
-                                                     col_kwrds,
-                                                     opts)
+    gains_per_xds, updated_xds, col_kwrds = \
+        add_calibration_graph(model_xds, col_kwrds, opts)
 
-    writes = write_column(model_xds, col_kwrds, opts)
+    writes = write_column(updated_xds, col_kwrds, opts)
 
     # write_columns = ms_handler.write_ms(updated_data_xds, opts)
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)

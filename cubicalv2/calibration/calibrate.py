@@ -84,6 +84,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
     col_kwrds["BITFLAG"]["FLAGSETS"] += ',cubical'
 
     gains_per_xds = {name: [] for name in opts.solver_gain_terms}
+    updated_xds = []
 
     for xds_ind, xds in enumerate(data_xds):
 
@@ -311,7 +312,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         # This is an example of updating the contents of and xds. TODO: Use
         # this for writing out data.
-        # bitflag_col = da.ones_like(bitflag_col)*10
 
         # This is not correct at the moment, as the cubical internal bitflags
         # are not what is ultimately written to the MS. TODO: The final
@@ -320,9 +320,11 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # old propagate options. The BITFLAG column keywords also need to be
         # approprately adjusted.
 
-        data_xds[xds_ind] = \
+        # I am currently relying on side-effects - this is not a good idea.
+
+        updated_xds.append(
             xds.assign({"RESIDUAL": (xds.DATA.dims, residuals),
-                        "BITFLAG": (xds.BITFLAG.dims, cubical_bitflags)})
+                        "BITFLAG": (xds.BITFLAG.dims, cubical_bitflags)}))
 
     # Return the resulting graphs for the gains and updated xds.
-    return gains_per_xds, col_kwrds
+    return gains_per_xds, updated_xds, col_kwrds
