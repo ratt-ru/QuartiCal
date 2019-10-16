@@ -104,7 +104,7 @@ def jhj_and_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
                 mh10 = m[1].conjugate()
                 mh11 = m[3].conjugate()
 
-                for g in range(n_gains):
+                for g in range(n_gains - 1, -1, -1):
 
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
@@ -148,7 +148,7 @@ def jhj_and_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
                     mh10 = jh10
                     mh11 = jh11
 
-                for g in range(active_term - 1, -1, -1):
+                for g in range(active_term):
 
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
@@ -188,7 +188,7 @@ def jhj_and_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
                 jhj[t_m, f_m, a1_m, out_d, 2] += (j10*w0*jh00 + j11*w3*jh10)
                 jhj[t_m, f_m, a1_m, out_d, 3] += (j10*w0*jh01 + j11*w3*jh11)
 
-                for g in range(n_gains):
+                for g in range(n_gains-1, -1, -1):
 
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
@@ -232,7 +232,7 @@ def jhj_and_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
                     m10 = jh10
                     m11 = jh11
 
-                for g in range(active_term - 1, -1, -1):
+                for g in range(active_term):
 
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]
@@ -339,7 +339,7 @@ def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                 m10 = model[row, f, d, 2]
                 m11 = model[row, f, d, 3]
 
-                for g in range(n_gains):
+                for g in range(n_gains-1, -1, -1):
 
                     d_m = d_map_arr[g, d]  # Broadcast dir.
                     t_m = t_map_arr[row, g]

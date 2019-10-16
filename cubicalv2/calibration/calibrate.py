@@ -301,7 +301,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             f_map_arr, ("rowlike", "term"),
             d_map_arr, None,
             *gain_list,
-            dtype=model_col.dtype,
+            dtype=data_col.dtype,
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
