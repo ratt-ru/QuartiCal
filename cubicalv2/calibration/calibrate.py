@@ -138,6 +138,10 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                        "MISSING",
                                        missing_points)
 
+        cubical_bitflags = set_bitflag(cubical_bitflags,
+                                       "NULLWGHT",
+                                       weight_col == 0)
+
         weight_col[cubical_bitflags] = 0
 
         # Convert the time column data into indices.
@@ -324,7 +328,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         updated_xds.append(
             xds.assign({"RESIDUAL": (xds.DATA.dims, residuals),
-                        "BITFLAG": (xds.BITFLAG.dims, cubical_bitflags)}))
+                        "BITFLAG": (xds.BITFLAG.dims, cubical_bitflags),
+                        "CODEX_MODEL": (xds.DATA.dims,
+                            model_col.sum(axis=2).astype(np.complex64))}}))
 
     # Return the resulting graphs for the gains and updated xds.
     return gains_per_xds, updated_xds, col_kwrds

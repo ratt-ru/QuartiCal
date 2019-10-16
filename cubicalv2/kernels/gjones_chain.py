@@ -57,10 +57,14 @@ def invert_gains(gain_list, inverse_gain_list):
 def jhj_and_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
                      weights, t_map_arr, f_map_arr, d_map_arr, active_term):
 
-    n_rows, n_chan, n_dir, _ = model.shape
+    n_rows, n_chan, n_dir, n_corr = model.shape
+    n_out_dir = gain_list[active_term].shape[3]
 
     jhr = np.zeros_like(gain_list[active_term])
     jhj = np.zeros_like(gain_list[active_term])
+
+    tmp_jh_p = np.zeros((n_out_dir, n_corr), dtype=jhj.dtype)
+    tmp_jh_q = np.zeros((n_out_dir, n_corr), dtype=jhj.dtype)
 
     n_gains = len(gain_list)
 
@@ -77,6 +81,9 @@ def jhj_and_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
             # w1 = w[1]  # We do not use the off diagonal weights.
             # w2 = w[2]  # We do not use the off diagonal weights.
             w3 = w[3]
+
+            tmp_jh_p[:, :] = 0
+            tmp_jh_q[:, :] = 0
 
             for d in range(n_dir):
 
@@ -173,20 +180,15 @@ def jhj_and_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
                 t_m = t_map_arr[row, active_term]
                 f_m = f_map_arr[f, active_term]
 
-                j00 = jh00.conjugate()
-                j01 = jh10.conjugate()
-                j10 = jh01.conjugate()
-                j11 = jh11.conjugate()
-
                 jhr[t_m, f_m, a1_m, out_d, 0] += (r00*jh00 + r01*jh10)
                 jhr[t_m, f_m, a1_m, out_d, 1] += (r00*jh01 + r01*jh11)
                 jhr[t_m, f_m, a1_m, out_d, 2] += (r10*jh00 + r11*jh10)
                 jhr[t_m, f_m, a1_m, out_d, 3] += (r10*jh01 + r11*jh11)
 
-                jhj[t_m, f_m, a1_m, out_d, 0] += (j00*w0*jh00 + j01*w3*jh10)
-                jhj[t_m, f_m, a1_m, out_d, 1] += (j00*w0*jh01 + j01*w3*jh11)
-                jhj[t_m, f_m, a1_m, out_d, 2] += (j10*w0*jh00 + j11*w3*jh10)
-                jhj[t_m, f_m, a1_m, out_d, 3] += (j10*w0*jh01 + j11*w3*jh11)
+                tmp_jh_p[out_d, 0] += jh00
+                tmp_jh_p[out_d, 1] += jh01
+                tmp_jh_p[out_d, 2] += jh10
+                tmp_jh_p[out_d, 3] += jh11
 
                 for g in range(n_gains-1, -1, -1):
 
@@ -257,20 +259,47 @@ def jhj_and_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
                 t_m = t_map_arr[row, active_term]
                 f_m = f_map_arr[f, active_term]
 
-                j00 = jh00.conjugate()
-                j01 = jh10.conjugate()
-                j10 = jh01.conjugate()
-                j11 = jh11.conjugate()
-
                 jhr[t_m, f_m, a2_m, out_d, 0] += (rh00*jh00 + rh01*jh10)
                 jhr[t_m, f_m, a2_m, out_d, 1] += (rh00*jh01 + rh01*jh11)
                 jhr[t_m, f_m, a2_m, out_d, 2] += (rh10*jh00 + rh11*jh10)
                 jhr[t_m, f_m, a2_m, out_d, 3] += (rh10*jh01 + rh11*jh11)
 
-                jhj[t_m, f_m, a2_m, out_d, 0] += (j00*w0*jh00 + j01*w3*jh10)
-                jhj[t_m, f_m, a2_m, out_d, 1] += (j00*w0*jh01 + j01*w3*jh11)
-                jhj[t_m, f_m, a2_m, out_d, 2] += (j10*w0*jh00 + j11*w3*jh10)
-                jhj[t_m, f_m, a2_m, out_d, 3] += (j10*w0*jh01 + j11*w3*jh11)
+                tmp_jh_q[out_d, 0] += jh00
+                tmp_jh_q[out_d, 1] += jh01
+                tmp_jh_q[out_d, 2] += jh10
+                tmp_jh_q[out_d, 3] += jh11
+
+            for d in range(n_out_dir):
+
+                jh00 = tmp_jh_p[d, 0]
+                jh01 = tmp_jh_p[d, 1]
+                jh10 = tmp_jh_p[d, 2]
+                jh11 = tmp_jh_p[d, 3]
+
+                j00 = jh00.conjugate()
+                j01 = jh10.conjugate()
+                j10 = jh01.conjugate()
+                j11 = jh11.conjugate()
+
+                jhj[t_m, f_m, a1_m, d, 0] += (j00*w0*jh00 + j01*w3*jh10)
+                jhj[t_m, f_m, a1_m, d, 1] += (j00*w0*jh01 + j01*w3*jh11)
+                jhj[t_m, f_m, a1_m, d, 2] += (j10*w0*jh00 + j11*w3*jh10)
+                jhj[t_m, f_m, a1_m, d, 3] += (j10*w0*jh01 + j11*w3*jh11)
+
+                jh00 = tmp_jh_q[d, 0]
+                jh01 = tmp_jh_q[d, 1]
+                jh10 = tmp_jh_q[d, 2]
+                jh11 = tmp_jh_q[d, 3]
+
+                j00 = jh00.conjugate()
+                j01 = jh10.conjugate()
+                j10 = jh01.conjugate()
+                j11 = jh11.conjugate()
+
+                jhj[t_m, f_m, a2_m, d, 0] += (j00*w0*jh00 + j01*w3*jh10)
+                jhj[t_m, f_m, a2_m, d, 1] += (j00*w0*jh01 + j01*w3*jh11)
+                jhj[t_m, f_m, a2_m, d, 2] += (j10*w0*jh00 + j11*w3*jh10)
+                jhj[t_m, f_m, a2_m, d, 3] += (j10*w0*jh01 + j11*w3*jh11)
 
     return jhj, jhr
 
