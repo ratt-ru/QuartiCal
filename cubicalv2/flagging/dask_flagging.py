@@ -49,3 +49,29 @@ def _bitflagger(bitflag_arr, bitflag_names, selection, setter):
                         bitflag_names, None,
                         *selection_args,
                         dtype=np.int32)
+
+
+def finalise_flags(xds_list, col_kwrds, opts):
+
+    cubical_bit = col_kwrds["BITFLAG"]["FLAGSET_cubical"]
+    legacy_bit = col_kwrds["BITFLAG"]["FLAGSET_legacy"]
+
+    writable_xds = []
+
+    for xds in xds_list:
+
+        flag_col = xds.FLAG.data
+        bitflag_col = xds.BITFLAG.data
+        cubi_bitflags = xds.CUBI_BITFLAG.data
+
+        if opts._init_legacy:
+            bitflag_col |= flag_col.astype(np.int32) << legacy_bit
+
+        bitflag_col |= (cubi_bitflags > 0).astype(np.int32) << cubical_bit
+        flag_col = bitflag_col > 0
+
+        writable_xds.append(
+            xds.assign({"BITFLAG": (xds.BITFLAG.dims, bitflag_col),
+                        "FLAG": (xds.FLAG.dims, flag_col)}))
+
+    return writable_xds

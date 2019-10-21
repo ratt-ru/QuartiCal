@@ -320,9 +320,9 @@ def add_calibration_graph(data_xds, opts):
         # approprately adjusted.
 
         updated_xds.append(
-            xds.assign({"RESIDUAL": (xds.DATA.dims, residuals),
-                        "BITFLAG": (xds.BITFLAG.dims, cubical_bitflags),
-                        "CODEX_MODEL": (xds.DATA.dims,
+            xds.assign({"CUBI_RESIDUAL": (xds.DATA.dims, residuals),
+                        "CUBI_BITFLAG": (xds.BITFLAG.dims, cubical_bitflags),
+                        "CUBI_MODEL": (xds.DATA.dims,
                             model_col.sum(axis=2).astype(np.complex64))}))
 
     # Return the resulting graphs for the gains and updated xds.

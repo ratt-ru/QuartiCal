@@ -235,10 +235,13 @@ def update_kwrds(col_kwrds, opts):
 
     available_bits = [bit for bit in range(32) if bit not in reserved_bits]
 
+    opts._init_legacy = False
+
     try:
         if "legacy" not in flagsets:
             flagsets |= set(("legacy",))
             bitflag_kwrds.update(FLAGSET_legacy=available_bits.pop(0))
+            opts._init_legacy = True
 
         if "cubical" not in flagsets:
             flagsets |= set(("cubical",))
@@ -256,6 +259,6 @@ def write_columns(xds_list, col_kwrds, opts):
     import daskms.descriptors.ratt_ms  # noqa
 
     return xds_to_table(xds_list, opts.input_ms_name,
-                        columns=("BITFLAG", "RESIDUAL"),
+                        columns=("BITFLAG", "CUBI_RESIDUAL", "FLAG"),
                         column_keywords={"BITFLAG": col_kwrds["BITFLAG"]},
                         descriptor="ratt_ms(fixed=False)")

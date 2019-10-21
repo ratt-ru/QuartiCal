@@ -6,6 +6,7 @@ from cubicalv2.parser import parser, preprocess
 from cubicalv2.data_handling.ms_handler import read_ms, write_columns
 from cubicalv2.data_handling.model_handler import add_model_graph
 from cubicalv2.calibration.calibrate import add_calibration_graph
+from cubicalv2.flagging.dask_flagging import finalise_flags
 import dask.array as da
 import time
 from dask.diagnostics import ProgressBar
@@ -45,9 +46,11 @@ def execute():
     # assigned.
     model_xds = add_model_graph(ms_xds, opts)
 
-    gains_per_xds, updated_xds = add_calibration_graph(model_xds, opts)
+    gains_per_xds, post_gain_xds = add_calibration_graph(model_xds, opts)
 
-    writes = write_columns(updated_xds, col_kwrds, opts)
+    writable_xds = finalise_flags(post_gain_xds, col_kwrds, opts)
+
+    writes = write_columns(writable_xds, col_kwrds, opts)
 
     # write_columns = ms_handler.write_ms(updated_data_xds, opts)
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
