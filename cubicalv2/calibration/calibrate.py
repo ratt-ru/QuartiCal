@@ -53,7 +53,7 @@ def initialize_gain(shape):
     return gain
 
 
-def add_calibration_graph(data_xds, col_kwrds, opts):
+def add_calibration_graph(data_xds, opts):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -78,11 +78,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                          "containing {} correlations.".format(
                              opts.solver_mode, opts._ms_ncorr, ))
 
-    # This is rudimentary - move out of calibration code and do relevant
-    # checking.
-    col_kwrds["BITFLAG"].update(FLAGSET_cubical=2)
-    col_kwrds["BITFLAG"]["FLAGSETS"] += ',cubical'
-
     gains_per_xds = {name: [] for name in opts.solver_gain_terms}
     updated_xds = []
 
@@ -100,7 +95,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice]
 
         # TODO: Do something sensible with existing bitflags.
-        cubical_bitflags = da.zeros_like(bitflag_col, dtype=np.int16)
+        cubical_bitflags = da.zeros_like(bitflag_col, dtype=np.int32)
         cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_col)
         cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_row_col)
 
@@ -324,8 +319,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # old propagate options. The BITFLAG column keywords also need to be
         # approprately adjusted.
 
-        # I am currently relying on side-effects - this is not a good idea.
-
         updated_xds.append(
             xds.assign({"RESIDUAL": (xds.DATA.dims, residuals),
                         "BITFLAG": (xds.BITFLAG.dims, cubical_bitflags),
@@ -333,4 +326,4 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                             model_col.sum(axis=2).astype(np.complex64))}))
 
     # Return the resulting graphs for the gains and updated xds.
-    return gains_per_xds, updated_xds, col_kwrds
+    return gains_per_xds, updated_xds

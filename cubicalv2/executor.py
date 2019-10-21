@@ -3,7 +3,7 @@
 import cubicalv2.logging.init_logger  # noqa
 from loguru import logger
 from cubicalv2.parser import parser, preprocess
-from cubicalv2.data_handling.ms_handler import read_ms, write_column
+from cubicalv2.data_handling.ms_handler import read_ms, write_columns
 from cubicalv2.data_handling.model_handler import add_model_graph
 from cubicalv2.calibration.calibrate import add_calibration_graph
 import dask.array as da
@@ -45,10 +45,9 @@ def execute():
     # assigned.
     model_xds = add_model_graph(ms_xds, opts)
 
-    gains_per_xds, updated_xds, col_kwrds = \
-        add_calibration_graph(model_xds, col_kwrds, opts)
+    gains_per_xds, updated_xds = add_calibration_graph(model_xds, opts)
 
-    writes = write_column(updated_xds, col_kwrds, opts)
+    writes = write_columns(updated_xds, col_kwrds, opts)
 
     # write_columns = ms_handler.write_ms(updated_data_xds, opts)
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)

@@ -26,8 +26,10 @@ def _bitflagger(bitflag_arr, bitflag_names, selection, setter):
         bitflag_arr: Dask array containing btiflags.
         bitflag_names: Name or list of names of bitflag/s to set/unset.
         selection: Dask array or None which determines where set/unset happens.
-        setter: Function to use in blockwise call. Either
+        setter: Function to use in blockwise call. Either set or unset.
 
+    Returns:
+        Dask array for blockwise flagging.
     """
 
     if bitflag_arr.ndim == 3:
@@ -46,10 +48,4 @@ def _bitflagger(bitflag_arr, bitflag_names, selection, setter):
                         bitflag_arr, bitflag_axes,
                         bitflag_names, None,
                         *selection_args,
-                        dtype=np.object)
-
-
-def update_bitflag_col_kwrds(col_kwrds):
-    """Updates the columns keywords to reflect cubical bitflags."""
-
-    return col_kwrds
+                        dtype=np.int32)
