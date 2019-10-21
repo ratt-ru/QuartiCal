@@ -330,7 +330,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             xds.assign({"RESIDUAL": (xds.DATA.dims, residuals),
                         "BITFLAG": (xds.BITFLAG.dims, cubical_bitflags),
                         "CODEX_MODEL": (xds.DATA.dims,
-                            model_col.sum(axis=2).astype(np.complex64))}}))
+                            model_col.sum(axis=2).astype(np.complex64))}))
 
     # Return the resulting graphs for the gains and updated xds.
     return gains_per_xds, updated_xds, col_kwrds
