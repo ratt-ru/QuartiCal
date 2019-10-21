@@ -201,15 +201,6 @@ def read_ms(opts):
     return data_xds, col_kwrds
 
 
-def write_ms(xds_list, opts):
-
-    import daskms.descriptors.ratt_ms  # noqa
-
-    return xds_to_table(xds_list, opts.input_ms_name,
-                        columns="BITFLAG",
-                        descriptor="ratt_ms(fixed=False)")
-
-
 def write_column(xds_list, col_kwrds, opts):
 
     import daskms.descriptors.ratt_ms  # noqa
