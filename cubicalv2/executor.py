@@ -71,6 +71,6 @@ def execute():
     # for gain in gains[0]["dE"]:
     #     print(np.max(np.abs(gain)))
 
-    # dask.visualize(gains_per_xds[0],
+    # dask.visualize(gains_per_xds["G"][0], writes[0],
     #                filename='graph.pdf',
     #                optimize_graph=True)

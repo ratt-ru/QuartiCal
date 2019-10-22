@@ -2,8 +2,9 @@
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
+from cubicalv2.flagging.dask_flagging import update_kwrds
+from uuid import uuid4
 from loguru import logger
-from copy import deepcopy
 
 
 def read_ms(opts):
@@ -187,71 +188,28 @@ def read_ms(opts):
 
     updated_kwrds = update_kwrds(col_kwrds, opts)
 
-    bitflag_dtype = np.int32
+    bitflag_dtype = np.uint32
 
     for xds_ind, xds in enumerate(data_xds):
         xds_updates = {}
-        legacy_bit = updated_kwrds["BITFLAG"]["FLAGSET_legacy"]
         if not opts._bitflag_exists:
-            data = xds.FLAG.data.astype(bitflag_dtype) << legacy_bit
+            data = da.zeros(xds.FLAG.data.shape,
+                            dtype=bitflag_dtype,
+                            chunks=xds.FLAG.data.chunks,
+                            name="zeros-" + uuid4().hex)
             schema = ("row", "chan", "corr")
             xds_updates["BITFLAG"] = (schema, data)
         if not opts._bitflagrow_exists:
-            data = xds.FLAG_ROW.data.astype(bitflag_dtype) << legacy_bit
+            data = da.zeros(xds.FLAG_ROW.data.shape,
+                            dtype=bitflag_dtype,
+                            chunks=xds.FLAG_ROW.data.chunks,
+                            name="zeros-" + uuid4().hex)
             schema = ("row",)
             xds_updates["BITFLAG_ROW"] = (schema, data)
         if xds_updates:
             data_xds[xds_ind] = xds.assign(xds_updates)
 
     return data_xds, updated_kwrds
-
-
-def update_kwrds(col_kwrds, opts):
-    """Updates the columns keywords to reflect cubical bitflags."""
-
-    # Create a deep copy of the column keywords to avoid mutating the input.
-    col_kwrds = deepcopy(col_kwrds)
-
-    # If the bitflag column already exists, we assume it is correct. Otherwise
-    # we initialise some keywords.
-    if opts._bitflag_exists:
-        bitflag_kwrds = col_kwrds["BITFLAG"]
-        flagsets = set(bitflag_kwrds["FLAGSETS"].split(","))
-    else:
-        col_kwrds["BITFLAG"] = dict()
-        bitflag_kwrds = col_kwrds["BITFLAG"]
-        bitflag_kwrds["FLAGSETS"] = str()
-        flagsets = set()
-
-    reserved_bits = [0]
-
-    for flagset in flagsets:
-        reserved_bit = bitflag_kwrds.get("FLAGSET_{}".format(flagset))
-        if reserved_bit is None:
-            raise ValueError("Cannot determine reserved bit for flagset"
-                             " {}.".format(flagset))
-        else:
-            reserved_bits.append(reserved_bit)
-
-    available_bits = [bit for bit in range(32) if bit not in reserved_bits]
-
-    opts._init_legacy = False
-
-    try:
-        if "legacy" not in flagsets:
-            flagsets |= set(("legacy",))
-            bitflag_kwrds.update(FLAGSET_legacy=available_bits.pop(0))
-            opts._init_legacy = True
-
-        if "cubical" not in flagsets:
-            flagsets |= set(("cubical",))
-            bitflag_kwrds.update(FLAGSET_cubical=available_bits.pop(0))
-    except IndexError:
-        raise ValueError("BITFLAG is full - aborting.")
-
-    bitflag_kwrds["FLAGSETS"] = ",".join(flagsets)
-
-    return col_kwrds
 
 
 def write_columns(xds_list, col_kwrds, opts):

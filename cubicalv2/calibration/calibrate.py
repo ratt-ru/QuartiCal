@@ -94,11 +94,6 @@ def add_calibration_graph(data_xds, opts):
         bitflag_col = xds.BITFLAG.data[..., corr_slice]
         bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice]
 
-        # TODO: Do something sensible with existing bitflags.
-        cubical_bitflags = da.zeros_like(bitflag_col, dtype=np.int32)
-        cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_col)
-        cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_row_col)
-
         if opts._unity_weights:
             weight_col = da.ones_like(data_col[:, :1, :], dtype=np.float32)
         else:
@@ -110,6 +105,13 @@ def add_calibration_graph(data_xds, opts):
         if weight_col.ndim == 2:
             weight_col = weight_col.map_blocks(
                 lambda w: np.expand_dims(w, 1), new_axis=1)
+
+        # TODO: Do something sensible with existing bitflags. This should be as
+        # simple as initing the cubical bitflags from the existing bitflags
+        # using a sensible mask.
+        cubical_bitflags = da.zeros_like(bitflag_col, dtype=np.uint32)
+        cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_col)
+        cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_row_col)
 
         # Anywhere we have input data flags (or invalid data), set the weights
         # to zero. Due to the fact np.inf*0 = np.nan (very annoying), we also
