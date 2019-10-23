@@ -8,6 +8,7 @@ from cubicalv2.flagging.dask_flagging import set_bitflag, unset_bitflag
 from loguru import logger  # noqa
 from numba.typed import List
 from itertools import chain, repeat
+from uuid import uuid4
 
 # The following supresses the egregious numba pending deprecation warnings.
 # TODO: Make sure that the code doesn't break when they finally decprecate
@@ -109,7 +110,10 @@ def add_calibration_graph(data_xds, opts):
         # TODO: Do something sensible with existing bitflags. This should be as
         # simple as initing the cubical bitflags from the existing bitflags
         # using a sensible mask.
-        cubical_bitflags = da.zeros_like(bitflag_col, dtype=np.uint32)
+        cubical_bitflags = da.zeros(bitflag_col.shape,
+                                    dtype=bitflag_col.dtype,
+                                    chunks=bitflag_col.chunks,
+                                    name="zeros-" + uuid4().hex)
         cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_col)
         cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_row_col)
 

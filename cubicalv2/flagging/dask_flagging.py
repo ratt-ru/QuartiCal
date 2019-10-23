@@ -54,7 +54,18 @@ def _bitflagger(bitflag_arr, bitflag_names, selection, setter):
 
 
 def update_kwrds(col_kwrds, opts):
-    """Updates the columns keywords to reflect cubical bitflags."""
+    """Updates the columns keywords to reflect cubical bitflags.
+
+    Given the existing column keywords (from the MS), updates them to include
+    CubiCal's bitflags and legacy bitflags if necessary.
+
+    Args:
+        col_kwrds: A dictionary of column keywords.
+        opts: The options Namespace.
+
+    Returns:
+        col_kwrds: An updated (copy) of the column keywords dictionary.
+    """
 
     # Create a deep copy of the column keywords to avoid mutating the input.
     col_kwrds = deepcopy(col_kwrds)
@@ -70,6 +81,7 @@ def update_kwrds(col_kwrds, opts):
         bitflag_kwrds["FLAGSETS"] = str()
         flagsets = set()
 
+    # We assume the 0 bit is always unavailable for new bitflags.
     reserved_bits = [0]
 
     for flagset in flagsets:
@@ -103,6 +115,20 @@ def update_kwrds(col_kwrds, opts):
 
 
 def finalise_flags(xds_list, col_kwrds, opts):
+    """ Combines internal and input bitflags to produce writable flag data.
+
+    Given a list of xds and appropraitely updated keywords, combines CubiCal's
+    internal bitflags with the input bitflags and creates a new list of xds
+    on which the combined flagging data is assigned. Also handles legacy flags.
+
+    Args:
+        xds_list: A list of xarray datasets.
+        col_kwrds: A dictionary of (updated) column keywowrds.
+        opts: The options Namespace.
+
+    Returns:
+        writable_xds: A list of xarray datasets.
+    """
 
     cubical_bit = col_kwrds["BITFLAG"]["FLAGSET_cubical"]
     legacy_bit = col_kwrds["BITFLAG"]["FLAGSET_legacy"]

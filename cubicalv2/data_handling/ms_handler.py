@@ -190,6 +190,9 @@ def read_ms(opts):
 
     bitflag_dtype = np.uint32
 
+    # The use of name below guaratees that dask produces unique arrays and
+    # avoids accidental aliasing.
+
     for xds_ind, xds in enumerate(data_xds):
         xds_updates = {}
         if not opts._bitflag_exists:
