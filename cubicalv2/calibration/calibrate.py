@@ -4,7 +4,8 @@ import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
-from cubicalv2.flagging.dask_flagging import set_bitflag, unset_bitflag
+from cubicalv2.flagging.dask_flagging import (set_bitflag, unset_bitflag,
+                                              make_bitmask)
 from loguru import logger  # noqa
 from numba.typed import List
 from itertools import chain, repeat
@@ -54,7 +55,7 @@ def initialize_gain(shape):
     return gain
 
 
-def add_calibration_graph(data_xds, opts):
+def add_calibration_graph(data_xds, col_kwrds, opts):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -62,6 +63,7 @@ def add_calibration_graph(data_xds, opts):
 
     Args:
         data_xds: A list of xarray data sets/graphs providing input data.
+        col_kwrds: A dictionary containing column keywords.
         opts: A Namespace object containing all necessary configuration.
 
     Returns:
@@ -79,6 +81,10 @@ def add_calibration_graph(data_xds, opts):
                          "containing {} correlations.".format(
                              opts.solver_mode, opts._ms_ncorr, ))
 
+    # In the event that not all input BITFLAGS are required, generate a mask
+    # which can be applied to select the appropriate bits.
+    bitmask = make_bitmask(col_kwrds, opts)
+
     gains_per_xds = {name: [] for name in opts.solver_gain_terms}
     updated_xds = []
 
@@ -92,8 +98,8 @@ def add_calibration_graph(data_xds, opts):
         time_col = xds.TIME.data
         flag_col = xds.FLAG.data[..., corr_slice]
         flag_row_col = xds.FLAG_ROW.data[..., corr_slice]
-        bitflag_col = xds.BITFLAG.data[..., corr_slice]
-        bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice]
+        bitflag_col = xds.BITFLAG.data[..., corr_slice] & bitmask
+        bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice] & bitmask
 
         if opts._unity_weights:
             weight_col = da.ones_like(data_col[:, :1, :], dtype=np.float32)
@@ -107,19 +113,27 @@ def add_calibration_graph(data_xds, opts):
             weight_col = weight_col.map_blocks(
                 lambda w: np.expand_dims(w, 1), new_axis=1)
 
-        # TODO: Do something sensible with existing bitflags. This should be as
-        # simple as initing the cubical bitflags from the existing bitflags
-        # using a sensible mask.
         cubical_bitflags = da.zeros(bitflag_col.shape,
-                                    dtype=bitflag_col.dtype,
+                                    dtype=np.uint32,
                                     chunks=bitflag_col.chunks,
                                     name="zeros-" + uuid4().hex)
-        cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_col)
-        cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR", flag_row_col)
+        # If no bitmask is generated, we presume that we are using the
+        # conventional FLAG and FLAG_ROW columns. TODO: Consider whether this
+        # is safe behaviour.
+        if bitmask == 0:
+            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
+                                           flag_col)
+            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
+                                           flag_row_col)
+        else:
+            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
+                                           bitflag_col > 0)
+            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
+                                           bitflag_row_col > 0)
 
         # Anywhere we have input data flags (or invalid data), set the weights
         # to zero. Due to the fact np.inf*0 = np.nan (very annoying), we also
-        # set the data to zero at these locations. These operation implicitly
+        # set the data to zero at these locations. These operations implicitly
         # broadcast the weights to the same frequency dimension as the data.
         # This unavoidable as we want to exploit the weights to effectively
         # flag.
@@ -314,9 +328,6 @@ def add_calibration_graph(data_xds, opts):
 
         for ind, term in enumerate(opts.solver_gain_terms):
             gains_per_xds[term].append(unpacked_gains[ind])
-
-        # This is an example of updating the contents of and xds. TODO: Use
-        # this for writing out data.
 
         # This is not correct at the moment, as the cubical internal bitflags
         # are not what is ultimately written to the MS. TODO: The final

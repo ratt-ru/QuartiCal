@@ -46,7 +46,8 @@ def execute():
     # assigned.
     model_xds = add_model_graph(ms_xds, opts)
 
-    gains_per_xds, post_gain_xds = add_calibration_graph(model_xds, opts)
+    gains_per_xds, post_gain_xds = \
+        add_calibration_graph(model_xds, col_kwrds, opts)
 
     writable_xds = finalise_flags(post_gain_xds, col_kwrds, opts)
 
