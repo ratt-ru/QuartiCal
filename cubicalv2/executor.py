@@ -6,7 +6,7 @@ from cubicalv2.parser import parser, preprocess
 from cubicalv2.data_handling.ms_handler import read_ms, write_columns
 from cubicalv2.data_handling.model_handler import add_model_graph
 from cubicalv2.calibration.calibrate import add_calibration_graph
-from cubicalv2.flagging.dask_flagging import finalise_flags
+from cubicalv2.flagging.flagging import finalise_flags
 import dask.array as da
 import time
 from dask.diagnostics import ProgressBar

@@ -4,8 +4,8 @@ import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
-from cubicalv2.flagging.dask_flagging import (set_bitflag, unset_bitflag,
-                                              make_bitmask, bfdtype)
+from cubicalv2.flagging.flagging import (set_bitflag, unset_bitflag,
+                                         make_bitmask, bfdtype)
 from loguru import logger  # noqa
 from numba.typed import List
 from itertools import chain, repeat

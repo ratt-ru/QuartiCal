@@ -2,7 +2,7 @@
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-from cubicalv2.flagging.dask_flagging import update_kwrds, bfdtype
+from cubicalv2.flagging.flagging import update_kwrds, bfdtype
 from uuid import uuid4
 from loguru import logger
 
