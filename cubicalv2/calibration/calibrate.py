@@ -5,7 +5,7 @@ from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.flagging.dask_flagging import (set_bitflag, unset_bitflag,
-                                              make_bitmask)
+                                              make_bitmask, bfdtype)
 from loguru import logger  # noqa
 from numba.typed import List
 from itertools import chain, repeat
@@ -114,7 +114,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 lambda w: np.expand_dims(w, 1), new_axis=1)
 
         cubical_bitflags = da.zeros(bitflag_col.shape,
-                                    dtype=np.uint32,
+                                    dtype=bfdtype,
                                     chunks=bitflag_col.chunks,
                                     name="zeros-" + uuid4().hex)
         # If no bitmask is generated, we presume that we are using the

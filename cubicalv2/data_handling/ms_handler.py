@@ -2,7 +2,7 @@
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-from cubicalv2.flagging.dask_flagging import update_kwrds
+from cubicalv2.flagging.dask_flagging import update_kwrds, bfdtype
 from uuid import uuid4
 from loguru import logger
 
@@ -188,8 +188,6 @@ def read_ms(opts):
 
     updated_kwrds = update_kwrds(col_kwrds, opts)
 
-    bitflag_dtype = np.uint32
-
     # The use of name below guaratees that dask produces unique arrays and
     # avoids accidental aliasing.
 
@@ -197,14 +195,14 @@ def read_ms(opts):
         xds_updates = {}
         if not opts._bitflag_exists:
             data = da.zeros(xds.FLAG.data.shape,
-                            dtype=bitflag_dtype,
+                            dtype=bfdtype,
                             chunks=xds.FLAG.data.chunks,
                             name="zeros-" + uuid4().hex)
             schema = ("row", "chan", "corr")
             xds_updates["BITFLAG"] = (schema, data)
         if not opts._bitflagrow_exists:
             data = da.zeros(xds.FLAG_ROW.data.shape,
-                            dtype=bitflag_dtype,
+                            dtype=bfdtype,
                             chunks=xds.FLAG_ROW.data.chunks,
                             name="zeros-" + uuid4().hex)
             schema = ("row",)
