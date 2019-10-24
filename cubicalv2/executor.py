@@ -25,7 +25,7 @@ def execute():
     # of operation. The idea is that all our configuration state lives in this
     # options dictionary. Down with OOP!
 
-    # There needs to be a validation step which checks that the config is
+    # TODO: There needs to be a validation step which checks that the config is
     # possible.
 
     preprocess.preprocess_opts(opts)

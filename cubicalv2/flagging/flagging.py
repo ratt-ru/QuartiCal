@@ -215,7 +215,8 @@ def finalise_flags(xds_list, col_kwrds, opts):
 
         flag_col = xds.FLAG.data
         flag_row_col = xds.FLAG_ROW.data
-        bitflag_col = xds.BITFLAG.data.astype(bfdtype)
+        bitflag_col = xds.BITFLAG.data.astype(bfdtype)  # Might be signed.
+        bitflag_row_col = xds.BITFLAG_ROW.data.astype(bfdtype)
         cubi_bitflags = xds.CUBI_BITFLAG.data
 
         # If legacy doesn't exist, it will be added.
@@ -229,16 +230,35 @@ def finalise_flags(xds_list, col_kwrds, opts):
         cubi_bitflag = (cubi_bitflags > 0).astype(bfdtype) << cubical_bit
 
         bitflag_col |= cubi_bitflag
+        bitflag_row_col = da.map_blocks(np.bitwise_and.reduce,
+                                        bitflag_col,
+                                        axis=(1, 2),
+                                        drop_axis=(1, 2),
+                                        dtype=bfdtype)
 
+        # TODO: This might be slightly incorrect - I may need to reuse the
+        # bitmask here, as the old-school flags will be a subset of the
+        # bitflags.
         flag_col = bitflag_col > 0
+        flag_row_col = da.map_blocks(np.logical_and.reduce,
+                                     flag_col,
+                                     axis=(1, 2),
+                                     drop_axis=(1, 2),
+                                     dtype=bool)
 
-        # BITFLAG muust be written as int32 as the MS doesn't play nicely with
-        # uint32. TODO: Also include functionality for the row-based
-        # equivalents.
-        writable_xds.append(
+        # BITFLAG and BITFLAG_ROW must be written as int32 as the MS doesn't
+        # play nicely with uint values.
+        updated_xds = \
             xds.assign({"BITFLAG": (xds.BITFLAG.dims,
                                     bitflag_col.astype(np.int32)),
-                        "FLAG": (xds.FLAG.dims, flag_col)}))
+                        "BITFLAG_ROW": (xds.BITFLAG_ROW.dims,
+                                        bitflag_row_col.astype(np.int32)),
+                        "FLAG": (xds.FLAG.dims, flag_col),
+                        "FLAG_ROW": (xds.FLAG_ROW.dims, flag_row_col)})
+        updated_xds.attrs["WRITE_COLS"] += \
+            ["BITFLAG", "BITFLAG_ROW", "FLAG", "FLAG_ROW"]
+
+        writable_xds.append(updated_xds)
 
     return writable_xds
 

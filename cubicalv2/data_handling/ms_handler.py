@@ -182,9 +182,8 @@ def read_ms(opts):
                                       column_keywords=True)
 
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
-    # appropriately sized dask arrays to the data sets. These are initialised
-    # from the existing flag data. These can be written back to the MS at the
-    # end.
+    # appropriately sized dask arrays to the data sets. These can be written
+    # to the MS at the end.
 
     updated_kwrds = update_kwrds(col_kwrds, opts)
 
@@ -210,6 +209,11 @@ def read_ms(opts):
         if xds_updates:
             data_xds[xds_ind] = xds.assign(xds_updates)
 
+    # Add an attribute to the xds on which we will store the names of fields
+    # which must be written to the MS.
+    for xds_ind, xds in enumerate(data_xds):
+        data_xds[xds_ind] = xds.assign_attrs(WRITE_COLS=[])
+
     return data_xds, updated_kwrds
 
 
@@ -217,7 +221,13 @@ def write_columns(xds_list, col_kwrds, opts):
 
     import daskms.descriptors.ratt_ms  # noqa
 
+    output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
+    output_kwrds = {cn: col_kwrds[cn] for cn in output_cols}
+
+    logger.info("Outputs will be written to {}.".format(
+        ", ".join(output_cols)))
+
     return xds_to_table(xds_list, opts.input_ms_name,
-                        columns=("BITFLAG", "CUBI_RESIDUAL", "FLAG"),
-                        column_keywords={"BITFLAG": col_kwrds["BITFLAG"]},
+                        columns=output_cols,
+                        column_keywords=output_kwrds,
                         descriptor="ratt_ms(fixed=False)")

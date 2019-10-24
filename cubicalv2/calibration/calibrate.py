@@ -86,7 +86,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
     bitmask = make_bitmask(col_kwrds, opts)
 
     gains_per_xds = {name: [] for name in opts.solver_gain_terms}
-    updated_xds = []
+    post_cal_xds = []
 
     for xds_ind, xds in enumerate(data_xds):
 
@@ -329,18 +329,18 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         for ind, term in enumerate(opts.solver_gain_terms):
             gains_per_xds[term].append(unpacked_gains[ind])
 
-        # This is not correct at the moment, as the cubical internal bitflags
-        # are not what is ultimately written to the MS. TODO: The final
-        # internal bitflags need to reduced to a single bitflag entry, based
-        # on a user specified mask/sensible default. This corersponds to the
-        # old propagate options. The BITFLAG column keywords also need to be
-        # approprately adjusted.
+        # Add quantities required elsewhere to the xds and mark certain columns
+        # for saving.
 
-        updated_xds.append(
+        updated_xds = \
             xds.assign({"CUBI_RESIDUAL": (xds.DATA.dims, residuals),
                         "CUBI_BITFLAG": (xds.BITFLAG.dims, cubical_bitflags),
                         "CUBI_MODEL": (xds.DATA.dims,
-                            model_col.sum(axis=2).astype(np.complex64))}))
+                                       model_col.sum(axis=2,
+                                                     dtype=np.complex64))})
+        updated_xds.attrs["WRITE_COLS"] += ["CUBI_RESIDUAL"]
+
+        post_cal_xds.append(updated_xds)
 
     # Return the resulting graphs for the gains and updated xds.
-    return gains_per_xds, updated_xds
+    return gains_per_xds, post_cal_xds
