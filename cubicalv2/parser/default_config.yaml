@@ -174,14 +174,14 @@ output:
 flags:
     _description: Arguments pertaining to flagging behaviour.
     apply-precal:
+        nargs: +
         type: str
-        help: Which flagsets will be applied prior to calibration. Use a
-              comma-separated list of flagset name to use bitflags. Use
+        help: Which flagsets will be applied prior to calibration. Use
               "~FLAGSET" to apply all bitflags except the named flagset
-              ("~cubical" is useful, to ignore the flags of a previous CubiCal
-              run). Use "FLAG" to just apply FLAG/FLAG_ROW. This needs to be
-              updated.
-        default: "~cubical"
+              ("~cubical" is will ignore preexisting CubiCal flags).
+              Use "FLAG" to just apply FLAG/FLAG_ROW.
+        default:
+            - ~cubical
     add-bitflags:
         type: bool
         help: If True, will automatically insert a BITFLAG column if one is not

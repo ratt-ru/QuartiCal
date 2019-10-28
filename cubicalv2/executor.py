@@ -3,9 +3,10 @@
 import cubicalv2.logging.init_logger  # noqa
 from loguru import logger
 from cubicalv2.parser import parser, preprocess
-from cubicalv2.data_handling.ms_handler import read_ms
+from cubicalv2.data_handling.ms_handler import read_ms, write_columns
 from cubicalv2.data_handling.model_handler import add_model_graph
 from cubicalv2.calibration.calibrate import add_calibration_graph
+from cubicalv2.flagging.flagging import finalise_flags
 import dask.array as da
 import time
 from dask.diagnostics import ProgressBar
@@ -24,7 +25,7 @@ def execute():
     # of operation. The idea is that all our configuration state lives in this
     # options dictionary. Down with OOP!
 
-    # There needs to be a validation step which checks that the config is
+    # TODO: There needs to be a validation step which checks that the config is
     # possible.
 
     preprocess.preprocess_opts(opts)
@@ -39,27 +40,38 @@ def execute():
     t0 = time.time()
 
     # Reads the measurement set using the relavant configuration from opts.
-    ms_xds = read_ms(opts)
+    ms_xds, col_kwrds = read_ms(opts)
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
     model_xds = add_model_graph(ms_xds, opts)
 
-    gains_per_xds = add_calibration_graph(model_xds, opts)
+    gains_per_xds, post_gain_xds = \
+        add_calibration_graph(model_xds, col_kwrds, opts)
+
+    writable_xds = finalise_flags(post_gain_xds, col_kwrds, opts)
+
+    writes = write_columns(writable_xds, col_kwrds, opts)
 
     # write_columns = ms_handler.write_ms(updated_data_xds, opts)
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()
     with ProgressBar():
-        gains = da.compute(gains_per_xds,
-                           # write_columns,
-                           # scheduler="sync")
-                           num_workers=opts.parallel_nthread)
+        gains, _ = da.compute(gains_per_xds, writes,
+                              #  write_columns,
+                              #  scheduler="sync")
+                              num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
-    # print(gains[0]["G"][0])
+    # import numpy as np
+    # for gain in gains["G"]:
+    #     print(np.max(np.abs(gain)))
+    #     np.save("example_gains.npy", gain)
+    #     break
+    # for gain in gains[0]["dE"]:
+    #     print(np.max(np.abs(gain)))
 
-    # dask.visualize(gains_per_xds[0],
+    # dask.visualize(gains_per_xds["G"][0], writes[0],
     #                filename='graph.pdf',
     #                optimize_graph=True)

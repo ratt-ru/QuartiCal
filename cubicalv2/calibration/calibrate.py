@@ -3,9 +3,23 @@ import numpy as np
 import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import chain_solver
-from cubicalv2.kernels.gjones_chain import update_func_factory
+from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
+from cubicalv2.flagging.flagging import (set_bitflag, unset_bitflag,
+                                         make_bitmask, ibfdtype)
 from loguru import logger  # noqa
 from numba.typed import List
+from itertools import chain, repeat
+from uuid import uuid4
+
+# The following supresses the egregious numba pending deprecation warnings.
+# TODO: Make sure that the code doesn't break when they finally decprecate
+# reflected lists.
+from numba.errors import NumbaDeprecationWarning
+from numba.errors import NumbaPendingDeprecationWarning
+import warnings
+
+warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
+warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
 
 # Defines which solver modes are supported given the number of correlations
 # in the measurement set. If a mode is supported, this dictionary contains
@@ -22,19 +36,26 @@ slice_scheme = {1: {"scalar": slice(None)},
                     "scalar": slice(0, 1)}}
 
 
-def initialize_gains(*shapes):
+def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
+                  *gains):
+
+    gain_list = [g for g in gains]
+
+    return residual_full(data, model, gain_list, a1, a2, t_map_arr,
+                         f_map_arr, d_map_arr)
+
+
+def initialize_gain(shape):
 
     dtype = np.complex128
 
-    gain_list = list(map(lambda s: np.zeros(s, dtype=dtype), shapes))
+    gain = np.zeros(shape, dtype=dtype)
+    gain[..., ::3] = 1
 
-    for gain in gain_list:
-        gain[..., ::3] = 1
-
-    return gain_list
+    return gain
 
 
-def add_calibration_graph(data_xds, opts):
+def add_calibration_graph(data_xds, col_kwrds, opts):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -42,6 +63,7 @@ def add_calibration_graph(data_xds, opts):
 
     Args:
         data_xds: A list of xarray data sets/graphs providing input data.
+        col_kwrds: A dictionary containing column keywords.
         opts: A Namespace object containing all necessary configuration.
 
     Returns:
@@ -59,32 +81,83 @@ def add_calibration_graph(data_xds, opts):
                          "containing {} correlations.".format(
                              opts.solver_mode, opts._ms_ncorr, ))
 
+    # In the event that not all input BITFLAGS are required, generate a mask
+    # which can be applied to select the appropriate bits.
+    bitmask = make_bitmask(col_kwrds, opts)
+
     gains_per_xds = {name: [] for name in opts.solver_gain_terms}
+    post_cal_xds = []
 
     for xds_ind, xds in enumerate(data_xds):
 
         # Unpack the data on the xds into variables with understandable names.
         data_col = xds.DATA.data[..., corr_slice]
-        raw_model_col = xds.MODEL_DATA.data[..., corr_slice]
+        model_col = xds.MODEL_DATA.data[..., corr_slice]
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         time_col = xds.TIME.data
         flag_col = xds.FLAG.data[..., corr_slice]
-        flag_row_col = xds.FLAG_ROW.data
-        bitflag_col = xds.BITFLAG.data[..., corr_slice]
-        bitflag_row_col = xds.BITFLAG_ROW.data
+        flag_row_col = xds.FLAG_ROW.data[..., corr_slice]
+        bitflag_col = xds.BITFLAG.data[..., corr_slice] & bitmask
+        bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice] & bitmask
+
         if opts._unity_weights:
             weight_col = da.ones_like(data_col[:, :1, :], dtype=np.float32)
         else:
             weight_col = xds[opts.input_ms_weight_column].data[..., corr_slice]
 
-        data_col = data_col.map_blocks(
-            lambda d, f: np.where(f == 1, 0, d), flag_col)
-        model_col = raw_model_col.map_blocks(
-            lambda m, f: np.where(f == 1, 0, m), flag_col[:, :, None, :])
+        # The following handles the fact that the chosen weight column might
+        # not have a frequency axis.
+
         if weight_col.ndim == 2:
             weight_col = weight_col.map_blocks(
                 lambda w: np.expand_dims(w, 1), new_axis=1)
+
+        cubical_bitflags = da.zeros(bitflag_col.shape,
+                                    dtype=ibfdtype,
+                                    chunks=bitflag_col.chunks,
+                                    name="zeros-" + uuid4().hex)
+        # If no bitmask is generated, we presume that we are using the
+        # conventional FLAG and FLAG_ROW columns. TODO: Consider whether this
+        # is safe behaviour.
+        if bitmask == 0:
+            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
+                                           flag_col)
+            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
+                                           flag_row_col)
+        else:
+            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
+                                           bitflag_col > 0)
+            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
+                                           bitflag_row_col > 0)
+
+        # Anywhere we have input data flags (or invalid data), set the weights
+        # to zero. Due to the fact np.inf*0 = np.nan (very annoying), we also
+        # set the data to zero at these locations. These operations implicitly
+        # broadcast the weights to the same frequency dimension as the data.
+        # This unavoidable as we want to exploit the weights to effectively
+        # flag.
+
+        invalid_points = ~da.isfinite(data_col)
+        data_col[invalid_points] = 0  # Set nasty data points to zero.
+
+        cubical_bitflags = set_bitflag(cubical_bitflags,
+                                       "INVALID",
+                                       invalid_points)
+
+        missing_points = da.logical_or(data_col[..., 0:1] == 0,
+                                       data_col[..., 3:4] == 0)
+        missing_points = da.logical_or(missing_points, data_col == 0)
+
+        cubical_bitflags = set_bitflag(cubical_bitflags,
+                                       "MISSING",
+                                       missing_points)
+
+        cubical_bitflags = set_bitflag(cubical_bitflags,
+                                       "NULLWGHT",
+                                       weight_col == 0)
+
+        weight_col[cubical_bitflags] = 0
 
         # Convert the time column data into indices.
         utime_ind = \
@@ -179,34 +252,27 @@ def add_calibration_graph(data_xds, opts):
         f_map_arr = da.stack(f_maps, axis=1).rechunk({1: n_term})
         d_map_arr = np.array(d_maps, dtype=np.uint32)
 
-        # Create a tuple of gain arrays per chunk.
-        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
-        gain_args = [initialize_gains, gain_schema]
-
-        for g_shape in g_shapes:
-            gain_args.append(g_shape)
-            gain_args.append(("rowlike",))
-
         # We set the time and frequency chunks to nan - this is done to encode
         # the fact that we do not know the shapes of the gains during the
         # graph construction step.
-        gain_list = da.blockwise(
-            *gain_args,
-            align_arrays=False,
-            dtype=np.complex128,
-            new_axes={"chan": n_freq,
-                      "ant": n_ant,
-                      "dir": n_dir,
-                      "corr": opts._ms_ncorr},
-            adjust_chunks={"rowlike": (np.nan,)*n_chunks,
-                           "chan": (np.nan,)})
 
-        # Initialise the inverse gains. This is basically the same as the
-        # gains, but we init them as empty. We init these outside the solver
-        # as tuples are notoriously difficult to construct in nopython mode.
-        inverse_gain_list = gain_list.map_blocks(
-            lambda gt: list(map(np.empty_like, gt)),
-            dtype=np.complex128)
+        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
+        gain_list = []
+
+        for g_shape in g_shapes:
+            gain = da.blockwise(
+                initialize_gain, gain_schema,
+                g_shape, ("rowlike",),
+                align_arrays=False,
+                dtype=np.complex128,
+                new_axes={"chan": n_freq,
+                          "ant": n_ant,
+                          "dir": n_dir,
+                          "corr": opts._ms_ncorr},
+                adjust_chunks={"rowlike": (np.nan,)*n_chunks,
+                               "chan": (np.nan,)})
+            gain_list.append(gain)
+            gain_list.append(gain_schema)
 
         # We use a factory function to produce appropraite update functions
         # for use in the solver. TODO: Investigate using generated jit for this
@@ -219,8 +285,6 @@ def add_calibration_graph(data_xds, opts):
         gains = da.blockwise(
             chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
-            gain_list, ("rowlike", "chan", "ant", "dir", "corr"),
-            inverse_gain_list, ("rowlike", "chan", "ant", "dir", "corr"),
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
@@ -230,19 +294,53 @@ def add_calibration_graph(data_xds, opts):
             d_map_arr, None,
             compute_jhj_and_jhr, None,
             compute_update, None,
+            *gain_list,
             concatenate=True,
             dtype=model_col.dtype,
             align_arrays=False,)
 
-        for ind, term in enumerate(opts.solver_gain_terms):
-            gains_per_xds[term].append(gains.map_blocks(
-                lambda g, i=None: g[i], i=ind, dtype=np.complex128))
+        # Gains are in dask limbo at this point - we have returned a list
+        # which is not understood by the array interface. We take the list of
+        # gains per chunk and explicitly unpack them using map_blocks.
 
-        # This is an example of updating the contents of and xds. TODO: Use
-        # this for writing out data.
-        # bitflag_col = da.ones_like(bitflag_col)*10
-        # data_xds[xds_ind] = \
-        #     xds.assign({"BITFLAG": (xds.BITFLAG.dims, bitflag_col)})
+        unpacked_gains = [gains.map_blocks(lambda g, i=None: g[i], i=ind,
+                          dtype=np.complex128) for ind in range(n_term)]
+
+        gain_zipper = zip(unpacked_gains, repeat(gain_schema, n_term))
+
+        gain_list = list(chain.from_iterable(gain_zipper))
+
+        residuals = da.blockwise(
+            dask_residual, ("rowlike", "chan", "corr"),
+            data_col, ("rowlike", "chan", "corr"),
+            model_col, ("rowlike", "chan", "dir", "corr"),
+            ant1_col, ("rowlike",),
+            ant2_col, ("rowlike",),
+            t_map_arr, ("rowlike", "term"),
+            f_map_arr, ("rowlike", "term"),
+            d_map_arr, None,
+            *gain_list,
+            dtype=data_col.dtype,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"rowlike": data_col.chunks[0],
+                           "chan": data_col.chunks[1]})
+
+        for ind, term in enumerate(opts.solver_gain_terms):
+            gains_per_xds[term].append(unpacked_gains[ind])
+
+        # Add quantities required elsewhere to the xds and mark certain columns
+        # for saving.
+
+        updated_xds = \
+            xds.assign({"CUBI_RESIDUAL": (xds.DATA.dims, residuals),
+                        "CUBI_BITFLAG": (xds.BITFLAG.dims, cubical_bitflags),
+                        "CUBI_MODEL": (xds.DATA.dims,
+                                       model_col.sum(axis=2,
+                                                     dtype=np.complex64))})
+        updated_xds.attrs["WRITE_COLS"] += ["CUBI_RESIDUAL"]
+
+        post_cal_xds.append(updated_xds)
 
     # Return the resulting graphs for the gains and updated xds.
-    return gains_per_xds
+    return gains_per_xds, post_cal_xds

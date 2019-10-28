@@ -2,8 +2,9 @@
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
+from cubicalv2.flagging.flagging import update_kwrds, ibfdtype
+from uuid import uuid4
 from loguru import logger
-import warnings
 
 
 def read_ms(opts):
@@ -76,21 +77,23 @@ def read_ms(opts):
                 opts._phase_dir[0], opts._phase_dir[1])
 
     # Check whether the BITFLAG column exists - if not, we will need to add it
-    # or ignore it. We suppress dask_ms warnings here as the columns may not
-    # exist.
+    # or ignore it.
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        bitflag_xds = xds_from_ms(opts.input_ms_name,
-                                  columns=("BITFLAG", "BITFLAG_ROW"))[0]
+    try:
+        xds_from_ms(opts.input_ms_name, columns=("BITFLAG",))
+        opts._bitflag_exists = True
+        logger.info("BITFLAG column is present.")
+    except RuntimeError:
+        opts._bitflag_exists = False
+        logger.info("BITFLAG column is missing. It will be added.")
 
-    opts._bitflag_exists = "BITFLAG" in bitflag_xds
-    opts._bitflagrow_exists = "BITFLAG_ROW" in bitflag_xds
-
-    logger.info("BITFLAG column {} present.",
-                "is" if opts._bitflag_exists else "isn't")
-    logger.info("BITFLAG_ROW column {} present.",
-                "is" if opts._bitflagrow_exists else "isn't")
+    try:
+        xds_from_ms(opts.input_ms_name, columns=("BITFLAG_ROW",))
+        opts._bitflagrow_exists = True
+        logger.info("BITFLAG_ROW column is present.")
+    except RuntimeError:
+        opts._bitflagrow_exists = False
+        logger.info("BITFLAG_ROW column is missing. It will be added.")
 
     # Check whether the specified weight column exists. If not, log a warning
     # and fall back to unity weights.
@@ -169,40 +172,79 @@ def read_ms(opts):
     data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "FLAG", "FLAG_ROW",
                     "UVW") + extra_columns
 
-    data_xds = xds_from_ms(opts.input_ms_name,
-                           columns=data_columns,
-                           index_cols=("TIME",),
-                           group_cols=("SCAN_NUMBER",
-                                       "FIELD_ID",
-                                       "DATA_DESC_ID"),
-                           chunks=row_chunks_per_xds)
+    data_xds, col_kwrds = xds_from_ms(opts.input_ms_name,
+                                      columns=data_columns,
+                                      index_cols=("TIME",),
+                                      group_cols=("SCAN_NUMBER",
+                                                  "FIELD_ID",
+                                                  "DATA_DESC_ID"),
+                                      chunks=row_chunks_per_xds,
+                                      column_keywords=True)
 
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
-    # appropriately sized dask arrays to the data sets. These are initialised
-    # from the existing flag data. If required, these can be written back to
-    # the MS at the end. TODO: Add writing functionality.
+    # appropriately sized dask arrays to the data sets. These can be written
+    # to the MS at the end. Note that if we are adding the bitflag column,
+    # we initiliase it using the internal dtype. This reduces the memory
+    # footprint a little, although it will still ultimately be saved as an
+    # int32. TODO: Check whether we can write it as int16 to save space.
+
+    updated_kwrds = update_kwrds(col_kwrds, opts)
+
+    # The use of name below guaratees that dask produces unique arrays and
+    # avoids accidental aliasing.
 
     for xds_ind, xds in enumerate(data_xds):
         xds_updates = {}
         if not opts._bitflag_exists:
-            data = xds.FLAG.data.astype(np.int32) << 1
+            data = da.zeros(xds.FLAG.data.shape,
+                            dtype=ibfdtype,
+                            chunks=xds.FLAG.data.chunks,
+                            name="zeros-" + uuid4().hex)
             schema = ("row", "chan", "corr")
             xds_updates["BITFLAG"] = (schema, data)
         if not opts._bitflagrow_exists:
-            data = xds.FLAG_ROW.data.astype(np.int32) << 1
+            data = da.zeros(xds.FLAG_ROW.data.shape,
+                            dtype=ibfdtype,
+                            chunks=xds.FLAG_ROW.data.chunks,
+                            name="zeros-" + uuid4().hex)
             schema = ("row",)
             xds_updates["BITFLAG_ROW"] = (schema, data)
         if xds_updates:
             data_xds[xds_ind] = xds.assign(xds_updates)
 
-    return data_xds
+    # Add the external bitflag dtype to the opts Namespace. This is necessary
+    # as internal bitflags may have a different dtype and we need to reconcile
+    # the two. Note that we elect to interpret the input as an unsigned int
+    # to avoid issues with negation. TODO: Check/warn that the maximal bit
+    # is correct.
+    ebfdtype = data_xds[0].BITFLAG.dtype
+
+    if ebfdtype == np.int32:
+        opts._ebfdtype = np.uint32
+    elif ebfdtype == ibfdtype:
+        opts._ebfdtype = ibfdtype
+    else:
+        raise TypeError("BITFLAG type {} not supported.".format(ebfdtype))
+
+    # Add an attribute to the xds on which we will store the names of fields
+    # which must be written to the MS.
+    for xds_ind, xds in enumerate(data_xds):
+        data_xds[xds_ind] = xds.assign_attrs(WRITE_COLS=[])
+
+    return data_xds, updated_kwrds
 
 
-def write_ms(xds_list, opts):
+def write_columns(xds_list, col_kwrds, opts):
 
     import daskms.descriptors.ratt_ms  # noqa
 
-    return xds_to_table(xds_list, opts.input_ms_name,
-                        columns="BITFLAG",
-                        descriptor="ratt_ms(fixed=False)")
+    output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
+    output_kwrds = {cn: col_kwrds[cn] for cn in output_cols}
 
+    logger.info("Outputs will be written to {}.".format(
+        ", ".join(output_cols)))
+
+    return xds_to_table(xds_list, opts.input_ms_name,
+                        columns=output_cols,
+                        column_keywords=output_kwrds,
+                        descriptor="ratt_ms(fixed=False)")

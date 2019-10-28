@@ -6,27 +6,30 @@ import numpy as np
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
-def chain_solver(model, gain_tuple, inverse_gain_tuple, data, a1, a2, weights,
+def chain_solver(model, data, a1, a2, weights,
                  t_map_arr, f_map_arr, d_map_arr, compute_jhj_and_jhr,
-                 compute_update):
+                 compute_update, *gain_list):
 
-    for gain_ind in range(len(gain_tuple)):
+    gain_list = [g for g in gain_list]
+    inverse_gain_list = [np.empty_like(g) for g in gain_list]
 
-        invert_gains(gain_tuple, inverse_gain_tuple)
+    for gain_ind in range(len(gain_list)):
 
-        dd_term = gain_tuple[gain_ind].shape[3] > 1
+        invert_gains(gain_list, inverse_gain_list)
+
+        dd_term = gain_list[gain_ind].shape[3] > 1
 
         for i in range(20):
 
             if dd_term:
-                residual = residual_full(data, model, gain_tuple, a1, a2,
+                residual = residual_full(data, model, gain_list, a1, a2,
                                          t_map_arr, f_map_arr, d_map_arr)
             else:
                 residual = data
 
             jhj, jhr = compute_jhj_and_jhr(model,
-                                           gain_tuple,
-                                           inverse_gain_tuple,
+                                           gain_list,
+                                           inverse_gain_list,
                                            residual,
                                            a1,
                                            a2,
@@ -39,8 +42,10 @@ def chain_solver(model, gain_tuple, inverse_gain_tuple, data, a1, a2, weights,
             update = compute_update(jhj, jhr)
 
             if dd_term:
-                gain_tuple[gain_ind][:] = gain_tuple[gain_ind][:] + update/2
+                gain_list[gain_ind][:] = gain_list[gain_ind][:] + update/2
+            elif i % 2 == 0:
+                gain_list[gain_ind][:] = update
             else:
-                gain_tuple[gain_ind][:] = (gain_tuple[gain_ind] + update)/2
+                gain_list[gain_ind][:] = (gain_list[gain_ind] + update)/2
 
-    return gain_tuple
+    return gain_list
