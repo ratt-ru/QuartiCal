@@ -126,7 +126,7 @@ def _bitflagger(bitflag_arr, bitflag_names, selection, setter):
                         bitflag_arr, bitflag_axes,
                         bitflag_names, None,
                         *selection_args,
-                        dtype=ibfdtype)
+                        dtype=bitflag_arr.dtype)
 
 
 def update_kwrds(col_kwrds, opts):
@@ -206,8 +206,10 @@ def finalise_flags(xds_list, col_kwrds, opts):
         writable_xds: A list of xarray datasets.
     """
 
-    cubical_bit = ibfdtype(col_kwrds["BITFLAG"]["FLAGSET_cubical"])
-    legacy_bit = ibfdtype(col_kwrds["BITFLAG"]["FLAGSET_legacy"])
+    ebfdtype = opts._ebfdtype
+
+    cubical_bit = ebfdtype(col_kwrds["BITFLAG"]["FLAGSET_cubical"])
+    legacy_bit = ebfdtype(col_kwrds["BITFLAG"]["FLAGSET_legacy"])
 
     writable_xds = []
 
@@ -215,26 +217,26 @@ def finalise_flags(xds_list, col_kwrds, opts):
 
         flag_col = xds.FLAG.data
         flag_row_col = xds.FLAG_ROW.data
-        bitflag_col = xds.BITFLAG.data.astype(ibfdtype)  # Might be signed.
-        bitflag_row_col = xds.BITFLAG_ROW.data.astype(ibfdtype)
+        bitflag_col = xds.BITFLAG.data  # Might be signed.
+        bitflag_row_col = xds.BITFLAG_ROW.data
         cubi_bitflags = xds.CUBI_BITFLAG.data
 
         # If legacy doesn't exist, it will be added.
         if opts._init_legacy or opts.flags_reinit_bitflags:
             legacy_flags = flag_col | flag_row_col[:, None, None]
-            legacy_flags = legacy_flags.astype(ibfdtype) << legacy_bit
+            legacy_flags = legacy_flags.astype(ebfdtype) << legacy_bit
             bitflag_col |= legacy_flags
 
         # Set the CubiCal bit in the bitflag column.
         cubi_bitflags = unset_bitflag(cubi_bitflags, "PRIOR")
-        cubi_bitflag = (cubi_bitflags > 0).astype(ibfdtype) << cubical_bit
+        cubi_bitflag = (cubi_bitflags > 0).astype(ebfdtype) << cubical_bit
 
         bitflag_col |= cubi_bitflag
         bitflag_row_col = da.map_blocks(np.bitwise_and.reduce,
                                         bitflag_col,
                                         axis=(1, 2),
                                         drop_axis=(1, 2),
-                                        dtype=ibfdtype)
+                                        dtype=ebfdtype)
 
         # TODO: This might be slightly incorrect - I may need to reuse the
         # bitmask here, as the old-school flags will be a subset of the
@@ -247,7 +249,8 @@ def finalise_flags(xds_list, col_kwrds, opts):
                                      dtype=bool)
 
         # BITFLAG and BITFLAG_ROW must be written as int32 as the MS doesn't
-        # play nicely with uint values.
+        # play nicely with uint values. # TODO: Make this more sophisticated
+        # in the event that we can write smaller columns.
         updated_xds = \
             xds.assign({"BITFLAG": (xds.BITFLAG.dims,
                                     bitflag_col.astype(np.int32)),
@@ -265,6 +268,8 @@ def finalise_flags(xds_list, col_kwrds, opts):
 
 def make_bitmask(col_kwrds, opts):
     """Generate a BITFLAG mask in accordance with opts."""
+
+    ebfdtype = opts._ebfdtype
 
     bflag_sel = opts.flags_apply_precal
     bflag_kwrds = col_kwrds["BITFLAG"]
@@ -284,19 +289,19 @@ def make_bitmask(col_kwrds, opts):
         logger.info("--flags-apply-precal contains '~' - all bitflags other "
                     "than {} will be applied.".format(exclusion.upper()))
         bitshift = bflag_kwrds.get("FLAGSET_{}".format(exclusion))
-        bitmask = ~(ibfdtype(1) << ibfdtype(bitshift))
+        bitmask = ~(ebfdtype(1) << ebfdtype(bitshift))  # TODO: CHECK!!!
     elif flagcols_only:
         logger.info("--flags-apply-precal contains FLAG - no bitflags will "
                     "be applied.")
-        bitmask = ibfdtype(0)
+        bitmask = ebfdtype(0)
     else:
         logger.info("Generating bitmask for {} bitflags. Missing bitflags "
                     "were ignored.".format(", ".join(bflag_sel).upper()))
 
-        bitmask = ibfdtype(0)
+        bitmask = ebfdtype(0)
         for bf in bflag_sel:
             bitshift = bflag_kwrds.get("FLAGSET_" + bf)
-            bitmask |= ibfdtype(1) << ibfdtype(bitshift)
+            bitmask |= ebfdtype(1) << ebfdtype(bitshift)
 
     logger.info("Generated the following bitmask: 0b{0:016b}.".format(bitmask))
 

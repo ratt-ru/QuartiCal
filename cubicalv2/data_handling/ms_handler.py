@@ -183,7 +183,10 @@ def read_ms(opts):
 
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
     # appropriately sized dask arrays to the data sets. These can be written
-    # to the MS at the end.
+    # to the MS at the end. Note that if we are adding the bitflag column,
+    # we initiliase it using the internal dtype. This reduces the memory
+    # footprint a little, although it will still ultimately be saved as an
+    # int32. TODO: Check whether we can write it as int16 to save space.
 
     updated_kwrds = update_kwrds(col_kwrds, opts)
 
@@ -208,6 +211,20 @@ def read_ms(opts):
             xds_updates["BITFLAG_ROW"] = (schema, data)
         if xds_updates:
             data_xds[xds_ind] = xds.assign(xds_updates)
+
+    # Add the external bitflag dtype to the opts Namespace. This is necessary
+    # as internal bitflags may have a different dtype and we need to reconcile
+    # the two. Note that we elect to interpret the input as an unsigned int
+    # to avoid issues with negation. TODO: Check/warn that the maximal bit
+    # is correct.
+    ebfdtype = data_xds[0].BITFLAG.dtype
+
+    if ebfdtype == np.int32:
+        opts._ebfdtype = np.uint32
+    elif ebfdtype == ibfdtype:
+        opts._ebfdtype = ibfdtype
+    else:
+        raise TypeError("BITFLAG type {} not supported.".format(ebfdtype))
 
     # Add an attribute to the xds on which we will store the names of fields
     # which must be written to the MS.
