@@ -3,25 +3,25 @@ import numpy as np
 from copy import deepcopy
 from loguru import logger
 
-bfdtype = np.uint16  # Data type for bitflags.
+ibfdtype = np.uint16  # Data type for internal bitflags.
 
 bitflags = {
-    "PRIOR": bfdtype(1 << 0),      # prior flags (i.e. from MS)
-    "MISSING": bfdtype(1 << 1),    # missing data or solution
-    "INVALID": bfdtype(1 << 2),    # invalid data (zero, inf, nan)
-    "ILLCOND": bfdtype(1 << 3),    # solution ill conditioned - bad inverse
-    "NOCONV": bfdtype(1 << 4),     # no convergence
-    "CHISQ": bfdtype(1 << 5),      # excessive chisq
-    "GOOB": bfdtype(1 << 6),       # gain solution out of bounds
-    "BOOM": bfdtype(1 << 7),       # gain solution exploded (inf/nan)
-    "GNULL": bfdtype(1 << 8),      # gain solution gone to zero.
-    "LOWSNR": bfdtype(1 << 9),     # prior SNR too low for gain solution
-    "GVAR": bfdtype(1 << 10),      # posterior variance too low for solution
-    "INVMODEL": bfdtype(1 << 11),  # invalid model (zero, inf, nan)
-    "INVWGHT": bfdtype(1 << 12),   # invalid weight (inf or nan)
-    "NULLWGHT": bfdtype(1 << 13),  # null weight
-    "MAD": bfdtype(1 << 14),       # residual exceeds MAD-based threshold
-    "SKIPSOL": bfdtype(1 << 15)    # omit this data point from the solver
+    "PRIOR": ibfdtype(1 << 0),      # prior flags (i.e. from MS)
+    "MISSING": ibfdtype(1 << 1),    # missing data or solution
+    "INVALID": ibfdtype(1 << 2),    # invalid data (zero, inf, nan)
+    "ILLCOND": ibfdtype(1 << 3),    # solution ill conditioned - bad inverse
+    "NOCONV": ibfdtype(1 << 4),     # no convergence
+    "CHISQ": ibfdtype(1 << 5),      # excessive chisq
+    "GOOB": ibfdtype(1 << 6),       # gain solution out of bounds
+    "BOOM": ibfdtype(1 << 7),       # gain solution exploded (inf/nan)
+    "GNULL": ibfdtype(1 << 8),      # gain solution gone to zero.
+    "LOWSNR": ibfdtype(1 << 9),     # prior SNR too low for gain solution
+    "GVAR": ibfdtype(1 << 10),      # posterior variance too low for solution
+    "INVMODEL": ibfdtype(1 << 11),  # invalid model (zero, inf, nan)
+    "INVWGHT": ibfdtype(1 << 12),   # invalid weight (inf or nan)
+    "NULLWGHT": ibfdtype(1 << 13),  # null weight
+    "MAD": ibfdtype(1 << 14),       # residual exceeds MAD-based threshold
+    "SKIPSOL": ibfdtype(1 << 15)    # omit this data point from the solver
 }
 
 
@@ -126,7 +126,7 @@ def _bitflagger(bitflag_arr, bitflag_names, selection, setter):
                         bitflag_arr, bitflag_axes,
                         bitflag_names, None,
                         *selection_args,
-                        dtype=bfdtype)
+                        dtype=ibfdtype)
 
 
 def update_kwrds(col_kwrds, opts):
@@ -206,8 +206,8 @@ def finalise_flags(xds_list, col_kwrds, opts):
         writable_xds: A list of xarray datasets.
     """
 
-    cubical_bit = bfdtype(col_kwrds["BITFLAG"]["FLAGSET_cubical"])
-    legacy_bit = bfdtype(col_kwrds["BITFLAG"]["FLAGSET_legacy"])
+    cubical_bit = ibfdtype(col_kwrds["BITFLAG"]["FLAGSET_cubical"])
+    legacy_bit = ibfdtype(col_kwrds["BITFLAG"]["FLAGSET_legacy"])
 
     writable_xds = []
 
@@ -215,26 +215,26 @@ def finalise_flags(xds_list, col_kwrds, opts):
 
         flag_col = xds.FLAG.data
         flag_row_col = xds.FLAG_ROW.data
-        bitflag_col = xds.BITFLAG.data.astype(bfdtype)  # Might be signed.
-        bitflag_row_col = xds.BITFLAG_ROW.data.astype(bfdtype)
+        bitflag_col = xds.BITFLAG.data.astype(ibfdtype)  # Might be signed.
+        bitflag_row_col = xds.BITFLAG_ROW.data.astype(ibfdtype)
         cubi_bitflags = xds.CUBI_BITFLAG.data
 
         # If legacy doesn't exist, it will be added.
         if opts._init_legacy or opts.flags_reinit_bitflags:
             legacy_flags = flag_col | flag_row_col[:, None, None]
-            legacy_flags = legacy_flags.astype(bfdtype) << legacy_bit
+            legacy_flags = legacy_flags.astype(ibfdtype) << legacy_bit
             bitflag_col |= legacy_flags
 
         # Set the CubiCal bit in the bitflag column.
         cubi_bitflags = unset_bitflag(cubi_bitflags, "PRIOR")
-        cubi_bitflag = (cubi_bitflags > 0).astype(bfdtype) << cubical_bit
+        cubi_bitflag = (cubi_bitflags > 0).astype(ibfdtype) << cubical_bit
 
         bitflag_col |= cubi_bitflag
         bitflag_row_col = da.map_blocks(np.bitwise_and.reduce,
                                         bitflag_col,
                                         axis=(1, 2),
                                         drop_axis=(1, 2),
-                                        dtype=bfdtype)
+                                        dtype=ibfdtype)
 
         # TODO: This might be slightly incorrect - I may need to reuse the
         # bitmask here, as the old-school flags will be a subset of the
@@ -284,19 +284,19 @@ def make_bitmask(col_kwrds, opts):
         logger.info("--flags-apply-precal contains '~' - all bitflags other "
                     "than {} will be applied.".format(exclusion.upper()))
         bitshift = bflag_kwrds.get("FLAGSET_{}".format(exclusion))
-        bitmask = ~(bfdtype(1) << bfdtype(bitshift))
+        bitmask = ~(ibfdtype(1) << ibfdtype(bitshift))
     elif flagcols_only:
         logger.info("--flags-apply-precal contains FLAG - no bitflags will "
                     "be applied.")
-        bitmask = bfdtype(0)
+        bitmask = ibfdtype(0)
     else:
         logger.info("Generating bitmask for {} bitflags. Missing bitflags "
                     "were ignored.".format(", ".join(bflag_sel).upper()))
 
-        bitmask = bfdtype(0)
+        bitmask = ibfdtype(0)
         for bf in bflag_sel:
             bitshift = bflag_kwrds.get("FLAGSET_" + bf)
-            bitmask |= bfdtype(1) << bfdtype(bitshift)
+            bitmask |= ibfdtype(1) << ibfdtype(bitshift)
 
     logger.info("Generated the following bitmask: 0b{0:016b}.".format(bitmask))
 
