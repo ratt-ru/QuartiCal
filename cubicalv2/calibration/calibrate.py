@@ -4,6 +4,7 @@ import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
+from cubicalv2.statistics.statistics import estimate_noise
 from cubicalv2.flagging.flagging import (set_bitflag, unset_bitflag,
                                          make_bitmask, ibfdtype)
 from loguru import logger  # noqa
@@ -280,6 +281,14 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
 
+        noise_estimate, inv_var_per_chan = estimate_noise(data_col,
+                                                          cubical_bitflags,
+                                                          ant1_col,
+                                                          ant2_col,
+                                                          n_ant)
+
+        # print(noise_estimate.compute(), inv_var_per_chan.compute())
+
         # Gains will not report its size or chunks correctly - this is because
         # we do not know their shapes during graph construction.
         gains = da.blockwise(
@@ -325,6 +334,14 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
+
+        noise_estimate, inv_var_per_chan = estimate_noise(residuals,
+                                                          cubical_bitflags,
+                                                          ant1_col,
+                                                          ant2_col,
+                                                          n_ant)
+
+        # print(noise_estimate.compute())
 
         for ind, term in enumerate(opts.solver_gain_terms):
             gains_per_xds[term].append(unpacked_gains[ind])
