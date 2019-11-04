@@ -4,13 +4,14 @@ import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
-from cubicalv2.statistics.statistics import estimate_noise
+from cubicalv2.statistics.statistics import estimate_noise, pre_solve
 from cubicalv2.flagging.flagging import (set_bitflag, unset_bitflag,
                                          make_bitmask, ibfdtype)
 from loguru import logger  # noqa
 from numba.typed import List
 from itertools import chain, repeat
 from uuid import uuid4
+import xarray
 
 # The following supresses the egregious numba pending deprecation warnings.
 # TODO: Make sure that the code doesn't break when they finally decprecate
@@ -88,6 +89,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
     gains_per_xds = {name: [] for name in opts.solver_gain_terms}
     post_cal_xds = []
+    stats_xds = []
 
     for xds_ind, xds in enumerate(data_xds):
 
@@ -161,8 +163,14 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         weight_col[cubical_bitflags] = 0
 
         # Convert the time column data into indices.
-        utime_ind = \
-            time_col.map_blocks(lambda d: np.unique(d, return_inverse=True)[1])
+        utime_tuple = \
+            time_col.map_blocks(lambda d: np.unique(d, return_inverse=True),
+                                dtype=np.float32, meta=np.empty(0))
+
+        utime_val = utime_tuple.map_blocks(lambda ut: ut[0],
+                                           dtype=np.float32,
+                                           chunks=(xds.CHUNK_SPEC,))
+        utime_ind = utime_tuple.map_blocks(lambda ut: ut[1], dtype=np.int32)
 
         # Figure out the number of times per chunk.
         utime_per_chunk = \
@@ -288,6 +296,20 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                           n_ant)
 
         # print(noise_estimate.compute(), inv_var_per_chan.compute())
+
+        # print(xds)
+        print(inv_var_per_chan)
+
+        stats = xarray.Dataset({
+            "inv_var": (["chunk", "chan"], inv_var_per_chan),
+            "noise": (["chunk"], noise_estimate)},
+            coords={"ant": ("nant", range(n_ant)),
+                    "time": ("ntime", utime_val),
+                    "chan": ("chan", range(n_freq)),
+                    "chunk": ("chunk", range(n_chunks))},
+            attrs={})
+        print(stats)
+
 
         # Gains will not report its size or chunks correctly - this is because
         # we do not know their shapes during graph construction.

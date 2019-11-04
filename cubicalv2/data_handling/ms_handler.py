@@ -113,6 +113,8 @@ def read_ms(opts):
 
     row_chunks_per_xds = []
 
+    chunk_spec_per_xds = []
+
     for xds in indexing_xds:
 
         time_col = xds.TIME.data
@@ -145,13 +147,19 @@ def read_ms(opts):
             utime_per_chunk = da_utime_per_chunk.compute()
 
             cum_utime_per_chunk = np.cumsum(utime_per_chunk)
-            cum_utime_per_chunk = cum_utime_per_chunk - cum_utime_per_chunk[0]
+            cum_utime_per_chunk = [0] + cum_utime_per_chunk[:-1].tolist()
 
         else:
+            n_utimes = len(utimes)
+            tc = opts.input_ms_time_chunk
+            n_full = n_utimes//tc
+            remainder = [(n_utimes - n_full*tc)] if n_utimes % tc else []
+            utime_per_chunk = [tc]*n_full + remainder
+            cum_utime_per_chunk = list(range(0,
+                                             len(utimes),
+                                             opts.input_ms_time_chunk))
 
-            cum_utime_per_chunk = range(0,
-                                        len(utimes),
-                                        opts.input_ms_time_chunk)
+        chunk_spec_per_xds.append(tuple(utime_per_chunk))
 
         chunks = np.add.reduceat(utime_counts, cum_utime_per_chunk).tolist()
 
@@ -227,9 +235,12 @@ def read_ms(opts):
         raise TypeError("BITFLAG type {} not supported.".format(ebfdtype))
 
     # Add an attribute to the xds on which we will store the names of fields
-    # which must be written to the MS.
+    # which must be written to the MS. Also add the attribute which stores
+    # the unique times per xds.
     for xds_ind, xds in enumerate(data_xds):
-        data_xds[xds_ind] = xds.assign_attrs(WRITE_COLS=[])
+        data_xds[xds_ind] = \
+            xds.assign_attrs(WRITE_COLS=[],
+                             CHUNK_SPEC=chunk_spec_per_xds[xds_ind])
 
     return data_xds, updated_kwrds
 

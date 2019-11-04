@@ -1,6 +1,7 @@
 from cubicalv2.statistics.stat_kernels import estimate_noise_kernel
 import dask.array as da
 import numpy as np
+import xarray
 
 
 def estimate_noise(data_col, cubical_bitflags, ant1_col, ant2_col, n_ant):
@@ -38,10 +39,17 @@ def estimate_noise(data_col, cubical_bitflags, ant1_col, ant2_col, n_ant):
     # The following unpacks values from the noise tuple of (noise_estimate,
     # inv_var_per_chan). Noise estiamte is a float so we are forced to make
     # it an array whilst unpacking.
+    # noise_est = da.blockwise(
+    #     lambda nt: np.array(nt[0], ndmin=2), ("rowlike", "chan"),
+    #     noise_tuple, ("rowlike", "chan"),
+    #     adjust_chunks={"chan": 1},
+    #     dtype=np.float32
+    # )
+
     noise_est = da.blockwise(
-        lambda nt: np.array(nt[0], ndmin=2), ("rowlike", "chan"),
+        lambda nt: nt[0][0], ("rowlike",),
         noise_tuple, ("rowlike", "chan"),
-        adjust_chunks={"chan": 1},
+        adjust_chunks={"rowlike": 1},
         dtype=np.float32
     )
 
@@ -52,3 +60,8 @@ def estimate_noise(data_col, cubical_bitflags, ant1_col, ant2_col, n_ant):
     )
 
     return noise_est, inv_var_per_chan
+
+
+def pre_solve(cubical_bitflags):
+
+    return
