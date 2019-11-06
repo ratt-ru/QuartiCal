@@ -4,7 +4,8 @@ import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
-from cubicalv2.statistics.statistics import estimate_noise, pre_solve
+from cubicalv2.statistics.statistics import (estimate_noise,
+                                             compute_interval_statistics)
 from cubicalv2.flagging.flagging import (set_bitflag, unset_bitflag,
                                          make_bitmask, ibfdtype)
 from loguru import logger  # noqa
@@ -168,7 +169,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                 dtype=np.float32, meta=np.empty(0))
 
         utime_val = utime_tuple.map_blocks(lambda ut: ut[0],
-                                           dtype=np.float32,
+                                           dtype=np.float64,
                                            chunks=(xds.CHUNK_SPEC,))
         utime_ind = utime_tuple.map_blocks(lambda ut: ut[1], dtype=np.int32)
 
@@ -180,7 +181,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         # Set up some values relating to problem dimensions.
         n_ant = opts._n_ant
-        n_row, n_freq, n_dir, _ = model_col.shape
+        n_row, n_chan, n_dir, _ = model_col.shape
         n_chunks = data_col.numblocks[0]  # Number of chunks in row/time.
         n_term = len(opts.solver_gain_terms)  # Number of gain terms.
 
@@ -201,9 +202,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # be solved aross an entire chunk. n_row is >> number of unique
             # times, but that value is unavaible at this point.
             t_int = da.full_like(utime_per_chunk, atomic_t_int or n_row)
-            f_int = da.full_like(utime_per_chunk, atomic_f_int or n_freq)
+            f_int = da.full_like(utime_per_chunk, atomic_f_int or n_chan)
 
-            freqs_per_chunk = da.full_like(utime_per_chunk, n_freq)
+            freqs_per_chunk = da.full_like(utime_per_chunk, n_chan)
 
             # Number of time intervals per data chunk.
             t_int_per_chunk = \
@@ -248,9 +249,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # frequency intervals. This currently presumes that we don't chunk
             # in frequency. BEWARE!
             f_map = freqs_per_chunk.map_blocks(
-                lambda f, f_i: np.array([i//f_i[0] for i in range(n_freq)]),
+                lambda f, f_i: np.array([i//f_i[0] for i in range(n_chan)]),
                 f_int,
-                chunks=(n_freq,),
+                chunks=(n_chan,),
                 dtype=np.uint32)
             f_maps.append(f_map)
 
@@ -274,7 +275,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 g_shape, ("rowlike",),
                 align_arrays=False,
                 dtype=np.complex128,
-                new_axes={"chan": n_freq,
+                new_axes={"chan": n_chan,
                           "ant": n_ant,
                           "dir": n_dir,
                           "corr": opts._ms_ncorr},
@@ -283,7 +284,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             gain_list.append(gain)
             gain_list.append(gain_schema)
 
-        # We use a factory function to produce appropraite update functions
+        # We use a factory function to produce appropriate update functions
         # for use in the solver. TODO: Investigate using generated jit for this
         # purpose.
         compute_jhj_and_jhr, compute_update = \
@@ -295,21 +296,29 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                           ant2_col,
                                                           n_ant)
 
-        # print(noise_estimate.compute(), inv_var_per_chan.compute())
-
-        # print(xds)
-        print(inv_var_per_chan)
-
         stats = xarray.Dataset({
-            "inv_var": (["chunk", "chan"], inv_var_per_chan),
-            "noise": (["chunk"], noise_estimate)},
-            coords={"ant": ("nant", range(n_ant)),
-                    "time": ("ntime", utime_val),
-                    "chan": ("chan", range(n_freq)),
-                    "chunk": ("chunk", range(n_chunks))},
+            "inv_var": (("chunk", "chan"), inv_var_per_chan),
+            "noise_est": (("chunk",), noise_estimate)},
+            coords={"ant": ("ant", da.arange(n_ant, dtype=np.int16)),
+                    "time": ("time", utime_val),
+                    "chan": ("chan", da.arange(n_chan, dtype=np.int16)),
+                    "chunk": ("chunk", da.arange(n_chunks, dtype=np.int16))},
             attrs={})
-        print(stats)
 
+        stats = compute_interval_statistics(stats,
+                                            cubical_bitflags,
+                                            ant1_col,
+                                            ant2_col,
+                                            utime_ind,
+                                            utime_per_chunk,
+                                            n_ant,
+                                            n_chunks,
+                                            n_chan,
+                                            xds.CHUNK_SPEC)
+
+        stats_xds.append(stats)
+
+        # print(stats)
 
         # Gains will not report its size or chunks correctly - this is because
         # we do not know their shapes during graph construction.
