@@ -4,7 +4,20 @@ import numpy as np
 import xarray
 
 
-def estimate_noise(data_col, cubical_bitflags, ant1_col, ant2_col, n_ant):
+def create_stats_xds(utime_val, n_chan, n_ant, n_chunks):
+    """Set up a stats xarray dataset and define its coordinates."""
+
+    stats_xds = xarray.Dataset(
+        coords={"ant": ("ant", da.arange(n_ant, dtype=np.int16)),
+                "time": ("time", utime_val),
+                "chan": ("chan", da.arange(n_chan, dtype=np.int16)),
+                "chunk": ("chunk", da.arange(n_chunks, dtype=np.int16))})
+
+    return stats_xds
+
+
+def assign_noise_estimates(stats_xds, data_col, cubical_bitflags, ant1_col,
+                           ant2_col, n_ant):
     """Wrapper and unpacker for the Numba noise estimator code.
 
     Uses blockwise and the numba kernel function to produce a noise estimate
@@ -37,34 +50,34 @@ def estimate_noise(data_col, cubical_bitflags, ant1_col, ant2_col, n_ant):
     )
 
     # The following unpacks values from the noise tuple of (noise_estimate,
-    # inv_var_per_chan). Noise estiamte is a float so we are forced to make
-    # it an array whilst unpacking.
-    # noise_est = da.blockwise(
-    #     lambda nt: np.array(nt[0], ndmin=2), ("rowlike", "chan"),
-    #     noise_tuple, ("rowlike", "chan"),
-    #     adjust_chunks={"chan": 1},
-    #     dtype=np.float32
-    # )
+    # inv_var_per_chan). Noise estimate is embedded in a 2D array in order
+    # to make these blockwise calls less complicated - the channel dimension
+    # is not meaningful and we immediately squeeze it out.
 
     noise_est = da.blockwise(
-        lambda nt: nt[0][0], ("rowlike",),
+        lambda nt: nt[0], ("rowlike", "chan"),
         noise_tuple, ("rowlike", "chan"),
-        adjust_chunks={"rowlike": 1},
-        dtype=np.float32
-    )
+        adjust_chunks={"rowlike": 1,
+                       "chan": 1},
+        dtype=np.float32).squeeze()
 
     inv_var_per_chan = da.blockwise(
         lambda nt: nt[1], ("rowlike", "chan"),
         noise_tuple, ("rowlike", "chan"),
-        dtype=np.float32
-    )
+        dtype=np.float32)
 
-    return noise_est, inv_var_per_chan
+    print(noise_est.compute())
+
+    updated_stats_xds = stats_xds.assign(
+        {"inv_var": (("chunk", "chan"), inv_var_per_chan),
+         "noise_est": (("chunk",), noise_est)})
+
+    return updated_stats_xds
 
 
-def compute_interval_statistics(stats_xds, cubical_bitflags, ant1_col,
-                                ant2_col, time_ind, n_time_ind, n_ant, n_chunk,
-                                n_chan, chunk_spec):
+def assign_interval_statistics(stats_xds, cubical_bitflags, ant1_col,
+                               ant2_col, time_ind, n_time_ind, n_ant, n_chunk,
+                               n_chan, chunk_spec):
 
     unflagged = cubical_bitflags == 0
 
@@ -133,3 +146,22 @@ def block_reciprocal(in_arr):
         out_arr = np.where(in_arr != 0, 1/in_arr, 0)
 
     return out_arr
+
+
+# def difference_chan_unflags(flags):
+
+#     unflags_diff = flags != 0
+
+#     unflags_diff[:, 1:, :] = unflags_diff[:, 1:, :] | unflags_diff[:, :-1, :]
+#     unflags_diff[:, 0, :] = unflags_diff[:, 1, :]
+
+#     return unflags_diff
+
+
+# def difference_chan_data(data, n_utime):
+
+#     n_row, n_chan, n_corr = data.shape
+
+#     data_diff = np.empty(n_utime, n_chan, dtype=data.real.dtype)
+
+#     data_diff[:, 1:, :] =

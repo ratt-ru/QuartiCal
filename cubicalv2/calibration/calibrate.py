@@ -4,8 +4,9 @@ import dask.array as da
 from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
-from cubicalv2.statistics.statistics import (estimate_noise,
-                                             compute_interval_statistics)
+from cubicalv2.statistics.statistics import (assign_noise_estimates,
+                                             assign_interval_statistics,
+                                             create_stats_xds)
 from cubicalv2.flagging.flagging import (set_bitflag, unset_bitflag,
                                          make_bitmask, ibfdtype)
 from loguru import logger  # noqa
@@ -90,7 +91,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
     gains_per_xds = {name: [] for name in opts.solver_gain_terms}
     post_cal_xds = []
-    stats_xds = []
+    stats_xds_list = []
 
     for xds_ind, xds in enumerate(data_xds):
 
@@ -290,35 +291,29 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
 
-        noise_estimate, inv_var_per_chan = estimate_noise(data_col,
-                                                          cubical_bitflags,
-                                                          ant1_col,
-                                                          ant2_col,
-                                                          n_ant)
+        stats_xds = create_stats_xds(utime_val, n_chan, n_ant, n_chunks)
 
-        stats = xarray.Dataset({
-            "inv_var": (("chunk", "chan"), inv_var_per_chan),
-            "noise_est": (("chunk",), noise_estimate)},
-            coords={"ant": ("ant", da.arange(n_ant, dtype=np.int16)),
-                    "time": ("time", utime_val),
-                    "chan": ("chan", da.arange(n_chan, dtype=np.int16)),
-                    "chunk": ("chunk", da.arange(n_chunks, dtype=np.int16))},
-            attrs={})
+        stats_xds = assign_noise_estimates(stats_xds,
+                                           data_col,
+                                           cubical_bitflags,
+                                           ant1_col,
+                                           ant2_col,
+                                           n_ant)
 
-        stats = compute_interval_statistics(stats,
-                                            cubical_bitflags,
-                                            ant1_col,
-                                            ant2_col,
-                                            utime_ind,
-                                            utime_per_chunk,
-                                            n_ant,
-                                            n_chunks,
-                                            n_chan,
-                                            xds.CHUNK_SPEC)
+        stats_xds = assign_interval_statistics(stats_xds,
+                                               cubical_bitflags,
+                                               ant1_col,
+                                               ant2_col,
+                                               utime_ind,
+                                               utime_per_chunk,
+                                               n_ant,
+                                               n_chunks,
+                                               n_chan,
+                                               xds.CHUNK_SPEC)
 
-        stats_xds.append(stats)
+        stats_xds_list.append(stats_xds)
 
-        # print(stats)
+        # print(stats_xds)
 
         # Gains will not report its size or chunks correctly - this is because
         # we do not know their shapes during graph construction.
@@ -366,11 +361,11 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 
-        noise_estimate, inv_var_per_chan = estimate_noise(residuals,
-                                                          cubical_bitflags,
-                                                          ant1_col,
-                                                          ant2_col,
-                                                          n_ant)
+        # noise_estimate, inv_var_per_chan = estimate_noise(residuals,
+        #                                                   cubical_bitflags,
+        #                                                   ant1_col,
+        #                                                   ant2_col,
+        #                                                   n_ant)
 
         # print(noise_estimate.compute())
 
