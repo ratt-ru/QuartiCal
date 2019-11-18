@@ -6,13 +6,27 @@ import numpy as np
 import xarray
 
 
-def create_stats_xds(utime_val, n_chan, n_ant, n_chunks):
+def create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks):
     """Set up a stats xarray dataset and define its coordinates."""
 
     stats_xds = xarray.Dataset(
         coords={"ant": ("ant", da.arange(n_ant, dtype=np.int16)),
                 "time": ("time", utime_val),
                 "chan": ("chan", da.arange(n_chan, dtype=np.int16)),
+                "chunk": ("chunk", da.arange(n_chunks, dtype=np.int16))})
+
+    return stats_xds
+
+
+def create_gain_stats_xds(n_tint, n_fint, n_ant, n_dir, n_corr, n_chunks):
+    """Set up a stats xarray dataset and define its coordinates."""
+
+    stats_xds = xarray.Dataset(
+        coords={"ant": ("ant", da.arange(n_ant, dtype=np.int16)),
+                "time_int": ("time_int", da.arange(n_tint, dtype=np.int16)),
+                "freq_int": ("freq_int", da.arange(n_fint, dtype=np.int16)),
+                "dir": ("dir", da.arange(n_dir, dtype=np.int16)),
+                "corr": ("corr", da.arange(n_corr, dtype=np.int16)),
                 "chunk": ("chunk", da.arange(n_chunks, dtype=np.int16))})
 
     return stats_xds
