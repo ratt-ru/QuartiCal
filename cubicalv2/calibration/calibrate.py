@@ -5,6 +5,7 @@ from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.statistics.statistics import (assign_noise_estimates,
+                                             assign_tf_statistics,
                                              assign_interval_statistics,
                                              create_stats_xds)
 from cubicalv2.flagging.flagging import (set_bitflag, unset_bitflag,
@@ -300,20 +301,33 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                            ant2_col,
                                            n_ant)
 
+        stats_xds = assign_tf_statistics(stats_xds,
+                                         cubical_bitflags,
+                                         ant1_col,
+                                         ant2_col,
+                                         utime_ind,
+                                         utime_per_chunk,
+                                         n_ant,
+                                         n_chunks,
+                                         n_chan,
+                                         xds.CHUNK_SPEC)
+
         stats_xds = assign_interval_statistics(stats_xds,
                                                cubical_bitflags,
                                                ant1_col,
                                                ant2_col,
-                                               utime_ind,
-                                               utime_per_chunk,
-                                               n_ant,
-                                               n_chunks,
-                                               n_chan,
+                                               t_map_arr,
+                                               f_map_arr,
+                                               t_int_per_chunk,
+                                               f_int_per_chunk,
+                                               atomic_t_int,
+                                               atomic_f_int,
+                                               opts.solver_gain_terms,
                                                xds.CHUNK_SPEC)
 
         stats_xds_list.append(stats_xds)
 
-        # print(stats_xds)
+        # print(stats_xds.tot_norm_factor.compute())
 
         # Gains will not report its size or chunks correctly - this is because
         # we do not know their shapes during graph construction.

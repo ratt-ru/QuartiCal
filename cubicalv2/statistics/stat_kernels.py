@@ -101,3 +101,75 @@ def estimate_noise_kernel(data, flags, a1, a2, n_ant):
 
     return np.array(noise_est).reshape((1, -1)), \
            inv_var_per_chan.reshape((1, -1))
+
+
+@jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+def logical_and_intervals(in_arr, t_map, f_map, n_ti, n_fi):
+    """Compute a logical and per interval.
+
+    Given an rowlike array of boolean values, uses the time and frequency
+    mappings to reduce them into a per interval value.
+
+    Args:
+        in_arr (np.ndarray): An 2D array of boolean values.
+        t_map (np.ndarray): A 1D array of time mappings.
+        f_map (np.ndarray): A 1D array of freq mappings.
+        n_ti (int): Number of time intervals.
+        n_fi (int): Number of frequency intervals.
+
+    Returns:
+        out_arr: (np.ndarray) A 2D array of per-interval boolean values.
+    """
+
+    n_row = t_map.shape[0]
+    n_chan = f_map.shape[0]
+
+    out_arr = np.ones((n_ti, n_fi), dtype=np.bool_)
+
+    for row in range(n_row):
+
+        t_m = t_map[row]
+
+        for chan in range(n_chan):
+
+            f_m = f_map[chan]
+
+            out_arr[t_m, f_m] &= in_arr[row, chan]
+
+    return out_arr
+
+
+@jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+def accumulate_intervals(in_arr, t_map, f_map, n_ti, n_fi):
+    """Compute a sum per interval.
+
+    Given an rowlike array of values, uses the time and frequency
+    mappings to reduce them into a per interval value.
+
+    Args:
+        in_arr (np.ndarray): A 2D array of values.
+        t_map (np.ndarray): A 1D array of time mappings.
+        f_map (np.ndarray): A 1D array of freq mappings.
+        n_ti (int): Number of time intervals.
+        n_fi (int): Number of frequency intervals.
+
+    Returns:
+        out_arr: (np.ndarray) A 2D array of per-interval values.
+    """
+
+    n_row = t_map.shape[0]
+    n_chan = f_map.shape[0]
+
+    out_arr = np.zeros((n_ti, n_fi), dtype=in_arr.dtype)
+
+    for row in range(n_row):
+
+        t_m = t_map[row]
+
+        for chan in range(n_chan):
+
+            f_m = f_map[chan]
+
+            out_arr[t_m, f_m] += in_arr[row, chan]
+
+    return out_arr

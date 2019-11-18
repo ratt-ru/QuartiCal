@@ -1,4 +1,6 @@
-from cubicalv2.statistics.stat_kernels import estimate_noise_kernel
+from cubicalv2.statistics.stat_kernels import (estimate_noise_kernel,
+                                               accumulate_intervals,
+                                               logical_and_intervals)
 import dask.array as da
 import numpy as np
 import xarray
@@ -66,8 +68,6 @@ def assign_noise_estimates(stats_xds, data_col, cubical_bitflags, ant1_col,
         noise_tuple, ("rowlike", "chan"),
         dtype=np.float32)
 
-    print(noise_est.compute())
-
     updated_stats_xds = stats_xds.assign(
         {"inv_var": (("chunk", "chan"), inv_var_per_chan),
          "noise_est": (("chunk",), noise_est)})
@@ -75,9 +75,9 @@ def assign_noise_estimates(stats_xds, data_col, cubical_bitflags, ant1_col,
     return updated_stats_xds
 
 
-def assign_interval_statistics(stats_xds, cubical_bitflags, ant1_col,
-                               ant2_col, time_ind, n_time_ind, n_ant, n_chunk,
-                               n_chan, chunk_spec):
+def assign_tf_statistics(stats_xds, cubical_bitflags, ant1_col,
+                         ant2_col, time_ind, n_time_ind, n_ant, n_chunk,
+                         n_chan, chunk_spec):
 
     unflagged = cubical_bitflags == 0
 
@@ -119,6 +119,50 @@ def assign_interval_statistics(stats_xds, cubical_bitflags, ant1_col,
     return modified_stats_xds
 
 
+def assign_interval_statistics(stats_xds, cubical_bitflags, ant1_col,
+                               ant2_col, t_map_arr, f_map_arr, n_t_int,
+                               n_f_int, t_int, f_int, gain_terms, chunk_spec):
+
+    flags = (cubical_bitflags != 0).all(axis=-1)
+    n_chan = cubical_bitflags.shape[1]
+
+    for term_ind, term_name in enumerate(gain_terms):
+
+        ti_chunk_dims = tuple(c//t_int + bool(c % t_int) for c in chunk_spec)
+
+        fi_chunk_dims = (n_chan//f_int + bool(n_chan % f_int),)
+
+        # TODO: I actually need to have the time and frequency solution
+        # interval axes on the xds at this point. Otherwise it will be
+        # impossible to asasign this onto the xds.
+
+        interval_flags = \
+            da.blockwise(logical_and_intervals, ("rowlike", "chan"),
+                         flags, ("rowlike", "chan"),
+                         t_map_arr[:, term_ind], ("rowlike",),
+                         f_map_arr[:, term_ind], ("rowlike",),
+                         n_t_int, ("rowlike",),
+                         n_f_int, ("rowlike",),
+                         dtype=np.int64,
+                         concatenate=True,
+                         align_arrays=False,
+                         adjust_chunks={"rowlike": ti_chunk_dims,
+                                        "chan": fi_chunk_dims})
+
+        # TODO: This is likely incorrect.
+
+        missing_intervals = da.map_blocks(
+            lambda x: np.sum(x, keepdims=True)/x.size,
+            interval_flags, dtype=np.int32)
+
+
+
+    # print(missing_intervals.compute())
+    # print(interval_flags.compute())
+
+    return stats_xds
+
+
 def sum_eqs_per_ant(rows_unflagged, ant1_col, ant2_col, n_ant):
 
     eqs_per_ant = np.zeros((1, n_ant), dtype=np.int64)
@@ -143,7 +187,7 @@ def sum_eqs_per_tf(unflagged, time_ind, n_time_ind):
 def block_reciprocal(in_arr):
 
     with np.errstate(divide='ignore'):
-        out_arr = np.where(in_arr != 0, 1/in_arr, 0)
+        out_arr = np.where(in_arr != 0, 1./in_arr, 0)
 
     return out_arr
 
