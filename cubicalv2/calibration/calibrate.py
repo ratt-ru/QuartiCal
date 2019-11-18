@@ -312,8 +312,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             gain_list.append(gain_schema)
             gain_chunks[term] = gain.chunks
 
-
-
         # We use a factory function to produce appropriate update functions
         # for use in the solver. TODO: Investigate using generated jit for this
         # purpose.
@@ -356,10 +354,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         data_stats_xds_list.append(data_stats_xds)
 
-        # print(stats_xds.tot_norm_factor.compute())
-
         # Gains will not report its size or chunks correctly - this is because
-        # we do not know their shapes during graph construction.
+        # it is actually returning multiple arrays (somewhat sordid) which we
+        # will subseqently unpack and give appropriate dimensions.
         gains = da.blockwise(
             chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
@@ -377,23 +374,28 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             dtype=model_col.dtype,
             align_arrays=False,)
 
-
-
         # Gains are in dask limbo at this point - we have returned a list
         # which is not understood by the array interface. We take the list of
-        # gains per chunk and explicitly unpack them using map_blocks.
+        # gains per chunk and explicitly unpack them using blockwise. We use
+        # the stored chunk values to give the resulting gains meaningful
+        # shapes.
 
         unpacked_gains = []
         for ind, term in enumerate(opts.solver_gain_terms):
-            unpacked_gains.append(
-                da.blockwise(lambda g: g[ind], gain_schema,
-                             gains, gain_schema,
-                             dtype=np.complex128,
-                             adjust_chunks={"rowlike": gain_chunks[term][0],
-                                            "chan": gain_chunks[term][1]},
-                             meta=np.empty((0,0,0,0,0), dtype=np.complex128)))
+            gain = da.blockwise(lambda g: g[ind], gain_schema,
+                                gains, gain_schema,
+                                dtype=np.complex128,
+                                adjust_chunks={"rowlike": gain_chunks[term][0],
+                                               "chan": gain_chunks[term][1]},
+                                meta=np.empty((0, 0, 0, 0, 0),
+                                              dtype=np.complex128))
 
-        print(unpacked_gains)
+            gain_stats_xds_dict[term][-1] = \
+                gain_stats_xds_dict[term][-1].assign(
+                    {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
+                               gain)})
+
+            unpacked_gains.append(gain)
 
         gain_zipper = zip(unpacked_gains, repeat(gain_schema, n_term))
 
@@ -415,24 +417,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 
-        # noise_estimate, inv_var_per_chan = estimate_noise(residuals,
-        #                                                   cubical_bitflags,
-        #                                                   ant1_col,
-        #                                                   ant2_col,
-        #                                                   n_ant)
-
-        # print(noise_estimate.compute())
-
-        for ind, term in enumerate(opts.solver_gain_terms):
-            gains_per_xds[term].append(unpacked_gains[ind])
-
-            print(unpacked_gains[ind].shape)
-
-            gain_stats_xds_dict[term][-1] = \
-                gain_stats_xds_dict[term][-1].assign(
-                    {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
-                               unpacked_gains[ind])})
-
         # Add quantities required elsewhere to the xds and mark certain columns
         # for saving.
 
@@ -447,4 +431,4 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         post_cal_xds.append(updated_xds)
 
     # Return the resulting graphs for the gains and updated xds.
-    return gains_per_xds, post_cal_xds
+    return gain_stats_xds_dict, post_cal_xds
