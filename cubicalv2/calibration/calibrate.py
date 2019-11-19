@@ -225,8 +225,10 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             n_fint = chunk_fi_dims[0]
 
             # Convert the chunk dimensions into dask arrays.
-            t_int_per_chunk = da.from_array(chunk_ti_dims, chunks=(1,))
-            f_int_per_chunk = da.from_array(chunk_fi_dims, chunks=(1,))
+            t_int_per_chunk = da.from_array(chunk_ti_dims, chunks=(1,),
+                                            name=False)
+            f_int_per_chunk = da.from_array(chunk_fi_dims, chunks=(1,),
+                                            name=False)
 
             # The or handles intervals specified as zero. These are assumed to
             # be solved aross an entire chunk. n_row is >> number of unique

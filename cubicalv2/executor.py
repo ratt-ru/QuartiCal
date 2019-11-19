@@ -64,8 +64,6 @@ def execute():
                               num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
-    print(gains["G"][0].gains.data)
-
     # import numpy as np
     # for gain in gains["G"]:
     #     print(np.max(np.abs(gain)))
