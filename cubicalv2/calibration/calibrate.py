@@ -91,7 +91,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
     # which can be applied to select the appropriate bits.
     bitmask = make_bitmask(col_kwrds, opts)
 
-    gains_per_xds = {name: [] for name in opts.solver_gain_terms}
     gain_stats_xds_dict = {name: [] for name in opts.solver_gain_terms}
     data_stats_xds_list = []
     post_cal_xds = []
@@ -208,22 +207,20 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # Number of time intervals per data chunk. If this is zero,
             # solution interval is the entire axis per chunk.
             if atomic_t_int:
-                ti_chunks[term] = \
-                    tuple(nt//atomic_t_int +
-                          bool(nt % atomic_t_int) for nt in n_utime)
+                ti_chunks[term] = tuple(int(np.ceil(nt/atomic_t_int))
+                                        for nt in n_utime)
             else:
-                ti_chunks[term] = tuple(nt for nt in n_utime)
+                ti_chunks[term] = tuple(1 for nt in n_utime)
 
             n_tint = np.sum(ti_chunks[term])
 
             # Number of frequency intervals per data chunk. If this is zero,
             # solution interval is the entire axis per chunk.
             if atomic_f_int:
-                fi_chunks[term] = \
-                    tuple(n_chan//atomic_f_int +
-                          bool(n_chan % atomic_f_int) for _ in range(n_chunks))
+                fi_chunks[term] = tuple(int(np.ceil(n_chan/atomic_f_int))
+                                        for _ in range(n_chunks))
             else:
-                fi_chunks[term] = tuple(n_chan for _ in range(n_chunks))
+                fi_chunks[term] = tuple(1 for _ in range(n_chunks))
 
             n_fint = fi_chunks[term][0]
 
@@ -389,13 +386,15 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         unpacked_gains = []
         for ind, term in enumerate(opts.solver_gain_terms):
-            gain = da.blockwise(lambda g: g[ind], gain_schema,
-                                gains, gain_schema,
-                                dtype=np.complex128,
-                                adjust_chunks={"rowlike": gain_chunks[term][0],
-                                               "chan": gain_chunks[term][1]},
-                                meta=np.empty((0, 0, 0, 0, 0),
-                                              dtype=np.complex128))
+            gain = da.blockwise(
+                lambda g, i: g[i], gain_schema,
+                gains, gain_schema,
+                ind, None,
+                dtype=np.complex128,
+                adjust_chunks={"rowlike": gain_chunks[term][0],
+                               "chan": gain_chunks[term][1]},
+                meta=np.empty((0, 0, 0, 0, 0), dtype=np.complex128),
+                align_arrays=False)
 
             gain_stats_xds_dict[term][-1] = \
                 gain_stats_xds_dict[term][-1].assign(
