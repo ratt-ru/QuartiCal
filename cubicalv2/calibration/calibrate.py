@@ -176,7 +176,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         utime_val = utime_tuple.map_blocks(lambda ut: ut[0],
                                            dtype=np.float64,
-                                           chunks=(n_utime,))
+                                           chunks=(xds.CHUNK_SPEC,))
         utime_ind = utime_tuple.map_blocks(lambda ut: ut[1], dtype=np.int32)
 
         # Figure out the number of times per chunk.
@@ -191,14 +191,13 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         n_chunks = data_col.numblocks[0]  # Number of chunks in row/time.
         n_term = len(opts.solver_gain_terms)  # Number of gain terms.
 
-        # Initialise some empty lists onto which we can append associated
-        # mappings/dimensions.
+        # Initialise some empty containers for mappings/dimensions.
         t_maps = []
         f_maps = []
-        g_shapes = {}
-        g_t_chunks = {}
-        g_f_chunks = {}
         d_maps = []
+        g_shapes = {}
+        ti_chunks = {}
+        fi_chunks = {}
 
         for term in opts.solver_gain_terms:
 
@@ -206,28 +205,34 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             atomic_f_int = getattr(opts, "{}_freq_interval".format(term))
             dd_term = getattr(opts, "{}_direction_dependent".format(term))
 
-            # Number of time intervals per data chunk.
-            chunk_ti_dims = \
-                tuple(nt//atomic_t_int +
-                      bool(nt % atomic_t_int) for nt in n_utime)
+            # Number of time intervals per data chunk. If this is zero,
+            # solution interval is the entire axis per chunk.
+            if atomic_t_int:
+                ti_chunks[term] = \
+                    tuple(nt//atomic_t_int +
+                          bool(nt % atomic_t_int) for nt in n_utime)
+            else:
+                ti_chunks[term] = tuple(nt for nt in n_utime)
 
-            g_t_chunks[term] = chunk_ti_dims
+            n_tint = np.sum(ti_chunks[term])
 
-            n_tint = np.sum(chunk_ti_dims)
+            # Number of frequency intervals per data chunk. If this is zero,
+            # solution interval is the entire axis per chunk.
+            if atomic_f_int:
+                fi_chunks[term] = \
+                    tuple(n_chan//atomic_f_int +
+                          bool(n_chan % atomic_f_int) for _ in range(n_chunks))
+            else:
+                fi_chunks[term] = tuple(n_chan for _ in range(n_chunks))
 
-            # Number of frequency intervals per data chunk.
-            chunk_fi_dims = \
-                tuple(n_chan//atomic_f_int +
-                      bool(n_chan % atomic_f_int) for _ in range(n_chunks))
-
-            g_f_chunks[term] = chunk_fi_dims
-
-            n_fint = chunk_fi_dims[0]
+            n_fint = fi_chunks[term][0]
 
             # Convert the chunk dimensions into dask arrays.
-            t_int_per_chunk = da.from_array(chunk_ti_dims, chunks=(1,),
+            t_int_per_chunk = da.from_array(ti_chunks[term],
+                                            chunks=(1,),
                                             name=False)
-            f_int_per_chunk = da.from_array(chunk_fi_dims, chunks=(1,),
+            f_int_per_chunk = da.from_array(fi_chunks[term],
+                                            chunks=(1,),
                                             name=False)
 
             # The or handles intervals specified as zero. These are assumed to
@@ -308,8 +313,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                           "ant": n_ant,
                           "dir": n_dir,
                           "corr": opts._ms_ncorr},
-                adjust_chunks={"rowlike": g_t_chunks[term],
-                               "chan": g_f_chunks[term][0]})
+                adjust_chunks={"rowlike": ti_chunks[term],
+                               "chan": fi_chunks[term][0]})
             gain_list.append(gain)
             gain_list.append(gain_schema)
             gain_chunks[term] = gain.chunks
@@ -341,18 +346,18 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                               n_chan,
                                               n_utime)
 
-        data_stats_xds = assign_interval_statistics(data_stats_xds,
-                                                    cubical_bitflags,
-                                                    ant1_col,
-                                                    ant2_col,
-                                                    t_map_arr,
-                                                    f_map_arr,
-                                                    t_int_per_chunk,
-                                                    f_int_per_chunk,
-                                                    atomic_t_int,
-                                                    atomic_f_int,
-                                                    opts.solver_gain_terms,
-                                                    n_utime)
+        # data_stats_xds = assign_interval_statistics(data_stats_xds,
+        #                                             cubical_bitflags,
+        #                                             ant1_col,
+        #                                             ant2_col,
+        #                                             t_map_arr,
+        #                                             f_map_arr,
+        #                                             t_int_per_chunk,
+        #                                             f_int_per_chunk,
+        #                                             atomic_t_int,
+        #                                             atomic_f_int,
+        #                                             opts.solver_gain_terms,
+        #                                             n_utime)
 
         data_stats_xds_list.append(data_stats_xds)
 
