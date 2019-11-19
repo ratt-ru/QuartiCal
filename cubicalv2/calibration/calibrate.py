@@ -384,7 +384,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # the stored chunk values to give the resulting gains meaningful
         # shapes.
 
-        unpacked_gains = []
+        gain_list = []
         for ind, term in enumerate(opts.solver_gain_terms):
             gain = da.blockwise(
                 lambda g, i: g[i], gain_schema,
@@ -401,11 +401,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                     {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
                                gain)})
 
-            unpacked_gains.append(gain)
-
-        gain_zipper = zip(unpacked_gains, repeat(gain_schema, n_term))
-
-        gain_list = list(chain.from_iterable(gain_zipper))
+            gain_list.extend([gain, gain_schema])
 
         residuals = da.blockwise(
             dask_residual, ("rowlike", "chan", "corr"),
