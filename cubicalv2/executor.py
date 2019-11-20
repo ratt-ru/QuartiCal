@@ -64,6 +64,13 @@ def execute():
                               num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
+    # import zarr
+    # store = zarr.DirectoryStore("G")
+
+    # for g_ind, g_xds in enumerate(gains["G"]):
+    #     g_xds.to_zarr(store, mode="w", group="G{}".format(g_ind))
+
+
     # import numpy as np
     # for gain in gains["G"]:
     #     print(np.max(np.abs(gain)))

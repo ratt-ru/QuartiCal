@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from math import ceil
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.statistics.statistics import (assign_noise_estimates,
@@ -9,16 +8,13 @@ from cubicalv2.statistics.statistics import (assign_noise_estimates,
                                              assign_interval_statistics,
                                              create_data_stats_xds,
                                              create_gain_stats_xds)
-from cubicalv2.flagging.flagging import (set_bitflag, unset_bitflag,
-                                         make_bitmask, ibfdtype,
+from cubicalv2.flagging.flagging import (make_bitmask,
                                          initialise_fullres_bitflags,
                                          is_set)
 from cubicalv2.weights.weights import initialize_weights
+from operator import getitem
 from loguru import logger  # noqa
-from numba.typed import List
-from itertools import chain, repeat
-from uuid import uuid4
-import xarray
+
 
 # The following supresses the egregious numba pending deprecation warnings.
 # TODO: Make sure that the code doesn't break when they finally decprecate
@@ -134,18 +130,16 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             time_col.map_blocks(lambda d: np.unique(d, return_inverse=True),
                                 dtype=np.float32, meta=np.empty(0))
 
-        utime_val = utime_tuple.map_blocks(lambda ut: ut[0],
+        utime_val = utime_tuple.map_blocks(getitem, 0,
                                            dtype=np.float64,
                                            chunks=(utime_chunks,))
-        utime_ind = utime_tuple.map_blocks(lambda ut: ut[1], dtype=np.int32)
+        utime_ind = utime_tuple.map_blocks(getitem, 1,
+                                           dtype=np.int32)
 
         # Figure out the number of times per chunk.
-        utime_per_chunk = \
-            utime_ind.map_blocks(lambda f: np.max(f, keepdims=True) + 1,
-                                 chunks=(1,),
-                                 dtype=utime_ind.dtype)
-
-        print(utime_per_chunk.compute(), utime_chunks)
+        utime_per_chunk = da.from_array(utime_chunks,
+                                        chunks=(1,),
+                                        name=False)
 
         # Set up some values relating to problem dimensions.
         n_ant = opts._n_ant
@@ -220,33 +214,34 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                     dtype=np.int32)
 
             # Generate a mapping between time at data resolution and time
-            # intervals.
+            # intervals. The or handles the 0 (full axis) case.
             t_map = utime_ind.map_blocks(
-                lambda t, t_i: t//t_i, t_int,
+                lambda t, t_i: t//t_i,
+                atomic_t_int or n_row,
                 chunks=utime_ind.chunks,
                 dtype=np.uint32)
             t_maps.append(t_map)
 
             # Generate a mapping between frequency at data resolution and
-            # frequency intervals. This currently presumes that we don't chunk
-            # in frequency. BEWARE!
+            # frequency intervals. The or handles the 0 (full axis) case.
+            # This currently presumes that we don't chunk in frequency. BEWARE!
             f_map = freqs_per_chunk.map_blocks(
-                lambda f, f_i: np.array([i//f_i[0] for i in range(n_chan)]),
-                f_int,
+                lambda f, f_i, n_c: np.array([i//f_i for i in range(n_c)]),
+                atomic_f_int or n_chan,
+                n_chan,
                 chunks=(n_chan,),
                 dtype=np.uint32)
             f_maps.append(f_map)
 
             d_maps.append(list(range(n_dir)) if dd_term else [0]*n_dir)
 
-            gain_stats_xds = create_gain_stats_xds(n_tint,
-                                                   n_fint,
-                                                   n_ant,
-                                                   n_dir if dd_term else 1,
-                                                   n_corr,
-                                                   n_chunks)
+            gain_xds = create_gain_stats_xds(n_tint,
+                                             n_fint,
+                                             n_ant,
+                                             n_dir if dd_term else 1,
+                                             n_corr)
 
-            gain_xds_dict[term].append(gain_stats_xds)
+            gain_xds_dict[term].append(gain_xds)
 
         # For each chunk, stack the per-gain mappings into a single array.
         t_map_arr = da.stack(t_maps, axis=1).rechunk({1: n_term})
