@@ -240,7 +240,7 @@ def read_ms(opts):
     for xds_ind, xds in enumerate(data_xds):
         data_xds[xds_ind] = \
             xds.assign_attrs(WRITE_COLS=[],
-                             CHUNK_SPEC=chunk_spec_per_xds[xds_ind])
+                             UTIME_CHUNKS=chunk_spec_per_xds[xds_ind])
 
     return data_xds, updated_kwrds
 

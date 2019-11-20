@@ -10,7 +10,10 @@ from cubicalv2.statistics.statistics import (assign_noise_estimates,
                                              create_data_stats_xds,
                                              create_gain_stats_xds)
 from cubicalv2.flagging.flagging import (set_bitflag, unset_bitflag,
-                                         make_bitmask, ibfdtype)
+                                         make_bitmask, ibfdtype,
+                                         initialise_fullres_bitflags,
+                                         is_set)
+from cubicalv2.weights.weights import initialize_weights
 from loguru import logger  # noqa
 from numba.typed import List
 from itertools import chain, repeat
@@ -91,9 +94,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
     # which can be applied to select the appropriate bits.
     bitmask = make_bitmask(col_kwrds, opts)
 
-    gain_stats_xds_dict = {name: [] for name in opts.solver_gain_terms}
+    gain_xds_dict = {name: [] for name in opts.solver_gain_terms}
     data_stats_xds_list = []
-    post_cal_xds = []
+    post_cal_data_xds_list = []
 
     for xds_ind, xds in enumerate(data_xds):
 
@@ -108,65 +111,23 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         bitflag_col = xds.BITFLAG.data[..., corr_slice] & bitmask
         bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice] & bitmask
 
-        n_utime = xds.CHUNK_SPEC
+        utime_chunks = xds.UTIME_CHUNKS
 
-        if opts._unity_weights:
-            weight_col = da.ones_like(data_col[:, :1, :], dtype=np.float32)
-        else:
-            weight_col = xds[opts.input_ms_weight_column].data[..., corr_slice]
+        weight_col = initialize_weights(xds, data_col, corr_slice, opts)
 
-        # The following handles the fact that the chosen weight column might
-        # not have a frequency axis.
+        fullres_bitflags = initialise_fullres_bitflags(data_col,
+                                                       weight_col,
+                                                       flag_col,
+                                                       flag_row_col,
+                                                       bitflag_col,
+                                                       bitflag_row_col,
+                                                       bitmask)
 
-        if weight_col.ndim == 2:
-            weight_col = weight_col.map_blocks(
-                lambda w: np.expand_dims(w, 1), new_axis=1)
+        # If we raised the invalid bitflag, zero those data points.
+        data_col[is_set(fullres_bitflags, "INVALID")] = 0
 
-        cubical_bitflags = da.zeros(bitflag_col.shape,
-                                    dtype=ibfdtype,
-                                    chunks=bitflag_col.chunks,
-                                    name="zeros-" + uuid4().hex)
-        # If no bitmask is generated, we presume that we are using the
-        # conventional FLAG and FLAG_ROW columns. TODO: Consider whether this
-        # is safe behaviour.
-        if bitmask == 0:
-            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
-                                           flag_col)
-            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
-                                           flag_row_col)
-        else:
-            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
-                                           bitflag_col > 0)
-            cubical_bitflags = set_bitflag(cubical_bitflags, "PRIOR",
-                                           bitflag_row_col > 0)
-
-        # Anywhere we have input data flags (or invalid data), set the weights
-        # to zero. Due to the fact np.inf*0 = np.nan (very annoying), we also
-        # set the data to zero at these locations. These operations implicitly
-        # broadcast the weights to the same frequency dimension as the data.
-        # This unavoidable as we want to exploit the weights to effectively
-        # flag.
-
-        invalid_points = ~da.isfinite(data_col)
-        data_col[invalid_points] = 0  # Set nasty data points to zero.
-
-        cubical_bitflags = set_bitflag(cubical_bitflags,
-                                       "INVALID",
-                                       invalid_points)
-
-        missing_points = da.logical_or(data_col[..., 0:1] == 0,
-                                       data_col[..., 3:4] == 0)
-        missing_points = da.logical_or(missing_points, data_col == 0)
-
-        cubical_bitflags = set_bitflag(cubical_bitflags,
-                                       "MISSING",
-                                       missing_points)
-
-        cubical_bitflags = set_bitflag(cubical_bitflags,
-                                       "NULLWGHT",
-                                       weight_col == 0)
-
-        weight_col[cubical_bitflags] = 0
+        # Anywhere we have a full resolution bitflag, we set the weight to 0.
+        weight_col[fullres_bitflags] = 0
 
         # Convert the time column data into indices.
         utime_tuple = \
@@ -175,7 +136,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         utime_val = utime_tuple.map_blocks(lambda ut: ut[0],
                                            dtype=np.float64,
-                                           chunks=(xds.CHUNK_SPEC,))
+                                           chunks=(utime_chunks,))
         utime_ind = utime_tuple.map_blocks(lambda ut: ut[1], dtype=np.int32)
 
         # Figure out the number of times per chunk.
@@ -183,6 +144,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             utime_ind.map_blocks(lambda f: np.max(f, keepdims=True) + 1,
                                  chunks=(1,),
                                  dtype=utime_ind.dtype)
+
+        print(utime_per_chunk.compute(), utime_chunks)
 
         # Set up some values relating to problem dimensions.
         n_ant = opts._n_ant
@@ -208,9 +171,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # solution interval is the entire axis per chunk.
             if atomic_t_int:
                 ti_chunks[term] = tuple(int(np.ceil(nt/atomic_t_int))
-                                        for nt in n_utime)
+                                        for nt in utime_chunks)
             else:
-                ti_chunks[term] = tuple(1 for nt in n_utime)
+                ti_chunks[term] = tuple(1 for nt in utime_chunks)
 
             n_tint = np.sum(ti_chunks[term])
 
@@ -283,7 +246,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                    n_corr,
                                                    n_chunks)
 
-            gain_stats_xds_dict[term].append(gain_stats_xds)
+            gain_xds_dict[term].append(gain_stats_xds)
 
         # For each chunk, stack the per-gain mappings into a single array.
         t_map_arr = da.stack(t_maps, axis=1).rechunk({1: n_term})
@@ -327,13 +290,13 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         data_stats_xds = assign_noise_estimates(data_stats_xds,
                                                 data_col,
-                                                cubical_bitflags,
+                                                fullres_bitflags,
                                                 ant1_col,
                                                 ant2_col,
                                                 n_ant)
 
         data_stats_xds = assign_tf_statistics(data_stats_xds,
-                                              cubical_bitflags,
+                                              fullres_bitflags,
                                               ant1_col,
                                               ant2_col,
                                               utime_ind,
@@ -341,10 +304,10 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                               n_ant,
                                               n_chunks,
                                               n_chan,
-                                              n_utime)
+                                              utime_chunks)
 
         # data_stats_xds = assign_interval_statistics(data_stats_xds,
-        #                                             cubical_bitflags,
+        #                                             fullres_bitflags,
         #                                             ant1_col,
         #                                             ant2_col,
         #                                             t_map_arr,
@@ -354,7 +317,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         #                                             atomic_t_int,
         #                                             atomic_f_int,
         #                                             opts.solver_gain_terms,
-        #                                             n_utime)
+        #                                             utime_chunks)
 
         data_stats_xds_list.append(data_stats_xds)
 
@@ -396,8 +359,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 meta=np.empty((0, 0, 0, 0, 0), dtype=np.complex128),
                 align_arrays=False)
 
-            gain_stats_xds_dict[term][-1] = \
-                gain_stats_xds_dict[term][-1].assign(
+            gain_xds_dict[term][-1] = \
+                gain_xds_dict[term][-1].assign(
                     {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
                                gain)})
 
@@ -424,13 +387,13 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         updated_xds = \
             xds.assign({"CUBI_RESIDUAL": (xds.DATA.dims, residuals),
-                        "CUBI_BITFLAG": (xds.BITFLAG.dims, cubical_bitflags),
+                        "CUBI_BITFLAG": (xds.BITFLAG.dims, fullres_bitflags),
                         "CUBI_MODEL": (xds.DATA.dims,
                                        model_col.sum(axis=2,
                                                      dtype=np.complex64))})
         updated_xds.attrs["WRITE_COLS"] += ["CUBI_RESIDUAL"]
 
-        post_cal_xds.append(updated_xds)
+        post_cal_data_xds_list.append(updated_xds)
 
     # Return the resulting graphs for the gains and updated xds.
-    return gain_stats_xds_dict, post_cal_xds
+    return gain_xds_dict, post_cal_data_xds_list

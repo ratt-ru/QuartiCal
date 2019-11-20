@@ -1,6 +1,7 @@
 import dask.array as da
 import numpy as np
 from copy import deepcopy
+from uuid import uuid4
 from loguru import logger
 
 ibfdtype = np.uint16  # Data type for internal bitflags.
@@ -306,3 +307,69 @@ def make_bitmask(col_kwrds, opts):
     logger.info("Generated the following bitmask: 0b{0:016b}.".format(bitmask))
 
     return bitmask
+
+
+def _is_set(bitflag_arr, flag_mask):
+
+    return (bitflag_arr & flag_mask) > 0
+
+
+def is_set(bitflag_arr, bitflag_names):
+
+    flag_mask = _make_flagmask(bitflag_names)
+
+    bitflag_axes = ("rowlike", "chan", "corr")
+
+    return da.blockwise(_is_set, bitflag_axes,
+                        bitflag_arr, bitflag_axes,
+                        flag_mask, None,
+                        dtype=np.bool)
+
+
+def initialise_fullres_bitflags(data_col, weight_col, flag_col, flag_row_col,
+                                bitflag_col, bitflag_row_col, bitmask):
+
+    fullres_bitflags = da.zeros(bitflag_col.shape,
+                                dtype=ibfdtype,
+                                chunks=bitflag_col.chunks,
+                                name="zeros-" + uuid4().hex)
+
+    # If no bitmask is generated, we presume that we are using the
+    # conventional FLAG and FLAG_ROW columns. TODO: Consider whether this
+    # is safe behaviour.
+    if bitmask == 0:
+        fullres_bitflags = set_bitflag(fullres_bitflags, "PRIOR",
+                                       flag_col)
+        fullres_bitflags = set_bitflag(fullres_bitflags, "PRIOR",
+                                       flag_row_col)
+    else:
+        fullres_bitflags = set_bitflag(fullres_bitflags, "PRIOR",
+                                       bitflag_col > 0)
+        fullres_bitflags = set_bitflag(fullres_bitflags, "PRIOR",
+                                       bitflag_row_col > 0)
+
+    # The following does some sanity checking on the input data and weights.
+    # Specifically, we look for bad data points, points with missing data,
+    # and points with null weights. These operations implicitly broadcast the
+    # weights to the same frequency dimension as the data. This unavoidable as
+    # we want to exploit the weights to effectively flag.
+
+    invalid_points = ~da.isfinite(data_col)
+
+    fullres_bitflags = set_bitflag(fullres_bitflags,
+                                   "INVALID",
+                                   invalid_points)
+
+    missing_points = da.logical_or(data_col[..., 0:1] == 0,
+                                   data_col[..., 3:4] == 0)
+    missing_points = da.logical_or(missing_points, data_col == 0)
+
+    fullres_bitflags = set_bitflag(fullres_bitflags,
+                                   "MISSING",
+                                   missing_points)
+
+    fullres_bitflags = set_bitflag(fullres_bitflags,
+                                   "NULLWGHT",
+                                   weight_col == 0)
+
+    return fullres_bitflags
