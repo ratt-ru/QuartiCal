@@ -136,7 +136,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         utime_ind = utime_tuple.map_blocks(getitem, 1,
                                            dtype=np.int32)
 
-        # Figure out the number of times per chunk.
+        # Daskify the chunks per array - these are already known from the
+        # initial chunkings step.
         utime_per_chunk = da.from_array(utime_chunks,
                                         chunks=(1,),
                                         name=False)
@@ -189,12 +190,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                             chunks=(1,),
                                             name=False)
 
-            # The or handles intervals specified as zero. These are assumed to
-            # be solved aross an entire chunk. n_row is >> number of unique
-            # times, but that value is unavaible at this point.
-            t_int = da.full_like(utime_per_chunk, atomic_t_int or n_row)
-            f_int = da.full_like(utime_per_chunk, atomic_f_int or n_chan)
-
             freqs_per_chunk = da.full_like(utime_per_chunk, n_chan)
 
             # Determine the per-chunk gain shapes from the time and frequency
@@ -239,7 +234,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                              n_fint,
                                              n_ant,
                                              n_dir if dd_term else 1,
-                                             n_corr)
+                                             n_corr,
+                                             term,
+                                             xds_ind)
 
             gain_xds_dict[term].append(gain_xds)
 
@@ -272,6 +269,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                "chan": fi_chunks[term][0]})
             gain_list.append(gain)
             gain_list.append(gain_schema)
+
             gain_chunks[term] = gain.chunks
 
         # We use a factory function to produce appropriate update functions
@@ -345,7 +343,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         gain_list = []
         for ind, term in enumerate(opts.solver_gain_terms):
             gain = da.blockwise(
-                lambda g, i: g[i], gain_schema,
+                getitem, gain_schema,
                 gains, gain_schema,
                 ind, None,
                 dtype=np.complex128,

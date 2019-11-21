@@ -53,6 +53,12 @@ def execute():
 
     writes = write_columns(writable_xds, col_kwrds, opts)
 
+    # for g_name, g_list in gains_per_xds.items():
+    #     for g_ind, g in enumerate(g_list):
+    #         g_list[g_ind] = g.to_zarr("{}{}".format(g_name, g_ind),
+    #                                   mode="w",
+    #                                   compute=False)
+
     # write_columns = ms_handler.write_ms(updated_data_xds, opts)
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
@@ -63,6 +69,26 @@ def execute():
                               #  scheduler="sync")
                               num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
+
+    # import zarr
+    # store = zarr.DirectoryStore("cc_gains")
+
+    # for g_name, g_list in gains.items():
+    #     for g_ind, g in enumerate(g_list):
+    #         g.to_zarr(store,
+    #                   mode="w",
+    #                   group="{}{}".format(g_name, g_ind))
+    # print(gains)
+
+    # import zarr
+    # store = zarr.DirectoryStore("cc_gains")
+
+    # for g_name, g_list in gains_per_xds.items():
+    #     for g_ind, g in enumerate(g_list):
+    #         g_list[g_ind] = g.to_zarr(store,
+    #                                   mode="w",
+    #                                   group="{}{}".format(g_name, g_ind),
+    #                                   compute=False)
 
     # import zarr
     # store = zarr.DirectoryStore("G")
