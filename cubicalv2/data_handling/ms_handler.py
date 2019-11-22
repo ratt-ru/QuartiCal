@@ -250,7 +250,7 @@ def write_columns(xds_list, col_kwrds, opts):
     import daskms.descriptors.ratt_ms  # noqa
 
     output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
-    output_kwrds = {cn: col_kwrds[cn] for cn in output_cols}
+    output_kwrds = {cn: col_kwrds.get(cn, {}) for cn in output_cols}
 
     logger.info("Outputs will be written to {}.".format(
         ", ".join(output_cols)))

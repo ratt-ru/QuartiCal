@@ -11,7 +11,7 @@ import dask.array as da
 import time
 from dask.diagnostics import ProgressBar
 import dask
-from dask.distributed import Client
+from dask.distributed import Client, LocalCluster
 
 
 @logger.catch
@@ -32,9 +32,10 @@ def execute():
 
     if opts.parallel_scheduler == "distributed":
         logger.info("Initializing distributed client.")
-        client = Client(processes=False,                            # noqa
-                        n_workers=opts.parallel_nworker,
-                        threads_per_worker=opts.parallel_nthread)
+        cluster = LocalCluster(processes=False,
+                               n_workers=opts.parallel_nworker,
+                               threads_per_worker=opts.parallel_nthread,)
+        client = Client(cluster)
         logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
@@ -53,16 +54,10 @@ def execute():
 
     writes = write_columns(writable_xds, col_kwrds, opts)
 
-    # for g_name, g_list in gains_per_xds.items():
-    #     for g_ind, g in enumerate(g_list):
-    #         g_list[g_ind] = g.to_zarr("{}{}".format(g_name, g_ind),
-    #                                   mode="w",
-    #                                   compute=False)
-
-    # write_columns = ms_handler.write_ms(updated_data_xds, opts)
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()
+
     with ProgressBar():
         gains, _ = da.compute(gains_per_xds, writes,
                               #  write_columns,
@@ -70,15 +65,19 @@ def execute():
                               num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
+    # This code can be used to save gain xarray datasets imeediately. This is
+    # much faster but requires the datasets to live in memory.
+
     # import zarr
     # store = zarr.DirectoryStore("cc_gains")
 
     # for g_name, g_list in gains.items():
     #     for g_ind, g in enumerate(g_list):
-    #         g.to_zarr(store,
-    #                   mode="w",
-    #                   group="{}{}".format(g_name, g_ind))
-    # print(gains)
+    #         g.to_zarr("{}{}".format(g_name, g_ind),
+    #                   mode="w")
+
+    # This code can be used to save gain xarray datasets using delayed. This
+    # is currently slower than it should be.
 
     # import zarr
     # store = zarr.DirectoryStore("cc_gains")
@@ -89,13 +88,6 @@ def execute():
     #                                   mode="w",
     #                                   group="{}{}".format(g_name, g_ind),
     #                                   compute=False)
-
-    # import zarr
-    # store = zarr.DirectoryStore("G")
-
-    # for g_ind, g_xds in enumerate(gains["G"]):
-    #     g_xds.to_zarr(store, mode="w", group="G{}".format(g_ind))
-
 
     # import numpy as np
     # for gain in gains["G"]:
