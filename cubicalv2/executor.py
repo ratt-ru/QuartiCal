@@ -54,15 +54,23 @@ def execute():
 
     writes = write_columns(writable_xds, col_kwrds, opts)
 
+    import zarr
+    store = zarr.DirectoryStore("cc_gains")
+
+    for g_name, g_list in gains_per_xds.items():
+        for g_ind, g in enumerate(g_list):
+            g_list[g_ind] = g.to_zarr(store,
+                                      mode="w",
+                                      group="{}{}".format(g_name, g_ind),
+                                      compute=False)
+
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()
 
     with ProgressBar():
-        gains, _ = da.compute(gains_per_xds, writes,
-                              #  write_columns,
-                              #  scheduler="sync")
-                              num_workers=opts.parallel_nthread)
+        da.compute(dask.delayed(tuple)([gains_per_xds, writes]),
+                   num_workers=opts.parallel_nthread)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
     # This code can be used to save gain xarray datasets imeediately. This is
