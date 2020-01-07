@@ -126,9 +126,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         weight_col[fullres_bitflags] = 0
 
         # Convert the time column data into indices.
-        utime_tuple = \
-            time_col.map_blocks(lambda d: np.unique(d, return_inverse=True),
-                                dtype=np.float32, meta=np.empty(0))
+        utime_tuple = time_col.map_blocks(np.unique, return_inverse=True,
+                                          dtype=np.float32, meta=np.empty(0))
 
         utime_val = utime_tuple.map_blocks(getitem, 0,
                                            dtype=np.float64,
@@ -155,6 +154,32 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         g_shapes = {}
         ti_chunks = {}
         fi_chunks = {}
+
+        # Create and populate xds for statisics at data resolution. TODO:
+        # This can all be moved into a function inside the statistics module
+        # in order to clean up the calibrate code.
+        data_stats_xds = \
+            create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks)
+
+        data_stats_xds = assign_noise_estimates(data_stats_xds,
+                                                data_col,
+                                                fullres_bitflags,
+                                                ant1_col,
+                                                ant2_col,
+                                                n_ant)
+
+        data_stats_xds = assign_tf_statistics(data_stats_xds,
+                                              fullres_bitflags,
+                                              ant1_col,
+                                              ant2_col,
+                                              utime_ind,
+                                              utime_per_chunk,
+                                              n_ant,
+                                              n_chunks,
+                                              n_chan,
+                                              utime_chunks)
+
+        data_stats_xds_list.append(data_stats_xds)
 
         for term in opts.solver_gain_terms:
 
@@ -210,11 +235,11 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
             # Generate a mapping between time at data resolution and time
             # intervals. The or handles the 0 (full axis) case.
-            t_map = utime_ind.map_blocks(
-                lambda t, t_i: t//t_i,
-                atomic_t_int or n_row,
-                chunks=utime_ind.chunks,
-                dtype=np.uint32)
+
+            t_map = utime_ind.map_blocks(np.floor_divide,
+                                         atomic_t_int or n_row,
+                                         chunks=utime_ind.chunks,
+                                         dtype=np.uint32)
             t_maps.append(t_map)
 
             # Generate a mapping between frequency at data resolution and
@@ -256,6 +281,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # we assume uniform frequency chunking to avoid madness.
 
         for term, shape in g_shapes.items():
+
+            dd_term = getattr(opts, "{}_direction_dependent".format(term))
+
             gain = da.blockwise(
                 initialize_gain, gain_schema,
                 shape, ("rowlike",),
@@ -263,7 +291,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 dtype=np.complex128,
                 new_axes={"chan": n_chan,
                           "ant": n_ant,
-                          "dir": n_dir,
+                          "dir": n_dir if dd_term else 1,
                           "corr": opts._ms_ncorr},
                 adjust_chunks={"rowlike": ti_chunks[term],
                                "chan": fi_chunks[term][0]})
@@ -278,27 +306,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
 
-        data_stats_xds = \
-            create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks)
-
-        data_stats_xds = assign_noise_estimates(data_stats_xds,
-                                                data_col,
-                                                fullres_bitflags,
-                                                ant1_col,
-                                                ant2_col,
-                                                n_ant)
-
-        data_stats_xds = assign_tf_statistics(data_stats_xds,
-                                              fullres_bitflags,
-                                              ant1_col,
-                                              ant2_col,
-                                              utime_ind,
-                                              utime_per_chunk,
-                                              n_ant,
-                                              n_chunks,
-                                              n_chan,
-                                              utime_chunks)
-
         # data_stats_xds = assign_interval_statistics(data_stats_xds,
         #                                             fullres_bitflags,
         #                                             ant1_col,
@@ -311,8 +318,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         #                                             atomic_f_int,
         #                                             opts.solver_gain_terms,
         #                                             utime_chunks)
-
-        data_stats_xds_list.append(data_stats_xds)
 
         # Gains will not report its size or chunks correctly - this is because
         # it is actually returning multiple arrays (somewhat sordid) which we
@@ -342,13 +347,17 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         gain_list = []
         for ind, term in enumerate(opts.solver_gain_terms):
+
+            dd_term = getattr(opts, "{}_direction_dependent".format(term))
+
             gain = da.blockwise(
                 getitem, gain_schema,
                 gains, gain_schema,
                 ind, None,
                 dtype=np.complex128,
                 adjust_chunks={"rowlike": gain_chunks[term][0],
-                               "chan": gain_chunks[term][1]},
+                               "chan": gain_chunks[term][1],
+                               "dir": n_dir if dd_term else 1},
                 meta=np.empty((0, 0, 0, 0, 0), dtype=np.complex128),
                 align_arrays=False)
 

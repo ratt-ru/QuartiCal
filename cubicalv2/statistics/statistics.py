@@ -75,7 +75,7 @@ def assign_noise_estimates(stats_xds, data_col, cubical_bitflags, ant1_col,
         noise_tuple, ("rowlike", "chan"),
         adjust_chunks={"rowlike": 1,
                        "chan": 1},
-        dtype=np.float32).squeeze()
+        dtype=np.float32).squeeze(axis=1)
 
     inv_var_per_chan = da.blockwise(
         lambda nt: nt[1], ("rowlike", "chan"),
@@ -93,17 +93,25 @@ def assign_tf_statistics(stats_xds, cubical_bitflags, ant1_col,
                          ant2_col, time_ind, n_time_ind, n_ant, n_chunk,
                          n_chan, chunk_spec):
 
+    # Get all the unflagged points.
+
     unflagged = cubical_bitflags == 0
 
+    # Compute the number of unflagged points per row. Note that this includes
+    # a summation over channel and correlation - version 1 did not have a
+    # a correlation axis in the flags but I believe we should.
     rows_unflagged = unflagged.map_blocks(np.sum, axis=(1, 2),
                                           chunks=(unflagged.chunks[0],),
                                           drop_axis=(1, 2))
 
+    # Determine the number of equations per antenna by summing the appropriate
+    # values from the per-row unflagged values.
     eqs_per_ant = da.map_blocks(sum_eqs_per_ant, rows_unflagged, ant1_col,
                                 ant2_col, n_ant, dtype=np.int64,
                                 new_axis=1,
                                 chunks=((1,)*n_chunk, (n_ant,)))
 
+    # Determine the number of equations per time-frequency slot.
     eqs_per_tf = da.blockwise(sum_eqs_per_tf, ("rowlike", "chan"),
                               unflagged, ("rowlike", "chan", "corr"),
                               time_ind, ("rowlike",),
@@ -113,17 +121,22 @@ def assign_tf_statistics(stats_xds, cubical_bitflags, ant1_col,
                               align_arrays=False,
                               adjust_chunks={"rowlike": tuple(chunk_spec)})
 
+    # Determine the normalisation factor as the reciprocal of the equations
+    # per time-frequency bin.
     tf_norm_factor = da.map_blocks(block_reciprocal,
                                    eqs_per_tf, dtype=np.float64)
 
+    # Compute the total number of equations per chunk.
     total_eqs = da.map_blocks(lambda x: np.atleast_1d(np.sum(x)),
                               eqs_per_tf, dtype=np.int64,
                               drop_axis=1,
                               chunks=(1,))
 
+    # Compute the overall normalisation factor.
     total_norm_factor = da.map_blocks(block_reciprocal,
                                       total_eqs, dtype=np.float64)
 
+    # Assign the relevant values to the xds.
     modified_stats_xds = \
         stats_xds.assign({"eqs_per_ant": (("chunk", "ant"), eqs_per_ant),
                           "eqs_per_tf": (("time", "chan"), eqs_per_tf),
