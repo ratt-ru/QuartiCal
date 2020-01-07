@@ -18,7 +18,8 @@ def create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks):
     return stats_xds
 
 
-def create_gain_stats_xds(n_tint, n_fint, n_ant, n_dir, n_corr, name, ind):
+def create_gain_stats_xds(n_tint, n_fint, n_ant, n_dir, n_corr, n_chunk, name,
+                          ind):
     """Set up a stats xarray dataset and define its coordinates."""
 
     stats_xds = xarray.Dataset(
@@ -26,7 +27,8 @@ def create_gain_stats_xds(n_tint, n_fint, n_ant, n_dir, n_corr, name, ind):
                 "time_int": ("time_int", da.arange(n_tint, dtype=np.int16)),
                 "freq_int": ("freq_int", da.arange(n_fint, dtype=np.int16)),
                 "dir": ("dir", da.arange(n_dir, dtype=np.int16)),
-                "corr": ("corr", da.arange(n_corr, dtype=np.int16))},
+                "corr": ("corr", da.arange(n_corr, dtype=np.int16)),
+                "chunk": ("chunk", da.arange(n_chunk, dtype=np.int16))},
         attrs={"name": "{}-{}".format(name, ind)})
 
     return stats_xds
@@ -146,48 +148,45 @@ def assign_tf_statistics(stats_xds, cubical_bitflags, ant1_col,
     return modified_stats_xds
 
 
-def assign_interval_statistics(stats_xds, cubical_bitflags, ant1_col,
-                               ant2_col, t_map_arr, f_map_arr, n_t_int,
-                               n_f_int, t_int, f_int, gain_terms, chunk_spec):
+def assign_interval_stats(gain_xds, fullres_bitflags, ant1_col,
+                          ant2_col, t_map, f_map, t_int_per_chunk,
+                          f_int_per_chunk, ti_chunks, fi_chunks):
 
-    flags = (cubical_bitflags != 0).all(axis=-1)
-    n_chan = cubical_bitflags.shape[1]
+    flagged = (fullres_bitflags != 0).all(axis=-1)
+    n_ant = gain_xds.dims["ant"]
 
-    for term_ind, term_name in enumerate(gain_terms):
+    # TODO: I actually need to have the time and frequency solution
+    # interval axes on the xds at this point. Otherwise it will be
+    # impossible to asasign this onto the xds.
 
-        ti_chunk_dims = tuple(c//t_int + bool(c % t_int) for c in chunk_spec)
+    ant_missing_per_int = \
+        da.blockwise(logical_and_intervals, ("rowlike", "chan", "ant"),
+                     flagged, ("rowlike", "chan"),
+                     ant1_col, ("rowlike",),
+                     ant2_col, ("rowlike",),
+                     t_map, ("rowlike",),
+                     f_map, ("rowlike",),
+                     t_int_per_chunk, ("rowlike",),
+                     f_int_per_chunk, ("rowlike",),
+                     n_ant, None,
+                     dtype=np.bool,
+                     concatenate=True,
+                     align_arrays=False,
+                     new_axes={"ant": n_ant},
+                     adjust_chunks={"rowlike": ti_chunks,
+                                    "chan": fi_chunks[0]})
 
-        fi_chunk_dims = (n_chan//f_int + bool(n_chan % f_int),)
+    missing_fraction = \
+        da.map_blocks(lambda x: np.atleast_1d(np.sum(x)/x.size),
+                      ant_missing_per_int,
+                      chunks=(1,),
+                      drop_axis=(1, 2),
+                      dtype=np.int32)
 
-        # TODO: I actually need to have the time and frequency solution
-        # interval axes on the xds at this point. Otherwise it will be
-        # impossible to asasign this onto the xds.
+    updated_gain_xds = gain_xds.assign(
+        {"missing_fraction": (("chunk",), missing_fraction)})
 
-        interval_flags = \
-            da.blockwise(logical_and_intervals, ("rowlike", "chan"),
-                         flags, ("rowlike", "chan"),
-                         t_map_arr[:, term_ind], ("rowlike",),
-                         f_map_arr[:, term_ind], ("rowlike",),
-                         n_t_int, ("rowlike",),
-                         n_f_int, ("rowlike",),
-                         dtype=np.int64,
-                         concatenate=True,
-                         align_arrays=False,
-                         adjust_chunks={"rowlike": ti_chunk_dims,
-                                        "chan": fi_chunk_dims})
-
-        # TODO: This is likely incorrect.
-
-        missing_intervals = da.map_blocks(
-            lambda x: np.sum(x, keepdims=True)/x.size,
-            interval_flags, dtype=np.int32)
-
-
-
-    # print(missing_intervals.compute())
-    # print(interval_flags.compute())
-
-    return stats_xds
+    return updated_gain_xds
 
 
 def sum_eqs_per_ant(rows_unflagged, ant1_col, ant2_col, n_ant):

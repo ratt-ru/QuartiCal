@@ -5,7 +5,7 @@ from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.statistics.statistics import (assign_noise_estimates,
                                              assign_tf_statistics,
-                                             assign_interval_statistics,
+                                             assign_interval_stats,
                                              create_data_stats_xds,
                                              create_gain_stats_xds)
 from cubicalv2.flagging.flagging import (make_bitmask,
@@ -260,8 +260,20 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                              n_ant,
                                              n_dir if dd_term else 1,
                                              n_corr,
+                                             n_chunks,
                                              term,
                                              xds_ind)
+
+            gain_xds = assign_interval_stats(gain_xds,
+                                             fullres_bitflags,
+                                             ant1_col,
+                                             ant2_col,
+                                             t_map,
+                                             f_map,
+                                             t_int_per_chunk,
+                                             f_int_per_chunk,
+                                             ti_chunks[term],
+                                             fi_chunks[term])
 
             gain_xds_dict[term].append(gain_xds)
 

@@ -104,7 +104,7 @@ def estimate_noise_kernel(data, flags, a1, a2, n_ant):
 
 
 @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
-def logical_and_intervals(in_arr, t_map, f_map, n_ti, n_fi):
+def logical_and_intervals(in_arr, ant1_col, ant2_col, t_map, f_map, n_ti, n_fi, n_ant):
     """Compute a logical and per interval.
 
     Given an rowlike array of boolean values, uses the time and frequency
@@ -124,17 +124,20 @@ def logical_and_intervals(in_arr, t_map, f_map, n_ti, n_fi):
     n_row = t_map.shape[0]
     n_chan = f_map.shape[0]
 
-    out_arr = np.ones((n_ti, n_fi), dtype=np.bool_)
+    out_arr = np.ones((n_ti[0], n_fi[0], n_ant), dtype=np.bool_)
 
     for row in range(n_row):
 
         t_m = t_map[row]
+        a1_m = ant1_col[row]
+        a2_m = ant2_col[row]
 
         for chan in range(n_chan):
 
             f_m = f_map[chan]
 
-            out_arr[t_m, f_m] &= in_arr[row, chan]
+            out_arr[t_m, f_m, a1_m] &= in_arr[row, chan]
+            out_arr[t_m, f_m, a2_m] &= in_arr[row, chan]
 
     return out_arr
 
