@@ -151,9 +151,15 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         t_maps = []
         f_maps = []
         d_maps = []
-        g_shapes = {}
         ti_chunks = {}
         fi_chunks = {}
+
+        # We preserve the gain chunking scheme here - returning multiple arrays
+        # in later calls can obliterate chunking information.
+
+        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
+        gain_list = []
+        gain_chunks = {}
 
         # Create and populate xds for statisics at data resolution. TODO:
         # This can all be moved into a function inside the statistics module
@@ -221,17 +227,53 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # intervals per chunk. Note that this uses the number of
             # correlations in the measurement set. TODO: This should depend
             # on the solver mode.
-            g_shapes[term] = \
-                da.map_blocks(
-                    lambda t, f, na=None, nd=None, nc=None:
-                        np.array([t.item(), f.item(), na, nd, nc]),
-                    t_int_per_chunk,
-                    f_int_per_chunk,
-                    na=n_ant,
-                    nd=n_dir if dd_term else 1,
-                    nc=opts._ms_ncorr,
-                    meta=np.empty((0, 0, 0, 0, 0), dtype=np.int32),
-                    dtype=np.int32)
+            g_shape = da.map_blocks(
+                lambda t, f, na, nd, nc:
+                    np.array([t.item(), f.item(), na, nd, nc]),
+                t_int_per_chunk,
+                f_int_per_chunk,
+                n_ant,
+                n_dir if dd_term else 1,
+                opts._ms_ncorr,
+                meta=np.empty((0, 0, 0, 0, 0), dtype=np.int32),
+                dtype=np.int32)
+
+            # Note that while we technically have a frequency chunk per row
+            # chunk, we assume uniform frequency chunking to avoid madness.
+
+            gain = da.blockwise(
+                initialize_gain, gain_schema,
+                g_shape, ("rowlike",),
+                align_arrays=False,
+                dtype=np.complex128,
+                new_axes={"chan": n_chan,
+                          "ant": n_ant,
+                          "dir": n_dir if dd_term else 1,
+                          "corr": opts._ms_ncorr},
+                adjust_chunks={"rowlike": ti_chunks[term],
+                               "chan": fi_chunks[term][0]})
+
+            gain_list.append(gain)
+            gain_list.append(gain_schema)
+
+            # The chunking of each gain will be lost post-solve due to Dask's
+            # lack of support for multiple return. We store the chunking values
+            # in a diecitonary so we can later correctly describe the output
+            # gains.
+
+            gain_chunks[term] = gain.chunks
+
+            # Create a an array for gain resolution bitflags. These have the
+            # same shape as the gains. We use an explicit creation routine
+            # to ensure we don't have accidental aliasing.
+
+            gain_flags = da.zeros(gain.shape,
+                                  chunks=gain.chunks,
+                                  dtype=np.uint8,
+                                  name=False)
+
+            gain_list.append(gain_flags)
+            gain_list.append(gain_schema)
 
             # Generate a mapping between time at data resolution and time
             # intervals. The or handles the 0 (full axis) case.
@@ -281,42 +323,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         t_map_arr = da.stack(t_maps, axis=1).rechunk({1: n_term})
         f_map_arr = da.stack(f_maps, axis=1).rechunk({1: n_term})
         d_map_arr = np.array(d_maps, dtype=np.uint32)
-
-        # We preserve the gain chunking scheme here - returning multiple arrays
-        # in later calls can obliterate chunking information.
-
-        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
-        gain_list = []
-        gain_chunks = {}
-
-        # Note that while we technically have a frequency chunk per row chunk,
-        # we assume uniform frequency chunking to avoid madness.
-
-        for term, shape in g_shapes.items():
-
-            dd_term = getattr(opts, "{}_direction_dependent".format(term))
-
-            gain = da.blockwise(
-                initialize_gain, gain_schema,
-                shape, ("rowlike",),
-                align_arrays=False,
-                dtype=np.complex128,
-                new_axes={"chan": n_chan,
-                          "ant": n_ant,
-                          "dir": n_dir if dd_term else 1,
-                          "corr": opts._ms_ncorr},
-                adjust_chunks={"rowlike": ti_chunks[term],
-                               "chan": fi_chunks[term][0]})
-            gain_list.append(gain)
-            gain_list.append(gain_schema)
-
-            gain_list.append(da.zeros(gain.shape,
-                                      chunks=gain.chunks,
-                                      dtype=np.uint8,
-                                      name=False))
-            gain_list.append(gain_schema)
-
-            gain_chunks[term] = gain.chunks
 
         # We use a factory function to produce appropriate update functions
         # for use in the solver. TODO: Investigate using generated jit for this
