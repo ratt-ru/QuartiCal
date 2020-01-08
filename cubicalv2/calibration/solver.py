@@ -10,7 +10,8 @@ def chain_solver(model, data, a1, a2, weights,
                  t_map_arr, f_map_arr, d_map_arr, compute_jhj_and_jhr,
                  compute_update, *gain_list):
 
-    gain_list = [g for g in gain_list]
+    gain_list = [g for g in gain_list[::2]]
+    gain_flag_list = [gf for gf in gain_list[1::2]]
     inverse_gain_list = [np.empty_like(g) for g in gain_list]
 
     for gain_ind in range(len(gain_list)):

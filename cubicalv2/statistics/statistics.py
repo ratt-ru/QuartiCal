@@ -155,9 +155,8 @@ def assign_interval_stats(gain_xds, fullres_bitflags, ant1_col,
     flagged = (fullres_bitflags != 0).all(axis=-1)
     n_ant = gain_xds.dims["ant"]
 
-    # TODO: I actually need to have the time and frequency solution
-    # interval axes on the xds at this point. Otherwise it will be
-    # impossible to asasign this onto the xds.
+    # This creates a (n_t_int, n_f_int, n_ant) boolean array which indicates
+    # which antennas (and consquently gain solutions) are missing.
 
     ant_missing_per_int = \
         da.blockwise(logical_and_intervals, ("rowlike", "chan", "ant"),
@@ -184,7 +183,9 @@ def assign_interval_stats(gain_xds, fullres_bitflags, ant1_col,
                       dtype=np.int32)
 
     updated_gain_xds = gain_xds.assign(
-        {"missing_fraction": (("chunk",), missing_fraction)})
+        {"missing_fraction": (("chunk",), missing_fraction),
+         "missing_array":
+            (("time_int", "freq_int", "ant"), ant_missing_per_int)})
 
     return updated_gain_xds
 

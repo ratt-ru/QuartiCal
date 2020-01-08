@@ -310,6 +310,12 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             gain_list.append(gain)
             gain_list.append(gain_schema)
 
+            gain_list.append(da.zeros(gain.shape,
+                                      chunks=gain.chunks,
+                                      dtype=np.uint8,
+                                      name=False))
+            gain_list.append(gain_schema)
+
             gain_chunks[term] = gain.chunks
 
         # We use a factory function to produce appropriate update functions
@@ -318,22 +324,13 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
 
-        # data_stats_xds = assign_interval_statistics(data_stats_xds,
-        #                                             fullres_bitflags,
-        #                                             ant1_col,
-        #                                             ant2_col,
-        #                                             t_map_arr,
-        #                                             f_map_arr,
-        #                                             t_int_per_chunk,
-        #                                             f_int_per_chunk,
-        #                                             atomic_t_int,
-        #                                             atomic_f_int,
-        #                                             opts.solver_gain_terms,
-        #                                             utime_chunks)
-
         # Gains will not report its size or chunks correctly - this is because
         # it is actually returning multiple arrays (somewhat sordid) which we
-        # will subseqently unpack and give appropriate dimensions.
+        # will subseqently unpack and give appropriate dimensions. NB - this
+        # call WILL mutate the contents of gain list. This is a necessary evil
+        # for now though it may be possible to move the array creation into
+        # the numba layer.
+
         gains = da.blockwise(
             chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
