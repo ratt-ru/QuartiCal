@@ -197,6 +197,8 @@ def assign_model_stats(stats_xds, model_col, cubical_bitflags, ant1_col,
     avg_abs_sqrd_model = \
         abs_sqrd_model_tfad.map_blocks(silent_divide, unflagged_tfa[..., None])
 
+    print(avg_abs_sqrd_model.compute())
+
 
 def assign_interval_stats(gain_xds, fullres_bitflags, ant1_col,
                           ant2_col, t_map, f_map, t_int_per_chunk,

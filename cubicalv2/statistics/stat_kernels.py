@@ -1,5 +1,6 @@
 import numpy as np
 from numba import jit, generated_jit, types
+from numba.extending import overload
 
 
 @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
@@ -205,6 +206,7 @@ def column_to_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
 
 @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
 def column_to_tfac(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
+    """Accumulate a column into (time, freq, antenna, correlation) array."""
 
     n_row, n_chan, n_corr = in_col.shape
 
@@ -220,36 +222,42 @@ def column_to_tfac(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
 
         for chan in range(n_chan):
 
-            inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m)
+            tfac_inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m)
 
     return out_arr
 
 
-@generated_jit(nopython=True, fastmath=False, cache=True, nogil=True)
-def inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+def tfac_inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+    pass
+
+
+@overload(tfac_inner_loop, inline='always')
+def tfac_inner_loop_impl(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
 
     if isinstance(in_col.dtype, types.Complex):
-        return inner_loop_cmplx
+        return tfac_inner_loop_cmplx
     else:
-        return inner_loop_noncmplx
+        return tfac_inner_loop_noncmplx
 
 
-@jit(inline="always")
-def inner_loop_noncmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+def tfac_inner_loop_noncmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
 
     out_arr[t_m, chan, a1_m, :] += in_col[row, chan, :]
     out_arr[t_m, chan, a2_m, :] += in_col[row, chan, :]
 
 
-@jit(inline="always")
-def inner_loop_cmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+def tfac_inner_loop_cmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
 
     out_arr[t_m, chan, a1_m, :] += in_col[row, chan, :]
     out_arr[t_m, chan, a2_m, :] += in_col[row, chan, :].conjugate()
 
 
-@generated_jit(nopython=True, fastmath=False, cache=True, nogil=True)
 def get_output_dtype(in_col):
+    pass
+
+
+@overload(get_output_dtype, inline='always')
+def get_output_dtype_impl(in_col):
 
     if isinstance(in_col.dtype, types.Boolean):
         return lambda in_col: np.int32
