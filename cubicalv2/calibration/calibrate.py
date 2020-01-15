@@ -4,13 +4,15 @@ import dask.array as da
 from cubicalv2.calibration.solver import chain_solver
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.statistics.statistics import (assign_noise_estimates,
-                                             assign_tf_statistics,
+                                             assign_tf_stats,
                                              assign_interval_stats,
+                                             assign_model_stats,
                                              create_data_stats_xds,
                                              create_gain_stats_xds)
 from cubicalv2.flagging.flagging import (make_bitmask,
                                          initialise_fullres_bitflags,
-                                         is_set)
+                                         is_set,
+                                         set_bitflag)
 from cubicalv2.weights.weights import initialize_weights
 from operator import getitem
 from loguru import logger  # noqa
@@ -174,16 +176,29 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                 ant2_col,
                                                 n_ant)
 
-        data_stats_xds = assign_tf_statistics(data_stats_xds,
-                                              fullres_bitflags,
-                                              ant1_col,
-                                              ant2_col,
-                                              utime_ind,
-                                              utime_per_chunk,
-                                              n_ant,
-                                              n_chunks,
-                                              n_chan,
-                                              utime_chunks)
+        data_stats_xds = assign_tf_stats(data_stats_xds,
+                                         fullres_bitflags,
+                                         ant1_col,
+                                         ant2_col,
+                                         utime_ind,
+                                         utime_per_chunk,
+                                         n_ant,
+                                         n_chunks,
+                                         n_chan,
+                                         utime_chunks)
+
+        data_stats_xds = assign_model_stats(data_stats_xds,
+                                            model_col,
+                                            fullres_bitflags,
+                                            ant1_col,
+                                            ant2_col,
+                                            utime_ind,
+                                            utime_per_chunk,
+                                            n_ant,
+                                            n_chunks,
+                                            n_chan,
+                                            n_dir,
+                                            utime_chunks)
 
         data_stats_xds_list.append(data_stats_xds)
 
@@ -306,16 +321,19 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                              term,
                                              xds_ind)
 
-            gain_xds = assign_interval_stats(gain_xds,
-                                             fullres_bitflags,
-                                             ant1_col,
-                                             ant2_col,
-                                             t_map,
-                                             f_map,
-                                             t_int_per_chunk,
-                                             f_int_per_chunk,
-                                             ti_chunks[term],
-                                             fi_chunks[term])
+            gain_xds, empty_intervals = \
+                assign_interval_stats(gain_xds,
+                                      fullres_bitflags,
+                                      ant1_col,
+                                      ant2_col,
+                                      t_map,
+                                      f_map,
+                                      t_int_per_chunk,
+                                      f_int_per_chunk,
+                                      ti_chunks[term],
+                                      fi_chunks[term])
+
+            gain_flags = set_bitflag(gain_flags, "MISSING", empty_intervals)
 
             gain_xds_dict[term].append(gain_xds)
 

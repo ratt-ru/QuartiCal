@@ -113,6 +113,8 @@ def _bitflagger(bitflag_arr, bitflag_names, selection, setter):
 
     if bitflag_arr.ndim == 3:
         bitflag_axes = ("rowlike", "chan", "corr")
+    elif bitflag_arr.ndim == 5:
+        bitflag_axes = ("rowlike", "chan", "ant", "dir", "corr")
     else:
         raise ValueError("BITFLAG is missing one or more dimensions.")
 

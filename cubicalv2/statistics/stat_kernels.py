@@ -1,5 +1,5 @@
 import numpy as np
-from numba import jit
+from numba import jit, generated_jit, types
 
 
 @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
@@ -104,7 +104,8 @@ def estimate_noise_kernel(data, flags, a1, a2, n_ant):
 
 
 @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
-def logical_and_intervals(in_arr, ant1_col, ant2_col, t_map, f_map, n_ti, n_fi, n_ant):
+def logical_and_intervals(in_arr, ant1_col, ant2_col, t_map, f_map, n_ti, n_fi,
+                          n_ant):
     """Compute a logical and per interval.
 
     Given an rowlike array of boolean values, uses the time and frequency
@@ -176,3 +177,81 @@ def accumulate_intervals(in_arr, t_map, f_map, n_ti, n_fi):
             out_arr[t_m, f_m] += in_arr[row, chan]
 
     return out_arr
+
+
+@jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+def column_to_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
+
+    n_row, n_chan, n_dir, n_corr = in_col.shape
+
+    out_arr = np.zeros((n_ut.item(), n_chan, n_a, n_dir, n_corr),
+                       dtype=in_col.dtype)
+
+    for row in range(n_row):
+
+        t_m = utime_ind[row]
+        a1_m = ant1_col[row]
+        a2_m = ant2_col[row]
+
+        for chan in range(n_chan):
+
+            out_arr[t_m, chan, a1_m, :, :] += \
+                in_col[row, chan, :, :]
+            out_arr[t_m, chan, a2_m, :, :] += \
+                in_col[row, chan, :, :].conjugate()
+
+    return out_arr
+
+
+@jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+def column_to_tfac(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
+
+    n_row, n_chan, n_corr = in_col.shape
+
+    out_dtype = get_output_dtype(in_col)
+
+    out_arr = np.zeros((n_ut.item(), n_chan, n_a, n_corr), dtype=out_dtype)
+
+    for row in range(n_row):
+
+        t_m = utime_ind[row]
+        a1_m = ant1_col[row]
+        a2_m = ant2_col[row]
+
+        for chan in range(n_chan):
+
+            inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m)
+
+    return out_arr
+
+
+@generated_jit(nopython=True, fastmath=False, cache=True, nogil=True)
+def inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+
+    if isinstance(in_col.dtype, types.Complex):
+        return inner_loop_cmplx
+    else:
+        return inner_loop_noncmplx
+
+
+@jit(inline="always")
+def inner_loop_noncmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+
+    out_arr[t_m, chan, a1_m, :] += in_col[row, chan, :]
+    out_arr[t_m, chan, a2_m, :] += in_col[row, chan, :]
+
+
+@jit(inline="always")
+def inner_loop_cmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+
+    out_arr[t_m, chan, a1_m, :] += in_col[row, chan, :]
+    out_arr[t_m, chan, a2_m, :] += in_col[row, chan, :].conjugate()
+
+
+@generated_jit(nopython=True, fastmath=False, cache=True, nogil=True)
+def get_output_dtype(in_col):
+
+    if isinstance(in_col.dtype, types.Boolean):
+        return lambda in_col: np.int32
+    else:
+        return lambda in_col: in_col.dtype

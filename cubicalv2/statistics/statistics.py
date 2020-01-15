@@ -1,6 +1,9 @@
 from cubicalv2.statistics.stat_kernels import (estimate_noise_kernel,
                                                accumulate_intervals,
-                                               logical_and_intervals)
+                                               logical_and_intervals,
+                                               column_to_tfadc,
+                                               column_to_tfac)
+from cubicalv2.utils.maths import cabs2
 import dask.array as da
 import numpy as np
 import xarray
@@ -91,9 +94,9 @@ def assign_noise_estimates(stats_xds, data_col, cubical_bitflags, ant1_col,
     return updated_stats_xds
 
 
-def assign_tf_statistics(stats_xds, cubical_bitflags, ant1_col,
-                         ant2_col, time_ind, n_time_ind, n_ant, n_chunk,
-                         n_chan, chunk_spec):
+def assign_tf_stats(stats_xds, cubical_bitflags, ant1_col,
+                    ant2_col, time_ind, n_time_ind, n_ant, n_chunk,
+                    n_chan, chunk_spec):
 
     # Get all the unflagged points.
 
@@ -148,6 +151,53 @@ def assign_tf_statistics(stats_xds, cubical_bitflags, ant1_col,
     return modified_stats_xds
 
 
+def assign_model_stats(stats_xds, model_col, cubical_bitflags, ant1_col,
+                       ant2_col, utime_ind, n_utime, n_ant, n_chunk,
+                       n_chan, n_dir, chunk_spec):
+
+    # Get all the unflagged points.
+
+    unflagged = cubical_bitflags == 0
+
+    abs_sqrd_model = model_col.map_blocks(cabs2)
+
+    abs_sqrd_model_tfadc = \
+        da.blockwise(column_to_tfadc, ("rowlike", "chan", "ant", "dir", "corr"),
+                     abs_sqrd_model, ("rowlike", "chan", "dir", "corr"),
+                     ant1_col, ("rowlike",),
+                     ant2_col, ("rowlike",),
+                     utime_ind, ("rowlike",),
+                     n_utime, ("rowlike",),
+                     n_ant, None,
+                     dtype=model_col.dtype,
+                     concatenate=True,
+                     align_arrays=False,
+                     new_axes={"ant": n_ant},
+                     adjust_chunks={"rowlike": chunk_spec})
+
+    abs_sqrd_model_tfad = \
+        abs_sqrd_model_tfadc.map_blocks(np.sum, axis=4, drop_axis=4)
+
+    unflagged_tfac = \
+        da.blockwise(column_to_tfac, ("rowlike", "chan", "ant", "corr"),
+                     unflagged, ("rowlike", "chan", "corr"),
+                     ant1_col, ("rowlike",),
+                     ant2_col, ("rowlike",),
+                     utime_ind, ("rowlike",),
+                     n_utime, ("rowlike",),
+                     n_ant, None,
+                     dtype=unflagged.dtype,
+                     concatenate=True,
+                     align_arrays=False,
+                     new_axes={"ant": n_ant},
+                     adjust_chunks={"rowlike": chunk_spec})
+
+    unflagged_tfa = unflagged_tfac.map_blocks(np.sum, axis=3, drop_axis=3)
+
+    avg_abs_sqrd_model = \
+        abs_sqrd_model_tfad.map_blocks(silent_divide, unflagged_tfa[..., None])
+
+
 def assign_interval_stats(gain_xds, fullres_bitflags, ant1_col,
                           ant2_col, t_map, f_map, t_int_per_chunk,
                           f_int_per_chunk, ti_chunks, fi_chunks):
@@ -183,11 +233,9 @@ def assign_interval_stats(gain_xds, fullres_bitflags, ant1_col,
                       dtype=np.int32)
 
     updated_gain_xds = gain_xds.assign(
-        {"missing_fraction": (("chunk",), missing_fraction),
-         "missing_array":
-            (("time_int", "freq_int", "ant"), ant_missing_per_int)})
+        {"missing_fraction": (("chunk",), missing_fraction)})
 
-    return updated_gain_xds
+    return updated_gain_xds, ant_missing_per_int
 
 
 def sum_eqs_per_ant(rows_unflagged, ant1_col, ant2_col, n_ant):
@@ -215,6 +263,14 @@ def block_reciprocal(in_arr):
 
     with np.errstate(divide='ignore'):
         out_arr = np.where(in_arr != 0, 1./in_arr, 0)
+
+    return out_arr
+
+
+def silent_divide(in_arr1, in_arr2):
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        out_arr = np.where(in_arr2 != 0, in_arr1/in_arr2, 0)
 
     return out_arr
 
