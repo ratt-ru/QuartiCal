@@ -128,8 +128,8 @@ def assign_tf_stats(stats_xds, cubical_bitflags, ant1_col,
 
     # Determine the normalisation factor as the reciprocal of the equations
     # per time-frequency bin.
-    tf_norm_factor = da.map_blocks(block_reciprocal,
-                                   eqs_per_tf, dtype=np.float64)
+    tf_norm_factor = da.map_blocks(silent_divide,
+                                   1, eqs_per_tf, dtype=np.float64)
 
     # Compute the total number of equations per chunk.
     total_eqs = da.map_blocks(lambda x: np.atleast_1d(np.sum(x)),
@@ -138,8 +138,8 @@ def assign_tf_stats(stats_xds, cubical_bitflags, ant1_col,
                               chunks=(1,))
 
     # Compute the overall normalisation factor.
-    total_norm_factor = da.map_blocks(block_reciprocal,
-                                      total_eqs, dtype=np.float64)
+    total_norm_factor = da.map_blocks(silent_divide,
+                                      1, total_eqs, dtype=np.float64)
 
     # Assign the relevant values to the xds.
     modified_stats_xds = \
@@ -259,36 +259,10 @@ def sum_eqs_per_tf(unflagged, time_ind, n_time_ind):
     return 4*eqs_per_tf  # Conjugate points + each row contributes to 2 ants.
 
 
-def block_reciprocal(in_arr):
-
-    with np.errstate(divide='ignore'):
-        out_arr = np.where(in_arr != 0, 1./in_arr, 0)
-
-    return out_arr
-
-
-def silent_divide(in_arr1, in_arr2):
+def silent_divide(in1, in2):
+    """Divides in1 by in2, supressing warnings. Division by zero gives zero."""
 
     with np.errstate(divide='ignore', invalid='ignore'):
-        out_arr = np.where(in_arr2 != 0, in_arr1/in_arr2, 0)
+        out_arr = np.where(in2 != 0, in1/in2, 0)
 
     return out_arr
-
-
-# def difference_chan_unflags(flags):
-
-#     unflags_diff = flags != 0
-
-#     unflags_diff[:, 1:, :] = unflags_diff[:, 1:, :] | unflags_diff[:, :-1, :]
-#     unflags_diff[:, 0, :] = unflags_diff[:, 1, :]
-
-#     return unflags_diff
-
-
-# def difference_chan_data(data, n_utime):
-
-#     n_row, n_chan, n_corr = data.shape
-
-#     data_diff = np.empty(n_utime, n_chan, dtype=data.real.dtype)
-
-#     data_diff[:, 1:, :] =
