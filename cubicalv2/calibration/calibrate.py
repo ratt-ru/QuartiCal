@@ -6,7 +6,7 @@ from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.statistics.statistics import (assign_noise_estimates,
                                              assign_tf_stats,
                                              assign_interval_stats,
-                                             assign_model_stats,
+                                             compute_model_stats,
                                              create_data_stats_xds,
                                              create_gain_stats_xds)
 from cubicalv2.flagging.flagging import (make_bitmask,
@@ -187,18 +187,18 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                          n_chan,
                                          utime_chunks)
 
-        data_stats_xds = assign_model_stats(data_stats_xds,
-                                            model_col,
-                                            fullres_bitflags,
-                                            ant1_col,
-                                            ant2_col,
-                                            utime_ind,
-                                            utime_per_chunk,
-                                            n_ant,
-                                            n_chunks,
-                                            n_chan,
-                                            n_dir,
-                                            utime_chunks)
+        avg_abs_sqrd_model = compute_model_stats(data_stats_xds,
+                                                 model_col,
+                                                 fullres_bitflags,
+                                                 ant1_col,
+                                                 ant2_col,
+                                                 utime_ind,
+                                                 utime_per_chunk,
+                                                 n_ant,
+                                                 n_chunks,
+                                                 n_chan,
+                                                 n_dir,
+                                                 utime_chunks)
 
         data_stats_xds_list.append(data_stats_xds)
 
@@ -323,7 +323,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
             gain_xds, empty_intervals = \
                 assign_interval_stats(gain_xds,
+                                      data_stats_xds,
                                       fullres_bitflags,
+                                      avg_abs_sqrd_model,
                                       ant1_col,
                                       ant2_col,
                                       t_map,
@@ -331,7 +333,10 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                       t_int_per_chunk,
                                       f_int_per_chunk,
                                       ti_chunks[term],
-                                      fi_chunks[term])
+                                      fi_chunks[term],
+                                      atomic_t_int or n_row,
+                                      atomic_f_int or n_chan,
+                                      utime_per_chunk)
 
             gain_flags = set_bitflag(gain_flags, "MISSING", empty_intervals)
 
