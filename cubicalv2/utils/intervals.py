@@ -1,7 +1,6 @@
 import numpy as np
-from numba import jit, generated_jit, types
+from numba import jit, types
 from numba.extending import overload
-from cubicalv2.statistics.stat_kernels import get_output_dtype
 
 
 model_schema = ("rowlike", "chan", "ant", "dir", "corr")
@@ -61,6 +60,117 @@ def tifiac_inner_loop_cmplx(out_arr, in_col, t_m, f_m, row, chan, a1_m, a2_m):
 
     out_arr[t_m, f_m, a1_m, :] += in_col[row, chan, :]
     out_arr[t_m, f_m, a2_m, :] += in_col[row, chan, :].conjugate()
+
+
+@jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+def column_to_tfac(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
+    """Accumulate a column into (time, freq, antenna, correlation) array."""
+
+    n_row, n_chan, n_corr = in_col.shape
+
+    out_dtype = get_output_dtype(in_col)
+
+    out_arr = np.zeros((n_ut.item(), n_chan, n_a, n_corr), dtype=out_dtype)
+
+    for row in range(n_row):
+
+        t_m = utime_ind[row]
+        a1_m = ant1_col[row]
+        a2_m = ant2_col[row]
+
+        for chan in range(n_chan):
+
+            tfac_inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m)
+
+    return out_arr
+
+
+def tfac_inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+    pass
+
+
+@overload(tfac_inner_loop, inline='always')
+def tfac_inner_loop_impl(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+
+    if isinstance(in_col.dtype, types.Complex):
+        return tfac_inner_loop_cmplx
+    else:
+        return tfac_inner_loop_noncmplx
+
+
+def tfac_inner_loop_noncmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+
+    out_arr[t_m, chan, a1_m, :] += in_col[row, chan, :]
+    out_arr[t_m, chan, a2_m, :] += in_col[row, chan, :]
+
+
+def tfac_inner_loop_cmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+
+    out_arr[t_m, chan, a1_m, :] += in_col[row, chan, :]
+    out_arr[t_m, chan, a2_m, :] += in_col[row, chan, :].conjugate()
+
+
+def get_output_dtype(in_col):
+    pass
+
+
+@overload(get_output_dtype, inline='always')
+def get_output_dtype_impl(in_col):
+
+    if isinstance(in_col.dtype, types.Boolean):
+        return lambda in_col: np.int32
+    else:
+        return lambda in_col: in_col.dtype
+
+
+@jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+def column_to_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
+
+    n_row, n_chan, n_dir, n_corr = in_col.shape
+
+    out_arr = np.zeros((n_ut.item(), n_chan, n_a, n_dir, n_corr),
+                       dtype=in_col.dtype)
+
+    for row in range(n_row):
+
+        t_m = utime_ind[row]
+        a1_m = ant1_col[row]
+        a2_m = ant2_col[row]
+
+        for chan in range(n_chan):
+
+            out_arr[t_m, chan, a1_m, :, :] += \
+                in_col[row, chan, :, :]
+            out_arr[t_m, chan, a2_m, :, :] += \
+                in_col[row, chan, :, :].conjugate()
+
+    return out_arr
+
+
+@jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+def column_to_abs_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
+
+    n_row, n_chan, n_dir, n_corr = in_col.shape
+
+    out_arr = np.zeros((n_ut.item(), n_chan, n_a, n_dir, n_corr),
+                       dtype=in_col.real.dtype)
+
+    for row in range(n_row):
+
+        t_m = utime_ind[row]
+        a1_m = ant1_col[row]
+        a2_m = ant2_col[row]
+
+        for chan in range(n_chan):
+
+            selection = in_col[row, chan, :, :]
+
+            abs_val = selection.real**2 + selection.imag**2
+
+            out_arr[t_m, chan, a1_m, :, :] += abs_val
+            out_arr[t_m, chan, a2_m, :, :] += abs_val
+
+    return out_arr
 
 
 @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)

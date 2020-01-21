@@ -1,14 +1,11 @@
-from cubicalv2.statistics.stat_kernels import (estimate_noise_kernel,
-                                            #    accumulate_intervals,
-                                            #    logical_and_intervals,
-                                               column_to_tfadc,
-                                               column_to_tfac)
+from cubicalv2.statistics.stat_kernels import estimate_noise_kernel
 from cubicalv2.utils.intervals import (column_to_tifiac,
+                                       column_to_tfadc,
+                                       column_to_abs_tfadc,
+                                       column_to_tfac,
                                        sum_intervals,
-                                       data_schema,
                                        model_schema,
-                                       gain_schema)
-
+                                       data_schema)
 from cubicalv2.utils.maths import cabs2
 import dask.array as da
 import numpy as np
@@ -16,7 +13,7 @@ import xarray
 
 
 def create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks):
-    """Set up a stats xarray dataset and define its coordinates."""
+    """Set up a data stats xarray dataset and define its coordinates."""
 
     stats_xds = xarray.Dataset(
         coords={"ant": ("ant", da.arange(n_ant, dtype=np.int16)),
@@ -29,7 +26,7 @@ def create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks):
 
 def create_gain_stats_xds(n_tint, n_fint, n_ant, n_dir, n_corr, n_chunk, name,
                           ind):
-    """Set up a stats xarray dataset and define its coordinates."""
+    """Set up a gain stats xarray dataset and define its coordinates."""
 
     stats_xds = xarray.Dataset(
         coords={"ant": ("ant", da.arange(n_ant, dtype=np.int16)),
@@ -101,99 +98,40 @@ def assign_noise_estimates(stats_xds, data_col, fullres_bitflags, ant1_col,
 
 
 def assign_tf_stats(stats_xds, fullres_bitflags, ant1_col,
-                    ant2_col, time_ind, n_time_ind, n_ant, n_chunk,
+                    ant2_col, utime_ind, n_utime, n_ant, n_chunk,
                     n_chan, chunk_spec):
+    """Computes and assigns a host of data resolution statistics.
+
+    Updates an input data stats xds with counts of equations per antenna and
+    equations per time-frequency. In addition it computes the chi-squared
+    nomalisation factor per time-frequency and for the entire chunk.
+
+    Args:
+        stats_xds: An xarray.dataset on which data resolution stats live.
+        fullres_bitflags: dask.array of bitflags at full resolution.
+        ant1_col: A dask.array of antenna1 values.
+        ant2_col: A dask.array of antenna1 values.
+        utime_ind: A dask.array of indices corresponding to unique time values.
+        n_utime: A dask.array of number of unique times per chunk.
+        n_ant: An integer number of antennas.
+        n_chunk: An integer number of chunks in this xarray.dataset.
+        n_chan: An integer number of channels.
+        chunk_spec: A tuple of integers describing the times per chunk.
+
+    Returns:
+        modified_stats_xds: xarray.dataset onto which the stats have been
+            assigned.
+        unflagged_tfac: dask.array of unflagged points. Returned here to
+            avoid wasteful recomputation.
+    """
 
     # Get all the unflagged points.
 
     unflagged = fullres_bitflags == 0
 
-    # Compute the number of unflagged points per row. Note that this includes
-    # a summation over channel and correlation - version 1 did not have a
-    # a correlation axis in the flags but I believe we should.
-    rows_unflagged = unflagged.map_blocks(np.sum, axis=(1, 2),
-                                          chunks=(unflagged.chunks[0],),
-                                          drop_axis=(1, 2))
-
-    # Determine the number of equations per antenna by summing the appropriate
-    # values from the per-row unflagged values.
-    eqs_per_ant = da.map_blocks(sum_eqs_per_ant, rows_unflagged, ant1_col,
-                                ant2_col, n_ant, dtype=np.int64,
-                                new_axis=1,
-                                chunks=((1,)*n_chunk, (n_ant,)))
-
-    # Determine the number of equations per time-frequency slot.
-    eqs_per_tf = da.blockwise(sum_eqs_per_tf, ("rowlike", "chan"),
-                              unflagged, ("rowlike", "chan", "corr"),
-                              time_ind, ("rowlike",),
-                              n_time_ind, ("rowlike",),
-                              dtype=np.int64,
-                              concatenate=True,
-                              align_arrays=False,
-                              adjust_chunks={"rowlike": tuple(chunk_spec)})
-
-    # Determine the normalisation factor as the reciprocal of the equations
-    # per time-frequency bin.
-    tf_norm_factor = da.map_blocks(silent_divide,
-                                   1, eqs_per_tf, dtype=np.float64)
-
-    # Compute the total number of equations per chunk.
-    total_eqs = da.map_blocks(lambda x: np.atleast_1d(np.sum(x)),
-                              eqs_per_tf, dtype=np.int64,
-                              drop_axis=1,
-                              chunks=(1,))
-
-    # Compute the overall normalisation factor.
-    total_norm_factor = da.map_blocks(silent_divide,
-                                      1, total_eqs, dtype=np.float64)
-
-    # Assign the relevant values to the xds.
-    modified_stats_xds = \
-        stats_xds.assign({"eqs_per_ant": (("chunk", "ant"), eqs_per_ant),
-                          "eqs_per_tf": (("time", "chan"), eqs_per_tf),
-                          "tf_norm_factor": (("time", "chan"), tf_norm_factor),
-                          "tot_norm_factor": (("chunk",), total_norm_factor)})
-
-    return modified_stats_xds
-
-
-def compute_model_stats(stats_xds, model_col, fullres_bitflags, ant1_col,
-                        ant2_col, utime_ind, n_utime, n_ant, n_chunk,
-                        n_chan, n_dir, chunk_spec):
-
-    # Get all the unflagged points.
-
-    unflagged = fullres_bitflags == 0
-
-    abs_sqrd_model = model_col.map_blocks(cabs2, dtype=model_col.real.dtype)
-
-    # Note that we currently do not use the weights here - this differs from
-    # V1 and needs to be discussed. This collapses the abs^2 values into a
-    # (time, freq, ant, dir, corr) array.
-
-    abs_sqrd_model_tfadc = \
-        da.blockwise(column_to_tfadc, ("rowlike", "chan", "ant", "dir", "corr"),
-                     abs_sqrd_model, ("rowlike", "chan", "dir", "corr"),
-                     ant1_col, ("rowlike",),
-                     ant2_col, ("rowlike",),
-                     utime_ind, ("rowlike",),
-                     n_utime, ("rowlike",),
-                     n_ant, None,
-                     dtype=abs_sqrd_model.dtype,
-                     concatenate=True,
-                     align_arrays=False,
-                     new_axes={"ant": n_ant},
-                     adjust_chunks={"rowlike": chunk_spec})
-
-    # Sum over the correlation axis as is done in V1. Note that we retain
-    # correlation as a dummy index (D) so that we don't confuse arrays with
-    # similar dimensions.
-
-    abs_sqrd_model_tfadD = \
-        abs_sqrd_model_tfadc.map_blocks(np.sum, axis=4, drop_axis=4,
-                                        new_axis=4, keepdims=True)
-
-    # This collapses the unflagged values into a (time, freq, ant, corr) array.
+    # Convert the bitflags (column-like) to a (time, freq, antenna,
+    # correlation) array. This is smaller (no baseline dimension) and can
+    # be easily manipulated to produce other quantities of interest.
 
     unflagged_tfac = \
         da.blockwise(column_to_tfac, ("rowlike", "chan", "ant", "corr"),
@@ -208,6 +146,102 @@ def compute_model_stats(stats_xds, model_col, fullres_bitflags, ant1_col,
                      align_arrays=False,
                      new_axes={"ant": n_ant},
                      adjust_chunks={"rowlike": chunk_spec})
+
+    # Determine the number of equations per antenna by summing the appropriate
+    # values from the per-row unflagged values. The factor of 2 accounts for
+    # the conjugate points.
+    eqs_per_ant = da.map_blocks(
+        lambda x, **kw: 2*np.atleast_2d(np.sum(x, **kw)),
+        unflagged_tfac,
+        axis=(0, 1, 3),
+        drop_axis=(1, 3),
+        chunks=((1,)*n_chunk, (n_ant,)))
+
+    # Determine the number of equations per time-frequency slot. The factor 0f
+    # 2 accounts for the conjugate points.
+    eqs_per_tf = da.map_blocks(
+        lambda x, **kw: 2*np.atleast_2d(np.sum(x, **kw)),
+        unflagged_tfac,
+        axis=(2, 3),
+        drop_axis=(2, 3))
+
+    # Determine the normalisation factor as the reciprocal of the equations
+    # per time-frequency bin.
+    tf_norm_factor = da.map_blocks(silent_divide, 1, eqs_per_tf,
+                                   dtype=np.float64)
+
+    # Compute the total number of equations per chunk.
+    total_eqs = da.map_blocks(lambda x: np.atleast_1d(np.sum(x)),
+                              eqs_per_tf, dtype=np.int32,
+                              drop_axis=1,
+                              chunks=(1,))
+
+    # Compute the overall normalisation factor.
+    total_norm_factor = da.map_blocks(silent_divide, 1, total_eqs,
+                                      dtype=np.float64)
+
+    # Assign the relevant values to the xds.
+    modified_stats_xds = \
+        stats_xds.assign({"eqs_per_ant": (("chunk", "ant"), eqs_per_ant),
+                          "eqs_per_tf": (("time", "chan"), eqs_per_tf),
+                          "tf_norm_factor": (("time", "chan"), tf_norm_factor),
+                          "tot_norm_factor": (("chunk",), total_norm_factor)})
+
+    return modified_stats_xds, unflagged_tfac
+
+
+def compute_average_model(model_col, unflagged_tfac, ant1_col, ant2_col,
+                          utime_ind, n_utime, n_ant, n_chunk, n_chan,
+                          chunk_spec):
+    """Computes average value of |model|^2.
+
+    Given model data, accumulates |model|^2 into a (time, freq, ant, dir, corr)
+    array. This is later used to determine the errors on the gains.
+
+    Args:
+        model_col: dask.array of model values.
+        unflagged_tfac: A dask.array of flag counts with shape (time, freq,
+            ant, corr).
+        ant1_col: A dask.array of antenna1 values.
+        ant2_col: A dask.array of antenna1 values.
+        utime_ind: A dask.array of indices corresponding to unique time values.
+        n_utime: A dask.array of number of unique times per chunk.
+        n_ant: An integer number of antennas.
+        n_chunk: An integer number of chunks in this xarray.dataset.
+        n_chan: An integer number of channels.
+        chunk_spec: A tuple of integers describing the times per chunk.
+
+    Returns:
+        avg_abs_sqrd_model: A dask.array of per-antenna |model|^2 values of
+            shape (time, freq, ant, dir, corr).
+    """
+
+    # Note that we currently do not use the weights here - this differs from
+    # V1 and needs to be discussed. This collapses the model values into a
+    # (time, freq, ant, dir, corr) array of abs^2. This is done as a single
+    # operation to avoid creating an array the size of the model.
+
+    abs_sqrd_model_tfadc = da.blockwise(
+        column_to_abs_tfadc, ("rowlike", "chan", "ant", "dir", "corr"),
+        model_col, ("rowlike", "chan", "dir", "corr"),
+        ant1_col, ("rowlike",),
+        ant2_col, ("rowlike",),
+        utime_ind, ("rowlike",),
+        n_utime, ("rowlike",),
+        n_ant, None,
+        dtype=model_col.real.dtype,
+        concatenate=True,
+        align_arrays=False,
+        new_axes={"ant": n_ant},
+        adjust_chunks={"rowlike": chunk_spec})
+
+    # Sum over the correlation axis as is done in V1. Note that we retain
+    # correlation as a dummy index (D) so that we don't confuse arrays with
+    # similar dimensions.
+
+    abs_sqrd_model_tfadD = \
+        abs_sqrd_model_tfadc.map_blocks(np.sum, axis=4, drop_axis=4,
+                                        new_axis=4, keepdims=True)
 
     # Sum over the correlation axis as is done in V1. Note that we retain
     # correlation as a dummy index (D) so that we don't confuse arrays with
@@ -232,45 +266,36 @@ def compute_model_stats(stats_xds, model_col, fullres_bitflags, ant1_col,
     return avg_abs_sqrd_model
 
 
-def assign_interval_stats(gain_xds, data_stats_xds, fullres_bitflags,
+def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
                           avg_abs_sqrd_model, ant1_col, ant2_col, t_map, f_map,
                           t_int_per_chunk, f_int_per_chunk, ti_chunks,
                           fi_chunks, t_int, f_int, n_utime):
 
-    unflagged = fullres_bitflags == 0
-    n_ant = gain_xds.dims["ant"]
-
     # This creates an (n_t_int, n_f_int, n_ant, n_corr) array of unflagged
-    # points. Note that V1 did not retain a correlation axis.
+    # points by summing over solution interval. Note that V1 did not retain a
+    # correlation axis.
 
-    unflagged_tifiac = \
-        da.blockwise(column_to_tifiac, ("rowlike", "chan", "ant", "corr"),
-                     unflagged, ("rowlike", "chan", "corr"),
-                     t_map, ("rowlike",),
-                     f_map, ("rowlike",),
-                     ant1_col, ("rowlike",),
-                     ant2_col, ("rowlike",),
-                     t_int_per_chunk, ("rowlike",),
-                     f_int_per_chunk, ("rowlike",),
-                     n_ant, None,
-                     dtype=np.int32,
-                     concatenate=True,
-                     align_arrays=False,
-                     new_axes={"ant": n_ant},
-                     adjust_chunks={"rowlike": ti_chunks,
-                                    "chan": fi_chunks[0]})
+    unflagged_tifiac = da.blockwise(sum_intervals, data_schema,
+                                    unflagged_tfac, data_schema,
+                                    t_int, None,
+                                    f_int, None,
+                                    dtype=np.int32,
+                                    concatenate=True,
+                                    align_arrays=False,
+                                    adjust_chunks={"rowlike": ti_chunks,
+                                                   "chan": fi_chunks[0]})
 
-    # Antennas which ahve no unflagged points in an interval must be fully
+    # Antennas which have no unflagged points in an interval must be fully
     # flagged. Note that we reduce over the correlation axis here.
 
     flagged_tifia = da.all(unflagged_tifiac == 0, axis=-1)
 
-    missing_fraction = \
-        da.map_blocks(lambda x: np.atleast_1d(np.sum(x)/x.size),
-                      flagged_tifia,
-                      chunks=(1,),
-                      drop_axis=(1, 2),
-                      dtype=np.int32)
+    missing_fraction = da.map_blocks(
+        lambda x: np.atleast_1d(np.sum(x)/x.size),
+        flagged_tifia,
+        chunks=(1,),
+        drop_axis=(1, 2),
+        dtype=np.int32)
 
     updated_gain_xds = gain_xds.assign(
         {"missing_fraction": (("chunk",), missing_fraction)})
@@ -315,32 +340,9 @@ def assign_interval_stats(gain_xds, data_stats_xds, fullres_bitflags,
 
     prior_gain_error = da.sqrt(noise_to_signal_ratio)
 
-
-
     # TODO: Handle direction pinning. Handle logging/stat reporting.
 
     return updated_gain_xds, flagged_tifia
-
-
-def sum_eqs_per_ant(rows_unflagged, ant1_col, ant2_col, n_ant):
-
-    eqs_per_ant = np.zeros((1, n_ant), dtype=np.int64)
-
-    np.add.at(eqs_per_ant[0, :], ant1_col, rows_unflagged)
-    np.add.at(eqs_per_ant[0, :], ant2_col, rows_unflagged)
-
-    return 2*eqs_per_ant  # The conjugate points double the eqs.
-
-
-def sum_eqs_per_tf(unflagged, time_ind, n_time_ind):
-
-    _, n_chan, _ = unflagged.shape
-
-    eqs_per_tf = np.zeros((n_time_ind.item(), n_chan), dtype=np.int64)
-
-    np.add.at(eqs_per_tf, time_ind, unflagged.sum(axis=-1))
-
-    return 4*eqs_per_tf  # Conjugate points + each row contributes to 2 ants.
 
 
 def silent_divide(in1, in2):

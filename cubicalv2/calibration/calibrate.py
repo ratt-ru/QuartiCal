@@ -6,7 +6,7 @@ from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.statistics.statistics import (assign_noise_estimates,
                                              assign_tf_stats,
                                              assign_interval_stats,
-                                             compute_model_stats,
+                                             compute_average_model,
                                              create_data_stats_xds,
                                              create_gain_stats_xds)
 from cubicalv2.flagging.flagging import (make_bitmask,
@@ -166,8 +166,11 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # Create and populate xds for statisics at data resolution. TODO:
         # This can all be moved into a function inside the statistics module
         # in order to clean up the calibrate code.
+
         data_stats_xds = \
             create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks)
+
+        # Determine the estimated noise.
 
         data_stats_xds = assign_noise_estimates(data_stats_xds,
                                                 data_col,
@@ -176,29 +179,33 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                 ant2_col,
                                                 n_ant)
 
-        data_stats_xds = assign_tf_stats(data_stats_xds,
-                                         fullres_bitflags,
-                                         ant1_col,
-                                         ant2_col,
-                                         utime_ind,
-                                         utime_per_chunk,
-                                         n_ant,
-                                         n_chunks,
-                                         n_chan,
-                                         utime_chunks)
+        # Compute statistics at time/frequency (data) resolution and return a
+        # useful (time, chan, ant, corr) version of flag counts.
 
-        avg_abs_sqrd_model = compute_model_stats(data_stats_xds,
-                                                 model_col,
-                                                 fullres_bitflags,
-                                                 ant1_col,
-                                                 ant2_col,
-                                                 utime_ind,
-                                                 utime_per_chunk,
-                                                 n_ant,
-                                                 n_chunks,
-                                                 n_chan,
-                                                 n_dir,
-                                                 utime_chunks)
+        data_stats_xds, unflagged_tfac = assign_tf_stats(data_stats_xds,
+                                                         fullres_bitflags,
+                                                         ant1_col,
+                                                         ant2_col,
+                                                         utime_ind,
+                                                         utime_per_chunk,
+                                                         n_ant,
+                                                         n_chunks,
+                                                         n_chan,
+                                                         utime_chunks)
+
+        # Compute the average value of the |model|^2. This is used to compute
+        # gain errors.
+
+        avg_abs_sqrd_model = compute_average_model(model_col,
+                                                   unflagged_tfac,
+                                                   ant1_col,
+                                                   ant2_col,
+                                                   utime_ind,
+                                                   utime_per_chunk,
+                                                   n_ant,
+                                                   n_chunks,
+                                                   n_chan,
+                                                   utime_chunks)
 
         data_stats_xds_list.append(data_stats_xds)
 
@@ -312,6 +319,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
             d_maps.append(list(range(n_dir)) if dd_term else [0]*n_dir)
 
+            # Create an xds in which to store the gain values and assosciated
+            # interval statistics.
+
             gain_xds = create_gain_stats_xds(n_tint,
                                              n_fint,
                                              n_ant,
@@ -321,10 +331,12 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                              term,
                                              xds_ind)
 
+            # Update the gain xds with relevant interval statistics.
+
             gain_xds, empty_intervals = \
                 assign_interval_stats(gain_xds,
                                       data_stats_xds,
-                                      fullres_bitflags,
+                                      unflagged_tfac,
                                       avg_abs_sqrd_model,
                                       ant1_col,
                                       ant2_col,
@@ -337,6 +349,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                       atomic_t_int or n_row,
                                       atomic_f_int or n_chan,
                                       utime_per_chunk)
+
+            # Empty intervals corresponds to missing gains.
 
             gain_flags = set_bitflag(gain_flags, "MISSING", empty_intervals)
 
