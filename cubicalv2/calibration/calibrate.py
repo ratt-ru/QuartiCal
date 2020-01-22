@@ -338,17 +338,14 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                       data_stats_xds,
                                       unflagged_tfac,
                                       avg_abs_sqrd_model,
-                                      ant1_col,
-                                      ant2_col,
-                                      t_map,
-                                      f_map,
-                                      t_int_per_chunk,
-                                      f_int_per_chunk,
                                       ti_chunks[term],
                                       fi_chunks[term],
                                       atomic_t_int or n_row,
                                       atomic_f_int or n_chan,
                                       utime_per_chunk)
+
+            # After computing the stats we need to do some flagging operations/
+            # construct the gain flags.
 
             # Empty intervals corresponds to missing gains.
 

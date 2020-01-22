@@ -267,9 +267,8 @@ def compute_average_model(model_col, unflagged_tfac, ant1_col, ant2_col,
 
 
 def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
-                          avg_abs_sqrd_model, ant1_col, ant2_col, t_map, f_map,
-                          t_int_per_chunk, f_int_per_chunk, ti_chunks,
-                          fi_chunks, t_int, f_int, n_utime):
+                          avg_abs_sqrd_model, ti_chunks, fi_chunks,
+                          t_int, f_int, n_utime):
 
     # This creates an (n_t_int, n_f_int, n_ant, n_corr) array of unflagged
     # points by summing over solution interval. Note that V1 did not retain a
@@ -297,9 +296,6 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
         drop_axis=(1, 2),
         dtype=np.int32)
 
-    updated_gain_xds = gain_xds.assign(
-        {"missing_fraction": (("chunk",), missing_fraction)})
-
     # Sum the average abs^2 model over solution intervals.
 
     avg_abs_sqrd_model_int = \
@@ -313,9 +309,13 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
                      adjust_chunks={"rowlike": ti_chunks,
                                     "chan": fi_chunks[0]})
 
+    # Determine the noise^2 per channel by inverting the varaince^2.
+
     sigma_sqrd_per_chan = \
         da.map_blocks(silent_divide, 1, data_stats_xds.inv_var_per_chan.data,
                       dtype=np.float64)
+
+    # Map the per channel estimates to per interval estimates.
 
     sigma_sqrd_per_int = \
         da.blockwise(per_chan_to_per_int, model_schema,
@@ -328,28 +328,101 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
                      concatenate=True,
                      align_arrays=False)
 
+    # Sum over the correlation axis.
+
     unflagged_tifiaD = unflagged_tifiac.map_blocks(np.sum, axis=3, drop_axis=3,
                                                    new_axis=3, keepdims=True)
 
     # Note the egregious fudge factor of four. This was introduced to be
     # consistent with V1 which abandons doesn't count correlations. TODO:
-    # Sit down with Oleg and figure out exactly what we want ot happen in V2.
+    # Sit down with Oleg and figure out exactly what we want to happen in V2.
 
-    noise_to_signal_ratio = (4*sigma_sqrd_per_int /
-        (unflagged_tifiaD[:, :, :, None, :]*avg_abs_sqrd_model_int))
+    noise_to_signal_ratio = da.map_blocks(
+        silent_divide,
+        4*sigma_sqrd_per_int,
+        unflagged_tifiaD[:, :, :, None, :]*avg_abs_sqrd_model_int,
+        undefined=np.inf,
+        dtype=np.float64)
+
+    # The prior gain error is the square root of the noise to signal ratio.
 
     prior_gain_error = da.sqrt(noise_to_signal_ratio)
+
+    # Determine the number of equations per interval by collapsing the
+    # equations per time-frequency array.
+
+    eqs_per_interval = \
+        da.blockwise(sum_intervals, ("rowlike", "chan"),
+                     data_stats_xds.eqs_per_tf.data, ("rowlike", "chan"),
+                     t_int, None,
+                     f_int, None,
+                     dtype=np.int32,
+                     concatenate=True,
+                     align_arrays=False,
+                     adjust_chunks={"rowlike": ti_chunks,
+                                    "chan": fi_chunks[0]})
+
+    n_dir = gain_xds.dims["dir"]  # TODO: Add fixed direction logic.
+    n_ant = gain_xds.dims["ant"]
+    dof_per_ant = 8  # TODO: Should depend on solver mode.
+
+    n_unknowns = dof_per_ant*n_ant*n_dir  # TODO: Add fixed direction logic.
+
+    # Check for intervals with a sufficient number of equations.
+
+    valid_intervals = eqs_per_interval > n_unknowns
+    n_valid_intervals = da.map_blocks(
+        lambda x: np.atleast_1d(np.sum(x)),
+        valid_intervals,
+        chunks=(1,),
+        drop_axis=(1),
+        dtype=np.int32)
+
+    n_valid_solutions = n_valid_intervals*n_dir
+
+    # Compute chi-squared correction factor for time-frequency and overall
+    # data.
+
+    chisq_tf_factor = da.map_blocks(
+        silent_divide,
+        eqs_per_interval,
+        eqs_per_interval - n_unknowns,
+        dtype=np.float64)
+    chisq_tf_factor[~valid_intervals] = 0
+
+    chisq_tot_factor = da.map_blocks(
+        lambda x: np.atleast_1d(np.sum(x)),
+        chisq_tf_factor,
+        chunks=(1,),
+        drop_axis=(1),
+        dtype=np.float32)
+    chisq_tot_factor = da.map_blocks(
+        silent_divide,
+        chisq_tot_factor,
+        n_valid_intervals,
+        dtype=np.float64)
+
+    # Zero the PGE in intervals which are considered unsolvable.
+
+    prior_gain_error[~valid_intervals[..., None, None, None]] = 0
+
+    updated_gain_xds = gain_xds.assign(
+        {"prior_gain_error": (("time_int", "freq_int", "ant", "dir"),
+                              prior_gain_error[..., 0]),
+         "missing_fraction": (("chunk",), missing_fraction),
+         "chisq_tf_correction": (("time_int", "freq_int"), chisq_tf_factor),
+         "chisq_tot_correction": (("chunk",), chisq_tot_factor)})
 
     # TODO: Handle direction pinning. Handle logging/stat reporting.
 
     return updated_gain_xds, flagged_tifia
 
 
-def silent_divide(in1, in2):
+def silent_divide(in1, in2, undefined=0):
     """Divides in1 by in2, supressing warnings. Division by zero gives zero."""
 
     with np.errstate(divide='ignore', invalid='ignore'):
-        out_arr = np.where(in2 != 0, in1/in2, 0)
+        out_arr = np.where(in2 != 0, in1/in2, undefined)
 
     return out_arr
 

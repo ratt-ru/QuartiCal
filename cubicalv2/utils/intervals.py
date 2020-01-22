@@ -196,6 +196,6 @@ def sum_intervals(in_arr, t_int, f_int):
 
             f_m = f//f_int
 
-            out_arr[t_m, f_m, :] += in_arr[t, f, :]
+            out_arr[t_m, f_m, ...] += in_arr[t, f, ...]
 
     return out_arr
