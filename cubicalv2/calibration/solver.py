@@ -58,9 +58,9 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr, utime_ind,
             else:
                 gain_list[gain_ind][:] = (gain_list[gain_ind] + update)/2
 
-            # Check for gain convergence. TODO: While I am pretty sure that
-            # the maths in this function works, I think I am missing something
-            # which requires the gain flags.
+            # Check for gain convergence. TODO: This can be affected by the
+            # weights. Currently unsure how or why, but using unity weights
+            # leads to monotonic convergence in all solution intervals.
 
             cnv_perc = compute_convergence(gain_list[gain_ind][:], last_gain)
 
