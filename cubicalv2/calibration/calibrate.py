@@ -380,6 +380,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             weight_col, ("rowlike", "chan", "corr"),
             t_map_arr, ("rowlike", "term"),
             f_map_arr, ("rowlike", "term"),
+            utime_ind, ("rowlike",),
+            utime_per_chunk, ("rowlike",),
             d_map_arr, None,
             compute_jhj_and_jhr, None,
             compute_update, None,

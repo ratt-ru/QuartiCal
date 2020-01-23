@@ -412,3 +412,65 @@ def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                 residual[row, f, 3] -= r11
 
     return residual
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def compute_chi_squared(residual, a1, a2, utime_ind, n_utime, n_ant):
+
+    n_rows, n_chan, n_corr = residual.shape
+
+    chisq = np.zeros((n_utime.item(), n_chan, n_ant),
+                     dtype=residual.real.dtype)
+
+    for row in prange(n_rows):
+
+        t_m = utime_ind[row]
+        a1_m, a2_m = a1[row], a2[row]
+
+        for f in range(n_chan):
+
+            for c in range(n_corr):
+
+                selection = residual[row, f, c]
+                abs_val_sqrd = selection.real**2 + selection.imag**2
+
+                chisq[t_m, f, a1_m] += abs_val_sqrd
+                chisq[t_m, f, a2_m] += abs_val_sqrd
+
+    return chisq
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
+def compute_convergence(gain, last_gain):
+
+    n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
+
+    tmp_abs2 = 0
+    tmp_diff_abs2 = 0
+
+    n_cnvgd = 0
+
+    for ti in range(n_tint):
+        for fi in range(n_fint):
+            for d in range(n_dir):
+
+                tmp_abs2 = 0
+                tmp_diff_abs2 = 0
+
+                for a in range(n_ant):
+                    for c in range(n_corr):
+
+                        gsel = gain[ti, fi, a, d, c]
+                        lgsel = last_gain[ti, fi, a, d, c]
+
+                        diff = lgsel - gsel
+
+                        tmp_abs2 += gsel.real**2 + gsel.imag**2
+                        tmp_diff_abs2 += diff.real**2 + diff.imag**2
+
+                if tmp_abs2 == 0:
+                    n_cnvgd += 1
+                else:
+                    n_cnvgd += tmp_diff_abs2/tmp_abs2 < 1e-6**2
+
+    return n_cnvgd/(n_tint*n_fint*n_dir)
