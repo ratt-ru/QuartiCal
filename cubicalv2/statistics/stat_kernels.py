@@ -1,5 +1,5 @@
 import numpy as np
-from numba import jit
+from numba import jit, prange
 
 
 @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
@@ -101,3 +101,57 @@ def estimate_noise_kernel(data, flags, a1, a2, n_ant):
 
     return np.array(noise_est).reshape((1, -1)), \
            inv_var_per_chan.reshape((1, -1))
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def compute_precal_chi_squared(data, model, weight, ivpc, utime_ind, a1, a2,
+                               n_utime, n_ant):
+
+    n_rows, n_chan, n_corr = data.shape
+
+    chisq = np.zeros((n_utime.item(), n_chan, n_ant),
+                     dtype=data.real.dtype)
+
+    for row in prange(n_rows):
+
+        t_m = utime_ind[row]
+        a1_m, a2_m = a1[row], a2[row]
+
+        for f in range(n_chan):
+
+            for c in range(n_corr):
+
+                residual = data[row, f, c] - model[row, f, c]
+                wgt = weight[row, f, c]*ivpc[0, f]
+                abs_val_sqrd = wgt*(residual.real**2 + residual.imag**2)
+
+                chisq[t_m, f, a1_m] += abs_val_sqrd
+                chisq[t_m, f, a2_m] += abs_val_sqrd
+
+    return chisq
+
+
+# @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+# def compute_precal_chi_squared(residual, a1, a2, utime_ind, n_utime, n_ant):
+
+#     n_rows, n_chan, n_corr = residual.shape
+
+#     chisq = np.zeros((n_utime.item(), n_chan, n_ant),
+#                      dtype=residual.real.dtype)
+
+#     for row in prange(n_rows):
+
+#         t_m = utime_ind[row]
+#         a1_m, a2_m = a1[row], a2[row]
+
+#         for f in range(n_chan):
+
+#             for c in range(n_corr):
+
+#                 selection = residual[row, f, c]
+#                 abs_val_sqrd = selection.real**2 + selection.imag**2
+
+#                 chisq[t_m, f, a1_m] += abs_val_sqrd
+#                 chisq[t_m, f, a2_m] += abs_val_sqrd
+
+#     return chisq

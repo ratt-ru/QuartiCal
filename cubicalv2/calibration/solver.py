@@ -2,10 +2,8 @@
 from numba import jit
 from cubicalv2.kernels.gjones_chain import invert_gains
 from cubicalv2.kernels.gjones_chain import (residual_full,
-                                            compute_chi_squared,
                                             compute_convergence)
 import numpy as np
-from cubicalv2.utils.maths import cabs2
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)

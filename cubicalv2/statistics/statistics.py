@@ -1,4 +1,5 @@
-from cubicalv2.statistics.stat_kernels import estimate_noise_kernel
+from cubicalv2.statistics.stat_kernels import (estimate_noise_kernel,
+                                               compute_precal_chi_squared)
 from cubicalv2.utils.intervals import (column_to_tifiac,
                                        column_to_tfadc,
                                        column_to_abs_tfadc,
@@ -446,3 +447,45 @@ def per_chan_to_per_int(sigma_sqrd_per_chan, avg_abs_sqrd_model_int, n_time,
         (time_per_int[:, None]*chan_per_int)[..., None, None, None]
 
     return sigma_sqrd_per_int
+
+
+def assign_pre_solve_chisq(data_stats_xds, data_col, model_col, weight_col,
+                           ant1_col, ant2_col, utime_ind, n_utime, n_ant,
+                           n_chunk, n_chan, chunk_spec):
+
+    inv_var_per_chan = data_stats_xds.inv_var_per_chan.data
+    tf_norm_factor = data_stats_xds.tf_norm_factor.data
+    tot_norm_factor = data_stats_xds.tot_norm_factor.data
+
+    pre_chisq_tfa = da.blockwise(
+        compute_precal_chi_squared, ("rowlike", "chan", "ant"),
+        data_col, ("rowlike", "chan", "corr"),
+        model_col.sum(axis=2), ("rowlike", "chan", "corr"),
+        weight_col, ("rowlike", "chan", "corr"),
+        inv_var_per_chan, ("rowlike", "chan"),
+        utime_ind, ("rowlike",),
+        ant1_col, ("rowlike",),
+        ant2_col, ("rowlike",),
+        n_utime, ("rowlike",),
+        n_ant, None,
+        dtype=data_col.real.dtype,
+        concatenate=True,
+        align_arrays=False,
+        new_axes={"ant": n_ant},
+        adjust_chunks={"rowlike": chunk_spec})
+
+    pre_chisq_tf = pre_chisq_tfa.sum(axis=-1) * tf_norm_factor
+
+    pre_chisq = pre_chisq_tfa.map_blocks(
+        lambda x: np.atleast_1d(np.sum(x)),
+        drop_axis=(1, 2),
+        chunks=(1,)
+    )
+
+    modified_stats_xds = \
+        data_stats_xds.assign(
+            {"pre_chisq_tfa": (("time", "chan", "ant"), pre_chisq_tfa),
+             "pre_chisq_tf": (("time", "chan"), pre_chisq_tf),
+             "pre_chisq": (("chunk",), pre_chisq * tot_norm_factor)})
+
+    return modified_stats_xds

@@ -8,7 +8,8 @@ from cubicalv2.statistics.statistics import (assign_noise_estimates,
                                              assign_interval_stats,
                                              compute_average_model,
                                              create_data_stats_xds,
-                                             create_gain_stats_xds)
+                                             create_gain_stats_xds,
+                                             assign_pre_solve_chisq)
 from cubicalv2.flagging.flagging import (make_bitmask,
                                          initialise_fullres_bitflags,
                                          is_set,
@@ -206,6 +207,19 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                    n_chunks,
                                                    n_chan,
                                                    utime_chunks)
+
+        data_stats_xds = assign_pre_solve_chisq(data_stats_xds,
+                                                data_col,
+                                                model_col,
+                                                weight_col,
+                                                ant1_col,
+                                                ant2_col,
+                                                utime_ind,
+                                                utime_per_chunk,
+                                                n_ant,
+                                                n_chunks,
+                                                n_chan,
+                                                utime_chunks)
 
         data_stats_xds_list.append(data_stats_xds)
 

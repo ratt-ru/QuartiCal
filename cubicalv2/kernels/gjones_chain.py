@@ -414,32 +414,6 @@ def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
     return residual
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_chi_squared(residual, a1, a2, utime_ind, n_utime, n_ant):
-
-    n_rows, n_chan, n_corr = residual.shape
-
-    chisq = np.zeros((n_utime.item(), n_chan, n_ant),
-                     dtype=residual.real.dtype)
-
-    for row in prange(n_rows):
-
-        t_m = utime_ind[row]
-        a1_m, a2_m = a1[row], a2[row]
-
-        for f in range(n_chan):
-
-            for c in range(n_corr):
-
-                selection = residual[row, f, c]
-                abs_val_sqrd = selection.real**2 + selection.imag**2
-
-                chisq[t_m, f, a1_m] += abs_val_sqrd
-                chisq[t_m, f, a2_m] += abs_val_sqrd
-
-    return chisq
-
-
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
 def compute_convergence(gain, last_gain):
 
