@@ -174,12 +174,13 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         # Determine the estimated noise.
 
-        data_stats_xds = assign_noise_estimates(data_stats_xds,
-                                                data_col,
-                                                fullres_bitflags,
-                                                ant1_col,
-                                                ant2_col,
-                                                n_ant)
+        data_stats_xds = assign_noise_estimates(
+            data_stats_xds,
+            data_col - model_col.sum(axis=2),
+            fullres_bitflags,
+            ant1_col,
+            ant2_col,
+            n_ant)
 
         # Compute statistics at time/frequency (data) resolution and return a
         # useful (time, chan, ant, corr) version of flag counts.
@@ -455,6 +456,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                  n_ant,
                                                  n_chunks,
                                                  utime_chunks)
+
+        # print(data_stats_xds.compute())
 
         data_stats_xds_list.append(data_stats_xds)
 

@@ -1,14 +1,10 @@
 from cubicalv2.statistics.stat_kernels import (estimate_noise_kernel,
-                                               compute_precal_chi_squared,
-                                               compute_postcal_chi_squared)
-from cubicalv2.utils.intervals import (column_to_tifiac,
-                                       column_to_tfadc,
-                                       column_to_abs_tfadc,
+                                               compute_chi_squared)
+from cubicalv2.utils.intervals import (column_to_abs_tfadc,
                                        column_to_tfac,
                                        sum_intervals,
                                        model_schema,
                                        data_schema)
-from cubicalv2.utils.maths import cabs2
 import dask.array as da
 import numpy as np
 import xarray
@@ -453,15 +449,89 @@ def per_chan_to_per_int(sigma_sqrd_per_chan, avg_abs_sqrd_model_int, n_time,
 def assign_pre_solve_chisq(data_stats_xds, data_col, model_col, weight_col,
                            ant1_col, ant2_col, utime_ind, n_utime, n_ant,
                            n_chunk, chunk_spec):
+    """See _assign_chisq. Suitable for OTF residual values with no gains."""
 
+    modified_stats_xds = _assign_chisq(data_stats_xds,
+                                       data_col,
+                                       model_col,
+                                       weight_col,
+                                       ant1_col,
+                                       ant2_col,
+                                       utime_ind,
+                                       n_utime,
+                                       n_ant,
+                                       n_chunk,
+                                       chunk_spec,
+                                       "pre")
+
+    return modified_stats_xds
+
+
+def assign_post_solve_chisq(data_stats_xds, residual_col, weight_col,
+                            ant1_col, ant2_col, utime_ind, n_utime, n_ant,
+                            n_chunk, chunk_spec):
+    """See _assign_chisq. Suitable for pre-computed residual values."""
+
+    modified_stats_xds = _assign_chisq(data_stats_xds,
+                                       residual_col,
+                                       None,
+                                       weight_col,
+                                       ant1_col,
+                                       ant2_col,
+                                       utime_ind,
+                                       n_utime,
+                                       n_ant,
+                                       n_chunk,
+                                       chunk_spec,
+                                       "post")
+
+    return modified_stats_xds
+
+
+def _assign_chisq(data_stats_xds, data_col, model_col, weight_col,
+                  ant1_col, ant2_col, utime_ind, n_utime, n_ant,
+                  n_chunk, chunk_spec, prefix):
+    """Assigns the value of the chi-squared onto a data stats xds.
+
+    Given an input stats xds, computes the chi-quared from the value of the
+    residual. If model_col is None, it is presumed that data_col already
+    contains the residual value. Otherwise the resdual is computed on the
+    fly as data_col - model_col. Note that this does not incude the weights.
+
+    Args:
+        data_stats_xds: An xarray.Dataset on which data stats live.
+        data_col: A dask.array containing the data/residual.
+        model_col: A dask.array containing the model or None.
+        weight_col: A dask.array containing the weights.
+        ant1_col: A dask.array containing antenna indices.
+        ant2_col: A dask.array containing antenna indices.
+        utime_ind: A dask.array containing unique time indices.
+        n_utime: A dask.array containing the number of unique times.
+        n_ant: Integer number of antennas.
+        n_chunk: Integer number of chunks.
+        chunk_spec: A non-dask equivalent of n_utime.
+        prefix: String prefix for chi-squared xds fields.
+    """
+
+    # Grab the weights from the xds. Note that these may be worth computing
+    # here.
     inv_var_per_chan = data_stats_xds.inv_var_per_chan.data
     tf_norm_factor = data_stats_xds.tf_norm_factor.data
     tot_norm_factor = data_stats_xds.tot_norm_factor.data
 
-    pre_chisq_tfa = da.blockwise(
-        compute_precal_chi_squared, ("rowlike", "chan", "ant"),
+    # Account for the model is None case - prior to calibration the residuals
+    # can easily be computed as data - model. Thereafter we want to feed in
+    # precomputed residual values.
+    if model_col is None:
+        model_arg = [None, None]
+    else:
+        model_arg = [model_col.sum(axis=2), ("rowlike", "chan", "corr")]
+
+    # Compute the chi-squared value per time, frequency and antenna.
+    chisq_tfa = da.blockwise(
+        compute_chi_squared, ("rowlike", "chan", "ant"),
         data_col, ("rowlike", "chan", "corr"),
-        model_col.sum(axis=2), ("rowlike", "chan", "corr"),
+        *model_arg,
         weight_col, ("rowlike", "chan", "corr"),
         inv_var_per_chan, ("rowlike", "chan"),
         utime_ind, ("rowlike",),
@@ -475,59 +545,22 @@ def assign_pre_solve_chisq(data_stats_xds, data_col, model_col, weight_col,
         new_axes={"ant": n_ant},
         adjust_chunks={"rowlike": chunk_spec})
 
-    pre_chisq_tf = pre_chisq_tfa.sum(axis=-1) * tf_norm_factor
+    # Compute and weight the chi-squared per time and frequency.
+    chisq_tf = chisq_tfa.sum(axis=-1) * tf_norm_factor
 
-    pre_chisq = pre_chisq_tfa.map_blocks(
+    # Compute and weight the total chi-squared value.
+    chisq = chisq_tfa.map_blocks(
         lambda x: np.atleast_1d(np.sum(x)),
         drop_axis=(1, 2),
         chunks=(1,)
     )
 
+    # Assign the relevant chi-squared values with the specified prefix.
     modified_stats_xds = \
         data_stats_xds.assign(
-            {"pre_chisq_tfa": (("time", "chan", "ant"), pre_chisq_tfa),
-             "pre_chisq_tf": (("time", "chan"), pre_chisq_tf),
-             "pre_chisq": (("chunk",), pre_chisq * tot_norm_factor)})
-
-    return modified_stats_xds
-
-
-def assign_post_solve_chisq(data_stats_xds, residual_col, weight_col,
-                            ant1_col, ant2_col, utime_ind, n_utime, n_ant,
-                            n_chunk, chunk_spec):
-
-    inv_var_per_chan = data_stats_xds.inv_var_per_chan.data
-    tf_norm_factor = data_stats_xds.tf_norm_factor.data
-    tot_norm_factor = data_stats_xds.tot_norm_factor.data
-
-    post_chisq_tfa = da.blockwise(
-        compute_postcal_chi_squared, ("rowlike", "chan", "ant"),
-        residual_col, ("rowlike", "chan", "corr"),
-        weight_col, ("rowlike", "chan", "corr"),
-        inv_var_per_chan, ("rowlike", "chan"),
-        utime_ind, ("rowlike",),
-        ant1_col, ("rowlike",),
-        ant2_col, ("rowlike",),
-        n_utime, ("rowlike",),
-        n_ant, None,
-        dtype=residual_col.real.dtype,
-        concatenate=True,
-        align_arrays=False,
-        new_axes={"ant": n_ant},
-        adjust_chunks={"rowlike": chunk_spec})
-
-    post_chisq_tf = post_chisq_tfa.sum(axis=-1) * tf_norm_factor
-
-    post_chisq = post_chisq_tfa.map_blocks(
-        lambda x: np.atleast_1d(np.sum(x)),
-        drop_axis=(1, 2),
-        chunks=(1,)
-    )
-
-    modified_stats_xds = \
-        data_stats_xds.assign(
-            {"post_chisq_tfa": (("time", "chan", "ant"), post_chisq_tfa),
-             "post_chisq_tf": (("time", "chan"), post_chisq_tf),
-             "post_chisq": (("chunk",), post_chisq * tot_norm_factor)})
+            {"{}_chisq_tfa".format(prefix): (("time", "chan", "ant"),
+                                             chisq_tfa),
+             "{}_chisq_tf".format(prefix): (("time", "chan"), chisq_tf),
+             "{}_chisq".format(prefix): (("chunk",), chisq * tot_norm_factor)})
 
     return modified_stats_xds
