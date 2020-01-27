@@ -9,8 +9,7 @@ from cubicalv2.utils.maths import cabs2
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
-def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr, utime_ind,
-                 n_utime,
+def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                  d_map_arr, compute_jhj_and_jhr, compute_update, *gain_list):
 
     gain_list = [g for g in gain_list[::2]]
@@ -68,15 +67,5 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr, utime_ind,
 
             if cnv_perc > 0.99:
                 break
-
-            # if i % 5 == 0:
-            #     if not dd_term:
-            #         residual = residual_full(data, model, gain_list, a1, a2,
-            #                                  t_map_arr, f_map_arr, d_map_arr)
-
-            #     chisq = compute_chi_squared(residual, a1, a2, utime_ind,
-            #                                 n_utime, n_ant)
-
-                # print(chisq)
 
     return gain_list
