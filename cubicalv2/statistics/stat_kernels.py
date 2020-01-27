@@ -131,27 +131,29 @@ def compute_precal_chi_squared(data, model, weight, ivpc, utime_ind, a1, a2,
     return chisq
 
 
-# @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-# def compute_precal_chi_squared(residual, a1, a2, utime_ind, n_utime, n_ant):
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def compute_postcal_chi_squared(residual, weight, ivpc, utime_ind, a1, a2,
+                                n_utime, n_ant):
 
-#     n_rows, n_chan, n_corr = residual.shape
+    n_rows, n_chan, n_corr = residual.shape
 
-#     chisq = np.zeros((n_utime.item(), n_chan, n_ant),
-#                      dtype=residual.real.dtype)
+    chisq = np.zeros((n_utime.item(), n_chan, n_ant),
+                     dtype=residual.real.dtype)
 
-#     for row in prange(n_rows):
+    for row in prange(n_rows):
 
-#         t_m = utime_ind[row]
-#         a1_m, a2_m = a1[row], a2[row]
+        t_m = utime_ind[row]
+        a1_m, a2_m = a1[row], a2[row]
 
-#         for f in range(n_chan):
+        for f in range(n_chan):
 
-#             for c in range(n_corr):
+            for c in range(n_corr):
 
-#                 selection = residual[row, f, c]
-#                 abs_val_sqrd = selection.real**2 + selection.imag**2
+                res = residual[row, f, c]
+                wgt = weight[row, f, c]*ivpc[0, f]
+                abs_val_sqrd = wgt*(res.real**2 + res.imag**2)
 
-#                 chisq[t_m, f, a1_m] += abs_val_sqrd
-#                 chisq[t_m, f, a2_m] += abs_val_sqrd
+                chisq[t_m, f, a1_m] += abs_val_sqrd
+                chisq[t_m, f, a2_m] += abs_val_sqrd
 
-#     return chisq
+    return chisq

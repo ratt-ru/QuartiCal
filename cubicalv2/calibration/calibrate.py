@@ -9,7 +9,8 @@ from cubicalv2.statistics.statistics import (assign_noise_estimates,
                                              compute_average_model,
                                              create_data_stats_xds,
                                              create_gain_stats_xds,
-                                             assign_pre_solve_chisq)
+                                             assign_pre_solve_chisq,
+                                             assign_post_solve_chisq)
 from cubicalv2.flagging.flagging import (make_bitmask,
                                          initialise_fullres_bitflags,
                                          is_set,
@@ -218,10 +219,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                 utime_per_chunk,
                                                 n_ant,
                                                 n_chunks,
-                                                n_chan,
                                                 utime_chunks)
-
-        data_stats_xds_list.append(data_stats_xds)
 
         for term in opts.solver_gain_terms:
 
@@ -446,6 +444,19 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
+
+        data_stats_xds = assign_post_solve_chisq(data_stats_xds,
+                                                 residuals,
+                                                 weight_col,
+                                                 ant1_col,
+                                                 ant2_col,
+                                                 utime_ind,
+                                                 utime_per_chunk,
+                                                 n_ant,
+                                                 n_chunks,
+                                                 utime_chunks)
+
+        data_stats_xds_list.append(data_stats_xds)
 
         # Add quantities required elsewhere to the xds and mark certain columns
         # for saving.
