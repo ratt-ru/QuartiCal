@@ -413,7 +413,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             dd_term = getattr(opts, "{}_direction_dependent".format(term))
 
             gain = da.blockwise(
-                getitem, gain_schema,
+                lambda x, g: x[0][g], gain_schema,
                 gains, gain_schema,
                 ind, None,
                 dtype=np.complex128,
@@ -429,6 +429,38 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                gain)})
 
             gain_list.extend([gain, gain_schema])
+
+        info = da.blockwise(
+            getitem, gain_schema,
+            gains, gain_schema,
+            1, None,
+            dtype=np.object,
+            adjust_chunks={"rowlike": 1},
+            meta=np.empty((0,), dtype=np.object),
+            align_arrays=False)
+
+        corr_chunks = ((1,)*n_chunks,) + ((1,),)*(len(gain_schema) - 1)
+
+        # info = da.Array(info.__dask_graph__(), info.name, chunks=corr_chunks,
+        #                 dtype=info.dtype).squeeze()
+
+        def blah(x):
+
+            print(x[0][0][0][0])
+            return x[0][0][0][0].conv_iters
+
+        print(info)
+
+        foo = da.blockwise(
+            blah, ("rowlike",),
+            info, gain_schema,
+            dtype=np.object,
+            adjust_chunks={"rowlike": 1},
+            # meta=np.empty((0), dtype=np.object),
+            align_arrays=False)
+
+        print(foo)
+        # print(foo.compute())
 
         residuals = da.blockwise(
             dask_residual, ("rowlike", "chan", "corr"),

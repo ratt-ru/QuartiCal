@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-from numba import jit
+from collections import namedtuple
+from numba import jit, types, typed
 from cubicalv2.kernels.gjones_chain import invert_gains
 from cubicalv2.kernels.gjones_chain import (residual_full,
                                             compute_convergence)
 import numpy as np
+
+
+conv_info = namedtuple("conv_info", "conv_iters dummy")
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
@@ -24,7 +28,7 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
         last_gain = gain_list[gain_ind].copy()
 
-        cnv_perc = 0
+        cnv_perc = 0.
 
         for i in range(20):
 
@@ -66,4 +70,4 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             if cnv_perc > 0.99:
                 break
 
-    return gain_list
+    return gain_list, conv_info(i, 10)
