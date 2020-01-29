@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from cubicalv2.calibration.solver import chain_solver, field_names
+from cubicalv2.calibration.solver import chain_solver, stat_fields
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.statistics.statistics import (assign_noise_estimates,
                                              assign_tf_stats,
@@ -416,10 +416,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             meta=np.empty((0,), dtype=np.object),
             align_arrays=False)
 
-        def blah(x, term, name):
-
-            return getattr(x[term], name)
-
         gain_list = []
         stats_dict = {}
         for ind, term in enumerate(opts.solver_gain_terms):
@@ -439,28 +435,27 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 meta=np.empty((0, 0, 0, 0, 0), dtype=np.complex128),
                 align_arrays=False)
 
-            gain_xds_dict[term][-1] = \
-                gain_xds_dict[term][-1].assign(
-                    {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
-                               gain)})
-
             gain_list.extend([gain, gain_schema])
 
             stats_dict[term] = {}
 
-            for field in field_names:
+            for field, field_dtype in stat_fields.items():
                 stats_dict[term][field] = da.blockwise(
-                    blah, ("rowlike",),
+                    lambda d, t, n: np.atleast_1d(getattr(d[t], n)),
+                    ("rowlike",),
                     solver_info, ("rowlike",),
                     ind, None,
                     field, None,
-                    dtype=np.object,
+                    dtype=field_dtype,
                     adjust_chunks={"rowlike": 1},
-                    # meta=np.empty((0), dtype=np.object),
                     align_arrays=False)
 
-        # print(stats_dict)
-        # print(da.compute(stats_dict))
+            gain_xds_dict[term][-1] = \
+                gain_xds_dict[term][-1].assign(
+                    {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
+                               gain),
+                     "conv_perc": (("chunk"), stats_dict[term]["conv_perc"]),
+                     "conv_iters": (("chunk"), stats_dict[term]["conv_iters"])})
 
         residuals = da.blockwise(
             dask_residual, ("rowlike", "chan", "corr"),

@@ -7,9 +7,10 @@ from cubicalv2.kernels.gjones_chain import (residual_full,
 import numpy as np
 
 
-field_names = ["conv_iters", "conv_perc"]
+stat_fields = {"conv_iters": np.int64,
+               "conv_perc": np.float64}
 
-term_conv_info = namedtuple("term_conv_info", " ".join(field_names))
+term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
