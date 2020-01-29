@@ -7,9 +7,9 @@ from cubicalv2.kernels.gjones_chain import (residual_full,
 import numpy as np
 
 
-field_names = ["conv_iters", "dummy"]
+field_names = ["conv_iters", "conv_perc"]
 
-conv_info = namedtuple("conv_info", " ".join(field_names))
+term_conv_info = namedtuple("term_conv_info", " ".join(field_names))
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
@@ -19,6 +19,8 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     gain_list = [g for g in gain_list[::2]]
     gain_flag_list = [gf for gf in gain_list[1::2]]
     inverse_gain_list = [np.empty_like(g) for g in gain_list]
+
+    info_dict = dict()
 
     for gain_ind in range(len(gain_list)):
 
@@ -36,21 +38,21 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
             if dd_term:
                 residual = residual_full(data, model, gain_list, a1, a2,
-                                         t_map_arr, f_map_arr, d_map_arr)
+                                        t_map_arr, f_map_arr, d_map_arr)
             else:
                 residual = data
 
             jhj, jhr = compute_jhj_and_jhr(model,
-                                           gain_list,
-                                           inverse_gain_list,
-                                           residual,
-                                           a1,
-                                           a2,
-                                           weights,
-                                           t_map_arr,
-                                           f_map_arr,
-                                           d_map_arr,
-                                           gain_ind)
+                                        gain_list,
+                                        inverse_gain_list,
+                                        residual,
+                                        a1,
+                                        a2,
+                                        weights,
+                                        t_map_arr,
+                                        f_map_arr,
+                                        d_map_arr,
+                                        gain_ind)
 
             update = compute_update(jhj, jhr)
 
@@ -72,4 +74,7 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             if cnv_perc > 0.99:
                 break
 
-    return gain_list, conv_info(i, 10)
+        info_dict[gain_ind] = term_conv_info(i, cnv_perc)
+
+    return gain_list, info_dict
+

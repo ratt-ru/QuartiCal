@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from cubicalv2.calibration.solver import chain_solver
+from cubicalv2.calibration.solver import chain_solver, field_names
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
 from cubicalv2.statistics.statistics import (assign_noise_estimates,
                                              assign_tf_stats,
@@ -384,8 +384,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # for now though it may be possible to move the array creation into
         # the numba layer.
 
-        gains = da.blockwise(
-            chain_solver, ("rowlike",),# "chan", "ant", "dir", "corr"),
+        solver_ouputs = da.blockwise(
+            chain_solver, ("rowlike",),  # This is a lie!
             model_col, ("rowlike", "chan", "dir", "corr"),
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
@@ -407,46 +407,28 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # the stored chunk values to give the resulting gains meaningful
         # shapes.
 
-        info = da.blockwise(
+        solver_info = da.blockwise(
             getitem, ("rowlike",),
-            gains, ("rowlike",),
-            1, None,
+            solver_ouputs, ("rowlike",),
+            1, None,  # The info tuple is the second return value.
             dtype=np.object,
             adjust_chunks={"rowlike": 1},
             meta=np.empty((0,), dtype=np.object),
             align_arrays=False)
 
-        def blah(x, name):
+        def blah(x, term, name):
 
-            return getattr(x, name)
-
-        # print(info)
-
-        from cubicalv2.calibration.solver import field_names
-
-        stats_dico = {}
-        for ind, field in enumerate(field_names):
-            stats_dico[field] = da.blockwise(
-                blah, ("rowlike",),
-                info, ("rowlike",),
-                field, None,
-                dtype=np.object,
-                adjust_chunks={"rowlike": 1},
-                # meta=np.empty((0), dtype=np.object),
-                align_arrays=False)
-
-        # print(stats_dico)
-        # print(da.compute(stats_dico))
-
+            return getattr(x[term], name)
 
         gain_list = []
+        stats_dict = {}
         for ind, term in enumerate(opts.solver_gain_terms):
 
             dd_term = getattr(opts, "{}_direction_dependent".format(term))
 
             gain = da.blockwise(
-                lambda x, g: x[0][g], gain_schema,
-                gains, ("rowlike",),
+                lambda x, g: x[0][g], gain_schema,  # Gains are first return.
+                solver_ouputs, ("rowlike",),
                 ind, None,
                 dtype=np.complex128,
                 adjust_chunks={"rowlike": gain_chunks[term][0]},
@@ -463,6 +445,22 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                gain)})
 
             gain_list.extend([gain, gain_schema])
+
+            stats_dict[term] = {}
+
+            for field in field_names:
+                stats_dict[term][field] = da.blockwise(
+                    blah, ("rowlike",),
+                    solver_info, ("rowlike",),
+                    ind, None,
+                    field, None,
+                    dtype=np.object,
+                    adjust_chunks={"rowlike": 1},
+                    # meta=np.empty((0), dtype=np.object),
+                    align_arrays=False)
+
+        # print(stats_dict)
+        # print(da.compute(stats_dict))
 
         residuals = da.blockwise(
             dask_residual, ("rowlike", "chan", "corr"),
