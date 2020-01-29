@@ -7,7 +7,9 @@ from cubicalv2.kernels.gjones_chain import (residual_full,
 import numpy as np
 
 
-conv_info = namedtuple("conv_info", "conv_iters dummy")
+field_names = ["conv_iters", "dummy"]
+
+conv_info = namedtuple("conv_info", " ".join(field_names))
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)

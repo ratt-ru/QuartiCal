@@ -385,7 +385,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # the numba layer.
 
         gains = da.blockwise(
-            chain_solver, ("rowlike", "chan", "ant", "dir", "corr"),
+            chain_solver, ("rowlike",),# "chan", "ant", "dir", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
             data_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
@@ -407,6 +407,38 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # the stored chunk values to give the resulting gains meaningful
         # shapes.
 
+        info = da.blockwise(
+            getitem, ("rowlike",),
+            gains, ("rowlike",),
+            1, None,
+            dtype=np.object,
+            adjust_chunks={"rowlike": 1},
+            meta=np.empty((0,), dtype=np.object),
+            align_arrays=False)
+
+        def blah(x, name):
+
+            return getattr(x, name)
+
+        # print(info)
+
+        from cubicalv2.calibration.solver import field_names
+
+        stats_dico = {}
+        for ind, field in enumerate(field_names):
+            stats_dico[field] = da.blockwise(
+                blah, ("rowlike",),
+                info, ("rowlike",),
+                field, None,
+                dtype=np.object,
+                adjust_chunks={"rowlike": 1},
+                # meta=np.empty((0), dtype=np.object),
+                align_arrays=False)
+
+        # print(stats_dico)
+        # print(da.compute(stats_dico))
+
+
         gain_list = []
         for ind, term in enumerate(opts.solver_gain_terms):
 
@@ -414,12 +446,14 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
             gain = da.blockwise(
                 lambda x, g: x[0][g], gain_schema,
-                gains, gain_schema,
+                gains, ("rowlike",),
                 ind, None,
                 dtype=np.complex128,
-                adjust_chunks={"rowlike": gain_chunks[term][0],
-                               "chan": gain_chunks[term][1],
-                               "dir": n_dir if dd_term else 1},
+                adjust_chunks={"rowlike": gain_chunks[term][0]},
+                new_axes={"chan": gain_chunks[term][1],
+                          "dir": n_dir if dd_term else 1,
+                          "ant": n_ant,
+                          "corr": n_corr},
                 meta=np.empty((0, 0, 0, 0, 0), dtype=np.complex128),
                 align_arrays=False)
 
@@ -429,38 +463,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                gain)})
 
             gain_list.extend([gain, gain_schema])
-
-        info = da.blockwise(
-            getitem, gain_schema,
-            gains, gain_schema,
-            1, None,
-            dtype=np.object,
-            adjust_chunks={"rowlike": 1},
-            meta=np.empty((0,), dtype=np.object),
-            align_arrays=False)
-
-        corr_chunks = ((1,)*n_chunks,) + ((1,),)*(len(gain_schema) - 1)
-
-        # info = da.Array(info.__dask_graph__(), info.name, chunks=corr_chunks,
-        #                 dtype=info.dtype).squeeze()
-
-        def blah(x):
-
-            print(x[0][0][0][0])
-            return x[0][0][0][0].conv_iters
-
-        print(info)
-
-        foo = da.blockwise(
-            blah, ("rowlike",),
-            info, gain_schema,
-            dtype=np.object,
-            adjust_chunks={"rowlike": 1},
-            # meta=np.empty((0), dtype=np.object),
-            align_arrays=False)
-
-        print(foo)
-        # print(foo.compute())
 
         residuals = da.blockwise(
             dask_residual, ("rowlike", "chan", "corr"),
