@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from collections import namedtuple
-from numba import jit, types, typed
+from numba import jit
 from cubicalv2.kernels.gjones_chain import invert_gains
 from cubicalv2.kernels.gjones_chain import (residual_full,
                                             compute_convergence)
@@ -39,21 +39,21 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
             if dd_term:
                 residual = residual_full(data, model, gain_list, a1, a2,
-                                        t_map_arr, f_map_arr, d_map_arr)
+                                         t_map_arr, f_map_arr, d_map_arr)
             else:
                 residual = data
 
             jhj, jhr = compute_jhj_and_jhr(model,
-                                        gain_list,
-                                        inverse_gain_list,
-                                        residual,
-                                        a1,
-                                        a2,
-                                        weights,
-                                        t_map_arr,
-                                        f_map_arr,
-                                        d_map_arr,
-                                        gain_ind)
+                                           gain_list,
+                                           inverse_gain_list,
+                                           residual,
+                                           a1,
+                                           a2,
+                                           weights,
+                                           t_map_arr,
+                                           f_map_arr,
+                                           d_map_arr,
+                                           gain_ind)
 
             update = compute_update(jhj, jhr)
 
@@ -78,4 +78,3 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         info_dict[gain_ind] = term_conv_info(i, cnv_perc)
 
     return gain_list, info_dict
-

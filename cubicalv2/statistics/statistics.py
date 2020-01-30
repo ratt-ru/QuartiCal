@@ -268,6 +268,9 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
                           avg_abs_sqrd_model, ti_chunks, fi_chunks,
                           t_int, f_int, n_utime):
 
+    n_dir = gain_xds.dims["dir"]  # TODO: Add fixed direction logic.
+    n_ant = gain_xds.dims["ant"]
+
     # This creates an (n_t_int, n_f_int, n_ant, n_corr) array of unflagged
     # points by summing over solution interval. Note that V1 did not retain a
     # correlation axis.
@@ -295,6 +298,13 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
         dtype=np.int32)
 
     # Sum the average abs^2 model over solution intervals.
+
+    if n_dir == 1 and avg_abs_sqrd_model.shape[3] != 1:
+        avg_abs_sqrd_model = avg_abs_sqrd_model.map_blocks(np.sum,
+                                                           axis=3,
+                                                           keepdims=True,
+                                                           drop_axis=3,
+                                                           new_axis=3)
 
     avg_abs_sqrd_model_int = \
         da.blockwise(sum_intervals, model_schema,
@@ -360,8 +370,7 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
                      adjust_chunks={"rowlike": ti_chunks,
                                     "chan": fi_chunks[0]})
 
-    n_dir = gain_xds.dims["dir"]  # TODO: Add fixed direction logic.
-    n_ant = gain_xds.dims["ant"]
+
     dof_per_ant = 8  # TODO: Should depend on solver mode.
 
     n_unknowns = dof_per_ant*n_ant*n_dir  # TODO: Add fixed direction logic.
