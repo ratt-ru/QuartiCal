@@ -414,7 +414,7 @@ def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
     return residual
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def compute_convergence(gain, last_gain):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape

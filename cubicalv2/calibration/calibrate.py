@@ -14,10 +14,12 @@ from cubicalv2.statistics.statistics import (assign_noise_estimates,
 from cubicalv2.flagging.flagging import (make_bitmask,
                                          initialise_fullres_bitflags,
                                          is_set,
-                                         set_bitflag)
+                                         set_bitflag,
+                                         compute_mad_flags)
 from cubicalv2.weights.weights import initialize_weights
 from operator import getitem
 from loguru import logger  # noqa
+from cubicalv2.utils.timings import timeit
 
 
 # The following supresses the egregious numba pending deprecation warnings.
@@ -455,7 +457,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                     {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
                                gain),
                      "conv_perc": (("chunk"), stats_dict[term]["conv_perc"]),
-                     "conv_iters": (("chunk"), stats_dict[term]["conv_iters"])})
+                     "conv_iters": (("chunk"),
+                                    stats_dict[term]["conv_iters"])})
 
         residuals = da.blockwise(
             dask_residual, ("rowlike", "chan", "corr"),
@@ -472,6 +475,22 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
+
+        #######################################################################
+        # This is the madmax flagging step which is not always enabled.
+
+        if opts.flags_mad_enable:
+            mad_flags = compute_mad_flags(residuals,
+                                          bitflag_col,
+                                          ant1_col,
+                                          ant2_col,
+                                          n_ant,
+                                          n_chunks,
+                                          opts)
+
+            fullres_bitflags = set_bitflag(fullres_bitflags, "MAD", mad_flags)
+
+        #######################################################################
 
         data_stats_xds = assign_post_solve_chisq(data_stats_xds,
                                                  residuals,

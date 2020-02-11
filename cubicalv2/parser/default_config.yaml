@@ -198,6 +198,22 @@ flags:
         help: Save solver flags to the named flagset. If None or zero, the
               solver flags will not be saved.
         default: cubical
+    mad-enable:
+        type: bool
+        help: Enables the MAD flagging routines.
+        default: False
+    bl-mad-threshold:
+        type: float
+        help: Multiplicative factor which determines whether or not a residual
+              is considered to deviate significantly from the median of a given
+              baseline. These values are flagged.
+        default: 10
+    global-mad-threshold:
+        type: float
+        help: Multiplicative factor which determines whether or not a residual
+              is considered to deviate significantly from the median of the
+              given data chunk. These values are flagged.
+        default: 12
 
 solver:
     _description: Arguments pertaining to solver behaviour.
