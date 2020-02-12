@@ -2,6 +2,7 @@ from loguru import logger
 import dask.array as da
 import Tigger
 from daskms import xds_from_table
+import numpy as np
 
 from africanus.coordinates.dask import radec_to_lm
 from africanus.rime.dask import phase_delay, predict_vis
@@ -350,7 +351,11 @@ def predict(data_xds, opts):
 
         corrs = opts._ms_ncorr
 
-        _, time_index = da.unique(xds.TIME.data, return_inverse=True)
+        time_index = da.map_blocks(
+            lambda x: np.unique(x, return_inverse=True)[1],
+            xds.TIME.data,
+            chunks=xds.TIME.data.chunks,
+            dtype=np.int64)
 
         model_vis = defaultdict(list)
 

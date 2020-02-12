@@ -72,7 +72,7 @@ def execute():
 
     with ProgressBar():
         da.compute(gains_per_xds, writes,
-                   num_workers=opts.parallel_nthread, optimize_graph=False)#, scheduler="single-threaded")
+                   num_workers=opts.parallel_nthread, optimize_graph=True)#, scheduler="single-threaded")
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
     # This code can be used to save gain xarray datasets imeediately. This is
@@ -107,9 +107,9 @@ def execute():
     # for gain in gains[0]["dE"]:
     #     print(np.max(np.abs(gain)))
 
-    # dask.visualize(model_xds, color='order', cmap='autumn',
-    #                filename='model.pdf', node_attr={'penwidth': '10'})
+    dask.visualize(model_xds[0].MODEL_DATA.data, color='order', cmap='autumn',
+                   filename='model_order.pdf', node_attr={'penwidth': '10'})
 
-    # dask.visualize(model_xds,
-    #                filename='model.pdf',
-    #                optimize_graph=True)
+    dask.visualize(model_xds[0].MODEL_DATA.data,
+                   filename='model.pdf',
+                   optimize_graph=False)
