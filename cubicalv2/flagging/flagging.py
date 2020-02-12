@@ -3,6 +3,8 @@ import numpy as np
 from copy import deepcopy
 from uuid import uuid4
 from loguru import logger
+from cubicalv2.flagging.flagging_kernels import madmax, threshold
+
 
 ibfdtype = np.uint16  # Data type for internal bitflags.
 
@@ -196,7 +198,7 @@ def update_kwrds(col_kwrds, opts):
 def finalise_flags(xds_list, col_kwrds, opts):
     """ Combines internal and input bitflags to produce writable flag data.
 
-    Given a list of xds and appropraitely updated keywords, combines CubiCal's
+    Given a list of xds and appropriately updated keywords, combines CubiCal's
     internal bitflags with the input bitflags and creates a new list of xds
     on which the combined flagging data is assigned. Also handles legacy flags.
 
@@ -218,10 +220,16 @@ def finalise_flags(xds_list, col_kwrds, opts):
 
     for xds in xds_list:
 
+        # The following may be slightly incorrect as we assume that no
+        # information from the current contents of the cubical bitflag needs
+        # to be retained. It might be necessary to have a "cubical_to_legacy"
+        # option which merges existing cubical flags into legacy so that we
+        # are free to only retain the latest round of CubiCal flags.
+
         flag_col = xds.FLAG.data
         flag_row_col = xds.FLAG_ROW.data
-        bitflag_col = xds.BITFLAG.data  # Might be signed.
-        bitflag_row_col = xds.BITFLAG_ROW.data
+        bitflag_col = xds.BITFLAG.data & ~ebfdtype(1 << cubical_bit)
+        bitflag_row_col = xds.BITFLAG_ROW.data & ~ebfdtype(1 << cubical_bit)
         cubi_bitflags = xds.CUBI_BITFLAG.data
 
         # If legacy doesn't exist, it will be added.
@@ -346,9 +354,9 @@ def initialise_fullres_bitflags(data_col, weight_col, flag_col, flag_row_col,
                                        flag_row_col)
     else:
         fullres_bitflags = set_bitflag(fullres_bitflags, "PRIOR",
-                                       bitflag_col > 0)
+                                       (bitflag_col & bitmask) > 0)
         fullres_bitflags = set_bitflag(fullres_bitflags, "PRIOR",
-                                       bitflag_row_col > 0)
+                                       (bitflag_row_col & bitmask) > 0)
 
     # The following does some sanity checking on the input data and weights.
     # Specifically, we look for bad data points, points with missing data,
@@ -375,3 +383,44 @@ def initialise_fullres_bitflags(data_col, weight_col, flag_col, flag_row_col,
                                    weight_col == 0)
 
     return fullres_bitflags
+
+
+def compute_mad_flags(residuals, bitflag_col, ant1_col, ant2_col, n_ant,
+                      n_chunks, opts):
+
+    bl_thresh = opts.flags_bl_mad_threshold
+    gbl_thresh = opts.flags_global_mad_threshold
+
+    mad_estimate = da.blockwise(madmax, ("rowlike", "ant1", "ant2"),
+                                residuals, ("rowlike", "chan", "corr"),
+                                bitflag_col, ("rowlike", "chan", "corr"),
+                                ant1_col, ("rowlike",),
+                                ant2_col, ("rowlike",),
+                                n_ant, None,
+                                dtype=residuals.real.dtype,
+                                align_arrays=False,
+                                concatenate=True,
+                                adjust_chunks={"rowlike": (1,)*n_chunks},
+                                new_axes={"ant1": n_ant,
+                                          "ant2": n_ant})
+
+    med_mad_estimate = \
+        da.map_blocks(lambda x: np.median(x[np.isfinite(x) & (x > 0)],
+                                          keepdims=True),
+                      mad_estimate, drop_axis=(1, 2), dtype=np.float64)
+
+    mad_flags = da.blockwise(threshold, ("rowlike", "chan", "corr"),
+                             residuals, ("rowlike", "chan", "corr"),
+                             bl_thresh*mad_estimate,
+                             ("rowlike", "ant1", "ant2"),
+                             gbl_thresh*med_mad_estimate,
+                             ("rowlike",),
+                             bitflag_col, ("rowlike", "chan", "corr"),
+                             ant1_col, ("rowlike",),
+                             ant2_col, ("rowlike",),
+                             dtype=np.bool_,
+                             align_arrays=False,
+                             concatenate=True,
+                             adjust_chunks={"rowlike": residuals.chunks[0]},)
+
+    return mad_flags

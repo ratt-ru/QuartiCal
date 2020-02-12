@@ -5,6 +5,7 @@ from cubicalv2.kernels.gjones_chain import invert_gains
 from cubicalv2.kernels.gjones_chain import (residual_full,
                                             compute_convergence)
 import numpy as np
+from cubicalv2.utils.timings import timeit
 
 
 stat_fields = {"conv_iters": np.int64,
