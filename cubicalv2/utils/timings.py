@@ -6,6 +6,6 @@ def timeit(method):
         ts = time.time()
         result = method(*args, **kw)
         te = time.time()
-        print(te-ts)
+        print(method.__name__, te-ts)
         return result
     return timed
