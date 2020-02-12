@@ -52,7 +52,8 @@ else:
                     "astro-tigger-lsm",
                     "loguru",
                     "numba",
-                    "distributed"]
+                    "distributed",
+                    "zarr"]
 
 setup(name='cubicalv2',
       version=cubicalv2.__version__,

@@ -86,7 +86,7 @@ input-model:
     invert-uvw:
         type: bool
         help: The UVW coordinates will be negated if this option is specified.
-        default: False
+        default: True
 
 output:
     _description: Arguments pertaining to output products.
