@@ -338,6 +338,24 @@ def is_set(bitflag_arr, bitflag_names):
 
 def initialise_fullres_bitflags(data_col, weight_col, flag_col, flag_row_col,
                                 bitflag_col, bitflag_row_col, bitmask):
+    """Given input data, weights and flags, initialise the internal bitflags.
+
+    Populates the internal bitflag array based on existing flags and data
+    points/weights which appear invalid.
+
+    Args:
+        data_col: A dask.array containing the data.
+        weight_col: A dask.array containing the weights.
+        flag_col: A dask.array containing the conventional flags.
+        flag_row_col: A dask.array containing the conventional row flags.
+        bitflag_col: A dask.array containing the bitflags.
+        bitflag_row_col: A dask.array containing the row bitflags.
+        bitmask: A binary (integer) mask for selecting relevant bitflags.
+
+    Returns:
+        fullres_bitflags: A dask.array containing the initialized internal
+            bitflags.
+    """
 
     fullres_bitflags = da.zeros(bitflag_col.shape,
                                 dtype=ibfdtype,
@@ -369,6 +387,8 @@ def initialise_fullres_bitflags(data_col, weight_col, flag_col, flag_row_col,
     fullres_bitflags = set_bitflag(fullres_bitflags,
                                    "INVALID",
                                    invalid_points)
+
+    # TODO: This is likely incorrect for different number of correlations. 
 
     missing_points = da.logical_or(data_col[..., 0:1] == 0,
                                    data_col[..., 3:4] == 0)

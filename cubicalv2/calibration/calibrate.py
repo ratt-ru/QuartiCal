@@ -17,6 +17,7 @@ from cubicalv2.flagging.flagging import (make_bitmask,
                                          set_bitflag,
                                          compute_mad_flags)
 from cubicalv2.weights.weights import initialize_weights
+from cubicalv2.utils.dask import blockwise_unique
 from operator import getitem
 from loguru import logger  # noqa
 from cubicalv2.utils.timings import timeit
@@ -85,6 +86,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
     # Calibrate per xds. This list will likely consist of an xds per SPW, per
     # scan. This behaviour can be changed.
 
+    # Figure out how to slice the correlation axis.
+
     corr_slice = slice_scheme[opts._ms_ncorr].get(opts.solver_mode, None)
 
     if not isinstance(corr_slice, slice):
@@ -110,6 +113,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         time_col = xds.TIME.data
         flag_col = xds.FLAG.data[..., corr_slice]
         flag_row_col = xds.FLAG_ROW.data[..., corr_slice]
+
+        # We immediately apply the bitmask so that we only have the bitflags
+        # we intend to use.
         bitflag_col = xds.BITFLAG.data[..., corr_slice] & bitmask
         bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice] & bitmask
 
@@ -131,15 +137,11 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # Anywhere we have a full resolution bitflag, we set the weight to 0.
         weight_col[fullres_bitflags] = 0
 
-        # Convert the time column data into indices.
-        utime_tuple = time_col.map_blocks(np.unique, return_inverse=True,
-                                          dtype=np.float32, meta=np.empty(0))
-
-        utime_val = utime_tuple.map_blocks(getitem, 0,
-                                           dtype=np.float64,
-                                           chunks=(utime_chunks,))
-        utime_ind = utime_tuple.map_blocks(getitem, 1,
-                                           dtype=np.int32)
+        # Convert the time column data into indices. Chunks is expected to be a 
+        # tuple of tuples.
+        utime_val, utime_ind = blockwise_unique(time_col,
+                                                (utime_chunks,),
+                                                return_inverse=True)
 
         # Daskify the chunks per array - these are already known from the
         # initial chunkings step.

@@ -72,7 +72,9 @@ def execute():
 
     with ProgressBar():
         da.compute(gains_per_xds, writes,
-                   num_workers=opts.parallel_nthread, optimize_graph=True)#, scheduler="single-threaded")
+                   num_workers=opts.parallel_nthread, 
+                   optimize_graph=True)
+                   #, scheduler="single-threaded")
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
     # This code can be used to save gain xarray datasets imeediately. This is

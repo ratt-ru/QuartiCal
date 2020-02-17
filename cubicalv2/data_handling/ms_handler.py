@@ -77,7 +77,8 @@ def read_ms(opts):
                 opts._phase_dir[0], opts._phase_dir[1])
 
     # Check whether the BITFLAG column exists - if not, we will need to add it
-    # or ignore it.
+    # or ignore it. TODO: Figure out how to prevent this thowing a message 
+    # wall.
 
     try:
         xds_from_ms(opts.input_ms_name, columns=("BITFLAG",))
