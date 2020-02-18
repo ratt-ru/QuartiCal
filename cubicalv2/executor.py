@@ -109,9 +109,9 @@ def execute():
     # for gain in gains[0]["dE"]:
     #     print(np.max(np.abs(gain)))
 
-    dask.visualize(model_xds[0].MODEL_DATA.data, color='order', cmap='autumn',
-                   filename='model_order.pdf', node_attr={'penwidth': '10'})
+    # dask.visualize(model_xds[0].MODEL_DATA.data, color='order', cmap='autumn',
+    #                filename='model_order.pdf', node_attr={'penwidth': '10'})
 
-    dask.visualize(model_xds[0].MODEL_DATA.data,
-                   filename='model.pdf',
-                   optimize_graph=False)
+    # dask.visualize(model_xds[0].MODEL_DATA.data,
+    #                filename='model.pdf',
+    #                optimize_graph=False)
