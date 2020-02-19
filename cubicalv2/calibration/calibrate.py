@@ -15,6 +15,7 @@ from cubicalv2.flagging.flagging import (make_bitmask,
                                          compute_mad_flags)
 from cubicalv2.weights.weights import initialize_weights
 from cubicalv2.utils.dask import blockwise_unique
+from uuid import uuid4
 from operator import getitem
 from loguru import logger  # noqa
 
@@ -217,7 +218,10 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                             chunks=(1,),
                                             name=False)
 
-            freqs_per_chunk = da.full_like(utime_per_chunk, n_chan)
+            freqs_per_chunk = da.ones(utime_per_chunk.shape,
+                                      chunks=utime_per_chunk.chunks,
+                                      name="freqs-" + uuid4().hex,
+                                      dtype=np.int64) * n_chan
 
             # Determine the per-chunk gain shapes from the time and frequency
             # intervals per chunk. Note that this uses the number of
@@ -266,7 +270,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             gain_flags = da.zeros(gain.shape,
                                   chunks=gain.chunks,
                                   dtype=np.uint8,
-                                  name=False)
+                                  name="gflags-" + uuid4().hex)
 
             gain_list.append(gain_flags)
             gain_list.append(gain_schema)
