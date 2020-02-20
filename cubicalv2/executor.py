@@ -42,7 +42,7 @@ def execute():
     # Reads the measurement set using the relavant configuration from opts.
     ms_xds, col_kwrds = read_ms(opts)
 
-    # ms_xds = ms_xds[0:2]
+    # ms_xds = ms_xds[0:1]
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
@@ -65,11 +65,12 @@ def execute():
                                       group="{}{}".format(g_name, g_ind),
                                       compute=False)
 
+    writes = [writes] if not isinstance(writes, list) else writes
+
     outputs = []
     for ind in range(len(writes)):
         output = []
         for key in gains_per_xds.keys():
-
             output.append(gains_per_xds[key][ind])
         output.append(writes[ind])
         outputs.append(output)
@@ -117,18 +118,18 @@ def execute():
     # for gain in gains[0]["dE"]:
     #     print(np.max(np.abs(gain)))
 
-    dask.visualize([xds.MODEL_DATA.data for xds in model_xds],
-                   color='order', cmap='autumn',
-                   filename='model_order.pdf', node_attr={'penwidth': '10'})
-
-    dask.visualize([xds.MODEL_DATA.data for xds in model_xds],
-                   filename='model.pdf',
-                   optimize_graph=False)
-
-    # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    # dask.visualize([xds.MODEL_DATA.data for xds in model_xds],
     #                color='order', cmap='autumn',
     #                filename='model_order.pdf', node_attr={'penwidth': '10'})
 
-    # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    # dask.visualize([xds.MODEL_DATA.data for xds in model_xds],
     #                filename='model.pdf',
-    #                optimize_graph=True)
+    #                optimize_graph=False)
+
+    dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+                   color='order', cmap='autumn',
+                   filename='model_order.pdf', node_attr={'penwidth': '10'})
+
+    dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+                   filename='model.pdf',
+                   optimize_graph=True)

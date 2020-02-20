@@ -366,7 +366,8 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
         4*sigma_sqrd_per_int,
         unflagged_tifiaD[:, :, :, None, :]*avg_abs_sqrd_model_int,
         undefined=np.inf,
-        dtype=np.float64)
+        dtype=np.float64,
+        chunks=(ti_chunks, (fi_chunks[0],), (n_ant,), (n_dir,), (1,)))
 
     # The prior gain error is the square root of the noise to signal ratio.
 
