@@ -7,7 +7,6 @@ from cubicalv2.data_handling.ms_handler import read_ms, write_columns
 from cubicalv2.data_handling.model_handler import add_model_graph
 from cubicalv2.calibration.calibrate import add_calibration_graph
 from cubicalv2.flagging.flagging import finalise_flags
-import dask.array as da
 import time
 from dask.diagnostics import ProgressBar
 import dask
@@ -118,10 +117,18 @@ def execute():
     # for gain in gains[0]["dE"]:
     #     print(np.max(np.abs(gain)))
 
-    dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    dask.visualize([xds.MODEL_DATA.data for xds in model_xds],
                    color='order', cmap='autumn',
                    filename='model_order.pdf', node_attr={'penwidth': '10'})
 
-    dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    dask.visualize([xds.MODEL_DATA.data for xds in model_xds],
                    filename='model.pdf',
                    optimize_graph=False)
+
+    # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    #                color='order', cmap='autumn',
+    #                filename='model_order.pdf', node_attr={'penwidth': '10'})
+
+    # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    #                filename='model.pdf',
+    #                optimize_graph=True)

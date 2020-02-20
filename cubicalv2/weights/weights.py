@@ -26,7 +26,9 @@ def initialize_weights(xds, data_col, corr_slice, opts):
                              corr_chunks), name="weights-" + uuid.uuid4().hex,
                              dtype=np.float32)
     else:
-        weight_col = xds[opts.input_ms_weight_column].data[..., corr_slice]
+        # We use a copy to prevent mutating the xds.
+        weight_col = \
+            xds[opts.input_ms_weight_column].data[..., corr_slice].copy()
 
     # The following handles the fact that the chosen weight column might
     # not have a frequency axis.

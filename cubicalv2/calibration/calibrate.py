@@ -103,7 +103,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
     for xds_ind, xds in enumerate(data_xds):
 
         # Unpack the data on the xds into variables with understandable names.
-        data_col = xds.DATA.data[..., corr_slice]
+        # We create copies of arrays we intend to mutate as otherwise we end
+        # up implicitly updating the xds.
+        data_col = xds.DATA.data[..., corr_slice].copy()
         model_col = xds.MODEL_DATA.data[..., corr_slice]
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
