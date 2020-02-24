@@ -52,6 +52,13 @@ def _set_bitflag(bitflag_arr, bitflag_names, selection=None):
         bitflag_arr: Modified version of input bitflag_arr.
     """
 
+    # NOTE: This is a nasty catch for using the distributed scheduler with 
+    # multiple workers. Bitflag arrays may become non-writable. TODO: Consider
+    # alternatives.
+    if not bitflag_arr.flags["W"]:
+        print("WRITABLE: False")
+        bitflag_arr = bitflag_arr.copy()
+
     flag_mask = _make_flagmask(bitflag_names)
 
     if selection is None:
@@ -73,6 +80,13 @@ def _unset_bitflag(bitflag_arr, bitflag_names, selection=None):
     Returns:
         bitflag_arr: Modified version of input bitflag_arr.
     """
+
+    # NOTE: This is a nasty catch for using the distributed scheduler with 
+    # multiple workers. Bitflag arrays may become non-writable. TODO: Consider
+    # alternatives.
+    if not bitflag_arr.flags["W"]:
+        print("WRITABLE: False")
+        bitflag_arr = bitflag_arr.copy()
 
     flag_mask = _make_flagmask(bitflag_names)
 
@@ -388,7 +402,7 @@ def initialise_fullres_bitflags(data_col, weight_col, flag_col, flag_row_col,
                                    "INVALID",
                                    invalid_points)
 
-    # TODO: This is likely incorrect for different number of correlations. 
+    # TODO: This is likely incorrect for different number of correlations.
 
     missing_points = da.logical_or(data_col[..., 0:1] == 0,
                                    data_col[..., 3:4] == 0)
