@@ -209,10 +209,10 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # Number of frequency intervals per data chunk. If this is zero,
             # solution interval is the entire axis per chunk.
             if atomic_f_int:
-                fi_chunks[term] = tuple(int(np.ceil(n_chan/atomic_f_int))
-                                        for _ in range(n_t_chunk))
+                fi_chunks[term] = tuple(int(np.ceil(nc/atomic_f_int))
+                                        for nc in data_col.chunks[1])
             else:
-                fi_chunks[term] = tuple(1 for _ in range(n_t_chunk))
+                fi_chunks[term] = tuple(1 for _ in range(n_f_chunk))
 
             n_fint = fi_chunks[term][0]
 
@@ -233,15 +233,17 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # intervals per chunk. Note that this uses the number of
             # correlations in the measurement set. TODO: This should depend
             # on the solver mode.
-            g_shape = da.map_blocks(
-                lambda t, f, na, nd, nc:
-                    np.array([t.item(), f.item(), na, nd, nc]),
-                t_int_per_chunk,
-                f_int_per_chunk,
-                n_ant,
-                n_dir if dd_term else 1,
-                opts._ms_ncorr,
-                meta=np.empty((0, 0, 0, 0, 0), dtype=np.int32),
+
+            def constructor(t, f, na, nd, nc):
+                return np.atleast_2d([t.item(), f.item(), na, nd, nc])
+
+            g_shape = da.blockwise(
+                constructor, ("rowlike", "chan",),
+                t_int_per_chunk, ("rowlike",),
+                f_int_per_chunk, ("chan",),
+                n_ant, None,
+                n_dir if dd_term else 1, None,
+                opts._ms_ncorr, None,
                 dtype=np.int32)
 
             # Note that while we technically have a frequency chunk per row
@@ -249,7 +251,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
             gain = da.blockwise(
                 initialize_gain, gain_schema,
-                g_shape, ("rowlike",),
+                g_shape, ("rowlike", "chan"),
                 align_arrays=False,
                 dtype=np.complex128,
                 new_axes={"chan": n_chan,
@@ -257,7 +259,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                           "dir": n_dir if dd_term else 1,
                           "corr": opts._ms_ncorr},
                 adjust_chunks={"rowlike": ti_chunks[term],
-                               "chan": fi_chunks[term][0]})
+                               "chan": fi_chunks[term]})
 
             gain_list.append(gain)
             gain_list.append(gain_schema)
