@@ -214,7 +214,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             else:
                 fi_chunks[term] = tuple(1 for _ in range(n_f_chunk))
 
-            n_fint = fi_chunks[term][0]
+            n_fint = sum(fi_chunks[term])
 
             # Convert the chunk dimensions into dask arrays.
             t_int_per_chunk = da.from_array(ti_chunks[term],
@@ -224,10 +224,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                             chunks=(1,),
                                             name=False)
 
-            freqs_per_chunk = da.ones(utime_per_chunk.shape,
-                                      chunks=utime_per_chunk.chunks,
-                                      name="freqs-" + uuid4().hex,
-                                      dtype=np.int64) * n_chan
+            freqs_per_chunk = da.from_array(data_col.chunks[1],
+                                            chunks=(1,),
+                                            name=False)
 
             # Determine the per-chunk gain shapes from the time and frequency
             # intervals per chunk. Note that this uses the number of
@@ -296,10 +295,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # frequency intervals. The or handles the 0 (full axis) case.
             # This currently presumes that we don't chunk in frequency. BEWARE!
             f_map = freqs_per_chunk.map_blocks(
-                lambda f, f_i, n_c: np.array([i//f_i for i in range(n_c)]),
+                lambda f, f_i: np.array([i//f_i for i in range(f.item())]),
                 atomic_f_int or n_chan,
-                n_chan,
-                chunks=(n_chan,),
+                chunks=(data_col.chunks[1],),
                 dtype=np.uint32)
             f_maps.append(f_map)
 
@@ -314,6 +312,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                              n_dir if dd_term else 1,
                                              n_corr,
                                              n_t_chunk,
+                                             n_f_chunk,
                                              term,
                                              xds_ind)
 
@@ -359,7 +358,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # custom graph for this - this works but I worry that it is very
         # vulnerable to interface changes.
 
-        solver_ouputs = da.blockwise(
+        solver_outputs = da.blockwise(
             chain_solver, ("rowlike",),  # This is a lie!
             model_col, ("rowlike", "chan", "dir", "corr"),
             data_col, ("rowlike", "chan", "corr"),
@@ -384,7 +383,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         solver_info = da.blockwise(
             getitem, ("rowlike",),
-            solver_ouputs, ("rowlike",),
+            solver_outputs, ("rowlike",),
             1, None,  # The info tuple is the second return value.
             dtype=np.object,
             adjust_chunks={"rowlike": 1},
@@ -399,7 +398,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
             gain = da.blockwise(
                 lambda x, g: x[0][g], gain_schema,  # Gains are first return.
-                solver_ouputs, ("rowlike",),
+                solver_outputs, ("rowlike",),
                 ind, None,
                 dtype=np.complex128,
                 adjust_chunks={"rowlike": gain_chunks[term][0]},
