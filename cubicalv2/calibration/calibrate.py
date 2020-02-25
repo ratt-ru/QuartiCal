@@ -151,7 +151,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # Set up some values relating to problem dimensions.
         n_ant = opts._n_ant
         n_row, n_chan, n_dir, n_corr = model_col.shape
-        n_chunks = data_col.npartitions  # Number of chunks in row/time.
+        n_t_chunk = len(data_col.chunks[0])
+        n_f_chunk = len(data_col.chunks[1])
         n_term = len(opts.solver_gain_terms)  # Number of gain terms.
 
         # Initialise some empty containers for mappings/dimensions.
@@ -171,8 +172,11 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         # Create and populate xds for statisics at data resolution. Returns
         # some useful arrays required for future computations.
-        data_stats_xds = \
-            create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks)
+        data_stats_xds = create_data_stats_xds(utime_val,
+                                               n_chan,
+                                               n_ant,
+                                               n_t_chunk,
+                                               n_f_chunk)
 
         data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
             assign_presolve_data_stats(data_stats_xds,
@@ -206,9 +210,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # solution interval is the entire axis per chunk.
             if atomic_f_int:
                 fi_chunks[term] = tuple(int(np.ceil(n_chan/atomic_f_int))
-                                        for _ in range(n_chunks))
+                                        for _ in range(n_t_chunk))
             else:
-                fi_chunks[term] = tuple(1 for _ in range(n_chunks))
+                fi_chunks[term] = tuple(1 for _ in range(n_t_chunk))
 
             n_fint = fi_chunks[term][0]
 
@@ -307,7 +311,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                              n_ant,
                                              n_dir if dd_term else 1,
                                              n_corr,
-                                             n_chunks,
+                                             n_t_chunk,
                                              term,
                                              xds_ind)
 
@@ -452,7 +456,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                           ant1_col,
                                           ant2_col,
                                           n_ant,
-                                          n_chunks,
+                                          n_t_chunk,
                                           opts)
 
             fullres_bitflags = set_bitflag(fullres_bitflags, "MAD", mad_flags)

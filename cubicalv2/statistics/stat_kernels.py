@@ -29,6 +29,8 @@ def estimate_noise_kernel(data, flags, a1, a2, n_ant):
 
     n_rows, n_chan, n_corr = data.shape
 
+    print(n_rows, n_chan, n_corr)
+
     chan_diff_sqrd = np.zeros((n_chan, n_ant), dtype=np.float32)
     valid_counts = np.zeros((n_chan, n_ant), dtype=np.uint32)
 

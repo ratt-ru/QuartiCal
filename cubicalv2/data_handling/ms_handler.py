@@ -110,9 +110,16 @@ def read_ms(opts):
                            "Falling back to unity weights.")
             opts._unity_weights = True
 
+    # Determine the channels in the measurement set.
+
+    spw_xds = xds_from_table(opts.input_ms_name + "::SPECTRAL_WINDOW")[0]
+    n_chan = spw_xds.dims["chan"]
+    chan_chunks = np.add.reduceat(np.ones(n_chan, dtype=np.int32),
+                                  np.arange(0, n_chan, 16)).tolist()
+
     # row_chunks is a list of dictionaries containing row chunks per data set.
 
-    row_chunks_per_xds = []
+    chunks_per_xds = []
 
     chunk_spec_per_xds = []
 
@@ -164,7 +171,7 @@ def read_ms(opts):
 
         chunks = np.add.reduceat(utime_counts, cum_utime_per_chunk).tolist()
 
-        row_chunks_per_xds.append({"row": chunks})
+        chunks_per_xds.append({"row": chunks, "chan": chan_chunks})
 
         logger.debug("Scan {}: row chunks: {}", xds.SCAN_NUMBER, chunks)
 
@@ -187,7 +194,7 @@ def read_ms(opts):
                                       group_cols=("SCAN_NUMBER",
                                                   "FIELD_ID",
                                                   "DATA_DESC_ID"),
-                                      chunks=row_chunks_per_xds,
+                                      chunks=chunks_per_xds,
                                       column_keywords=True)
 
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
