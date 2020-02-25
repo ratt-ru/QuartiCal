@@ -3,23 +3,21 @@ import numpy as np
 import dask.array as da
 from cubicalv2.calibration.solver import chain_solver, stat_fields
 from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
-from cubicalv2.statistics.statistics import (assign_noise_estimates,
-                                             assign_tf_stats,
-                                             assign_interval_stats,
-                                             compute_average_model,
-                                             create_data_stats_xds,
+from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_gain_stats_xds,
-                                             assign_pre_solve_chisq,
-                                             assign_post_solve_chisq)
+                                             assign_post_solve_chisq,
+                                             assign_presolve_data_stats,
+                                             create_data_stats_xds)
 from cubicalv2.flagging.flagging import (make_bitmask,
                                          initialise_fullres_bitflags,
                                          is_set,
                                          set_bitflag,
                                          compute_mad_flags)
 from cubicalv2.weights.weights import initialize_weights
+from cubicalv2.utils.dask import blockwise_unique
+from uuid import uuid4
 from operator import getitem
 from loguru import logger  # noqa
-from cubicalv2.utils.timings import timeit
 
 
 # The following supresses the egregious numba pending deprecation warnings.
@@ -85,6 +83,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
     # Calibrate per xds. This list will likely consist of an xds per SPW, per
     # scan. This behaviour can be changed.
 
+    # Figure out how to slice the correlation axis.
+
     corr_slice = slice_scheme[opts._ms_ncorr].get(opts.solver_mode, None)
 
     if not isinstance(corr_slice, slice):
@@ -103,13 +103,18 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
     for xds_ind, xds in enumerate(data_xds):
 
         # Unpack the data on the xds into variables with understandable names.
-        data_col = xds.DATA.data[..., corr_slice]
+        # We create copies of arrays we intend to mutate as otherwise we end
+        # up implicitly updating the xds.
+        data_col = xds.DATA.data[..., corr_slice].copy()
         model_col = xds.MODEL_DATA.data[..., corr_slice]
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         time_col = xds.TIME.data
         flag_col = xds.FLAG.data[..., corr_slice]
         flag_row_col = xds.FLAG_ROW.data[..., corr_slice]
+
+        # We immediately apply the bitmask so that we only have the bitflags
+        # we intend to use.
         bitflag_col = xds.BITFLAG.data[..., corr_slice] & bitmask
         bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice] & bitmask
 
@@ -131,15 +136,11 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # Anywhere we have a full resolution bitflag, we set the weight to 0.
         weight_col[fullres_bitflags] = 0
 
-        # Convert the time column data into indices.
-        utime_tuple = time_col.map_blocks(np.unique, return_inverse=True,
-                                          dtype=np.float32, meta=np.empty(0))
-
-        utime_val = utime_tuple.map_blocks(getitem, 0,
-                                           dtype=np.float64,
-                                           chunks=(utime_chunks,))
-        utime_ind = utime_tuple.map_blocks(getitem, 1,
-                                           dtype=np.int32)
+        # Convert the time column data into indices. Chunks is expected to be a
+        # tuple of tuples.
+        utime_val, utime_ind = blockwise_unique(time_col,
+                                                (utime_chunks,),
+                                                return_inverse=True)
 
         # Daskify the chunks per array - these are already known from the
         # initial chunkings step.
@@ -150,7 +151,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # Set up some values relating to problem dimensions.
         n_ant = opts._n_ant
         n_row, n_chan, n_dir, n_corr = model_col.shape
-        n_chunks = data_col.numblocks[0]  # Number of chunks in row/time.
+        n_chunks = data_col.npartitions  # Number of chunks in row/time.
         n_term = len(opts.solver_gain_terms)  # Number of gain terms.
 
         # Initialise some empty containers for mappings/dimensions.
@@ -161,68 +162,29 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         fi_chunks = {}
 
         # We preserve the gain chunking scheme here - returning multiple arrays
-        # in later calls can obliterate chunking information.
+        # in later calls can obliterate chunking information. TODO: Build a
+        # custom graph.
 
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
         gain_list = []
         gain_chunks = {}
 
-        # Create and populate xds for statisics at data resolution. TODO:
-        # This can all be moved into a function inside the statistics module
-        # in order to clean up the calibrate code.
-
+        # Create and populate xds for statisics at data resolution. Returns
+        # some useful arrays required for future computations.
         data_stats_xds = \
             create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks)
 
-        # Determine the estimated noise.
-
-        data_stats_xds = assign_noise_estimates(
-            data_stats_xds,
-            data_col - model_col.sum(axis=2),
-            fullres_bitflags,
-            ant1_col,
-            ant2_col,
-            n_ant)
-
-        # Compute statistics at time/frequency (data) resolution and return a
-        # useful (time, chan, ant, corr) version of flag counts.
-
-        data_stats_xds, unflagged_tfac = assign_tf_stats(data_stats_xds,
-                                                         fullres_bitflags,
-                                                         ant1_col,
-                                                         ant2_col,
-                                                         utime_ind,
-                                                         utime_per_chunk,
-                                                         n_ant,
-                                                         n_chunks,
-                                                         n_chan,
-                                                         utime_chunks)
-
-        # Compute the average value of the |model|^2. This is used to compute
-        # gain errors.
-
-        avg_abs_sqrd_model = compute_average_model(model_col,
-                                                   unflagged_tfac,
-                                                   ant1_col,
-                                                   ant2_col,
-                                                   utime_ind,
-                                                   utime_per_chunk,
-                                                   n_ant,
-                                                   n_chunks,
-                                                   n_chan,
-                                                   utime_chunks)
-
-        data_stats_xds = assign_pre_solve_chisq(data_stats_xds,
-                                                data_col,
-                                                model_col,
-                                                weight_col,
-                                                ant1_col,
-                                                ant2_col,
-                                                utime_ind,
-                                                utime_per_chunk,
-                                                n_ant,
-                                                n_chunks,
-                                                utime_chunks)
+        data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
+            assign_presolve_data_stats(data_stats_xds,
+                                       data_col,
+                                       model_col,
+                                       weight_col,
+                                       fullres_bitflags,
+                                       ant1_col,
+                                       ant2_col,
+                                       utime_ind,
+                                       utime_per_chunk,
+                                       utime_chunks)
 
         for term in opts.solver_gain_terms:
 
@@ -258,7 +220,10 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                             chunks=(1,),
                                             name=False)
 
-            freqs_per_chunk = da.full_like(utime_per_chunk, n_chan)
+            freqs_per_chunk = da.ones(utime_per_chunk.shape,
+                                      chunks=utime_per_chunk.chunks,
+                                      name="freqs-" + uuid4().hex,
+                                      dtype=np.int64) * n_chan
 
             # Determine the per-chunk gain shapes from the time and frequency
             # intervals per chunk. Note that this uses the number of
@@ -307,7 +272,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             gain_flags = da.zeros(gain.shape,
                                   chunks=gain.chunks,
                                   dtype=np.uint8,
-                                  name=False)
+                                  name="gflags-" + uuid4().hex)
 
             gain_list.append(gain_flags)
             gain_list.append(gain_schema)
@@ -384,7 +349,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # will subseqently unpack and give appropriate dimensions. NB - this
         # call WILL mutate the contents of gain list. This is a necessary evil
         # for now though it may be possible to move the array creation into
-        # the numba layer.
+        # the numba layer. TODO: It would be more appropriate to construct a
+        # custom graph for this - this works but I worry that it is very
+        # vulnerable to interface changes.
 
         solver_ouputs = da.blockwise(
             chain_solver, ("rowlike",),  # This is a lie!
@@ -456,8 +423,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 gain_xds_dict[term][-1].assign(
                     {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
                                gain),
-                     "conv_perc": (("chunk"), stats_dict[term]["conv_perc"]),
-                     "conv_iters": (("chunk"),
+                     "conv_perc": (("block"), stats_dict[term]["conv_perc"]),
+                     "conv_iters": (("block"),
                                     stats_dict[term]["conv_iters"])})
 
         residuals = da.blockwise(
@@ -499,16 +466,13 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                  ant2_col,
                                                  utime_ind,
                                                  utime_per_chunk,
-                                                 n_ant,
-                                                 n_chunks,
                                                  utime_chunks)
-
-        # print(data_stats_xds.compute())
 
         data_stats_xds_list.append(data_stats_xds)
 
         # Add quantities required elsewhere to the xds and mark certain columns
-        # for saving.
+        # for saving. TODO: This is VERY rudimentary. Need to be done in
+        # accordance with opts.
 
         updated_xds = \
             xds.assign({"CUBI_RESIDUAL": (xds.DATA.dims, residuals),

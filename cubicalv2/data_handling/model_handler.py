@@ -99,9 +99,9 @@ def add_model_graph(ms_xds, opts):
         # rechunking is necessary to ensure the solver gets appropriate blocks.
         model = da.stack(model, axis=2).rechunk({2: n_dir})
 
-        xds = xds.assign({"MODEL_DATA":
-                         (("row", "chan", "dir", "corr"), model)})
+        modified_xds = xds.assign({"MODEL_DATA":
+                                  (("row", "chan", "dir", "corr"), model)})
 
-        model_xds.append(xds)
+        model_xds.append(modified_xds)
 
     return model_xds

@@ -4,6 +4,20 @@ import uuid
 
 
 def initialize_weights(xds, data_col, corr_slice, opts):
+    """Given an input dataset, initializes the weights based on opts.
+
+    Initialises the weights. Data column is required in order to stat up unity
+    weights.
+
+    Inputs:
+        xds: xarray.dataset on which the weight columns live.
+        data_col: Chunked dask.array containing the data.
+        corr_slice: A tuple of Slice objects to select out releveant weights.
+        opts: A Namespace of options.
+
+    Outputs:
+        weight_col: A chunked dask.array containing the weights.
+    """
 
     if opts._unity_weights:
         n_row, n_chan, n_corr = data_col.shape
@@ -12,7 +26,9 @@ def initialize_weights(xds, data_col, corr_slice, opts):
                              corr_chunks), name="weights-" + uuid.uuid4().hex,
                              dtype=np.float32)
     else:
-        weight_col = xds[opts.input_ms_weight_column].data[..., corr_slice]
+        # We use a copy to prevent mutating the xds.
+        weight_col = \
+            xds[opts.input_ms_weight_column].data[..., corr_slice].copy()
 
     # The following handles the fact that the chosen weight column might
     # not have a frequency axis.

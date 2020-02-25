@@ -7,7 +7,6 @@ from cubicalv2.data_handling.ms_handler import read_ms, write_columns
 from cubicalv2.data_handling.model_handler import add_model_graph
 from cubicalv2.calibration.calibrate import add_calibration_graph
 from cubicalv2.flagging.flagging import finalise_flags
-import dask.array as da
 import time
 from dask.diagnostics import ProgressBar
 import dask
@@ -43,7 +42,7 @@ def execute():
     # Reads the measurement set using the relavant configuration from opts.
     ms_xds, col_kwrds = read_ms(opts)
 
-    # ms_xds = ms_xds[0:1]
+    # ms_xds = ms_xds[1:4]
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
@@ -66,13 +65,25 @@ def execute():
                                       group="{}{}".format(g_name, g_ind),
                                       compute=False)
 
+    writes = [writes] if not isinstance(writes, list) else writes
+
+    outputs = []
+    for ind in range(len(writes)):
+        output = []
+        for key in gains_per_xds.keys():
+            output.append(gains_per_xds[key][ind])
+        output.append(writes[ind])
+        outputs.append(output)
+
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()
 
     with ProgressBar():
-        da.compute(gains_per_xds, writes,
-                   num_workers=opts.parallel_nthread, optimize_graph=True)#, scheduler="single-threaded")
+        dask.compute([dask.delayed(tuple)(x) for x in outputs],
+                     num_workers=opts.parallel_nthread,
+                     optimize_graph=True,)
+                     # scheduler="threads") # noqa
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
     # This code can be used to save gain xarray datasets imeediately. This is
@@ -107,9 +118,26 @@ def execute():
     # for gain in gains[0]["dE"]:
     #     print(np.max(np.abs(gain)))
 
-    dask.visualize(model_xds[0].MODEL_DATA.data, color='order', cmap='autumn',
-                   filename='model_order.pdf', node_attr={'penwidth': '10'})
+    # dask.visualize([xds.MODEL_DATA.data for xds in model_xds],
+    #                color='order', cmap='autumn',
+    #                filename='model_order.pdf', node_attr={'penwidth': '10'})
 
-    dask.visualize(model_xds[0].MODEL_DATA.data,
-                   filename='model.pdf',
-                   optimize_graph=False)
+    # dask.visualize([xds.MODEL_DATA.data for xds in model_xds],
+    #                filename='model.pdf',
+    #                optimize_graph=False)
+
+    # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    #                color='order', cmap='autumn',
+    #                filename='model_order.pdf', node_attr={'penwidth': '10'})
+
+    # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    #                filename='model.pdf',
+    #                optimize_graph=True)
+
+    # dask.visualize(model_xds,
+    #                color='order', cmap='autumn',
+    #                filename='model_order.pdf', node_attr={'penwidth': '10'})
+
+    # dask.visualize(model_xds,
+    #                filename='model.pdf',
+    #                optimize_graph=False)
