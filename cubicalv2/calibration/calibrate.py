@@ -174,6 +174,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
         gain_list = []
+        gain_flag_list = []
         gain_chunks = {}
 
         # Create and populate xds for statisics at data resolution. Returns
@@ -279,7 +280,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                   dtype=np.uint8,
                                   name="gflags-" + uuid4().hex)
 
-            gain_list.append(gain_flags)
+            gain_flag_list.append(gain_flags)
 
             # Generate a mapping between time at data resolution and time
             # intervals. The or handles the 0 (full axis) case.
@@ -348,14 +349,10 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
 
-        # Gains will not report its size or chunks correctly - this is because
-        # it is actually returning multiple arrays (somewhat sordid) which we
-        # will subseqently unpack and give appropriate dimensions. NB - this
-        # call WILL mutate the contents of gain list. This is a necessary evil
-        # for now though it may be possible to move the array creation into
-        # the numba layer. TODO: It would be more appropriate to construct a
-        # custom graph for this - this works but I worry that it is very
-        # vulnerable to interface changes.
+        # This has been fixed - this now constructs a custom graph which
+        # preserves gain chunking. It also somewhat simplifies future work
+        # as we now have a blueprint for pulling values out of the solver
+        # layer.
 
         gain_list, solver_info = construct_solver(chain_solver,
                                                   model_col,
@@ -368,13 +365,13 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                   d_map_arr,
                                                   compute_jhj_and_jhr,
                                                   compute_update,
-                                                  *gain_list)
+                                                  gain_list,
+                                                  gain_flag_list)
 
-        # Gains are in dask limbo at this point - we have returned a list
-        # which is not understood by the array interface. We take the list of
-        # gains per chunk and explicitly unpack them using blockwise. We use
-        # the stored chunk values to give the resulting gains meaningful
-        # shapes.
+        # Solver is still in limbo at this point - this can likely be entirely
+        # replaced by modifying the solver constructor to pull out the
+        # different info values rather than the somewhat cludgy nmed tuple 
+        # approach I was resorting to due to blockwise.
 
         stats_dict = {}
         for ind, term in enumerate(opts.solver_gain_terms):
