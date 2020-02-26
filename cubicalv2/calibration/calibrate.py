@@ -13,8 +13,10 @@ from cubicalv2.flagging.flagging import (make_bitmask,
                                          is_set,
                                          set_bitflag,
                                          compute_mad_flags)
+from cubicalv2.calibration.constructor import construct_solver
 from cubicalv2.weights.weights import initialize_weights
 from cubicalv2.utils.dask import blockwise_unique
+from itertools import chain, zip_longest
 from uuid import uuid4
 from operator import getitem
 from loguru import logger  # noqa
@@ -260,7 +262,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                "chan": fi_chunks[term]})
 
             gain_list.append(gain)
-            gain_list.append(gain_schema)
 
             # The chunking of each gain will be lost post-solve due to Dask's
             # lack of support for multiple return. We store the chunking values
@@ -279,7 +280,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                   name="gflags-" + uuid4().hex)
 
             gain_list.append(gain_flags)
-            gain_list.append(gain_schema)
 
             # Generate a mapping between time at data resolution and time
             # intervals. The or handles the 0 (full axis) case.
@@ -357,20 +357,18 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # custom graph for this - this works but I worry that it is very
         # vulnerable to interface changes.
 
-        from cubicalv2.calibration.constructor import construct_solver
-
-        solver_outputs = construct_solver(chain_solver,
-                                          model_col,
-                                          data_col,
-                                          ant1_col,
-                                          ant2_col,
-                                          weight_col,
-                                          t_map_arr,
-                                          f_map_arr,
-                                          d_map_arr,
-                                          compute_jhj_and_jhr,
-                                          compute_update,
-                                          *gain_list)
+        gain_list, solver_info = construct_solver(chain_solver,
+                                                  model_col,
+                                                  data_col,
+                                                  ant1_col,
+                                                  ant2_col,
+                                                  weight_col,
+                                                  t_map_arr,
+                                                  f_map_arr,
+                                                  d_map_arr,
+                                                  compute_jhj_and_jhr,
+                                                  compute_update,
+                                                  *gain_list)
 
         # Gains are in dask limbo at this point - we have returned a list
         # which is not understood by the array interface. We take the list of
@@ -378,56 +376,35 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # the stored chunk values to give the resulting gains meaningful
         # shapes.
 
-        solver_info = da.blockwise(
-            getitem, ("rowlike",),
-            solver_outputs, ("rowlike",),
-            1, None,  # The info tuple is the second return value.
-            dtype=np.object,
-            adjust_chunks={"rowlike": 1},
-            meta=np.empty((0,), dtype=np.object),
-            align_arrays=False)
-
-        gain_list = []
         stats_dict = {}
         for ind, term in enumerate(opts.solver_gain_terms):
 
             dd_term = getattr(opts, "{}_direction_dependent".format(term))
 
-            gain = da.blockwise(
-                lambda x, g: x[0][g], gain_schema,  # Gains are first return.
-                solver_outputs, ("rowlike",),
-                ind, None,
-                dtype=np.complex128,
-                adjust_chunks={"rowlike": gain_chunks[term][0]},
-                new_axes={"chan": gain_chunks[term][1],
-                          "dir": n_dir if dd_term else 1,
-                          "ant": n_ant,
-                          "corr": n_corr},
-                meta=np.empty((0, 0, 0, 0, 0), dtype=np.complex128),
-                align_arrays=False)
-
-            gain_list.extend([gain, gain_schema])
-
             stats_dict[term] = {}
 
             for field, field_dtype in stat_fields.items():
                 stats_dict[term][field] = da.blockwise(
-                    lambda d, t, n: np.atleast_1d(getattr(d[t], n)),
-                    ("rowlike",),
-                    solver_info, ("rowlike",),
+                    lambda d, t, n: np.atleast_2d(getattr(d[t], n)),
+                    ("rowlike", "chan"),
+                    solver_info, ("rowlike", "chan"),
                     ind, None,
                     field, None,
                     dtype=field_dtype,
-                    adjust_chunks={"rowlike": 1},
                     align_arrays=False)
 
             gain_xds_dict[term][-1] = \
                 gain_xds_dict[term][-1].assign(
                     {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
-                               gain),
-                     "conv_perc": (("block"), stats_dict[term]["conv_perc"]),
-                     "conv_iters": (("block"),
+                               gain_list[ind]),
+                     "conv_perc": (("t_chunk", "f_chunk"),
+                                   stats_dict[term]["conv_perc"]),
+                     "conv_iters": (("t_chunk", "f_chunk"),
                                     stats_dict[term]["conv_iters"])})
+
+        gain_list_gen = chain.from_iterable(zip_longest(gain_list, [],
+                                            fillvalue=gain_schema))
+        gain_list = [x for x in gain_list_gen]
 
         residuals = da.blockwise(
             dask_residual, ("rowlike", "chan", "corr"),
@@ -436,7 +413,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             t_map_arr, ("rowlike", "term"),
-            f_map_arr, ("rowlike", "term"),
+            f_map_arr, ("chan", "term"),
             d_map_arr, None,
             *gain_list,
             dtype=data_col.dtype,

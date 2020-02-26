@@ -110,12 +110,20 @@ def read_ms(opts):
                            "Falling back to unity weights.")
             opts._unity_weights = True
 
-    # Determine the channels in the measurement set.
+    # Determine the channels in the measurement set. TODO: Handle multiple
+    # SPWs.
 
     spw_xds = xds_from_table(opts.input_ms_name + "::SPECTRAL_WINDOW")[0]
     n_chan = spw_xds.dims["chan"]
-    chan_chunks = np.add.reduceat(np.ones(n_chan, dtype=np.int32),
-                                  np.arange(0, n_chan, 16)).tolist()
+
+    # Set up chunking in frequency.
+
+    if opts.input_ms_freq_chunk:
+        chan_chunks = np.add.reduceat(
+            np.ones(n_chan, dtype=np.int32),
+            np.arange(0, n_chan, opts.input_ms_freq_chunk)).tolist()
+    else:
+        chan_chunks = [n_chan]
 
     # row_chunks is a list of dictionaries containing row chunks per data set.
 
