@@ -196,14 +196,16 @@ def read_ms(opts):
     data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "FLAG", "FLAG_ROW",
                     "UVW") + extra_columns
 
-    data_xds, col_kwrds = xds_from_ms(opts.input_ms_name,
-                                      columns=data_columns,
-                                      index_cols=("TIME",),
-                                      group_cols=("SCAN_NUMBER",
-                                                  "FIELD_ID",
-                                                  "DATA_DESC_ID"),
-                                      chunks=chunks_per_xds,
-                                      column_keywords=True)
+    data_xds, col_kwrds = xds_from_ms(
+        opts.input_ms_name,
+        columns=data_columns,
+        index_cols=("TIME",),
+        group_cols=("SCAN_NUMBER",
+                    "FIELD_ID",
+                    "DATA_DESC_ID"),
+        chunks=chunks_per_xds,
+        column_keywords=True,
+        table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')}}])
 
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
     # appropriately sized dask arrays to the data sets. These can be written
