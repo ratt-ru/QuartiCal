@@ -26,7 +26,10 @@ def construct_solver(chain_solver,
                      compute_jhj_and_jhr,
                      compute_update,
                      gain_list,
-                     gain_flag_list):
+                     flag_list):
+
+    # This is slightly ugly but work for now. Grab and faltten the keys of all
+    # the inputs we intend to pass to the solver.
 
     model_col_keys = list(flatten(model_col.__dask_keys__()))
     data_col_keys = list(flatten(data_col.__dask_keys__()))
@@ -36,30 +39,36 @@ def construct_solver(chain_solver,
     t_map_arr_keys = list(flatten(t_map_arr.__dask_keys__()))
     f_map_arr_keys = list(flatten(f_map_arr.__dask_keys__()))
     gain_keys = [list(flatten(gain.__dask_keys__())) for gain in gain_list]
-    gain_flag_keys = \
-        [list(flatten(flag.__dask_keys__())) for flag in gain_flag_list]
+    flag_keys = [list(flatten(flag.__dask_keys__())) for flag in flag_list]
 
-    args = [model_col, data_col, ant1_col, ant2_col, weight_col,
-            t_map_arr, f_map_arr, *gain_list, *gain_flag_list]
+    # Tuple of all dasky inputs over which we will loop for establishing
+    # dependencies.
+    args = (model_col, data_col, ant1_col, ant2_col, weight_col,
+            t_map_arr, f_map_arr, *gain_list, *flag_list)
 
+    # These should be guarateed to have the correct dimension in each chunking
+    # axis. This is important for key matching.
     n_t_chunks = len(t_map_arr_keys)
     n_f_chunks = len(f_map_arr_keys)
 
-    solver_dsk = {}
-
+    # Based on the inputs, generate a unique hash which can be used to uniquely
+    # identify nodes in the graph.
     token = tokenize(*args)
 
     solver_name = "solver-" + token
 
-    # Set up the solver layer. This is the first step - the next is to add the
-    # getitem layers to pull values out.
+    solver_dsk = {}
+
+    # Set up the solver graph. Loop over the chunked axes.
     for t in range(n_t_chunks):
         for f in range(n_f_chunks):
+
             ind = t*n_f_chunks + f
 
-            gain_inputs = \
-                list(chain.from_iterable(zip(gain_keys, gain_flag_keys)))
+            # Interleave these keys (solver expects this).
+            gain_inputs = list(chain.from_iterable(zip(gain_keys, flag_keys)))
 
+            # Set up the per-chunk solves. Note how keys are assosciated.
             solver_dsk[(solver_name, t, f,)] = \
                 (chain_solver,
                  model_col_keys[ind],
@@ -74,12 +83,17 @@ def construct_solver(chain_solver,
                  compute_update,
                  *[gi[ind] for gi in gain_inputs])
 
+    # Layers are the high level graph structure. Initialise with the dasky
+    # inputs. Similarly for the their dependencies.
     layers = {inp.name: inp.__dask_graph__() for inp in args}
     deps = {inp.name: inp.__dask_graph__().dependencies for inp in args}
 
+    # Add the solver layer and its dependencies.
     layers.update({solver_name: solver_dsk})
     deps.update({solver_name: {inp.name for inp in args}})
 
+    # The following constructs the getitem layer which is necessary to handle
+    # returning several results from the solver.
     gain_names = \
         ["gain-{}-{}".format(i, token) for i in range(len(gain_list))]
 
@@ -91,6 +105,9 @@ def construct_solver(chain_solver,
         layers.update({gn: get_gain})
         deps.update({gn: {solver_name}})
 
+    # We also want to get the named tuple of convergance info - note that this
+    # may no longer be needed as we have a way to pull out values from the
+    # solver in a more transparent fashion than before. TODO: Change this.
     info_name = "info-" + token
 
     get_info = \
@@ -100,8 +117,11 @@ def construct_solver(chain_solver,
     layers.update({info_name: get_info})
     deps.update({info_name: {solver_name}})
 
+    # Turn the layers and dependencies into a high level graph.
     graph = HighLevelGraph(layers, deps)
 
+    # Now that we have the graph, we need to construct arrays from the results.
+    # We loop over the output gains and pack them into a list of dask arrays.
     output_gain_list = []
     for gi, gn in enumerate(gain_names):
         output_gain_list.append(da.Array(graph,
@@ -109,6 +129,8 @@ def construct_solver(chain_solver,
                                          chunks=gain_list[gi].chunks,
                                          dtype=np.complex64))
 
+    # We also partially unpack the info tuple, but see earlier comment. This
+    # can probably be refined.
     info_array = da.Array(graph,
                           name=info_name,
                           chunks=((1,)*n_t_chunks,

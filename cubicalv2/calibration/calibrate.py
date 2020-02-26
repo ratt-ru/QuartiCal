@@ -175,7 +175,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
         gain_list = []
         gain_flag_list = []
-        gain_chunks = {}
 
         # Create and populate xds for statisics at data resolution. Returns
         # some useful arrays required for future computations.
@@ -263,13 +262,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                "chan": fi_chunks[term]})
 
             gain_list.append(gain)
-
-            # The chunking of each gain will be lost post-solve due to Dask's
-            # lack of support for multiple return. We store the chunking values
-            # in a diecitonary so we can later correctly describe the output
-            # gains.
-
-            gain_chunks[term] = gain.chunks
 
             # Create a an array for gain resolution bitflags. These have the
             # same shape as the gains. We use an explicit creation routine
@@ -368,9 +360,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                   gain_list,
                                                   gain_flag_list)
 
-        # Solver is still in limbo at this point - this can likely be entirely
+        # Info is still in limbo at this point - this can likely be entirely
         # replaced by modifying the solver constructor to pull out the
-        # different info values rather than the somewhat cludgy nmed tuple 
+        # different info values rather than the somewhat cludgy named tuple
         # approach I was resorting to due to blockwise.
 
         stats_dict = {}
