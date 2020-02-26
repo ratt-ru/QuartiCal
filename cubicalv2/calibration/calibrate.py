@@ -58,10 +58,14 @@ def initialize_gain(shape):
 
     dtype = np.complex128
 
-    gain = np.zeros(shape, dtype=dtype)
+    gain = np.zeros(shape[0], dtype=dtype)
     gain[..., ::3] = 1
 
     return gain
+
+
+def shape_maker(t, f, na, nd, nc):
+    return np.atleast_2d([t.item(), f.item(), na, nd, nc])
 
 
 def add_calibration_graph(data_xds, col_kwrds, opts):
@@ -233,11 +237,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # correlations in the measurement set. TODO: This should depend
             # on the solver mode.
 
-            def constructor(t, f, na, nd, nc):
-                return np.atleast_2d([t.item(), f.item(), na, nd, nc])
-
             g_shape = da.blockwise(
-                constructor, ("rowlike", "chan",),
+                shape_maker, ("rowlike", "chan",),
                 t_int_per_chunk, ("rowlike",),
                 f_int_per_chunk, ("chan",),
                 n_ant, None,
@@ -251,10 +252,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             gain = da.blockwise(
                 initialize_gain, gain_schema,
                 g_shape, ("rowlike", "chan"),
-                align_arrays=False,
                 dtype=np.complex128,
-                new_axes={"chan": n_chan,
-                          "ant": n_ant,
+                new_axes={"ant": n_ant,
                           "dir": n_dir if dd_term else 1,
                           "corr": opts._ms_ncorr},
                 adjust_chunks={"rowlike": ti_chunks[term],
@@ -358,22 +357,20 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # custom graph for this - this works but I worry that it is very
         # vulnerable to interface changes.
 
-        solver_outputs = da.blockwise(
-            chain_solver, ("rowlike",),  # This is a lie!
-            model_col, ("rowlike", "chan", "dir", "corr"),
-            data_col, ("rowlike", "chan", "corr"),
-            ant1_col, ("rowlike",),
-            ant2_col, ("rowlike",),
-            weight_col, ("rowlike", "chan", "corr"),
-            t_map_arr, ("rowlike", "term"),
-            f_map_arr, ("rowlike", "term"),
-            d_map_arr, None,
-            compute_jhj_and_jhr, None,
-            compute_update, None,
-            *gain_list,
-            concatenate=True,
-            dtype=model_col.dtype,
-            align_arrays=False,)
+        from cubicalv2.calibration.constructor import construct_solver
+
+        solver_outputs = construct_solver(chain_solver,
+                                          model_col,
+                                          data_col,
+                                          ant1_col,
+                                          ant2_col,
+                                          weight_col,
+                                          t_map_arr,
+                                          f_map_arr,
+                                          d_map_arr,
+                                          compute_jhj_and_jhr,
+                                          compute_update,
+                                          *gain_list)
 
         # Gains are in dask limbo at this point - we have returned a list
         # which is not understood by the array interface. We take the list of
