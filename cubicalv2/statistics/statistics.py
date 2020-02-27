@@ -10,20 +10,21 @@ import numpy as np
 import xarray
 
 
-def create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks):
+def create_data_stats_xds(utime_val, n_chan, n_ant, n_t_chunk, n_f_chunk):
     """Set up a data stats xarray dataset and define its coordinates."""
 
     stats_xds = xarray.Dataset(
         coords={"ant": ("ant", np.arange(n_ant, dtype=np.int32)),
                 "time": ("time", utime_val),
                 "chan": ("chan", np.arange(n_chan, dtype=np.int32)),
-                "block": ("block", np.arange(n_chunks, dtype=np.int32))})
+                "t_chunk": ("t_chunk", np.arange(n_t_chunk, dtype=np.int32)),
+                "f_chunk": ("f_chunk", np.arange(n_f_chunk, dtype=np.int32))})
 
     return stats_xds
 
 
-def create_gain_stats_xds(n_tint, n_fint, n_ant, n_dir, n_corr, n_chunk, name,
-                          ind):
+def create_gain_stats_xds(n_tint, n_fint, n_ant, n_dir, n_corr, n_t_chunk,
+                          n_f_chunk, name, ind):
     """Set up a gain stats xarray dataset and define its coordinates."""
 
     stats_xds = xarray.Dataset(
@@ -32,7 +33,8 @@ def create_gain_stats_xds(n_tint, n_fint, n_ant, n_dir, n_corr, n_chunk, name,
                 "freq_int": ("freq_int", np.arange(n_fint, dtype=np.int32)),
                 "dir": ("dir", np.arange(n_dir, dtype=np.int32)),
                 "corr": ("corr", np.arange(n_corr, dtype=np.int32)),
-                "block": ("block", np.arange(n_chunk, dtype=np.int32))},
+                "t_chunk": ("t_chunk", np.arange(n_t_chunk, dtype=np.int32)),
+                "f_chunk": ("f_chunk", np.arange(n_f_chunk, dtype=np.int32))},
         attrs={"name": "{}-{}".format(name, ind)})
 
     return stats_xds
@@ -81,7 +83,7 @@ def assign_noise_estimates(stats_xds, data_col, fullres_bitflags, ant1_col,
         noise_tuple, ("rowlike", "chan"),
         adjust_chunks={"rowlike": 1,
                        "chan": 1},
-        dtype=np.float32).squeeze(axis=1)
+        dtype=np.float32)
 
     inv_var_per_chan = da.blockwise(
         lambda nt: nt[1], ("rowlike", "chan"),
@@ -89,8 +91,8 @@ def assign_noise_estimates(stats_xds, data_col, fullres_bitflags, ant1_col,
         dtype=np.float32)
 
     updated_stats_xds = stats_xds.assign(
-        {"inv_var_per_chan": (("block", "chan"), inv_var_per_chan),
-         "noise_est": (("block",), noise_est)})
+        {"inv_var_per_chan": (("t_chunk", "chan"), inv_var_per_chan),
+         "noise_est": (("t_chunk", "f_chunk"), noise_est)})
 
     return updated_stats_xds
 
@@ -149,13 +151,15 @@ def assign_tf_stats(stats_xds, fullres_bitflags, ant1_col,
     # the conjugate points.
 
     eqs_per_ant = da.map_blocks(
-        lambda x, **kw: 2*np.atleast_2d(np.sum(x, **kw)),
+        lambda x, **kw: 2*np.atleast_3d(np.sum(x, **kw)),
         unflagged_tfac,
         axis=(0, 1, 3),
-        drop_axis=(1, 3),
-        chunks=((1,)*stats_xds.block.size, (stats_xds.ant.size,)))
+        drop_axis=3,
+        chunks=((1,)*stats_xds.t_chunk.size,
+                (1,)*stats_xds.f_chunk.size,
+                (stats_xds.ant.size,)))
 
-    # Determine the number of equations per time-frequency slot. The factor 0f
+    # Determine the number of equations per time-frequency slot. The factor of
     # 2 accounts for the conjugate points.
     eqs_per_tf = da.map_blocks(
         lambda x, **kw: 2*np.atleast_2d(np.sum(x, **kw)),
@@ -169,21 +173,21 @@ def assign_tf_stats(stats_xds, fullres_bitflags, ant1_col,
                                    dtype=np.float64)
 
     # Compute the total number of equations per chunk.
-    total_eqs = da.map_blocks(lambda x: np.atleast_1d(np.sum(x)),
+    total_eqs = da.map_blocks(lambda x: np.atleast_2d(np.sum(x)),
                               eqs_per_tf, dtype=np.int32,
-                              drop_axis=1,
-                              chunks=(1,))
+                              chunks=((1,)*stats_xds.t_chunk.size,
+                                      (1,)*stats_xds.f_chunk.size))
 
     # Compute the overall normalisation factor.
     total_norm_factor = da.map_blocks(silent_divide, 1, total_eqs,
                                       dtype=np.float64)
 
     # Assign the relevant values to the xds.
-    modified_stats_xds = \
-        stats_xds.assign({"eqs_per_ant": (("block", "ant"), eqs_per_ant),
-                          "eqs_per_tf": (("time", "chan"), eqs_per_tf),
-                          "tf_norm_factor": (("time", "chan"), tf_norm_factor),
-                          "tot_norm_factor": (("block",), total_norm_factor)})
+    modified_stats_xds = stats_xds.assign(
+        {"eqs_per_ant": (("t_chunk", "f_chunk", "ant"), eqs_per_ant),
+         "eqs_per_tf": (("time", "chan"), eqs_per_tf),
+         "tf_norm_factor": (("time", "chan"), tf_norm_factor),
+         "tot_norm_factor": (("t_chunk", "f_chunk"), total_norm_factor)})
 
     return modified_stats_xds, unflagged_tfac
 
@@ -299,7 +303,7 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
                                     concatenate=True,
                                     align_arrays=False,
                                     adjust_chunks={"rowlike": ti_chunks,
-                                                   "chan": fi_chunks[0]})
+                                                   "chan": fi_chunks})
 
     # Antennas which have no unflagged points in an interval must be fully
     # flagged. Note that we reduce over the correlation axis here.
@@ -307,10 +311,11 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
     flagged_tifia = da.all(unflagged_tifiac == 0, axis=-1)
 
     missing_fraction = da.map_blocks(
-        lambda x: np.atleast_1d(np.sum(x)/x.size),
+        lambda x: np.atleast_2d(np.sum(x)/x.size),
         flagged_tifia,
-        chunks=(1,),
-        drop_axis=(1, 2),
+        chunks=((1,)*gain_xds.t_chunk.size,
+                (1,)*gain_xds.f_chunk.size),
+        drop_axis=2,
         dtype=np.int32)
 
     # Sum the average abs^2 model over solution intervals.
@@ -331,7 +336,7 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
                      concatenate=True,
                      align_arrays=False,
                      adjust_chunks={"rowlike": ti_chunks,
-                                    "chan": fi_chunks[0]})
+                                    "chan": fi_chunks})
 
     # Determine the noise^2 per channel by inverting the varaince^2.
 
@@ -367,7 +372,7 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
         unflagged_tifiaD[:, :, :, None, :]*avg_abs_sqrd_model_int,
         undefined=np.inf,
         dtype=np.float64,
-        chunks=(ti_chunks, (fi_chunks[0],), (n_ant,), (n_dir,), (1,)))
+        chunks=(ti_chunks, fi_chunks, (n_ant,), (n_dir,), (1,)))
 
     # The prior gain error is the square root of the noise to signal ratio.
 
@@ -385,7 +390,7 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
                      concatenate=True,
                      align_arrays=False,
                      adjust_chunks={"rowlike": ti_chunks,
-                                    "chan": fi_chunks[0]})
+                                    "chan": fi_chunks})
 
     dof_per_ant = 8  # TODO: Should depend on solver mode.
 
@@ -395,10 +400,10 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
 
     valid_intervals = eqs_per_interval > n_unknowns
     n_valid_intervals = da.map_blocks(
-        lambda x: np.atleast_1d(np.sum(x)),
+        lambda x: np.atleast_2d(np.sum(x)),
         valid_intervals,
-        chunks=(1,),
-        drop_axis=(1),
+        chunks=((1,)*gain_xds.t_chunk.size,
+                (1,)*gain_xds.f_chunk.size),
         dtype=np.int32)
 
     n_valid_solutions = n_valid_intervals*n_dir
@@ -414,10 +419,10 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
     chisq_tf_factor[~valid_intervals] = 0
 
     chisq_tot_factor = da.map_blocks(
-        lambda x: np.atleast_1d(np.sum(x)),
+        lambda x: np.atleast_2d(np.sum(x)),
         chisq_tf_factor,
-        chunks=(1,),
-        drop_axis=(1),
+        chunks=((1,)*gain_xds.t_chunk.size,
+                (1,)*gain_xds.f_chunk.size),
         dtype=np.float32)
     chisq_tot_factor = da.map_blocks(
         silent_divide,
@@ -432,9 +437,9 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
     updated_gain_xds = gain_xds.assign(
         {"prior_gain_error": (("time_int", "freq_int", "ant", "dir"),
                               prior_gain_error[..., 0]),
-         "missing_fraction": (("block",), missing_fraction),
+         "missing_fraction": (("t_chunk", "f_chunk"), missing_fraction),
          "chisq_tf_correction": (("time_int", "freq_int"), chisq_tf_factor),
-         "chisq_tot_correction": (("block",), chisq_tot_factor)})
+         "chisq_tot_correction": (("t_chunk", "f_chunk"), chisq_tot_factor)})
 
     # TODO: Handle direction pinning. Handle logging/stat reporting.
 
@@ -569,11 +574,11 @@ def _assign_chisq(stats_xds, data_col, model_col, weight_col,
     chisq_tf = chisq_tfa.sum(axis=-1) * tf_norm_factor
 
     # Compute and weight the total chi-squared value.
-    chisq = chisq_tfa.map_blocks(
-        lambda x: np.atleast_1d(np.sum(x)),
-        drop_axis=(1, 2),
-        chunks=(1,)
-    )
+    chisq = tot_norm_factor * chisq_tfa.map_blocks(
+        lambda x: np.atleast_2d(np.sum(x)),
+        drop_axis=2,
+        chunks=((1,)*stats_xds.t_chunk.size,
+                (1,)*stats_xds.f_chunk.size))
 
     # Assign the relevant chi-squared values with the specified prefix.
     modified_stats_xds = \
@@ -581,7 +586,7 @@ def _assign_chisq(stats_xds, data_col, model_col, weight_col,
             {"{}_chisq_tfa".format(prefix): (("time", "chan", "ant"),
                                              chisq_tfa),
              "{}_chisq_tf".format(prefix): (("time", "chan"), chisq_tf),
-             "{}_chisq".format(prefix): (("block",), chisq * tot_norm_factor)})
+             "{}_chisq".format(prefix): (("t_chunk", "f_chunk"), chisq)})
 
     return modified_stats_xds
 

@@ -13,8 +13,10 @@ from cubicalv2.flagging.flagging import (make_bitmask,
                                          is_set,
                                          set_bitflag,
                                          compute_mad_flags)
+from cubicalv2.calibration.constructor import construct_solver
 from cubicalv2.weights.weights import initialize_weights
 from cubicalv2.utils.dask import blockwise_unique
+from itertools import chain, zip_longest
 from uuid import uuid4
 from operator import getitem
 from loguru import logger  # noqa
@@ -58,10 +60,14 @@ def initialize_gain(shape):
 
     dtype = np.complex128
 
-    gain = np.zeros(shape, dtype=dtype)
+    gain = np.zeros(shape[0], dtype=dtype)
     gain[..., ::3] = 1
 
     return gain
+
+
+def shape_maker(t, f, na, nd, nc):
+    return np.atleast_2d([t.item(), f.item(), na, nd, nc])
 
 
 def add_calibration_graph(data_xds, col_kwrds, opts):
@@ -151,7 +157,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # Set up some values relating to problem dimensions.
         n_ant = opts._n_ant
         n_row, n_chan, n_dir, n_corr = model_col.shape
-        n_chunks = data_col.npartitions  # Number of chunks in row/time.
+        n_t_chunk = len(data_col.chunks[0])
+        n_f_chunk = len(data_col.chunks[1])
         n_term = len(opts.solver_gain_terms)  # Number of gain terms.
 
         # Initialise some empty containers for mappings/dimensions.
@@ -167,12 +174,15 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
         gain_list = []
-        gain_chunks = {}
+        gain_flag_list = []
 
         # Create and populate xds for statisics at data resolution. Returns
         # some useful arrays required for future computations.
-        data_stats_xds = \
-            create_data_stats_xds(utime_val, n_chan, n_ant, n_chunks)
+        data_stats_xds = create_data_stats_xds(utime_val,
+                                               n_chan,
+                                               n_ant,
+                                               n_t_chunk,
+                                               n_f_chunk)
 
         data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
             assign_presolve_data_stats(data_stats_xds,
@@ -205,12 +215,12 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # Number of frequency intervals per data chunk. If this is zero,
             # solution interval is the entire axis per chunk.
             if atomic_f_int:
-                fi_chunks[term] = tuple(int(np.ceil(n_chan/atomic_f_int))
-                                        for _ in range(n_chunks))
+                fi_chunks[term] = tuple(int(np.ceil(nc/atomic_f_int))
+                                        for nc in data_col.chunks[1])
             else:
-                fi_chunks[term] = tuple(1 for _ in range(n_chunks))
+                fi_chunks[term] = tuple(1 for _ in range(n_f_chunk))
 
-            n_fint = fi_chunks[term][0]
+            n_fint = sum(fi_chunks[term])
 
             # Convert the chunk dimensions into dask arrays.
             t_int_per_chunk = da.from_array(ti_chunks[term],
@@ -220,24 +230,22 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                             chunks=(1,),
                                             name=False)
 
-            freqs_per_chunk = da.ones(utime_per_chunk.shape,
-                                      chunks=utime_per_chunk.chunks,
-                                      name="freqs-" + uuid4().hex,
-                                      dtype=np.int64) * n_chan
+            freqs_per_chunk = da.from_array(data_col.chunks[1],
+                                            chunks=(1,),
+                                            name=False)
 
             # Determine the per-chunk gain shapes from the time and frequency
             # intervals per chunk. Note that this uses the number of
             # correlations in the measurement set. TODO: This should depend
             # on the solver mode.
-            g_shape = da.map_blocks(
-                lambda t, f, na, nd, nc:
-                    np.array([t.item(), f.item(), na, nd, nc]),
-                t_int_per_chunk,
-                f_int_per_chunk,
-                n_ant,
-                n_dir if dd_term else 1,
-                opts._ms_ncorr,
-                meta=np.empty((0, 0, 0, 0, 0), dtype=np.int32),
+
+            g_shape = da.blockwise(
+                shape_maker, ("rowlike", "chan",),
+                t_int_per_chunk, ("rowlike",),
+                f_int_per_chunk, ("chan",),
+                n_ant, None,
+                n_dir if dd_term else 1, None,
+                opts._ms_ncorr, None,
                 dtype=np.int32)
 
             # Note that while we technically have a frequency chunk per row
@@ -245,25 +253,15 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
             gain = da.blockwise(
                 initialize_gain, gain_schema,
-                g_shape, ("rowlike",),
-                align_arrays=False,
+                g_shape, ("rowlike", "chan"),
                 dtype=np.complex128,
-                new_axes={"chan": n_chan,
-                          "ant": n_ant,
+                new_axes={"ant": n_ant,
                           "dir": n_dir if dd_term else 1,
                           "corr": opts._ms_ncorr},
                 adjust_chunks={"rowlike": ti_chunks[term],
-                               "chan": fi_chunks[term][0]})
+                               "chan": fi_chunks[term]})
 
             gain_list.append(gain)
-            gain_list.append(gain_schema)
-
-            # The chunking of each gain will be lost post-solve due to Dask's
-            # lack of support for multiple return. We store the chunking values
-            # in a diecitonary so we can later correctly describe the output
-            # gains.
-
-            gain_chunks[term] = gain.chunks
 
             # Create a an array for gain resolution bitflags. These have the
             # same shape as the gains. We use an explicit creation routine
@@ -274,8 +272,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                   dtype=np.uint8,
                                   name="gflags-" + uuid4().hex)
 
-            gain_list.append(gain_flags)
-            gain_list.append(gain_schema)
+            gain_flag_list.append(gain_flags)
 
             # Generate a mapping between time at data resolution and time
             # intervals. The or handles the 0 (full axis) case.
@@ -290,10 +287,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # frequency intervals. The or handles the 0 (full axis) case.
             # This currently presumes that we don't chunk in frequency. BEWARE!
             f_map = freqs_per_chunk.map_blocks(
-                lambda f, f_i, n_c: np.array([i//f_i for i in range(n_c)]),
+                lambda f, f_i: np.array([i//f_i for i in range(f.item())]),
                 atomic_f_int or n_chan,
-                n_chan,
-                chunks=(n_chan,),
+                chunks=(data_col.chunks[1],),
                 dtype=np.uint32)
             f_maps.append(f_map)
 
@@ -307,7 +303,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                              n_ant,
                                              n_dir if dd_term else 1,
                                              n_corr,
-                                             n_chunks,
+                                             n_t_chunk,
+                                             n_f_chunk,
                                              term,
                                              xds_ind)
 
@@ -344,88 +341,59 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         compute_jhj_and_jhr, compute_update = \
             update_func_factory(opts.solver_mode)
 
-        # Gains will not report its size or chunks correctly - this is because
-        # it is actually returning multiple arrays (somewhat sordid) which we
-        # will subseqently unpack and give appropriate dimensions. NB - this
-        # call WILL mutate the contents of gain list. This is a necessary evil
-        # for now though it may be possible to move the array creation into
-        # the numba layer. TODO: It would be more appropriate to construct a
-        # custom graph for this - this works but I worry that it is very
-        # vulnerable to interface changes.
+        # This has been fixed - this now constructs a custom graph which
+        # preserves gain chunking. It also somewhat simplifies future work
+        # as we now have a blueprint for pulling values out of the solver
+        # layer.
 
-        solver_ouputs = da.blockwise(
-            chain_solver, ("rowlike",),  # This is a lie!
-            model_col, ("rowlike", "chan", "dir", "corr"),
-            data_col, ("rowlike", "chan", "corr"),
-            ant1_col, ("rowlike",),
-            ant2_col, ("rowlike",),
-            weight_col, ("rowlike", "chan", "corr"),
-            t_map_arr, ("rowlike", "term"),
-            f_map_arr, ("rowlike", "term"),
-            d_map_arr, None,
-            compute_jhj_and_jhr, None,
-            compute_update, None,
-            *gain_list,
-            concatenate=True,
-            dtype=model_col.dtype,
-            align_arrays=False,)
+        gain_list, solver_info = construct_solver(chain_solver,
+                                                  model_col,
+                                                  data_col,
+                                                  ant1_col,
+                                                  ant2_col,
+                                                  weight_col,
+                                                  t_map_arr,
+                                                  f_map_arr,
+                                                  d_map_arr,
+                                                  compute_jhj_and_jhr,
+                                                  compute_update,
+                                                  gain_list,
+                                                  gain_flag_list)
 
-        # Gains are in dask limbo at this point - we have returned a list
-        # which is not understood by the array interface. We take the list of
-        # gains per chunk and explicitly unpack them using blockwise. We use
-        # the stored chunk values to give the resulting gains meaningful
-        # shapes.
+        # Info is still in limbo at this point - this can likely be entirely
+        # replaced by modifying the solver constructor to pull out the
+        # different info values rather than the somewhat cludgy named tuple
+        # approach I was resorting to due to blockwise.
 
-        solver_info = da.blockwise(
-            getitem, ("rowlike",),
-            solver_ouputs, ("rowlike",),
-            1, None,  # The info tuple is the second return value.
-            dtype=np.object,
-            adjust_chunks={"rowlike": 1},
-            meta=np.empty((0,), dtype=np.object),
-            align_arrays=False)
-
-        gain_list = []
         stats_dict = {}
         for ind, term in enumerate(opts.solver_gain_terms):
 
             dd_term = getattr(opts, "{}_direction_dependent".format(term))
 
-            gain = da.blockwise(
-                lambda x, g: x[0][g], gain_schema,  # Gains are first return.
-                solver_ouputs, ("rowlike",),
-                ind, None,
-                dtype=np.complex128,
-                adjust_chunks={"rowlike": gain_chunks[term][0]},
-                new_axes={"chan": gain_chunks[term][1],
-                          "dir": n_dir if dd_term else 1,
-                          "ant": n_ant,
-                          "corr": n_corr},
-                meta=np.empty((0, 0, 0, 0, 0), dtype=np.complex128),
-                align_arrays=False)
-
-            gain_list.extend([gain, gain_schema])
-
             stats_dict[term] = {}
 
             for field, field_dtype in stat_fields.items():
                 stats_dict[term][field] = da.blockwise(
-                    lambda d, t, n: np.atleast_1d(getattr(d[t], n)),
-                    ("rowlike",),
-                    solver_info, ("rowlike",),
+                    lambda d, t, n: np.atleast_2d(getattr(d[t], n)),
+                    ("rowlike", "chan"),
+                    solver_info, ("rowlike", "chan"),
                     ind, None,
                     field, None,
                     dtype=field_dtype,
-                    adjust_chunks={"rowlike": 1},
                     align_arrays=False)
 
             gain_xds_dict[term][-1] = \
                 gain_xds_dict[term][-1].assign(
                     {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
-                               gain),
-                     "conv_perc": (("block"), stats_dict[term]["conv_perc"]),
-                     "conv_iters": (("block"),
+                               gain_list[ind]),
+                     "conv_perc": (("t_chunk", "f_chunk"),
+                                   stats_dict[term]["conv_perc"]),
+                     "conv_iters": (("t_chunk", "f_chunk"),
                                     stats_dict[term]["conv_iters"])})
+
+        gain_list_gen = chain.from_iterable(zip_longest(gain_list, [],
+                                            fillvalue=gain_schema))
+        gain_list = [x for x in gain_list_gen]
 
         residuals = da.blockwise(
             dask_residual, ("rowlike", "chan", "corr"),
@@ -434,7 +402,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             t_map_arr, ("rowlike", "term"),
-            f_map_arr, ("rowlike", "term"),
+            f_map_arr, ("chan", "term"),
             d_map_arr, None,
             *gain_list,
             dtype=data_col.dtype,
@@ -452,7 +420,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                           ant1_col,
                                           ant2_col,
                                           n_ant,
-                                          n_chunks,
+                                          n_t_chunk,
                                           opts)
 
             fullres_bitflags = set_bitflag(fullres_bitflags, "MAD", mad_flags)

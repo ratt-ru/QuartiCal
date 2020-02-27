@@ -23,11 +23,11 @@ input-ms:
               (e.g. '300s'). 0 means use full time axis.
         default: "32"
     freq-chunk:
-        type: FREQ
+        type: int
         help:  Chunk data by this number of channels. See time-chunk for info.
                Specify as an integer number of channels, or a value with a unit
                (e.g. '128MHz'). 0 means use full frequency axis.
-        default: "32"
+        default: 0
     rebin-time:
         type: TIME
         help: Rebin data in time on the fly. Specify as a number of timeslots

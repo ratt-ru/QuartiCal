@@ -110,9 +110,24 @@ def read_ms(opts):
                            "Falling back to unity weights.")
             opts._unity_weights = True
 
+    # Determine the channels in the measurement set. TODO: Handle multiple
+    # SPWs.
+
+    spw_xds = xds_from_table(opts.input_ms_name + "::SPECTRAL_WINDOW")[0]
+    n_chan = spw_xds.dims["chan"]
+
+    # Set up chunking in frequency.
+
+    if opts.input_ms_freq_chunk:
+        chan_chunks = np.add.reduceat(
+            np.ones(n_chan, dtype=np.int32),
+            np.arange(0, n_chan, opts.input_ms_freq_chunk)).tolist()
+    else:
+        chan_chunks = [n_chan]
+
     # row_chunks is a list of dictionaries containing row chunks per data set.
 
-    row_chunks_per_xds = []
+    chunks_per_xds = []
 
     chunk_spec_per_xds = []
 
@@ -164,7 +179,7 @@ def read_ms(opts):
 
         chunks = np.add.reduceat(utime_counts, cum_utime_per_chunk).tolist()
 
-        row_chunks_per_xds.append({"row": chunks})
+        chunks_per_xds.append({"row": chunks, "chan": chan_chunks})
 
         logger.debug("Scan {}: row chunks: {}", xds.SCAN_NUMBER, chunks)
 
@@ -181,14 +196,16 @@ def read_ms(opts):
     data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "FLAG", "FLAG_ROW",
                     "UVW") + extra_columns
 
-    data_xds, col_kwrds = xds_from_ms(opts.input_ms_name,
-                                      columns=data_columns,
-                                      index_cols=("TIME",),
-                                      group_cols=("SCAN_NUMBER",
-                                                  "FIELD_ID",
-                                                  "DATA_DESC_ID"),
-                                      chunks=row_chunks_per_xds,
-                                      column_keywords=True)
+    data_xds, col_kwrds = xds_from_ms(
+        opts.input_ms_name,
+        columns=data_columns,
+        index_cols=("TIME",),
+        group_cols=("SCAN_NUMBER",
+                    "FIELD_ID",
+                    "DATA_DESC_ID"),
+        chunks=chunks_per_xds,
+        column_keywords=True,
+        table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')}}])
 
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
     # appropriately sized dask arrays to the data sets. These can be written
