@@ -128,6 +128,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         weight_col = initialize_weights(xds, data_col, corr_slice, opts)
 
+        print(weight_col)
+
         fullres_bitflags = initialise_fullres_bitflags(data_col,
                                                        weight_col,
                                                        flag_col,
