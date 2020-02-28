@@ -207,6 +207,19 @@ def read_ms(opts):
         column_keywords=True,
         table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')}}])
 
+    # Keeping here for posterity - frequency chunking in daskms==0.2.3 is
+    # broken but this can be used to kludge it. Note that chunks_per_xds
+    # also needs to be changed.
+    # for xds in data_xds:
+    #     xds.BITFLAG.data = \
+    #         xds.BITFLAG.data.rechunk({1: opts.input_ms_freq_chunk})
+    #     xds.FLAG.data = \
+    #         xds.FLAG.data.rechunk({1: opts.input_ms_freq_chunk})
+    #     xds.DATA.data = \
+    #         xds.DATA.data.rechunk({1: opts.input_ms_freq_chunk})
+    #     xds.MODEL_DATA.data = \
+    #         xds.MODEL_DATA.data.rechunk({1: opts.input_ms_freq_chunk})
+
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
     # appropriately sized dask arrays to the data sets. These can be written
     # to the MS at the end. Note that if we are adding the bitflag column,
