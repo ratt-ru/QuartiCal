@@ -87,6 +87,11 @@ input-model:
         type: bool
         help: The UVW coordinates will be negated if this option is specified.
         default: True
+    source-chunks:
+        type: int
+        help: The number of sources to predict simultaneously. Has a large 
+              impact on memory footprint.
+        default: 10
 
 output:
     _description: Arguments pertaining to output products.

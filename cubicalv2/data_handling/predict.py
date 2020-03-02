@@ -1,8 +1,10 @@
 from loguru import logger
 import dask.array as da
+import dask
 import Tigger
 from daskms import xds_from_table
-import numpy as np
+
+from cubicalv2.utils.dask import blockwise_unique
 
 from africanus.coordinates.dask import radec_to_lm
 from africanus.rime.dask import phase_delay, predict_vis
@@ -153,7 +155,7 @@ def parse_sky_model(opts):
     # Currently, we hard code the model chunks to include 10 sources.
     # TODO: Make this dynamic if necessary.
 
-    chunks = 10
+    chunks = opts.input_model_source_chunks
 
     Point = namedtuple("Point", ["radec", "stokes", "spi", "ref_freq"])
     Gauss = namedtuple("Gauss", ["radec", "stokes", "spi", "ref_freq",
@@ -198,23 +200,40 @@ def parse_sky_model(opts):
     return sky_model_dict
 
 
-def support_tables(opts, tables):
+def support_tables(opts):
     """
     Parameters
     ----------
     args : object
         Script argument objects
-    tables : list of str
-        List of support tables to open
     Returns
     -------
     table_map : dict of Dataset
         {name: dataset}
     """
-    return {t: [ds.compute() for ds in
-                xds_from_table("::".join((opts.input_ms_name, t)),
-                               group_cols="__row__")]
-            for t in tables}
+
+    n = {k: '::'.join((opts.input_ms_name, k)) for k
+         in ("ANTENNA", "DATA_DESCRIPTION", "FIELD",
+             "SPECTRAL_WINDOW", "POLARIZATION")}
+
+    # All rows at once
+    lazy_tables = {"ANTENNA": xds_from_table(n["ANTENNA"])}
+
+    compute_tables = {
+        # Fixed shape rows
+        "DATA_DESCRIPTION": xds_from_table(n["DATA_DESCRIPTION"]),
+        # Variably shaped, need a dataset per row
+        "FIELD": xds_from_table(n["FIELD"],
+                                group_cols="__row__"),
+        "SPECTRAL_WINDOW": xds_from_table(n["SPECTRAL_WINDOW"],
+                                          group_cols="__row__"),
+        "POLARIZATION": xds_from_table(n["POLARIZATION"],
+                                       group_cols="__row__"),
+    }
+
+    lazy_tables.update(dask.compute(compute_tables)[0])
+
+    return lazy_tables
 
 
 def corr_schema(pol):
@@ -272,26 +291,20 @@ def baseline_jones_multiply(corrs, *args):
     return da.einsum(schema, *arrays, optimize=True)
 
 
-def vis_factory(opts, source_type, sky_model, time_index,
-                ms, field, spw, pol):
+def vis_factory(opts, source_type, sky_model,
+                ms, ant, field, spw, pol):
     try:
         source = sky_model[source_type]
     except KeyError:
         raise ValueError("Source type '%s' unsupported" % source_type)
 
-    corrs = pol.NUM_CORR.values
-
-    # Added the squeeze - no idea if this is correct. TODO: Ask Simon.
-    # The phase direction has dimensions (row, poly, 2). Currently we assume
-    # that both row and poly are size one and can be squeezed out. Similarly,
-    # we squeeze the row dimension out of the spectral window.
-
-    if field.NUM_POLY.data != 0:
-        raise ValueError("Polynomials in FIELD table currently unsupported.")
-
-    lm = radec_to_lm(source.radec, field.PHASE_DIR.data[0][0])
-    uvw = -ms.UVW.data if opts.input_model_invert_uvw else ms.UVW.data
+    # Select single dataset rows
+    corrs = pol.NUM_CORR.data[0]
     frequency = spw.CHAN_FREQ.data[0]
+    phase_dir = field.PHASE_DIR.data[0][0]  # row, poly
+
+    lm = radec_to_lm(source.radec, phase_dir)
+    uvw = -ms.UVW.data if opts.input_model_invert_uvw else ms.UVW.data
 
     # (source, row, frequency)
     phase = phase_delay(lm, uvw, frequency)
@@ -307,18 +320,24 @@ def vis_factory(opts, source_type, sky_model, time_index,
     brightness = convert(stokes, ["I", "Q", "U", "V"],
                          corr_schema(pol))
 
-    args = ["phase_delay", phase]
+    bl_jones_args = ["phase_delay", phase]
 
     # Add any visibility amplitude terms
     if source_type == "gauss":
-        args.append("gauss_shape")
-        args.append(gaussian_shape(uvw, frequency, source.shape))
+        bl_jones_args.append("gauss_shape")
+        bl_jones_args.append(gaussian_shape(uvw, frequency, source.shape))
 
-    args.extend(["brightness", brightness])
+    bl_jones_args.extend(["brightness", brightness])
 
-    jones = baseline_jones_multiply(corrs, *args)
+    utime_val, utime_ind = blockwise_unique(ms.TIME.data,
+                                            chunks=(ms.UTIME_CHUNKS,),
+                                            return_inverse=True)
 
-    return predict_vis(time_index, ms.ANTENNA1.data, ms.ANTENNA2.data,
+    jones = baseline_jones_multiply(corrs, *bl_jones_args)
+    # TODO: This will need to be added eventually.
+    # dde = dde_factory(opts, ms, ant, field, pol, lm, utime, frequency)
+
+    return predict_vis(utime_ind, ms.ANTENNA1.data, ms.ANTENNA2.data,
                        None, jones, None, None, None, None)
 
 
@@ -328,9 +347,9 @@ def predict(data_xds, opts):
     sky_model_dict = parse_sky_model(opts)
 
     # Get the support tables.
-    tables = support_tables(opts, ["FIELD", "DATA_DESCRIPTION",
-                                   "SPECTRAL_WINDOW", "POLARIZATION"])
+    tables = support_tables(opts)
 
+    ant_ds = tables["ANTENNA"]
     field_ds = tables["FIELD"]
     ddid_ds = tables["DATA_DESCRIPTION"]
     spw_ds = tables["SPECTRAL_WINDOW"]
@@ -341,21 +360,14 @@ def predict(data_xds, opts):
 
     for xds in data_xds:
 
-        # Extract frequencies from the spectral window associated
-        # with this data descriptor id
+        # Perform subtable joins.
+        ant = ant_ds[0]
         field = field_ds[xds.attrs['FIELD_ID']]
         ddid = ddid_ds[xds.attrs['DATA_DESC_ID']]
-
-        spw = spw_ds[ddid.SPECTRAL_WINDOW_ID.values[0]]
-        pol = pol_ds[ddid.POLARIZATION_ID.values[0]]
+        spw = spw_ds[ddid.SPECTRAL_WINDOW_ID.data[0]]
+        pol = pol_ds[ddid.POLARIZATION_ID.data[0]]
 
         corrs = opts._ms_ncorr
-
-        time_index = da.map_blocks(
-            lambda x: np.unique(x, return_inverse=True)[1],
-            xds.TIME.data,
-            chunks=xds.TIME.data.chunks,
-            dtype=np.int64)
 
         model_vis = defaultdict(list)
 
@@ -364,18 +376,20 @@ def predict(data_xds, opts):
         for model_name, model_group in sky_model_dict.items():
             for group_name, group_sources in model_group.items():
 
-                # Sum the contributions from the different source types into
-                # a single visibility.
-                group_vis = sum([vis_factory(opts, stype, group_sources,
-                                             time_index, xds, field, spw, pol)
-                                for stype in group_sources.keys()])
+                # Generate visibilities per source type.
+                source_vis = [vis_factory(opts, stype, group_sources,
+                                          xds, ant, field, spw, pol)
+                              for stype in group_sources.keys()]
+
+                # Sum the visibilitites together.
+                vis = sum(source_vis)
 
                 # Reshape (2, 2) correlation to shape (4,)
                 if corrs == 4:
-                    group_vis = group_vis.reshape(group_vis.shape[:-2] + (4,))
+                    vis = vis.reshape(vis.shape[:-2] + (4,))
 
                 # Append group_vis to the appropriate list.
-                model_vis[model_name].append(group_vis)
+                model_vis[model_name].append(vis)
 
         predict_list.append(model_vis)
 
