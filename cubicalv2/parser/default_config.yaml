@@ -71,6 +71,14 @@ input-ms:
               (exclusive range), "10:" (from 10 to last), ":10:2" (0 to 9
               inclusive, stepped by 2).
         default: None
+    correlation-mode:
+        type: str
+        choices:
+            - diag
+            - full
+        help: Determines whether we perform calibration using all the 
+              correlations or only the diagonal terms.
+        default: diag
 
 input-model:
     _description: Arguments pertaining to input model parameters.

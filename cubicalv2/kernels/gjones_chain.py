@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import jit, prange
+from numba.extending import overload
+from numba import jit, prange, literally
 
 
 class ModeError(Exception):
@@ -21,7 +22,7 @@ def update_func_factory(mode):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def invert_gains(gain_list, inverse_gain_list):
+def invert_gains(gain_list, inverse_gain_list, mode):
 
     for gain_ind, gain in enumerate(gain_list):
 
@@ -34,23 +35,57 @@ def invert_gains(gain_list, inverse_gain_list):
                 for a in range(n_ant):
                     for d in range(n_dir):
 
-                        g00 = gain[t, f, a, d, 0]
-                        g01 = gain[t, f, a, d, 1]
-                        g10 = gain[t, f, a, d, 2]
-                        g11 = gain[t, f, a, d, 3]
+                        _invert(gain[d, t, f, a, :],
+                                inverse_gain[d, t, f, a, :],
+                                literally(mode))
 
-                        det = (g00*g11 - g01*g10)
 
-                        if np.abs(det) < 1e-6:
-                            inverse_gain[t, f, a, d, 0] = 0
-                            inverse_gain[t, f, a, d, 1] = 0
-                            inverse_gain[t, f, a, d, 2] = 0
-                            inverse_gain[t, f, a, d, 3] = 0
-                        else:
-                            inverse_gain[t, f, a, d, 0] = g11/det
-                            inverse_gain[t, f, a, d, 1] = -g01/det
-                            inverse_gain[t, f, a, d, 2] = -g10/det
-                            inverse_gain[t, f, a, d, 3] = g00/det
+def _invert(gain, inverse_gain, mode):
+    pass
+
+
+@overload(_invert, inline='always')
+def _invert_impl(gain, inverse_gain, mode):
+
+    if mode.literal_value == "diag":
+        def _invert_impl(gain, inverse_gain, mode):
+
+            g00 = gain[..., 0]
+            g11 = gain[..., 1]
+
+            det = g00*g11
+
+            if np.abs(det) < 1e-6:
+                inverse_gain[..., 0] = 0
+                inverse_gain[..., 1] = 0
+            else:
+                inverse_gain[..., 0] = 1/g00
+                inverse_gain[..., 3] = 1/g11
+
+        return _invert_impl
+
+    else:
+        def _invert_impl(gain, inverse_gain, mode):
+
+            g00 = gain[..., 0]
+            g01 = gain[..., 1]
+            g10 = gain[..., 2]
+            g11 = gain[..., 3]
+
+            det = (g00*g11 - g01*g10)
+
+            if np.abs(det) < 1e-6:
+                inverse_gain[..., 0] = 0
+                inverse_gain[..., 1] = 0
+                inverse_gain[..., 2] = 0
+                inverse_gain[..., 3] = 0
+            else:
+                inverse_gain[..., 0] = g11/det
+                inverse_gain[..., 1] = -g01/det
+                inverse_gain[..., 2] = -g10/det
+                inverse_gain[..., 3] = g00/det
+
+        return _invert_impl
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)

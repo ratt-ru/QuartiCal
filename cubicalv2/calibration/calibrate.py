@@ -61,7 +61,11 @@ def initialize_gain(shape):
     dtype = np.complex128
 
     gain = np.zeros(shape[0], dtype=dtype)
-    gain[..., ::3] = 1
+
+    if shape[0][-1] == 4:
+        gain[..., ::3] = 1
+    else:
+        gain[..., :] = 1
 
     return gain
 
@@ -93,6 +97,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
     corr_slice = slice_scheme[opts._ms_ncorr].get(opts.solver_mode, None)
 
+    mode = opts.input_ms_correlation_mode
+
     if not isinstance(corr_slice, slice):
         raise ValueError("{} solver mode incompatible with measurement set "
                          "containing {} correlations.".format(
@@ -111,22 +117,22 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # Unpack the data on the xds into variables with understandable names.
         # We create copies of arrays we intend to mutate as otherwise we end
         # up implicitly updating the xds.
-        data_col = xds.DATA.data[..., corr_slice].copy()
-        model_col = xds.MODEL_DATA.data[..., corr_slice]
+        data_col = xds.DATA.data.copy()
+        model_col = xds.MODEL_DATA.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         time_col = xds.TIME.data
-        flag_col = xds.FLAG.data[..., corr_slice]
-        flag_row_col = xds.FLAG_ROW.data[..., corr_slice]
+        flag_col = xds.FLAG.data
+        flag_row_col = xds.FLAG_ROW.data
 
         # We immediately apply the bitmask so that we only have the bitflags
         # we intend to use.
-        bitflag_col = xds.BITFLAG.data[..., corr_slice] & bitmask
-        bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice] & bitmask
+        bitflag_col = xds.BITFLAG.data & bitmask
+        bitflag_row_col = xds.BITFLAG_ROW.data & bitmask
 
         utime_chunks = xds.UTIME_CHUNKS
 
-        weight_col = initialize_weights(xds, data_col, corr_slice, opts)
+        weight_col = initialize_weights(xds, data_col, opts)
 
         fullres_bitflags = initialise_fullres_bitflags(data_col,
                                                        weight_col,
@@ -245,7 +251,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 f_int_per_chunk, ("chan",),
                 n_ant, None,
                 n_dir if dd_term else 1, None,
-                opts._ms_ncorr, None,
+                n_corr, None,
                 dtype=np.int32)
 
             # Note that while we technically have a frequency chunk per row
@@ -257,7 +263,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 dtype=np.complex128,
                 new_axes={"ant": n_ant,
                           "dir": n_dir if dd_term else 1,
-                          "corr": opts._ms_ncorr},
+                          "corr": n_corr},
                 adjust_chunks={"rowlike": ti_chunks[term],
                                "chan": fi_chunks[term]})
 
@@ -357,6 +363,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                   d_map_arr,
                                                   compute_jhj_and_jhr,
                                                   compute_update,
+                                                  mode,
                                                   gain_list,
                                                   gain_flag_list)
 

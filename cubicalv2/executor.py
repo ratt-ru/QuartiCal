@@ -72,7 +72,7 @@ def execute():
         output = []
         for key in gains_per_xds.keys():
             output.append(gains_per_xds[key][ind])
-        output.append(writes[ind])
+        # output.append(writes[ind])
         outputs.append(output)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)

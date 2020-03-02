@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 from collections import namedtuple
-from numba import jit
+from numba import jit, literally
 from cubicalv2.kernels.gjones_chain import invert_gains
 from cubicalv2.kernels.gjones_chain import (residual_full,
                                             compute_convergence)
 import numpy as np
-from cubicalv2.utils.timings import timeit
 
 
 stat_fields = {"conv_iters": np.int64,
@@ -16,10 +15,11 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
 def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                 d_map_arr, compute_jhj_and_jhr, compute_update, *gain_list):
+                 d_map_arr, compute_jhj_and_jhr, compute_update, mode,
+                 *input_list):
 
-    gain_list = [g for g in gain_list[::2]]
-    gain_flag_list = [gf for gf in gain_list[1::2]]
+    gain_list = [g for g in input_list[::2]]
+    gain_flag_list = [gf for gf in input_list[1::2]]
     inverse_gain_list = [np.empty_like(g) for g in gain_list]
 
     info_dict = dict()
@@ -28,7 +28,7 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
         n_tint, t_fint, n_ant, n_dir, n_corr = gain_list[gain_ind].shape
 
-        invert_gains(gain_list, inverse_gain_list)
+        invert_gains(gain_list, inverse_gain_list, literally(mode))
 
         dd_term = n_dir > 1
 

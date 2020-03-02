@@ -402,11 +402,14 @@ def initialise_fullres_bitflags(data_col, weight_col, flag_col, flag_row_col,
                                    "INVALID",
                                    invalid_points)
 
-    # TODO: This is likely incorrect for different number of correlations.
-
-    missing_points = da.logical_or(data_col[..., 0:1] == 0,
-                                   data_col[..., 3:4] == 0)
-    missing_points = da.logical_or(missing_points, data_col == 0)
+    # TODO: This is likely incorrect for different number of correlations. We
+    # assume that the first and last entries of the correlation axis are the
+    # on-diagonal terms. This should be safe provided we don't have
+    # off-diagonal only data, although in that case the flagging logic is
+    # probablly equally applicable.
+    missing_points = da.logical_or(data_col[..., 0] == 0,
+                                   data_col[..., -1] == 0)
+    missing_points = da.logical_or(missing_points[..., None], data_col == 0)
 
     fullres_bitflags = set_bitflag(fullres_bitflags,
                                    "MISSING",

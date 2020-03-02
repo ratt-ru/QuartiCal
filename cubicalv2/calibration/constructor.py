@@ -25,6 +25,7 @@ def construct_solver(chain_solver,
                      d_map_arr,
                      compute_jhj_and_jhr,
                      compute_update,
+                     mode,
                      gain_list,
                      flag_list):
 
@@ -81,6 +82,7 @@ def construct_solver(chain_solver,
                  d_map_arr,
                  compute_jhj_and_jhr,
                  compute_update,
+                 mode,
                  *[gi[ind] for gi in gain_inputs])
 
     # Layers are the high level graph structure. Initialise with the dasky

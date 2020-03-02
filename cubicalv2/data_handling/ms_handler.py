@@ -233,6 +233,13 @@ def read_ms(opts):
 
     updated_kwrds = update_kwrds(col_kwrds, opts)
 
+    # We may only want to use some of the input correlation values. xarray 
+    # has a neat syntax for this. #TODO: This needs to depend on the number of
+    # correlations actually present in the MS/on the xds.
+
+    if opts.input_ms_correlation_mode == "diag":
+        data_xds = [xds.sel(corr=[0, 3]) for xds in data_xds]
+
     # The use of name below guaratees that dask produces unique arrays and
     # avoids accidental aliasing.
 

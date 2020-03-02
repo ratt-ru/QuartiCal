@@ -3,7 +3,7 @@ import numpy as np
 import uuid
 
 
-def initialize_weights(xds, data_col, corr_slice, opts):
+def initialize_weights(xds, data_col, opts):
     """Given an input dataset, initializes the weights based on opts.
 
     Initialises the weights. Data column is required in order to stat up unity
@@ -12,7 +12,6 @@ def initialize_weights(xds, data_col, corr_slice, opts):
     Inputs:
         xds: xarray.dataset on which the weight columns live.
         data_col: Chunked dask.array containing the data.
-        corr_slice: A tuple of Slice objects to select out releveant weights.
         opts: A Namespace of options.
 
     Outputs:
@@ -27,8 +26,7 @@ def initialize_weights(xds, data_col, corr_slice, opts):
                              dtype=np.float32)
     else:
         # We use a copy to prevent mutating the xds.
-        weight_col = \
-            xds[opts.input_ms_weight_column].data[..., corr_slice].copy()
+        weight_col = xds[opts.input_ms_weight_column].data.copy()
 
     # The following handles the fact that the chosen weight column might
     # not have a frequency axis.
