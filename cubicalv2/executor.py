@@ -72,7 +72,7 @@ def execute():
         output = []
         for key in gains_per_xds.keys():
             output.append(gains_per_xds[key][ind])
-        # output.append(writes[ind])
+        output.append(writes[ind])
         outputs.append(output)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
@@ -83,7 +83,7 @@ def execute():
         dask.compute([dask.delayed(tuple)(x) for x in outputs],
                      num_workers=opts.parallel_nthread,
                      optimize_graph=True,)
-                     # scheduler="threads") # noqa
+                    #  scheduler="single-threaded") # noqa
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
     # This code can be used to save gain xarray datasets imeediately. This is

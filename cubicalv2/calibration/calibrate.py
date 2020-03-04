@@ -2,7 +2,8 @@
 import numpy as np
 import dask.array as da
 from cubicalv2.calibration.solver import chain_solver, stat_fields, diag_solver
-from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
+from cubicalv2.kernels.gjones_chain import (update_func_factory,
+                                            compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_gain_stats_xds,
                                              assign_post_solve_chisq,
@@ -18,7 +19,6 @@ from cubicalv2.weights.weights import initialize_weights
 from cubicalv2.utils.dask import blockwise_unique
 from itertools import chain, zip_longest
 from uuid import uuid4
-from operator import getitem
 from loguru import logger  # noqa
 
 
@@ -47,13 +47,13 @@ slice_scheme = {1: {"scalar": slice(None)},
                     "scalar": slice(0, 1)}}
 
 
-def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
+def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr, mode,
                   *gains):
 
     gain_list = [g for g in gains]
 
-    return residual_full(data, model, gain_list, a1, a2, t_map_arr,
-                         f_map_arr, d_map_arr)
+    return compute_residual(data, model, gain_list, a1, a2, t_map_arr,
+                            f_map_arr, d_map_arr, mode)
 
 
 def initialize_gain(shape):
@@ -413,6 +413,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             t_map_arr, ("rowlike", "term"),
             f_map_arr, ("chan", "term"),
             d_map_arr, None,
+            mode, None,
             *gain_list,
             dtype=data_col.dtype,
             align_arrays=False,

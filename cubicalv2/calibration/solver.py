@@ -3,7 +3,8 @@ from collections import namedtuple
 from numba import jit, literally
 from cubicalv2.kernels.gjones_chain import invert_gains
 from cubicalv2.kernels.gjones_chain import (residual_full,
-                                            compute_convergence)
+                                            compute_convergence,
+                                            compute_residual)
 import numpy as np
 
 
@@ -39,8 +40,9 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         for i in range(20):
 
             if dd_term:
-                residual = residual_full(data, model, gain_list, a1, a2,
-                                         t_map_arr, f_map_arr, d_map_arr)
+                residual = compute_residual(data, model, gain_list, a1, a2,
+                                            t_map_arr, f_map_arr, d_map_arr,
+                                            literally(mode))
             else:
                 residual = data
 
@@ -107,8 +109,9 @@ def diag_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         for i in range(20):
 
             if dd_term:
-                residual = residual_full(data, model, gain_list, a1, a2,
-                                         t_map_arr, f_map_arr, d_map_arr)
+                residual = compute_residual(data, model, gain_list, a1, a2,
+                                            t_map_arr, f_map_arr, d_map_arr,
+                                            literally(mode))
             else:
                 residual = data
 
@@ -340,3 +343,4 @@ def update_diag(jhj, jhr):
                     update[t, f, a, d, 1] = (jhr11*jhjinv11)
 
     return update
+

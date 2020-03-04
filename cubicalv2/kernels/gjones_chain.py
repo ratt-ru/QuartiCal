@@ -388,8 +388,74 @@ def update_full(jhj, jhr):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def compute_residual(data, model, gain_list, a1, a2, t_map_arr,
+                     f_map_arr, d_map_arr, mode):
+
+    return _compute_residual(data, model, gain_list, a1, a2, t_map_arr,
+                             f_map_arr, d_map_arr, literally(mode))
+
+
+def _compute_residual(data, model, gain_list, a1, a2, t_map_arr,
+                      f_map_arr, d_map_arr, mode):
+    pass
+
+
+@overload(_compute_residual, inline='always')
+def _compute_residual_impl(data, model, gain_list, a1, a2, t_map_arr,
+                           f_map_arr, d_map_arr, mode):
+
+    if mode.literal_value == "diag":
+        return residual_diag
+    else:
+        return residual_full
+
+
+def residual_diag(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
+                  d_map_arr, mode):
+
+    residual = data.copy()
+
+    n_rows, n_chan, n_dir, _ = model.shape
+    n_gains = len(gain_list)
+
+    for row in range(n_rows):
+
+        a1_m, a2_m = a1[row], a2[row]
+
+        for f in range(n_chan):
+            for d in range(n_dir):
+
+                m00 = model[row, f, d, 0]
+                m11 = model[row, f, d, 1]
+
+                for g in range(n_gains-1, -1, -1):
+
+                    d_m = d_map_arr[g, d]  # Broadcast dir.
+                    t_m = t_map_arr[row, g]
+                    f_m = f_map_arr[f, g]
+
+                    gain = gain_list[g]
+
+                    g00 = gain[t_m, f_m, a1_m, d_m, 0]
+                    g11 = gain[t_m, f_m, a1_m, d_m, 1]
+
+                    gh00 = gain[t_m, f_m, a2_m, d_m, 0].conjugate()
+                    gh11 = gain[t_m, f_m, a2_m, d_m, 1].conjugate()
+
+                    r00 = g00*m00*gh00
+                    r11 = g11*m11*gh11
+
+                    m00 = r00
+                    m11 = r11
+
+                residual[row, f, 0] -= r00
+                residual[row, f, 1] -= r11
+
+    return residual
+
+
 def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
-                  d_map_arr):
+                  d_map_arr, mode):
 
     residual = data.copy()
 
