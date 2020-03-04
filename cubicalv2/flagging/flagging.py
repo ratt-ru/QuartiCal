@@ -52,7 +52,7 @@ def _set_bitflag(bitflag_arr, bitflag_names, selection=None):
         bitflag_arr: Modified version of input bitflag_arr.
     """
 
-    # NOTE: This is a nasty catch for using the distributed scheduler with 
+    # NOTE: This is a nasty catch for using the distributed scheduler with
     # multiple workers. Bitflag arrays may become non-writable. TODO: Consider
     # alternatives.
     if not bitflag_arr.flags["W"]:
@@ -81,7 +81,7 @@ def _unset_bitflag(bitflag_arr, bitflag_names, selection=None):
         bitflag_arr: Modified version of input bitflag_arr.
     """
 
-    # NOTE: This is a nasty catch for using the distributed scheduler with 
+    # NOTE: This is a nasty catch for using the distributed scheduler with
     # multiple workers. Bitflag arrays may become non-writable. TODO: Consider
     # alternatives.
     if not bitflag_arr.flags["W"]:

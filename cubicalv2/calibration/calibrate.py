@@ -361,8 +361,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                   t_map_arr,
                                                   f_map_arr,
                                                   d_map_arr,
-                                                  compute_jhj_and_jhr,
-                                                  compute_update,
                                                   mode,
                                                   gain_list,
                                                   gain_flag_list)

@@ -23,8 +23,6 @@ def construct_solver(chain_solver,
                      t_map_arr,
                      f_map_arr,
                      d_map_arr,
-                     compute_jhj_and_jhr,
-                     compute_update,
                      mode,
                      gain_list,
                      flag_list):
@@ -80,8 +78,6 @@ def construct_solver(chain_solver,
                  t_map_arr_keys[t],
                  f_map_arr_keys[f],
                  d_map_arr,
-                 compute_jhj_and_jhr,
-                 compute_update,
                  mode,
                  *[gi[ind] for gi in gain_inputs])
 

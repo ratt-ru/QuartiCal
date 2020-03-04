@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 from collections import namedtuple
 from numba import jit, literally
-from cubicalv2.kernels.gjones_chain import invert_gains
-from cubicalv2.kernels.gjones_chain import (residual_full,
-                                            compute_convergence,
-                                            compute_residual)
+from cubicalv2.kernels.gjones_chain import (invert_gains,
+                                            compute_update,
+                                            compute_jhj_jhr,
+                                            compute_residual,
+                                            compute_convergence)
 import numpy as np
 
 
@@ -14,10 +15,9 @@ stat_fields = {"conv_iters": np.int64,
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                 d_map_arr, compute_jhj_and_jhr, compute_update, mode,
-                 *input_list):
+                 d_map_arr, mode, *input_list):
 
     gain_list = [g for g in input_list[::2]]
     gain_flag_list = [gf for gf in input_list[1::2]]
@@ -46,18 +46,18 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             else:
                 residual = data
 
-            jhj, jhr = compute_jhj_and_jhr(model,
-                                           gain_list,
-                                           inverse_gain_list,
-                                           residual,
-                                           a1,
-                                           a2,
-                                           weights,
-                                           t_map_arr,
-                                           f_map_arr,
-                                           d_map_arr,
-                                           gain_ind,
-                                           literally(mode))
+            jhj, jhr = compute_jhj_jhr(model,
+                                       gain_list,
+                                       inverse_gain_list,
+                                       residual,
+                                       a1,
+                                       a2,
+                                       weights,
+                                       t_map_arr,
+                                       f_map_arr,
+                                       d_map_arr,
+                                       gain_ind,
+                                       literally(mode))
 
             update = compute_update(jhj, jhr, literally(mode))
 
