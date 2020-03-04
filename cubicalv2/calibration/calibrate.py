@@ -2,8 +2,7 @@
 import numpy as np
 import dask.array as da
 from cubicalv2.calibration.solver import chain_solver, stat_fields
-from cubicalv2.kernels.gjones_chain import (update_func_factory,
-                                            compute_residual)
+from cubicalv2.kernels.gjones_chain import (compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_gain_stats_xds,
                                              assign_post_solve_chisq,
@@ -340,12 +339,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         t_map_arr = da.stack(t_maps, axis=1).rechunk({1: n_term})
         f_map_arr = da.stack(f_maps, axis=1).rechunk({1: n_term})
         d_map_arr = np.array(d_maps, dtype=np.uint32)
-
-        # We use a factory function to produce appropriate update functions
-        # for use in the solver. TODO: Investigate using generated jit for this
-        # purpose.
-        compute_jhj_and_jhr, compute_update = \
-            update_func_factory(opts.solver_mode)
 
         # This has been fixed - this now constructs a custom graph which
         # preserves gain chunking. It also somewhat simplifies future work
