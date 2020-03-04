@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from cubicalv2.calibration.solver import chain_solver, stat_fields, diag_solver
+from cubicalv2.calibration.solver import chain_solver, stat_fields
 from cubicalv2.kernels.gjones_chain import (update_func_factory,
                                             compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
@@ -352,9 +352,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # as we now have a blueprint for pulling values out of the solver
         # layer.
 
-        solver = diag_solver if mode == "diag" else chain_solver
-
-        gain_list, solver_info = construct_solver(solver,
+        gain_list, solver_info = construct_solver(chain_solver,
                                                   model_col,
                                                   data_col,
                                                   ant1_col,

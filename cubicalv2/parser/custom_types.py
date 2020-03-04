@@ -47,7 +47,7 @@ def TIME(arg):
                                 "or a duration in seconds.")
 
     if arg == 0:
-        arg = int(1e99)
+        arg = int(arg)
         logger.info("Argument of custom type TIME is zero - treating as "
                     "infinite.")
 

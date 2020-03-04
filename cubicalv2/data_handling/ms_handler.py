@@ -166,14 +166,13 @@ def read_ms(opts):
             cum_utime_per_chunk = [0] + cum_utime_per_chunk[:-1].tolist()
 
         else:
+
             n_utimes = len(utimes)
-            tc = opts.input_ms_time_chunk
+            tc = opts.input_ms_time_chunk or n_utimes
             n_full = n_utimes//tc
             remainder = [(n_utimes - n_full*tc)] if n_utimes % tc else []
             utime_per_chunk = [tc]*n_full + remainder
-            cum_utime_per_chunk = list(range(0,
-                                             len(utimes),
-                                             opts.input_ms_time_chunk))
+            cum_utime_per_chunk = list(range(0, n_utimes, tc))
 
         chunk_spec_per_xds.append(tuple(utime_per_chunk))
 
