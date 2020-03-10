@@ -2,7 +2,7 @@
 import numpy as np
 import dask.array as da
 from cubicalv2.calibration.solver import chain_solver, stat_fields
-from cubicalv2.kernels.gjones_chain import (compute_residual)
+from cubicalv2.kernels.generics import (compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_gain_stats_xds,
                                              assign_post_solve_chisq,

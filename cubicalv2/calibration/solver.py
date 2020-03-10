@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 from collections import namedtuple
 from numba import jit, literally
-from cubicalv2.kernels.gjones_chain import (invert_gains,
-                                            compute_update,
-                                            compute_jhj_jhr,
-                                            compute_residual,
-                                            compute_convergence)
+from cubicalv2.kernels.complex import compute_update, compute_jhj_jhr
+from cubicalv2.kernels.generics import (invert_gains,
+                                        compute_residual,
+                                        compute_convergence)
 import numpy as np
 
 
