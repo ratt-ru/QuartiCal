@@ -60,6 +60,9 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
             update = compute_update(jhj, jhr, literally(mode))
 
+            # phases = np.angle(gain_list[gain_ind])
+            # phases += update/2
+            # gain_list[gain_ind][:] = np.exp(1j*phases)
             if dd_term:
                 gain_list[gain_ind][:] = gain_list[gain_ind][:] + update/2
             elif i % 2 == 0:
