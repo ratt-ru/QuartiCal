@@ -1,10 +1,9 @@
 import numpy as np
 import dask.array as da
-from itertools import chain
 from dask.array.core import HighLevelGraph
 from operator import getitem
 from dask.base import tokenize
-from cubicalv2.calibration.gain_types import *
+from cubicalv2.calibration.gain_types import cmplx
 
 
 def flatten(l):
@@ -15,9 +14,10 @@ def flatten(l):
             yield el
 
 
-def tuplify(gain_keys, flag_keys):
+def tuplify(gain_key, flag_key):
 
-    return [cmplx(g, f) for g, f in zip(gain_keys, flag_keys)]
+    return cmplx(gain_key, flag_key)
+
 
 def construct_solver(chain_solver,
                      model_col,
@@ -54,6 +54,7 @@ def construct_solver(chain_solver,
     # axis. This is important for key matching.
     n_t_chunks = len(t_map_arr_keys)
     n_f_chunks = len(f_map_arr_keys)
+    n_term = len(gain_list)
 
     # Based on the inputs, generate a unique hash which can be used to uniquely
     # identify nodes in the graph.
@@ -64,24 +65,20 @@ def construct_solver(chain_solver,
     layers = {inp.name: inp.__dask_graph__() for inp in args}
     deps = {inp.name: inp.__dask_graph__().dependencies for inp in args}
 
-    tupler_name = "tupler-" + token
-    tupler_dsk = {}
-    tupler_args = (*gain_list, *flag_list)
+    tupler_dsks = []
 
-    for t in range(n_t_chunks):
-        for f in range(n_f_chunks):
+    for ind in range(n_term):
 
-            ind = t*n_f_chunks + f
+        tupler_name = "tupler-{}-{}".format(ind, token)
 
-            gks = [gk[ind] for gk in gain_keys]
-            fks = [fk[ind] for fk in flag_keys]
+        tupler_dsk = {(tupler_name, gk[1], gk[2]): (tuplify, gk, fk)
+                      for gk, fk in zip(gain_keys[ind], flag_keys[ind])}
 
-            tupler_dsk.update({(tupler_name, t, f): (tuplify, gks, fks)})
+        # Add a tupler layer per gain with its dependencies.
+        layers.update({tupler_name: tupler_dsk})
+        deps.update({tupler_name: {gain_list[ind].name, flag_list[ind].name}})
 
-
-    # Add the tupler layer and its dependencies.
-    layers.update({tupler_name: tupler_dsk})
-    deps.update({tupler_name: {inp.name for inp in tupler_args}})
+        tupler_dsks.append(list(tupler_dsk.keys()))
 
     solver_name = "solver-" + token
 
@@ -94,7 +91,7 @@ def construct_solver(chain_solver,
             ind = t*n_f_chunks + f
 
             # Interleave these keys (solver expects this).
-            gain_inputs = list(chain.from_iterable(zip(gain_keys, flag_keys)))
+            gain_inputs = list(zip(*tupler_dsks))
 
             # Set up the per-chunk solves. Note how keys are assosciated.
             solver_dsk[(solver_name, t, f,)] = \
@@ -108,7 +105,7 @@ def construct_solver(chain_solver,
                  f_map_arr_keys[f],
                  d_map_arr,
                  mode,
-                 list(tupler_dsk.keys())[ind])
+                 *gain_inputs[ind])
 
     # Add the solver layer and its dependencies.
     layers.update({solver_name: solver_dsk})

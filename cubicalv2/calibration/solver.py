@@ -16,7 +16,7 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                 d_map_arr, mode, input_list):
+                 d_map_arr, mode, *input_list):
 
     gain_list = [g.gains for g in input_list]
     gain_flag_list = [g.flags for g in input_list]
