@@ -24,8 +24,8 @@ from loguru import logger  # noqa
 # The following supresses the egregious numba pending deprecation warnings.
 # TODO: Make sure that the code doesn't break when they finally decprecate
 # reflected lists.
-from numba.errors import NumbaDeprecationWarning
-from numba.errors import NumbaPendingDeprecationWarning
+from numba.core.errors import NumbaDeprecationWarning
+from numba.core.errors import NumbaPendingDeprecationWarning
 import warnings
 
 warnings.simplefilter('ignore', category=NumbaDeprecationWarning)

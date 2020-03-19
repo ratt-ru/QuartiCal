@@ -4,6 +4,7 @@ from itertools import chain
 from dask.array.core import HighLevelGraph
 from operator import getitem
 from dask.base import tokenize
+from cubicalv2.calibration.gain_types import *
 
 
 def flatten(l):
@@ -13,6 +14,10 @@ def flatten(l):
         else:
             yield el
 
+
+def tuplify(gain_keys, flag_keys):
+
+    return [cmplx(g, f) for g, f in zip(gain_keys, flag_keys)]
 
 def construct_solver(chain_solver,
                      model_col,
@@ -54,6 +59,30 @@ def construct_solver(chain_solver,
     # identify nodes in the graph.
     token = tokenize(*args)
 
+    # Layers are the high level graph structure. Initialise with the dasky
+    # inputs. Similarly for the their dependencies.
+    layers = {inp.name: inp.__dask_graph__() for inp in args}
+    deps = {inp.name: inp.__dask_graph__().dependencies for inp in args}
+
+    tupler_name = "tupler-" + token
+    tupler_dsk = {}
+    tupler_args = (*gain_list, *flag_list)
+
+    for t in range(n_t_chunks):
+        for f in range(n_f_chunks):
+
+            ind = t*n_f_chunks + f
+
+            gks = [gk[ind] for gk in gain_keys]
+            fks = [fk[ind] for fk in flag_keys]
+
+            tupler_dsk.update({(tupler_name, t, f): (tuplify, gks, fks)})
+
+
+    # Add the tupler layer and its dependencies.
+    layers.update({tupler_name: tupler_dsk})
+    deps.update({tupler_name: {inp.name for inp in tupler_args}})
+
     solver_name = "solver-" + token
 
     solver_dsk = {}
@@ -79,12 +108,7 @@ def construct_solver(chain_solver,
                  f_map_arr_keys[f],
                  d_map_arr,
                  mode,
-                 *[gi[ind] for gi in gain_inputs])
-
-    # Layers are the high level graph structure. Initialise with the dasky
-    # inputs. Similarly for the their dependencies.
-    layers = {inp.name: inp.__dask_graph__() for inp in args}
-    deps = {inp.name: inp.__dask_graph__().dependencies for inp in args}
+                 list(tupler_dsk.keys())[ind])
 
     # Add the solver layer and its dependencies.
     layers.update({solver_name: solver_dsk})
