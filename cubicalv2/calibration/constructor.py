@@ -3,7 +3,7 @@ import dask.array as da
 from dask.array.core import HighLevelGraph
 from operator import getitem
 from dask.base import tokenize
-from cubicalv2.calibration.gain_types import cmplx
+from cubicalv2.calibration.gain_types import term_types
 
 
 def flatten(l):
@@ -14,9 +14,9 @@ def flatten(l):
             yield el
 
 
-def tuplify(gain_key, flag_key):
+def tuplify(gains, flags, parms, term_type):
 
-    return cmplx(gain_key, flag_key)
+    return term_types[term_type](gains, flags, parms)
 
 
 def construct_solver(chain_solver,
@@ -30,7 +30,9 @@ def construct_solver(chain_solver,
                      d_map_arr,
                      mode,
                      gain_list,
-                     flag_list):
+                     flag_list,
+                     parm_list,
+                     opts):
 
     # This is slightly ugly but work for now. Grab and faltten the keys of all
     # the inputs we intend to pass to the solver.
@@ -44,11 +46,12 @@ def construct_solver(chain_solver,
     f_map_arr_keys = list(flatten(f_map_arr.__dask_keys__()))
     gain_keys = [list(flatten(gain.__dask_keys__())) for gain in gain_list]
     flag_keys = [list(flatten(flag.__dask_keys__())) for flag in flag_list]
+    parm_keys = [list(flatten(parm.__dask_keys__())) for parm in parm_list]
 
     # Tuple of all dasky inputs over which we will loop for establishing
     # dependencies.
     args = (model_col, data_col, ant1_col, ant2_col, weight_col,
-            t_map_arr, f_map_arr, *gain_list, *flag_list)
+            t_map_arr, f_map_arr, *gain_list, *flag_list, *parm_list)
 
     # These should be guarateed to have the correct dimension in each chunking
     # axis. This is important for key matching.
@@ -66,17 +69,34 @@ def construct_solver(chain_solver,
     deps = {inp.name: inp.__dask_graph__().dependencies for inp in args}
 
     tupler_dsks = []
+    term_types = \
+        [getattr(opts, "{}_type".format(t)) for t in opts.solver_gain_terms]
+    consumed_parms = 0
 
     for ind in range(n_term):
 
         tupler_name = "tupler-{}-{}".format(ind, token)
 
-        tupler_dsk = {(tupler_name, gk[1], gk[2]): (tuplify, gk, fk)
-                      for gk, fk in zip(gain_keys[ind], flag_keys[ind])}
+        pterm = term_types[ind] == "phase"
+
+        p_keys = \
+            parm_keys[consumed_parms] if pterm else [None]*len(gain_keys[ind])
+
+        tupler_dsk = {(tupler_name, gk[1], gk[2]):
+                      (tuplify, gk, fk, pk, term_types[ind])
+                      for gk, fk, pk in zip(gain_keys[ind],
+                                            flag_keys[ind],
+                                            p_keys)}
+
+        p_vals = parm_list[consumed_parms] if pterm else ()
 
         # Add a tupler layer per gain with its dependencies.
         layers.update({tupler_name: tupler_dsk})
-        deps.update({tupler_name: {gain_list[ind].name, flag_list[ind].name}})
+        deps.update({tupler_name: {gain_list[ind].name,
+                                   flag_list[ind].name,
+                                   p_vals.name if pterm else ()}})
+
+        consumed_parms = consumed_parms + 1 if pterm else consumed_parms
 
         tupler_dsks.append(list(tupler_dsk.keys()))
 

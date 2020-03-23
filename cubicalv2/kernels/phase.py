@@ -1,55 +1,11 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba.extending import overload
-from numba import jit, prange, literally
-
-
-class ModeError(Exception):
-    """Raised when solver mode is not understood."""
-    pass
-
-
-def update_func_factory(mode):
-
-    if mode == "full-full":
-        return compute_jhj_jhr, compute_update
-    elif mode == "diag-full":
-        raise NotImplementedError("diag-full solver mode not yet supported.")
-    elif mode == "diag-diag":
-        raise NotImplementedError("diag-diag solver mode not yet supported.")
-    else:
-        raise ModeError("Undefined calibration mode.")
-
-
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_jhj_jhr(model, gain_list, inverse_gain_list, residual, a1, a2,
-                    weights, t_map_arr, f_map_arr, d_map_arr, active_term,
-                    mode):
-
-    return _compute_jhj_jhr(model, gain_list, inverse_gain_list, residual, a1,
-                            a2, weights, t_map_arr, f_map_arr, d_map_arr,
-                            active_term, literally(mode))
-
-
-def _compute_jhj_jhr(model, gain_list, inverse_gain_list, residual, a1, a2,
-                     weights, t_map_arr, f_map_arr, d_map_arr, active_term,
-                     mode):
-    pass
-
-
-@overload(_compute_jhj_jhr, inline='always')
-def _compute_jhj_jhr_impl(model, gain_list, inverse_gain_list, residual, a1,
-                          a2, weights, t_map_arr, f_map_arr, d_map_arr,
-                          active_term, mode):
-
-    if mode.literal_value == "diag":
-        return jhj_jhr_diag
-    else:
-        return jhj_jhr_full
+from numba import prange
 
 
 def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
-                 weights, t_map_arr, f_map_arr, d_map_arr, active_term, mode):
+                 weights, t_map_arr, f_map_arr, d_map_arr, active_term,
+                 corr_mode, term_type):
 
     n_rows, n_chan, n_dir, n_corr = model.shape
     n_out_dir = gain_list[active_term].shape[3]
@@ -222,7 +178,8 @@ def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
 
 
 def jhj_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
-                 weights, t_map_arr, f_map_arr, d_map_arr, active_term, mode):
+                 weights, t_map_arr, f_map_arr, d_map_arr, active_term,
+                 corr_mode, term_type):
 
     n_rows, n_chan, n_dir, n_corr = model.shape
     n_out_dir = gain_list[active_term].shape[3]
@@ -476,26 +433,7 @@ def jhj_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
     return jhj, jhr
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_update(jhj, jhr, mode):
-
-    return _compute_update(jhj, jhr, literally(mode))
-
-
-def _compute_update(jhj, jhr, mode):
-    pass
-
-
-@overload(_compute_update, inline='always')
-def _compute_update_impl(jhj, jhr, mode):
-
-    if mode.literal_value == "diag":
-        return update_diag
-    else:
-        return update_full
-
-
-def update_diag(jhj, jhr, mode):
+def update_diag(jhj, jhr, corr_mode, term_type):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
 
@@ -527,7 +465,7 @@ def update_diag(jhj, jhr, mode):
     return update
 
 
-def update_full(jhj, jhr, mode):
+def update_full(jhj, jhr, corr_mode, term_type):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
 

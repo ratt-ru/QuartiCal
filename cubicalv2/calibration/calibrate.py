@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from cubicalv2.calibration.solver import chain_solver, stat_fields
+from cubicalv2.calibration.solver import stat_fields, solver_wrapper
 from cubicalv2.kernels.generics import (compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_gain_stats_xds,
@@ -180,6 +180,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
         gain_list = []
         gain_flag_list = []
+        param_list = []
 
         # Create and populate xds for statisics at data resolution. Returns
         # some useful arrays required for future computations.
@@ -206,6 +207,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             atomic_t_int = getattr(opts, "{}_time_interval".format(term))
             atomic_f_int = getattr(opts, "{}_freq_interval".format(term))
             dd_term = getattr(opts, "{}_direction_dependent".format(term))
+            term_type = getattr(opts, "{}_type".format(term))
 
             # Number of time intervals per data chunk. If this is zero,
             # solution interval is the entire axis per chunk.
@@ -279,6 +281,23 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
             gain_flag_list.append(gain_flags)
 
+            # If this term in parameterised, we need to set up its parameter
+            # array. TODO: This probably needs to be more sophisticated. I am
+            # also tempted to move the creation of the gains into the solver.
+            # Creation of parameters could also be moved. Would need to pass
+            # in the shapes.
+
+            if term_type == "phase":
+                param_shape = gain.shape[:-1] + (1,) + gain.shape[-1:]
+                param_chunks = gain.chunks[:-1] + (1,) + gain.chunks[-1:]
+
+                gain_params = da.zeros(param_shape,
+                                       chunks=param_chunks,
+                                       dtype=gain.real.dtype,
+                                       name="gparams-" + uuid4().hex)
+
+                param_list.append(gain_params)
+
             # Generate a mapping between time at data resolution and time
             # intervals. The or handles the 0 (full axis) case.
 
@@ -345,7 +364,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # as we now have a blueprint for pulling values out of the solver
         # layer.
 
-        gain_list, solver_info = construct_solver(chain_solver,
+        gain_list, solver_info = construct_solver(solver_wrapper,
                                                   model_col,
                                                   data_col,
                                                   ant1_col,
@@ -356,7 +375,9 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                   d_map_arr,
                                                   mode,
                                                   gain_list,
-                                                  gain_flag_list)
+                                                  gain_flag_list,
+                                                  param_list,
+                                                  opts)
 
         # Info is still in limbo at this point - this can likely be entirely
         # replaced by modifying the solver constructor to pull out the

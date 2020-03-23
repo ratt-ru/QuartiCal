@@ -1,4 +1,5 @@
 from collections import namedtuple
 
 
-cmplx = namedtuple("cmplx", ("gains", "flags"))
+term_types = {"complex": namedtuple("cmplx", ("gains", "flags", "parms")),
+              "phase": namedtuple("phase", ("gains", "flags", "parms"))}

@@ -43,7 +43,7 @@ def _invert_impl(gain, inverse_gain, mode):
                 inverse_gain[..., 1] = 0
             else:
                 inverse_gain[..., 0] = 1/g00
-                inverse_gain[..., 3] = 1/g11
+                inverse_gain[..., 1] = 1/g11
 
         return _invert_impl
 
