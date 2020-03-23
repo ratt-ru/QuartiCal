@@ -28,11 +28,37 @@ def construct_solver(chain_solver,
                      t_map_arr,
                      f_map_arr,
                      d_map_arr,
-                     mode,
+                     corr_mode,
                      gain_list,
                      flag_list,
                      param_list,
                      opts):
+    """Constructs the dask graph for the solver layer.
+
+    This constructs a custom dask graph for the solver layer given the slew
+    of solver inputs. This is arguably the most important function in V2 and
+    should not be tampered with without a certain level of expertise with dask.
+
+    Args:
+        chain_solver: Solver funtion to be used.
+        model_col: dask.Array containing the model column.
+        data_col: dask.Array containing the data column.
+        ant1_col: dask.Array containing the first antenna column.
+        ant2_col: dask.Array containing the second antenna column.
+        wegith_col: dask.Array containing the weight column.
+        t_map_arr: dask.Array containing time mappings.
+        f_map_arr: dask.Array containing frequency mappings.
+        d_map_arr: dask.Array containing direction mappings.
+        corr_mode: A string indicating the correlation mode.
+        gain_list: A list of dask.Arrays corresponding to the gain terms.
+        flag_list: A list of dask.Arrays corresponding to the gain flags.
+        param_list: A list of dask.Arrays corresponding to parameterisations.
+        opts: A Namespace object containing global options.
+
+    Returns:
+        output_gain_list: A list of dask.Arrays containing the gains.
+        info_array: An dask.Array containing convergence info.
+    """
 
     # This is slightly ugly but work for now. Grab and faltten the keys of all
     # the inputs we intend to pass to the solver.
@@ -71,7 +97,7 @@ def construct_solver(chain_solver,
     tupler_dsks = []
     term_types = \
         [getattr(opts, "{}_type".format(t)) for t in opts.solver_gain_terms]
-    consumed_parms = 0
+    consumed_params = 0
 
     for ind in range(n_term):
 
@@ -82,7 +108,7 @@ def construct_solver(chain_solver,
 
         param_term = term_types[ind] != "complex"
 
-        term_param_keys = param_keys[consumed_parms] if param_term \
+        term_param_keys = param_keys[consumed_params] if param_term \
             else [None]*len(gain_keys[ind])
 
         tupler_dsk = {(tupler_name, gk[1], gk[2]):
@@ -91,7 +117,7 @@ def construct_solver(chain_solver,
                                             flag_keys[ind],
                                             term_param_keys)}
 
-        term_param_vals = param_list[consumed_parms] if param_term else ()
+        term_param_vals = param_list[consumed_params] if param_term else ()
         term_param_name = term_param_vals.name if param_term else ()
 
         # Add a tupler layer per gain with its dependencies.
@@ -100,7 +126,8 @@ def construct_solver(chain_solver,
                                    flag_list[ind].name,
                                    term_param_name}})
 
-        consumed_parms = consumed_parms + 1 if param_term else consumed_parms
+        if param_term:
+            consumed_params = consumed_params + 1
 
         tupler_dsks.append(list(tupler_dsk.keys()))
 
@@ -128,7 +155,7 @@ def construct_solver(chain_solver,
                  t_map_arr_keys[t],
                  f_map_arr_keys[f],
                  d_map_arr,
-                 mode,
+                 corr_mode,
                  *gain_inputs[ind])
 
     # Add the solver layer and its dependencies.
