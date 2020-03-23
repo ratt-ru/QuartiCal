@@ -31,7 +31,7 @@ def construct_solver(chain_solver,
                      mode,
                      gain_list,
                      flag_list,
-                     parm_list,
+                     param_list,
                      opts):
 
     # This is slightly ugly but work for now. Grab and faltten the keys of all
@@ -46,12 +46,12 @@ def construct_solver(chain_solver,
     f_map_arr_keys = list(flatten(f_map_arr.__dask_keys__()))
     gain_keys = [list(flatten(gain.__dask_keys__())) for gain in gain_list]
     flag_keys = [list(flatten(flag.__dask_keys__())) for flag in flag_list]
-    parm_keys = [list(flatten(parm.__dask_keys__())) for parm in parm_list]
+    param_keys = [list(flatten(parm.__dask_keys__())) for parm in param_list]
 
     # Tuple of all dasky inputs over which we will loop for establishing
     # dependencies.
     args = (model_col, data_col, ant1_col, ant2_col, weight_col,
-            t_map_arr, f_map_arr, *gain_list, *flag_list, *parm_list)
+            t_map_arr, f_map_arr, *gain_list, *flag_list, *param_list)
 
     # These should be guarateed to have the correct dimension in each chunking
     # axis. This is important for key matching.
@@ -77,26 +77,30 @@ def construct_solver(chain_solver,
 
         tupler_name = "tupler-{}-{}".format(ind, token)
 
-        pterm = term_types[ind] == "phase"
+        # For now assume that non-complex terms are parameterised. TODO: Make
+        # this behaviour a little neater.
 
-        p_keys = \
-            parm_keys[consumed_parms] if pterm else [None]*len(gain_keys[ind])
+        param_term = term_types[ind] != "complex"
+
+        term_param_keys = param_keys[consumed_parms] if param_term \
+            else [None]*len(gain_keys[ind])
 
         tupler_dsk = {(tupler_name, gk[1], gk[2]):
                       (tuplify, gk, fk, pk, term_types[ind])
                       for gk, fk, pk in zip(gain_keys[ind],
                                             flag_keys[ind],
-                                            p_keys)}
+                                            term_param_keys)}
 
-        p_vals = parm_list[consumed_parms] if pterm else ()
+        term_param_vals = param_list[consumed_parms] if param_term else ()
+        term_param_name = term_param_vals.name if param_term else ()
 
         # Add a tupler layer per gain with its dependencies.
         layers.update({tupler_name: tupler_dsk})
         deps.update({tupler_name: {gain_list[ind].name,
                                    flag_list[ind].name,
-                                   p_vals.name if pterm else ()}})
+                                   term_param_name}})
 
-        consumed_parms = consumed_parms + 1 if pterm else consumed_parms
+        consumed_parms = consumed_parms + 1 if param_term else consumed_parms
 
         tupler_dsks.append(list(tupler_dsk.keys()))
 
