@@ -35,7 +35,8 @@ def _compute_jhj_jhr_impl(model, gain_list, inverse_gain_list, residual, a1,
         if term_type.literal_value == "cmplx":
             return cmplx.jhj_jhr_full
         elif term_type.literal_value == "phase":
-            return phase.jhj_jhr_full
+            raise NotImplementedError("Phase-only gain not yet supported in "
+                                      "non-diagonal modes.")
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
@@ -61,5 +62,35 @@ def _compute_update_impl(jhj, jhr, corr_mode, term_type):
         if term_type.literal_value == "cmplx":
             return cmplx.update_full
         elif term_type.literal_value == "phase":
-            return phase.update_full
+            raise NotImplementedError("Phase-only gain not supported in "
+                                      "non-diagonal modes.")
 
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def finalize_update(update, params, gain, i_num, dd_term, corr_mode,
+                    term_type):
+
+    return _finalize_update(update, params, gain, i_num, dd_term, corr_mode,
+                            term_type)
+
+
+def _finalize_update(update, params, gain, i_num, dd_term, corr_mode,
+                     term_type):
+    pass
+
+
+@overload(_finalize_update, inline="always")
+def _finalize_update_impl(update, params, gain, i_num, dd_term, corr_mode,
+                          term_type):
+
+    if corr_mode.literal_value == "diag":
+        if term_type.literal_value == "cmplx":
+            return cmplx.finalize_full  # Diagonal case is no different.
+        elif term_type.literal_value == "phase":
+            return phase.finalize_diag
+    else:
+        if term_type.literal_value == "cmplx":
+            return cmplx.finalize_full
+        elif term_type.literal_value == "phase":
+            raise NotImplementedError("Phase-only gain not yet supported in "
+                                      "non-diagonal modes.")

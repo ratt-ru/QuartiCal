@@ -492,3 +492,13 @@ def update_full(jhj, jhr, corr_mode, term_type):
                     update[t, f, a, d, 3] = (jhr10*jhjinv01 + jhr11*jhjinv11)
 
     return update
+
+
+def finalize_full(update, params, gain, i_num, dd_term, corr_mode, term_type):
+
+    if dd_term:
+        gain[:] = gain[:] + update/2
+    elif i_num % 2 == 0:
+        gain[:] = update
+    else:
+        gain[:] = (gain[:] + update)/2

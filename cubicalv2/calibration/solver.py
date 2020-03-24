@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 from collections import namedtuple
 from numba import jit, literally
-from cubicalv2.kernels.kernel_dispatcher import compute_jhj_jhr, compute_update
+from cubicalv2.kernels.kernel_dispatcher import (compute_jhj_jhr,
+                                                 compute_update,
+                                                 finalize_update)
 from cubicalv2.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
@@ -80,18 +82,13 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                                 literally(corr_mode),
                                 literally(term_type))
 
-        # TODO: Make this bit less cludgy.
-
-        if params is not None:
-            phases = np.angle(gain_list[gain_ind])
-            phases += update/2
-            gain_list[gain_ind][:] = np.exp(1j*phases)
-        elif dd_term:
-            gain_list[gain_ind][:] = gain_list[gain_ind][:] + update/2
-        elif i % 2 == 0:
-            gain_list[gain_ind][:] = update
-        else:
-            gain_list[gain_ind][:] = (gain_list[gain_ind] + update)/2
+        finalize_update(update,
+                        params,
+                        gain_list[gain_ind],
+                        i,
+                        dd_term,
+                        literally(corr_mode),
+                        literally(term_type))
 
         # Check for gain convergence. TODO: This can be affected by the
         # weights. Currently unsure how or why, but using unity weights

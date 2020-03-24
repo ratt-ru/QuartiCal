@@ -505,3 +505,13 @@ def update_full(jhj, jhr, corr_mode, term_type):
                     update[t, f, a, d, 3] = (jhr10*jhjinv01 + jhr11*jhjinv11)
 
     return update
+
+
+def finalize_diag(update, params, gain, i_num, dd_term, corr_mode, term_type):
+
+    # This is hacky in the extreme. TODO: Fix the jhj/jhr/update code to
+    # understands the parameters axis. Also consider improving the
+    # exponentiation code as I suspect it is slow.
+
+    params[:] = params[:] + np.expand_dims(update, axis=4)/2
+    np.exp(1j*params[:, :, :, :, 0, :], gain)
