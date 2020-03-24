@@ -28,8 +28,6 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
         term_type = type(input_list[gain_ind]).__name__
 
-        #print("PRESOLVE")
-
         info_dict[gain_ind] = \
             chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                          d_map_arr, corr_mode, gain_list, gain_flag_list,
@@ -82,8 +80,7 @@ def chain_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                                 literally(corr_mode),
                                 literally(term_type))
 
-        # TODO: Make this bit less cludgy. Figure out why using an infinite
-        # frequency solution interval makes the diagonal code crash and burn.
+        # TODO: Make this bit less cludgy.
 
         if params is not None:
             phases = np.angle(gain_list[gain_ind])
