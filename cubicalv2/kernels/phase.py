@@ -13,12 +13,15 @@ def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
     cmplx_dtype = gain_list[active_term].dtype
     real_dtype = gain_list[active_term].real.dtype
 
-    jhr = np.zeros_like(gain_list[active_term], dtype=real_dtype)
-    jhj = np.zeros_like(gain_list[active_term], dtype=real_dtype)
+    n_tint, n_fint, n_ant, n_gdir, _ = gain_list[active_term].shape
+    n_param = 1  # One phase per antenna.
+
+    jhj = np.zeros((n_tint, n_fint, n_ant, n_gdir, n_param, n_corr),
+                   dtype=real_dtype)
+    jhr = np.zeros((n_tint, n_fint, n_ant, n_gdir, n_param, n_corr),
+                   dtype=real_dtype)
 
     n_gains = len(gain_list)
-
-    n_tint = jhr.shape[0]
 
     inactive_terms = list(range(n_gains))
     inactive_terms.pop(active_term)
@@ -102,8 +105,8 @@ def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
                     ga00 = -1j*ga[0].conjugate()
                     ga11 = -1j*ga[1].conjugate()
 
-                    jhr[t_m, f_m, a1_m, out_d, 0] += (ga00*r00*jh00).real
-                    jhr[t_m, f_m, a1_m, out_d, 1] += (ga11*r11*jh11).real
+                    jhr[t_m, f_m, a1_m, out_d, 0, 0] += (ga00*r00*jh00).real
+                    jhr[t_m, f_m, a1_m, out_d, 0, 1] += (ga11*r11*jh11).real
 
                     tmp_jh_p[out_d, 0] += jh00
                     tmp_jh_p[out_d, 1] += jh11
@@ -148,8 +151,8 @@ def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
                     gb00 = -1j*gb[0].conjugate()
                     gb11 = -1j*gb[1].conjugate()
 
-                    jhr[t_m, f_m, a2_m, out_d, 0] += (gb00*rh00*jh00).real
-                    jhr[t_m, f_m, a2_m, out_d, 1] += (gb11*rh11*jh11).real
+                    jhr[t_m, f_m, a2_m, out_d, 0, 0] += (gb00*rh00*jh00).real
+                    jhr[t_m, f_m, a2_m, out_d, 0, 1] += (gb11*rh11*jh11).real
 
                     tmp_jh_q[out_d, 0] += jh00
                     tmp_jh_q[out_d, 1] += jh11
@@ -162,8 +165,8 @@ def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
                     j00 = jh00.conjugate()
                     j11 = jh11.conjugate()
 
-                    jhj[t_m, f_m, a1_m, d, 0] += (j00*w00*jh00).real
-                    jhj[t_m, f_m, a1_m, d, 1] += (j11*w11*jh11).real
+                    jhj[t_m, f_m, a1_m, d, 0, 0] += (j00*w00*jh00).real
+                    jhj[t_m, f_m, a1_m, d, 0, 1] += (j11*w11*jh11).real
 
                     jh00 = tmp_jh_q[d, 0]
                     jh11 = tmp_jh_q[d, 1]
@@ -171,15 +174,15 @@ def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
                     j00 = jh00.conjugate()
                     j11 = jh11.conjugate()
 
-                    jhj[t_m, f_m, a2_m, d, 0] += (j00*w00*jh00).real
-                    jhj[t_m, f_m, a2_m, d, 1] += (j11*w11*jh11).real
+                    jhj[t_m, f_m, a2_m, d, 0, 0] += (j00*w00*jh00).real
+                    jhj[t_m, f_m, a2_m, d, 0, 1] += (j11*w11*jh11).real
 
     return jhj, jhr
 
 
 def update_diag(jhj, jhr, corr_mode, term_type):
 
-    n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
+    n_tint, n_fint, n_ant, n_dir, n_param, n_corr = jhj.shape
 
     update = np.empty_like(jhr)
 
@@ -188,8 +191,8 @@ def update_diag(jhj, jhr, corr_mode, term_type):
             for a in range(n_ant):
                 for d in range(n_dir):
 
-                    jhj00 = jhj[t, f, a, d, 0]
-                    jhj11 = jhj[t, f, a, d, 1]
+                    jhj00 = jhj[t, f, a, d, 0, 0]
+                    jhj11 = jhj[t, f, a, d, 0, 1]
 
                     det = (jhj00*jhj11)
 
@@ -200,20 +203,17 @@ def update_diag(jhj, jhr, corr_mode, term_type):
                         jhjinv00 = 1/jhj00
                         jhjinv11 = 1/jhj11
 
-                    jhr00 = jhr[t, f, a, d, 0]
-                    jhr11 = jhr[t, f, a, d, 1]
+                    jhr00 = jhr[t, f, a, d, 0, 0]
+                    jhr11 = jhr[t, f, a, d, 0, 1]
 
-                    update[t, f, a, d, 0] = (jhr00*jhjinv00)
-                    update[t, f, a, d, 1] = (jhr11*jhjinv11)
+                    update[t, f, a, d, 0, 0] = (jhr00*jhjinv00)
+                    update[t, f, a, d, 0, 1] = (jhr11*jhjinv11)
 
     return update
 
 
 def finalize_diag(update, params, gain, i_num, dd_term, corr_mode, term_type):
 
-    # This is hacky in the extreme. TODO: Fix the jhj/jhr/update code to
-    # understands the parameters axis. Also consider improving the
-    # exponentiation code as I suspect it is slow.
+    params[:] = params[:] + update/2
 
-    params[:] = params[:] + np.expand_dims(update, axis=4)/2
-    np.exp(1j*params[:, :, :, :, 0, :], gain)
+    gain[:] = np.exp(1j*params[:, :, :, :, 0, :])  # This may be a bit slow.
