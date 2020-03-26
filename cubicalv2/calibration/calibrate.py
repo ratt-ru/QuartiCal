@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from cubicalv2.calibration.solver import chain_solver, stat_fields
-from cubicalv2.kernels.gjones_chain import update_func_factory, residual_full
+from cubicalv2.calibration.solver import stat_fields
+from cubicalv2.kernels.generics import (compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_gain_stats_xds,
                                              assign_post_solve_chisq,
@@ -18,15 +18,14 @@ from cubicalv2.weights.weights import initialize_weights
 from cubicalv2.utils.dask import blockwise_unique
 from itertools import chain, zip_longest
 from uuid import uuid4
-from operator import getitem
 from loguru import logger  # noqa
 
 
 # The following supresses the egregious numba pending deprecation warnings.
 # TODO: Make sure that the code doesn't break when they finally decprecate
 # reflected lists.
-from numba.errors import NumbaDeprecationWarning
-from numba.errors import NumbaPendingDeprecationWarning
+from numba.core.errors import NumbaDeprecationWarning
+from numba.core.errors import NumbaPendingDeprecationWarning
 import warnings
 
 warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
@@ -47,13 +46,13 @@ slice_scheme = {1: {"scalar": slice(None)},
                     "scalar": slice(0, 1)}}
 
 
-def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
+def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr, mode,
                   *gains):
 
     gain_list = [g for g in gains]
 
-    return residual_full(data, model, gain_list, a1, a2, t_map_arr,
-                         f_map_arr, d_map_arr)
+    return compute_residual(data, model, gain_list, a1, a2, t_map_arr,
+                            f_map_arr, d_map_arr, mode)
 
 
 def initialize_gain(shape):
@@ -61,7 +60,11 @@ def initialize_gain(shape):
     dtype = np.complex128
 
     gain = np.zeros(shape[0], dtype=dtype)
-    gain[..., ::3] = 1
+
+    if shape[0][-1] == 4:
+        gain[..., ::3] = 1
+    else:
+        gain[..., :] = 1
 
     return gain
 
@@ -93,6 +96,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
     corr_slice = slice_scheme[opts._ms_ncorr].get(opts.solver_mode, None)
 
+    mode = opts.input_ms_correlation_mode
+
     if not isinstance(corr_slice, slice):
         raise ValueError("{} solver mode incompatible with measurement set "
                          "containing {} correlations.".format(
@@ -111,22 +116,22 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # Unpack the data on the xds into variables with understandable names.
         # We create copies of arrays we intend to mutate as otherwise we end
         # up implicitly updating the xds.
-        data_col = xds.DATA.data[..., corr_slice].copy()
-        model_col = xds.MODEL_DATA.data[..., corr_slice]
+        data_col = xds.DATA.data.copy()
+        model_col = xds.MODEL_DATA.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         time_col = xds.TIME.data
-        flag_col = xds.FLAG.data[..., corr_slice]
-        flag_row_col = xds.FLAG_ROW.data[..., corr_slice]
+        flag_col = xds.FLAG.data
+        flag_row_col = xds.FLAG_ROW.data
 
         # We immediately apply the bitmask so that we only have the bitflags
         # we intend to use.
-        bitflag_col = xds.BITFLAG.data[..., corr_slice] & bitmask
-        bitflag_row_col = xds.BITFLAG_ROW.data[..., corr_slice] & bitmask
+        bitflag_col = xds.BITFLAG.data & bitmask
+        bitflag_row_col = xds.BITFLAG_ROW.data & bitmask
 
         utime_chunks = xds.UTIME_CHUNKS
 
-        weight_col = initialize_weights(xds, data_col, corr_slice, opts)
+        weight_col = initialize_weights(xds, data_col, opts)
 
         fullres_bitflags = initialise_fullres_bitflags(data_col,
                                                        weight_col,
@@ -175,6 +180,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
         gain_list = []
         gain_flag_list = []
+        param_list = []
 
         # Create and populate xds for statisics at data resolution. Returns
         # some useful arrays required for future computations.
@@ -201,6 +207,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             atomic_t_int = getattr(opts, "{}_time_interval".format(term))
             atomic_f_int = getattr(opts, "{}_freq_interval".format(term))
             dd_term = getattr(opts, "{}_direction_dependent".format(term))
+            term_type = getattr(opts, "{}_type".format(term))
 
             # Number of time intervals per data chunk. If this is zero,
             # solution interval is the entire axis per chunk.
@@ -245,7 +252,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 f_int_per_chunk, ("chan",),
                 n_ant, None,
                 n_dir if dd_term else 1, None,
-                opts._ms_ncorr, None,
+                n_corr, None,
                 dtype=np.int32)
 
             # Note that while we technically have a frequency chunk per row
@@ -257,7 +264,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 dtype=np.complex128,
                 new_axes={"ant": n_ant,
                           "dir": n_dir if dd_term else 1,
-                          "corr": opts._ms_ncorr},
+                          "corr": n_corr},
                 adjust_chunks={"rowlike": ti_chunks[term],
                                "chan": fi_chunks[term]})
 
@@ -273,6 +280,23 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                   name="gflags-" + uuid4().hex)
 
             gain_flag_list.append(gain_flags)
+
+            # If this term in parameterised, we need to set up its parameter
+            # array. TODO: This probably needs to be more sophisticated. I am
+            # also tempted to move the creation of the gains into the solver.
+            # Creation of parameters could also be moved. Would need to pass
+            # in the shapes.
+
+            if term_type == "phase":
+                param_shape = gain.shape[:-1] + (1,) + gain.shape[-1:]
+                param_chunks = gain.chunks[:-1] + (1,) + gain.chunks[-1:]
+
+                gain_params = da.zeros(param_shape,
+                                       chunks=param_chunks,
+                                       dtype=gain.real.dtype,
+                                       name="gparams-" + uuid4().hex)
+
+                param_list.append(gain_params)
 
             # Generate a mapping between time at data resolution and time
             # intervals. The or handles the 0 (full axis) case.
@@ -335,19 +359,12 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         f_map_arr = da.stack(f_maps, axis=1).rechunk({1: n_term})
         d_map_arr = np.array(d_maps, dtype=np.uint32)
 
-        # We use a factory function to produce appropriate update functions
-        # for use in the solver. TODO: Investigate using generated jit for this
-        # purpose.
-        compute_jhj_and_jhr, compute_update = \
-            update_func_factory(opts.solver_mode)
-
         # This has been fixed - this now constructs a custom graph which
         # preserves gain chunking. It also somewhat simplifies future work
         # as we now have a blueprint for pulling values out of the solver
         # layer.
 
-        gain_list, solver_info = construct_solver(chain_solver,
-                                                  model_col,
+        gain_list, solver_info = construct_solver(model_col,
                                                   data_col,
                                                   ant1_col,
                                                   ant2_col,
@@ -355,10 +372,11 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                   t_map_arr,
                                                   f_map_arr,
                                                   d_map_arr,
-                                                  compute_jhj_and_jhr,
-                                                  compute_update,
+                                                  mode,
                                                   gain_list,
-                                                  gain_flag_list)
+                                                  gain_flag_list,
+                                                  param_list,
+                                                  opts)
 
         # Info is still in limbo at this point - this can likely be entirely
         # replaced by modifying the solver constructor to pull out the
@@ -404,6 +422,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             t_map_arr, ("rowlike", "term"),
             f_map_arr, ("chan", "term"),
             d_map_arr, None,
+            mode, None,
             *gain_list,
             dtype=data_col.dtype,
             align_arrays=False,

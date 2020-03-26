@@ -42,7 +42,7 @@ def execute():
     # Reads the measurement set using the relavant configuration from opts.
     ms_xds, col_kwrds = read_ms(opts)
 
-    # ms_xds = ms_xds[:2]
+    # ms_xds = ms_xds[:4]
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
@@ -83,7 +83,7 @@ def execute():
         dask.compute([dask.delayed(tuple)(x) for x in outputs],
                      num_workers=opts.parallel_nthread,
                      optimize_graph=True,)
-                     # scheduler="threads") # noqa
+                    #  scheduler="single-threaded") # noqa
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
     # This code can be used to save gain xarray datasets imeediately. This is

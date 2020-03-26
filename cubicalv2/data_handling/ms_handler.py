@@ -77,7 +77,7 @@ def read_ms(opts):
                 opts._phase_dir[0], opts._phase_dir[1])
 
     # Check whether the BITFLAG column exists - if not, we will need to add it
-    # or ignore it. TODO: Figure out how to prevent this thowing a message 
+    # or ignore it. TODO: Figure out how to prevent this thowing a message
     # wall.
 
     try:
@@ -166,14 +166,13 @@ def read_ms(opts):
             cum_utime_per_chunk = [0] + cum_utime_per_chunk[:-1].tolist()
 
         else:
+
             n_utimes = len(utimes)
-            tc = opts.input_ms_time_chunk
+            tc = opts.input_ms_time_chunk or n_utimes
             n_full = n_utimes//tc
             remainder = [(n_utimes - n_full*tc)] if n_utimes % tc else []
             utime_per_chunk = [tc]*n_full + remainder
-            cum_utime_per_chunk = list(range(0,
-                                             len(utimes),
-                                             opts.input_ms_time_chunk))
+            cum_utime_per_chunk = list(range(0, n_utimes, tc))
 
         chunk_spec_per_xds.append(tuple(utime_per_chunk))
 
@@ -208,6 +207,12 @@ def read_ms(opts):
         column_keywords=True,
         table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')}}])
 
+    # Add coordinates to the xarray datasets - this becomes immensely useful
+    # down the line.
+    data_xds = [xds.assign_coords({"corr": np.arange(opts._ms_ncorr),
+                                   "chan": np.arange(n_chan)})
+                for xds in data_xds]
+
     # Keeping here for posterity - frequency chunking in daskms==0.2.3 is
     # broken but this can be used to kludge it. Note that chunks_per_xds
     # also needs to be changed. TODO: Revert this and chunks_per_xds above
@@ -232,6 +237,13 @@ def read_ms(opts):
     # int32. TODO: Check whether we can write it as int16 to save space.
 
     updated_kwrds = update_kwrds(col_kwrds, opts)
+
+    # We may only want to use some of the input correlation values. xarray
+    # has a neat syntax for this. #TODO: This needs to depend on the number of
+    # correlations actually present in the MS/on the xds.
+
+    if opts.input_ms_correlation_mode == "diag":
+        data_xds = [xds.sel(corr=[0, 3]) for xds in data_xds]
 
     # The use of name below guaratees that dask produces unique arrays and
     # avoids accidental aliasing.
@@ -283,6 +295,15 @@ def read_ms(opts):
 def write_columns(xds_list, col_kwrds, opts):
 
     import daskms.descriptors.ratt_ms  # noqa
+
+    # If we selected some correlations, we need to be sure that whatever we
+    # attempt to write back to the MS is still consistent. This does this using
+    # the magic of reindex. TODO: Check whether it would be better to let
+    # dask-ms handle this.
+    if opts._ms_ncorr != xds_list[0].corr.size:
+        xds_list = \
+            [xds.reindex({"corr": np.arange(opts._ms_ncorr)}, fill_value=0)
+             for xds in xds_list]
 
     output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
     output_kwrds = {cn: col_kwrds.get(cn, {}) for cn in output_cols}

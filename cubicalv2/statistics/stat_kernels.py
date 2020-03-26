@@ -1,7 +1,7 @@
 import numpy as np
 from numba import jit, prange
 from numba.extending import overload
-from numba.types import NoneType
+from numba.core.types import NoneType
 
 
 @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
