@@ -1,11 +1,114 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange
+from numba import jit, prange, literally
+from numba.extending import overload
+from cubicalv2.kernels.generics import (invert_gains,
+                                        compute_residual,
+                                        compute_convergence)
+from collections import namedtuple
+
+
+# This can be done without a named tuple now. TODO: Add unpacking to
+# constructor.
+stat_fields = {"conv_iters": np.int64,
+               "conv_perc": np.float64}
+
+term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def phase_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
+                 d_map_arr, corr_mode, gain_list, gain_flag_list,
+                 inverse_gain_list, gain_ind, params):
+
+    n_tint, t_fint, n_ant, n_dir, n_corr = gain_list[gain_ind].shape
+
+    invert_gains(gain_list, inverse_gain_list, literally(corr_mode))
+
+    dd_term = n_dir > 1
+
+    last_gain = gain_list[gain_ind].copy()
+
+    cnv_perc = 0.
+
+    for i in range(20):
+
+        if dd_term:
+            residual = compute_residual(data, model, gain_list, a1, a2,
+                                        t_map_arr, f_map_arr, d_map_arr,
+                                        literally(corr_mode))
+        else:
+            residual = data
+
+        jhj, jhr = compute_jhj_jhr(model,
+                                   gain_list,
+                                   inverse_gain_list,
+                                   residual,
+                                   a1,
+                                   a2,
+                                   weights,
+                                   t_map_arr,
+                                   f_map_arr,
+                                   d_map_arr,
+                                   gain_ind,
+                                   literally(corr_mode))
+
+        update = compute_update(jhj,
+                                jhr,
+                                literally(corr_mode))
+
+        finalize_update(update,
+                        params,
+                        gain_list[gain_ind],
+                        i,
+                        dd_term,
+                        literally(corr_mode))
+
+        # Check for gain convergence. TODO: This can be affected by the
+        # weights. Currently unsure how or why, but using unity weights
+        # leads to monotonic convergence in all solution intervals.
+
+        cnv_perc = compute_convergence(gain_list[gain_ind][:], last_gain)
+
+        last_gain[:] = gain_list[gain_ind][:]
+
+        if cnv_perc > 0.99:
+            break
+
+    return term_conv_info(i, cnv_perc)
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def compute_jhj_jhr(model, gain_list, inverse_gain_list, residual, a1, a2,
+                    weights, t_map_arr, f_map_arr, d_map_arr, active_term,
+                    corr_mode):
+
+    return _compute_jhj_jhr(model, gain_list, inverse_gain_list, residual, a1,
+                            a2, weights, t_map_arr, f_map_arr, d_map_arr,
+                            active_term, literally(corr_mode))
+
+
+def _compute_jhj_jhr(model, gain_list, inverse_gain_list, residual, a1, a2,
+                     weights, t_map_arr, f_map_arr, d_map_arr, active_term,
+                     corr_mode):
+    pass
+
+
+@overload(_compute_jhj_jhr, inline="always")
+def _compute_jhj_jhr_impl(model, gain_list, inverse_gain_list, residual, a1,
+                          a2, weights, t_map_arr, f_map_arr, d_map_arr,
+                          active_term, corr_mode):
+
+    if corr_mode.literal_value == "diag":
+        return jhj_jhr_diag
+    else:
+        raise NotImplementedError("Phase-only gain not yet supported in "
+                                  "non-diagonal modes.")
 
 
 def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
                  weights, t_map_arr, f_map_arr, d_map_arr, active_term,
-                 corr_mode, term_type):
+                 corr_mode):
 
     n_rows, n_chan, n_dir, n_corr = model.shape
     n_out_dir = gain_list[active_term].shape[3]
@@ -180,7 +283,27 @@ def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
     return jhj, jhr
 
 
-def update_diag(jhj, jhr, corr_mode, term_type):
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def compute_update(jhj, jhr, corr_mode):
+
+    return _compute_update(jhj, jhr, literally(corr_mode))
+
+
+def _compute_update(jhj, jhr, corr_mode):
+    pass
+
+
+@overload(_compute_update, inline="always")
+def _compute_update_impl(jhj, jhr, corr_mode):
+
+    if corr_mode.literal_value == "diag":
+        return update_diag
+    else:
+        raise NotImplementedError("Phase-only gain not supported in "
+                                  "non-diagonal modes.")
+
+
+def update_diag(jhj, jhr, corr_mode):
 
     n_tint, n_fint, n_ant, n_dir, n_param, n_corr = jhj.shape
 
@@ -212,7 +335,27 @@ def update_diag(jhj, jhr, corr_mode, term_type):
     return update
 
 
-def finalize_diag(update, params, gain, i_num, dd_term, corr_mode, term_type):
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def finalize_update(update, params, gain, i_num, dd_term, corr_mode):
+
+    return _finalize_update(update, params, gain, i_num, dd_term, corr_mode)
+
+
+def _finalize_update(update, params, gain, i_num, dd_term, corr_mode):
+    pass
+
+
+@overload(_finalize_update, inline="always")
+def _finalize_update_impl(update, params, gain, i_num, dd_term, corr_mode):
+
+    if corr_mode.literal_value == "diag":
+        return finalize_diag
+    else:
+        raise NotImplementedError("Phase-only gain not yet supported in "
+                                  "non-diagonal modes.")
+
+
+def finalize_diag(update, params, gain, i_num, dd_term, corr_mode):
 
     params[:] = params[:] + update/2
 
