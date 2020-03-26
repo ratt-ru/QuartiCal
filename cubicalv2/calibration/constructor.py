@@ -4,6 +4,7 @@ from dask.array.core import HighLevelGraph
 from operator import getitem
 from dask.base import tokenize
 from cubicalv2.calibration.gain_types import term_types
+from cubicalv2.calibration.solver import solver_wrapper
 
 
 def flatten(l):
@@ -19,8 +20,7 @@ def tuplify(gains, flags, parms, term_type):
     return term_types[term_type](gains, flags, parms)
 
 
-def construct_solver(chain_solver,
-                     model_col,
+def construct_solver(model_col,
                      data_col,
                      ant1_col,
                      ant2_col,
@@ -40,7 +40,6 @@ def construct_solver(chain_solver,
     should not be tampered with without a certain level of expertise with dask.
 
     Args:
-        chain_solver: Solver funtion to be used.
         model_col: dask.Array containing the model column.
         data_col: dask.Array containing the data column.
         ant1_col: dask.Array containing the first antenna column.
@@ -146,7 +145,7 @@ def construct_solver(chain_solver,
 
             # Set up the per-chunk solves. Note how keys are assosciated.
             solver_dsk[(solver_name, t, f,)] = \
-                (chain_solver,
+                (solver_wrapper,
                  model_col_keys[ind],
                  data_col_keys[ind],
                  ant1_col_keys[t],

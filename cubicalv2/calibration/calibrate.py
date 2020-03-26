@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from cubicalv2.calibration.solver import stat_fields, solver_wrapper
+from cubicalv2.calibration.solver import stat_fields
 from cubicalv2.kernels.generics import (compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_gain_stats_xds,
@@ -364,8 +364,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # as we now have a blueprint for pulling values out of the solver
         # layer.
 
-        gain_list, solver_info = construct_solver(solver_wrapper,
-                                                  model_col,
+        gain_list, solver_info = construct_solver(model_col,
                                                   data_col,
                                                   ant1_col,
                                                   ant2_col,
