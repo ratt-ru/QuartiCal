@@ -19,17 +19,21 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                    d_map_arr, corr_mode, gain_list, gain_flag_list,
-                   inverse_gain_list, gain_ind, params):
+                   inverse_gain_list, active_term, params):
 
-    n_tint, t_fint, n_ant, n_dir, n_corr = gain_list[gain_ind].shape
+    n_tint, t_fint, n_ant, n_dir, n_corr = gain_list[active_term].shape
 
     invert_gains(gain_list, inverse_gain_list, literally(corr_mode))
 
     dd_term = n_dir > 1
 
-    last_gain = gain_list[gain_ind].copy()
+    last_gain = gain_list[active_term].copy()
 
     cnv_perc = 0.
+
+    jhj = np.empty_like(gain_list[active_term])
+    jhr = np.empty_like(gain_list[active_term])
+    update = np.empty_like(gain_list[active_term])
 
     for i in range(20):
 
@@ -40,26 +44,29 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         else:
             residual = data
 
-        jhj, jhr = compute_jhj_jhr(model,
-                                   gain_list,
-                                   inverse_gain_list,
-                                   residual,
-                                   a1,
-                                   a2,
-                                   weights,
-                                   t_map_arr,
-                                   f_map_arr,
-                                   d_map_arr,
-                                   gain_ind,
-                                   literally(corr_mode))
+        compute_jhj_jhr(jhj,
+                        jhr,
+                        model,
+                        gain_list,
+                        inverse_gain_list,
+                        residual,
+                        a1,
+                        a2,
+                        weights,
+                        t_map_arr,
+                        f_map_arr,
+                        d_map_arr,
+                        active_term,
+                        literally(corr_mode))
 
-        update = compute_update(jhj,
-                                jhr,
-                                literally(corr_mode))
+        compute_update(update,
+                       jhj,
+                       jhr,
+                       literally(corr_mode))
 
         finalize_update(update,
                         params,
-                        gain_list[gain_ind],
+                        gain_list[active_term],
                         i,
                         dd_term,
                         literally(corr_mode))
@@ -68,9 +75,9 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         # weights. Currently unsure how or why, but using unity weights
         # leads to monotonic convergence in all solution intervals.
 
-        cnv_perc = compute_convergence(gain_list[gain_ind][:], last_gain)
+        cnv_perc = compute_convergence(gain_list[active_term][:], last_gain)
 
-        last_gain[:] = gain_list[gain_ind][:]
+        last_gain[:] = gain_list[active_term][:]
 
         if cnv_perc > 0.99:
             break
@@ -79,25 +86,25 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_jhj_jhr(model, gain_list, inverse_gain_list, residual, a1, a2,
-                    weights, t_map_arr, f_map_arr, d_map_arr, active_term,
-                    corr_mode):
+def compute_jhj_jhr(jhj, jhr, model, gain_list, inverse_gain_list, residual,
+                    a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
+                    active_term, corr_mode):
 
-    return _compute_jhj_jhr(model, gain_list, inverse_gain_list, residual, a1,
-                            a2, weights, t_map_arr, f_map_arr, d_map_arr,
-                            active_term, literally(corr_mode))
+    return _compute_jhj_jhr(jhj, jhr, model, gain_list, inverse_gain_list,
+                            residual, a1, a2, weights, t_map_arr, f_map_arr,
+                            d_map_arr, active_term, literally(corr_mode))
 
 
-def _compute_jhj_jhr(model, gain_list, inverse_gain_list, residual, a1, a2,
-                     weights, t_map_arr, f_map_arr, d_map_arr, active_term,
-                     corr_mode):
+def _compute_jhj_jhr(jhj, jhr, model, gain_list, inverse_gain_list, residual,
+                     a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
+                     active_term, corr_mode):
     pass
 
 
 @overload(_compute_jhj_jhr, inline="always")
-def _compute_jhj_jhr_impl(model, gain_list, inverse_gain_list, residual, a1,
-                          a2, weights, t_map_arr, f_map_arr, d_map_arr,
-                          active_term, corr_mode):
+def _compute_jhj_jhr_impl(jhj, jhr, model, gain_list, inverse_gain_list,
+                          residual, a1, a2, weights, t_map_arr, f_map_arr,
+                          d_map_arr, active_term, corr_mode):
 
     if corr_mode.literal_value == "diag":
         return jhj_jhr_diag
@@ -105,15 +112,15 @@ def _compute_jhj_jhr_impl(model, gain_list, inverse_gain_list, residual, a1,
         return jhj_jhr_full
 
 
-def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
-                 weights, t_map_arr, f_map_arr, d_map_arr, active_term,
+def jhj_jhr_diag(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
+                 a2, weights, t_map_arr, f_map_arr, d_map_arr, active_term,
                  corr_mode):
 
     n_rows, n_chan, n_dir, n_corr = model.shape
     n_out_dir = gain_list[active_term].shape[3]
 
-    jhr = np.zeros_like(gain_list[active_term])
-    jhj = np.zeros_like(gain_list[active_term])
+    jhj[:] = 0
+    jhr[:] = 0
 
     n_gains = len(gain_list)
 
@@ -263,18 +270,18 @@ def jhj_jhr_diag(model, gain_list, inverse_gain_list, residual, a1, a2,
                     jhj[t_m, f_m, a2_m, d, 0] += (j00*w00*jh00)
                     jhj[t_m, f_m, a2_m, d, 1] += (j11*w11*jh11)
 
-    return jhj, jhr
+    return
 
 
-def jhj_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
-                 weights, t_map_arr, f_map_arr, d_map_arr, active_term,
+def jhj_jhr_full(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
+                 a2, weights, t_map_arr, f_map_arr, d_map_arr, active_term,
                  corr_mode):
 
     n_rows, n_chan, n_dir, n_corr = model.shape
     n_out_dir = gain_list[active_term].shape[3]
 
-    jhr = np.zeros_like(gain_list[active_term])
-    jhj = np.zeros_like(gain_list[active_term])
+    jhj[:] = 0
+    jhr[:] = 0
 
     n_gains = len(gain_list)
 
@@ -519,21 +526,21 @@ def jhj_jhr_full(model, gain_list, inverse_gain_list, residual, a1, a2,
                     jhj[t_m, f_m, a2_m, d, 2] += (j10*w0*jh00 + j11*w3*jh10)
                     jhj[t_m, f_m, a2_m, d, 3] += (j10*w0*jh01 + j11*w3*jh11)
 
-    return jhj, jhr
+    return
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_update(jhj, jhr, corr_mode):
+def compute_update(update, jhj, jhr, corr_mode):
 
-    return _compute_update(jhj, jhr, literally(corr_mode))
+    return _compute_update(update, jhj, jhr, literally(corr_mode))
 
 
-def _compute_update(jhj, jhr, corr_mode):
+def _compute_update(update, jhj, jhr, corr_mode):
     pass
 
 
 @overload(_compute_update, inline="always")
-def _compute_update_impl(jhj, jhr, corr_mode):
+def _compute_update_impl(update, jhj, jhr, corr_mode):
 
     if corr_mode.literal_value == "diag":
         return update_diag
@@ -541,11 +548,9 @@ def _compute_update_impl(jhj, jhr, corr_mode):
         return update_full
 
 
-def update_diag(jhj, jhr, corr_mode):
+def update_diag(update, jhj, jhr, corr_mode):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
-
-    update = np.empty_like(jhr)
 
     for t in range(n_tint):
         for f in range(n_fint):
@@ -570,14 +575,12 @@ def update_diag(jhj, jhr, corr_mode):
                     update[t, f, a, d, 0] = (jhr00*jhjinv00)
                     update[t, f, a, d, 1] = (jhr11*jhjinv11)
 
-    return update
+    return
 
 
-def update_full(jhj, jhr, corr_mode):
+def update_full(update, jhj, jhr, corr_mode):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
-
-    update = np.empty_like(jhr)
 
     for t in range(n_tint):
         for f in range(n_fint):
@@ -612,7 +615,7 @@ def update_full(jhj, jhr, corr_mode):
                     update[t, f, a, d, 2] = (jhr10*jhjinv00 + jhr11*jhjinv10)
                     update[t, f, a, d, 3] = (jhr10*jhjinv01 + jhr11*jhjinv11)
 
-    return update
+    return
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
