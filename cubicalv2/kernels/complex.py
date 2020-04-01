@@ -18,27 +18,27 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, gain_list, gain_flag_list,
-                   inverse_gain_list, active_term, params):
+                   d_map_arr, corr_mode, active_term, inverse_gain_list,
+                   gains, flags):
 
-    n_tint, t_fint, n_ant, n_dir, n_corr = gain_list[active_term].shape
+    n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
-    invert_gains(gain_list, inverse_gain_list, literally(corr_mode))
+    invert_gains(gains, inverse_gain_list, literally(corr_mode))
 
     dd_term = n_dir > 1
 
-    last_gain = gain_list[active_term].copy()
+    last_gain = gains[active_term].copy()
 
     cnv_perc = 0.
 
-    jhj = np.empty_like(gain_list[active_term])
-    jhr = np.empty_like(gain_list[active_term])
-    update = np.empty_like(gain_list[active_term])
+    jhj = np.empty_like(gains[active_term])
+    jhr = np.empty_like(gains[active_term])
+    update = np.empty_like(gains[active_term])
 
     for i in range(20):
 
         if dd_term:
-            residual = compute_residual(data, model, gain_list, a1, a2,
+            residual = compute_residual(data, model, gains, a1, a2,
                                         t_map_arr, f_map_arr, d_map_arr,
                                         literally(corr_mode))
         else:
@@ -47,7 +47,7 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         compute_jhj_jhr(jhj,
                         jhr,
                         model,
-                        gain_list,
+                        gains,
                         inverse_gain_list,
                         residual,
                         a1,
@@ -65,8 +65,7 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                        literally(corr_mode))
 
         finalize_update(update,
-                        params,
-                        gain_list[active_term],
+                        gains[active_term],
                         i,
                         dd_term,
                         literally(corr_mode))
@@ -75,9 +74,9 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         # weights. Currently unsure how or why, but using unity weights
         # leads to monotonic convergence in all solution intervals.
 
-        cnv_perc = compute_convergence(gain_list[active_term][:], last_gain)
+        cnv_perc = compute_convergence(gains[active_term][:], last_gain)
 
-        last_gain[:] = gain_list[active_term][:]
+        last_gain[:] = gains[active_term][:]
 
         if cnv_perc > 0.99:
             break
@@ -86,23 +85,23 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_jhj_jhr(jhj, jhr, model, gain_list, inverse_gain_list, residual,
+def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
                     a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
                     active_term, corr_mode):
 
-    return _compute_jhj_jhr(jhj, jhr, model, gain_list, inverse_gain_list,
+    return _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list,
                             residual, a1, a2, weights, t_map_arr, f_map_arr,
                             d_map_arr, active_term, literally(corr_mode))
 
 
-def _compute_jhj_jhr(jhj, jhr, model, gain_list, inverse_gain_list, residual,
+def _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
                      a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
                      active_term, corr_mode):
     pass
 
 
 @overload(_compute_jhj_jhr, inline="always")
-def _compute_jhj_jhr_impl(jhj, jhr, model, gain_list, inverse_gain_list,
+def _compute_jhj_jhr_impl(jhj, jhr, model, gains, inverse_gain_list,
                           residual, a1, a2, weights, t_map_arr, f_map_arr,
                           d_map_arr, active_term, corr_mode):
 
@@ -112,17 +111,17 @@ def _compute_jhj_jhr_impl(jhj, jhr, model, gain_list, inverse_gain_list,
         return jhj_jhr_full
 
 
-def jhj_jhr_diag(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
+def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                  a2, weights, t_map_arr, f_map_arr, d_map_arr, active_term,
                  corr_mode):
 
     n_rows, n_chan, n_dir, n_corr = model.shape
-    n_out_dir = gain_list[active_term].shape[3]
+    n_out_dir = gains[active_term].shape[3]
 
     jhj[:] = 0
     jhr[:] = 0
 
-    n_gains = len(gain_list)
+    n_gains = len(gains)
 
     n_tint = jhr.shape[0]
 
@@ -173,7 +172,7 @@ def jhj_jhr_diag(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
                         d_m = d_map_arr[g, d]  # Broadcast dir.
                         t_m = t_map_arr[row, g]
                         f_m = f_map_arr[f, g]
-                        gb = gain_list[g][t_m, f_m, a2_m, d_m]
+                        gb = gains[g][t_m, f_m, a2_m, d_m]
 
                         g00 = gb[0]
                         g11 = gb[1]
@@ -189,7 +188,7 @@ def jhj_jhr_diag(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
                         d_m = d_map_arr[g, d]  # Broadcast dir.
                         t_m = t_map_arr[row, g]
                         f_m = f_map_arr[f, g]
-                        ga = gain_list[g][t_m, f_m, a1_m, d_m]
+                        ga = gains[g][t_m, f_m, a1_m, d_m]
 
                         gh00 = ga[0].conjugate()
                         gh11 = ga[1].conjugate()
@@ -214,7 +213,7 @@ def jhj_jhr_diag(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
                         d_m = d_map_arr[g, d]  # Broadcast dir.
                         t_m = t_map_arr[row, g]
                         f_m = f_map_arr[f, g]
-                        ga = gain_list[g][t_m, f_m, a1_m, d_m]
+                        ga = gains[g][t_m, f_m, a1_m, d_m]
 
                         g00 = ga[0]
                         g11 = ga[1]
@@ -230,7 +229,7 @@ def jhj_jhr_diag(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
                         d_m = d_map_arr[g, d]  # Broadcast dir.
                         t_m = t_map_arr[row, g]
                         f_m = f_map_arr[f, g]
-                        gb = gain_list[g][t_m, f_m, a2_m, d_m]
+                        gb = gains[g][t_m, f_m, a2_m, d_m]
 
                         gh00 = gb[0].conjugate()
                         gh11 = gb[1].conjugate()
@@ -273,17 +272,17 @@ def jhj_jhr_diag(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
     return
 
 
-def jhj_jhr_full(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
+def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                  a2, weights, t_map_arr, f_map_arr, d_map_arr, active_term,
                  corr_mode):
 
     n_rows, n_chan, n_dir, n_corr = model.shape
-    n_out_dir = gain_list[active_term].shape[3]
+    n_out_dir = gains[active_term].shape[3]
 
     jhj[:] = 0
     jhr[:] = 0
 
-    n_gains = len(gain_list)
+    n_gains = len(gains)
 
     n_tint = jhr.shape[0]
 
@@ -341,7 +340,7 @@ def jhj_jhr_full(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
                         d_m = d_map_arr[g, d]  # Broadcast dir.
                         t_m = t_map_arr[row, g]
                         f_m = f_map_arr[f, g]
-                        gb = gain_list[g][t_m, f_m, a2_m, d_m]
+                        gb = gains[g][t_m, f_m, a2_m, d_m]
 
                         g00 = gb[0]
                         g01 = gb[1]
@@ -363,7 +362,7 @@ def jhj_jhr_full(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
                         d_m = d_map_arr[g, d]  # Broadcast dir.
                         t_m = t_map_arr[row, g]
                         f_m = f_map_arr[f, g]
-                        ga = gain_list[g][t_m, f_m, a1_m, d_m]
+                        ga = gains[g][t_m, f_m, a1_m, d_m]
 
                         gh00 = ga[0].conjugate()
                         gh01 = ga[2].conjugate()
@@ -420,7 +419,7 @@ def jhj_jhr_full(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
                         d_m = d_map_arr[g, d]  # Broadcast dir.
                         t_m = t_map_arr[row, g]
                         f_m = f_map_arr[f, g]
-                        ga = gain_list[g][t_m, f_m, a1_m, d_m]
+                        ga = gains[g][t_m, f_m, a1_m, d_m]
 
                         g00 = ga[0]
                         g01 = ga[1]
@@ -442,7 +441,7 @@ def jhj_jhr_full(jhj, jhr, model, gain_list, inverse_gain_list, residual, a1,
                         d_m = d_map_arr[g, d]  # Broadcast dir.
                         t_m = t_map_arr[row, g]
                         f_m = f_map_arr[f, g]
-                        gb = gain_list[g][t_m, f_m, a2_m, d_m]
+                        gb = gains[g][t_m, f_m, a2_m, d_m]
 
                         gh00 = gb[0].conjugate()
                         gh01 = gb[2].conjugate()
@@ -619,22 +618,22 @@ def update_full(update, jhj, jhr, corr_mode):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def finalize_update(update, params, gain, i_num, dd_term, corr_mode):
+def finalize_update(update, gain, i_num, dd_term, corr_mode):
 
-    return _finalize_update(update, params, gain, i_num, dd_term, corr_mode)
+    return _finalize_update(update, gain, i_num, dd_term, corr_mode)
 
 
-def _finalize_update(update, params, gain, i_num, dd_term, corr_mode):
+def _finalize_update(update, gain, i_num, dd_term, corr_mode):
     pass
 
 
 @overload(_finalize_update, inline="always")
-def _finalize_update_impl(update, params, gain, i_num, dd_term, corr_mode):
+def _finalize_update_impl(update, gain, i_num, dd_term, corr_mode):
 
     return finalize_full  # Doesn't do much at present - futureproofing.
 
 
-def finalize_full(update, params, gain, i_num, dd_term, corr_mode):
+def finalize_full(update, gain, i_num, dd_term, corr_mode):
 
     if dd_term:
         gain[:] = gain[:] + update/2

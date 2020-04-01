@@ -15,9 +15,35 @@ def flatten(l):
             yield el
 
 
-def tuplify(gains, flags, parms, term_type):
+def tuplify(gains, flags, params, term_type):
+    """Converts solver intputs into a term specific named tuple.
 
-    return term_types[term_type](gains, flags, parms)
+    This function should not be altered/extended. It makes use of locals()
+    and therefore adding code rashly can lead to unexpected behaviour. Uses
+    the contents of locals() to dynamically generate named tuples of inputs
+    for the solver layer. This allows us to keep the solver interface a little
+    neater though this still needs further work.
+
+    Args:
+        gains: List of np.arrays containing the various gains.
+        flags: List of np.arrays containing the gain flags.
+        params: List of np.arrays containing the parameterisations.
+        term_type: String determining term type.
+
+    Returns:
+        Named tuple contatining the appropriate inputs for the solver.
+    """
+
+    frozen_locals = locals()
+    fields = {k: frozen_locals[k] for k in term_types[term_type]._fields}
+
+    return term_types[term_type](**fields)
+
+
+def listify(*args):
+    """Convenience function - just list that accepts multiple arguments."""
+
+    return list(args)
 
 
 def construct_solver(model_col,
@@ -59,7 +85,7 @@ def construct_solver(model_col,
         info_array: An dask.Array containing convergence info.
     """
 
-    # This is slightly ugly but work for now. Grab and faltten the keys of all
+    # This is slightly ugly but works for now. Grab and flatten the keys of all
     # the inputs we intend to pass to the solver.
 
     model_col_keys = list(flatten(model_col.__dask_keys__()))
@@ -110,10 +136,18 @@ def construct_solver(model_col,
         term_param_keys = param_keys[consumed_params] if param_term \
             else [None]*len(gain_keys[ind])
 
-        tupler_dsk = {(tupler_name, gk[1], gk[2]):
+        # Generators for grouping the gains and flags. This has to be done on
+        # each loop as the generators are consumed. TODO: We are deliberately
+        # aliasing the gains into each tuple - we need to carefully consider
+        # whether this is safe.
+
+        grouped_gains = ((listify, *gk) for gk in zip(*gain_keys))
+        grouped_flags = ((listify, *fk) for fk in zip(*flag_keys))
+
+        tupler_dsk = {(tupler_name, gk[1][1], gk[1][2]):
                       (tuplify, gk, fk, pk, term_types[ind])
-                      for gk, fk, pk in zip(gain_keys[ind],
-                                            flag_keys[ind],
+                      for gk, fk, pk in zip(grouped_gains,
+                                            grouped_flags,
                                             term_param_keys)}
 
         term_param_vals = param_list[consumed_params] if param_term else ()
@@ -121,9 +155,9 @@ def construct_solver(model_col,
 
         # Add a tupler layer per gain with its dependencies.
         layers.update({tupler_name: tupler_dsk})
-        deps.update({tupler_name: {gain_list[ind].name,
-                                   flag_list[ind].name,
-                                   term_param_name}})
+        deps.update({tupler_name: {g.name for g in gain_list} |
+                                  {f.name for f in flag_list} |
+                                  {term_param_name}})
 
         if param_term:
             consumed_params = consumed_params + 1
