@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from cubicalv2.calibration.solver import stat_fields
+from cubicalv2.kernels.complex import stat_fields
 from cubicalv2.kernels.generics import (compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_gain_stats_xds,
