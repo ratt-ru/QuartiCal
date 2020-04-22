@@ -19,7 +19,7 @@ def freq_chunk(request):
     return request.param
 
 
-@pytest.fixture(params=[0, 58])
+@pytest.fixture(params=[0, 58, 291.0])
 def time_chunk(request):
     return request.param
 
@@ -64,22 +64,22 @@ def test_read_ms(opts):
 
     # Check that all requested columns are present on each xds.
     assert np.all([hasattr(xds, cn)
-                   for cn in col_names
-                   for xds in ms_xds_list])
+                   for xds in ms_xds_list
+                   for cn in col_names])
 
     # Check that the time axis is correctly chunked.
     expected_t_dim = opts.input_ms_time_chunk or np.inf  # or handles 0.
 
     assert np.all([c <= expected_t_dim
-                   for c in xds.UTIME_CHUNKS
-                   for xds in ms_xds_list])
+                   for xds in ms_xds_list
+                   for c in xds.UTIME_CHUNKS])
 
     # Check that the frequency axis is correctly chunked.
     expected_f_dim = opts.input_ms_freq_chunk or np.inf  # or handles 0.
 
     assert np.all([c <= expected_f_dim
-                   for c in xds.DATA.data.chunks[1]
-                   for xds in ms_xds_list])
+                   for xds in ms_xds_list
+                   for c in xds.DATA.data.chunks[1]])
 
 
 @pytest.mark.slow

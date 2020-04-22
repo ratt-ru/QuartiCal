@@ -8,7 +8,15 @@ from loguru import logger
 
 
 def read_ms(opts):
-    """Reads an input measurement set and generates a number of data sets."""
+    """Reads a measurement set and generates a list of xarray data sets.
+
+    Args:
+        opts: A Namepsace of global options.
+
+    Returns:
+        data_xds: A list of appropriately chunked xarray datasets.
+        updated_kwrds: A dictionary of updated column keywords.
+    """
 
     # Create an xarray data set containing indexing columns. This is
     # necessary to determine initial chunking over row. TODO: Add blocking
@@ -18,29 +26,29 @@ def read_ms(opts):
 
     logger.debug("Setting up indexing xarray dataset.")
 
-    indexing_xds = xds_from_ms(opts.input_ms_name,
-                               columns=("TIME", "INTERVAL"),
-                               index_cols=("TIME",),
-                               group_cols=("SCAN_NUMBER",
-                                           "FIELD_ID",
-                                           "DATA_DESC_ID"))
+    indexing_xds_list = xds_from_ms(opts.input_ms_name,
+                                    columns=("TIME", "INTERVAL"),
+                                    index_cols=("TIME",),
+                                    group_cols=("SCAN_NUMBER",
+                                                "FIELD_ID",
+                                                "DATA_DESC_ID"))
 
     # Read the antenna table and add the number of antennas to the options
     # namespace/dictionary. Leading underscore indiciates that this option is
-    # private.
+    # private and added internally.
 
-    antenna_xds = xds_from_table(opts.input_ms_name+"::ANTENNA")
+    antenna_xds = xds_from_table(opts.input_ms_name + "::ANTENNA")[0]
 
-    opts._n_ant = antenna_xds[0].dims["row"]
+    opts._n_ant = antenna_xds.dims["row"]
 
     logger.info("Antenna table indicates {} antennas were present for this "
                 "observation.", opts._n_ant)
 
     # Determine the number of correlations present in the measurement set.
 
-    polarization_xds = xds_from_table(opts.input_ms_name + "::POLARIZATION")
+    polarization_xds = xds_from_table(opts.input_ms_name + "::POLARIZATION")[0]
 
-    opts._ms_ncorr = polarization_xds[0].dims["corr"]
+    opts._ms_ncorr = polarization_xds.dims["corr"]
 
     if opts._ms_ncorr not in (1, 2, 4):
         raise ValueError("Measurement set contains {} correlations - this "
@@ -51,9 +59,9 @@ def read_ms(opts):
 
     # Determine the feed types present in the measurement set.
 
-    feed_xds = xds_from_table(opts.input_ms_name + "::FEED")
+    feed_xds = xds_from_table(opts.input_ms_name + "::FEED")[0]
 
-    feeds = feed_xds[0].POLARIZATION_TYPE.data.compute()
+    feeds = feed_xds.POLARIZATION_TYPE.data.compute()
     unique_feeds = np.unique(feeds)
 
     if np.all([feed in "XxYy" for feed in unique_feeds]):
@@ -131,15 +139,13 @@ def read_ms(opts):
 
     chunk_spec_per_xds = []
 
-    for xds in indexing_xds:
-
-        time_col = xds.TIME.data
+    for xds in indexing_xds_list:
 
         # Compute unique times, indices of their first ocurrence and number of
         # appearances.
 
         da_utimes, da_utime_inds, da_utime_counts = \
-            da.unique(time_col, return_counts=True, return_index=True)
+            da.unique(xds.TIME.data, return_counts=True, return_index=True)
 
         utimes, utime_inds, utime_counts = da.compute(da_utimes,
                                                       da_utime_inds,
@@ -148,11 +154,12 @@ def read_ms(opts):
         # If the chunking interval is a float after preprocessing, we are
         # dealing with a duration rather than a number of intervals. TODO:
         # Need to take resulting chunks and reprocess them based on chunk-on
-        # columns and jumps.
+        # columns and jumps. This code can almost certainly be tidied up/
+        # clarified.
 
         if isinstance(opts.input_ms_time_chunk, float):
 
-            interval_col = indexing_xds[0].INTERVAL.data
+            interval_col = xds.INTERVAL.data
 
             da_cumint = da.cumsum(interval_col[utime_inds])
             da_cumint = da_cumint - da_cumint[0]
@@ -246,7 +253,7 @@ def read_ms(opts):
         data_xds = [xds.sel(corr=[0, 3]) for xds in data_xds]
 
     # The use of name below guaratees that dask produces unique arrays and
-    # avoids accidental aliasing.
+    # avoids accidental aliasing. TODO: Make these names more descriptive.
 
     for xds_ind, xds in enumerate(data_xds):
         xds_updates = {}
