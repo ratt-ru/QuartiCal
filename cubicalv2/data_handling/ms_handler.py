@@ -300,13 +300,25 @@ def read_ms(opts):
 
 
 def write_columns(xds_list, col_kwrds, opts):
+    """Writes fields spicified in the WRITE_COLS attribute to the MS.
+
+    Args:
+        xds-list: A list of xarray datasets.
+        col_kwrds: A dictionary of column keywords.
+        opts: A Namepsace of global options.
+
+    Returns:
+        write_xds_list: A list of xarray datasets indicating success of writes.
+    """
 
     import daskms.descriptors.ratt_ms  # noqa
 
     # If we selected some correlations, we need to be sure that whatever we
     # attempt to write back to the MS is still consistent. This does this using
     # the magic of reindex. TODO: Check whether it would be better to let
-    # dask-ms handle this.
+    # dask-ms handle this. This also might need some further consideration,
+    # as the fill_value might cause problems.
+
     if opts._ms_ncorr != xds_list[0].corr.size:
         xds_list = \
             [xds.reindex({"corr": np.arange(opts._ms_ncorr)}, fill_value=0)
@@ -318,7 +330,9 @@ def write_columns(xds_list, col_kwrds, opts):
     logger.info("Outputs will be written to {}.".format(
         ", ".join(output_cols)))
 
-    return xds_to_table(xds_list, opts.input_ms_name,
-                        columns=output_cols,
-                        column_keywords=output_kwrds,
-                        descriptor="ratt_ms(fixed=False)")
+    write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
+                                  columns=output_cols,
+                                  column_keywords=output_kwrds,
+                                  descriptor="ratt_ms(fixed=False)")
+
+    return write_xds_list
