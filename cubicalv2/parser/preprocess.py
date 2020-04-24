@@ -25,6 +25,10 @@ def preprocess_opts(opts):
 
     model_recipes = opts.input_model_recipe.split(":")
 
+    if model_recipes == ['']:
+        raise ValueError("No model recipe was specified. Please set/check "
+                         "--input-model-recipe.")
+
     # TODO: Repeated .lsm files overwrite dictionary contents. This needs to
     # be fixed.
 
@@ -37,7 +41,7 @@ def preprocess_opts(opts):
 
         ingredients = re.split(r'([\+~])', model_recipe)
 
-        # Behaviour of re.split guaratees every second term is either a column
+        # Behaviour of re.split guarantees every second term is either a column
         # or .lsm. This may lead to the first element being an empty string.
 
         # Split the ingredients into operations and model sources. We preserve

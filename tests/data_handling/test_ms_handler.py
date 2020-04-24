@@ -1,9 +1,7 @@
 import pytest
 from cubicalv2.data_handling.ms_handler import read_ms, write_columns
-import cubicalv2.data_handling.ms_handler
 from argparse import Namespace
 import numpy as np
-import daskms
 
 
 ms_name = "/home/jonathan/CubiCalV2/tests/C147_unflagged.MS"

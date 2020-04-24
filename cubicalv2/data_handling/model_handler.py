@@ -16,7 +16,7 @@ def add_model_graph(ms_xds, opts):
         opts: The options Namepsace.
 
     Returns:
-        model_xds: A list of xarray datasets containing the model data.
+        model_xds_list: A list of xarray datasets containing the model data.
     """
 
     # Generates a predicition scheme (graph) per-xds. If no predict is
@@ -28,7 +28,7 @@ def add_model_graph(ms_xds, opts):
     # Initialise a list to contain the xdss after the model data has been
     # assigned.
 
-    model_xds = []
+    model_xds_list = []
 
     # Loops over the xdss and prediciton schemes.
 
@@ -102,6 +102,6 @@ def add_model_graph(ms_xds, opts):
         modified_xds = xds.assign({"MODEL_DATA":
                                   (("row", "chan", "dir", "corr"), model)})
 
-        model_xds.append(modified_xds)
+        model_xds_list.append(modified_xds)
 
-    return model_xds
+    return model_xds_list

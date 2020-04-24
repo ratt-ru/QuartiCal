@@ -34,22 +34,22 @@ def execute():
         cluster = LocalCluster(processes=False,
                                n_workers=opts.parallel_nworker,
                                threads_per_worker=opts.parallel_nthread,)
-        client = Client(cluster)
+        client = Client(cluster) # noqa
         logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
 
     # Reads the measurement set using the relavant configuration from opts.
-    ms_xds, col_kwrds = read_ms(opts)
+    ms_xds_list, col_kwrds = read_ms(opts)
 
-    # ms_xds = ms_xds[:4]
+    # ms_xds_list = ms_xds_list[:4]
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
-    model_xds = add_model_graph(ms_xds, opts)
+    model_xds_list = add_model_graph(ms_xds_list, opts)
 
     gains_per_xds, post_gain_xds = \
-        add_calibration_graph(model_xds, col_kwrds, opts)
+        add_calibration_graph(model_xds_list, col_kwrds, opts)
 
     writable_xds = finalise_flags(post_gain_xds, col_kwrds, opts)
 
@@ -118,11 +118,11 @@ def execute():
     # for gain in gains[0]["dE"]:
     #     print(np.max(np.abs(gain)))
 
-    # dask.visualize([xds.MODEL_DATA.data for xds in model_xds],
+    # dask.visualize([xds.MODEL_DATA.data for xds in model_xds_list],
     #                color='order', cmap='autumn',
     #                filename='model_order.pdf', node_attr={'penwidth': '10'})
 
-    # dask.visualize([xds.MODEL_DATA.data for xds in model_xds],
+    # dask.visualize([xds.MODEL_DATA.data for xds in model_xds_list],
     #                filename='model.pdf',
     #                optimize_graph=False)
 
@@ -134,10 +134,10 @@ def execute():
     #                filename='model.pdf',
     #                optimize_graph=True)
 
-    # dask.visualize(model_xds,
+    # dask.visualize(model_xds_list,
     #                color='order', cmap='autumn',
     #                filename='model_order.pdf', node_attr={'penwidth': '10'})
 
-    # dask.visualize(model_xds,
+    # dask.visualize(model_xds_list,
     #                filename='model.pdf',
     #                optimize_graph=False)
