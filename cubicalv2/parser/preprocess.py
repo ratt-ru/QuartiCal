@@ -2,6 +2,10 @@
 from loguru import logger
 import re
 import dask.array as da
+from collections import namedtuple
+
+
+sm_tup = namedtuple("sky_model", ("name", "tags"))
 
 
 def interpret_model(opts):
@@ -56,10 +60,10 @@ def interpret_model(opts):
             elif ".lsm.html" in ingredient:
 
                 filename, _, tags = ingredient.partition("@")
-                tags = tags.split(",")
+                tags = tuple(tags.split(",")) if tags else ()
                 sky_models.add(filename)
 
-                internal_recipe[recipe_index].append((filename, tags))
+                internal_recipe[recipe_index].append(sm_tup(filename, tags))
 
             elif ingredient != "":
                 model_columns.add(ingredient)
