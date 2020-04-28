@@ -4,7 +4,7 @@ import re
 import dask.array as da
 
 
-def preprocess_opts(opts):
+def interpret_model(opts):
     """Preprocesses the namespace/dictionary given by opts.
 
     Given a namespace/dictionary of options, this should verify that that
@@ -18,28 +18,27 @@ def preprocess_opts(opts):
         Namespace: An updated namespace object.
     """
 
-    opts._model_columns = []
-    opts._sky_models = {}
-    opts._predict = False
-    opts._internal_recipe = {}
+    model_columns = set()
+    sky_models = set()
+    internal_recipe = {}
 
-    model_recipes = opts.input_model_recipe.split(":")
+    input_recipes = opts.input_model_recipe.replace(" ", "").split(":")
 
-    if model_recipes == ['']:
+    if input_recipes == ['']:
         raise ValueError("No model recipe was specified. Please set/check "
                          "--input-model-recipe.")
 
     # TODO: Repeated .lsm files overwrite dictionary contents. This needs to
     # be fixed.
 
-    for recipe_index, model_recipe in enumerate(model_recipes):
+    for recipe_index, recipe in enumerate(input_recipes):
 
-        opts._internal_recipe[recipe_index] = []
+        internal_recipe[recipe_index] = []
 
         # A raw string is required to avoid insane escape characters. Splits
         # on understood operators, ~ for subtract, + for add.
 
-        ingredients = re.split(r'([\+~])', model_recipe)
+        ingredients = re.split(r'([\+~])', recipe)
 
         # Behaviour of re.split guarantees every second term is either a column
         # or .lsm. This may lead to the first element being an empty string.
@@ -47,36 +46,41 @@ def preprocess_opts(opts):
         # Split the ingredients into operations and model sources. We preserve
         # empty strings in the recipe to avoid more complicated code elsewhere.
 
-        # TODO: The recipe building is currently ignorant of tags. This
-        # functionality may later be necessary.
-
         for ingredient in ingredients:
 
             if ingredient in "~+" and ingredient != "":
 
                 operation = da.add if ingredient == "+" else da.subtract
-                opts._internal_recipe[recipe_index].append(operation)
+                internal_recipe[recipe_index].append(operation)
 
             elif ".lsm.html" in ingredient:
+
                 filename, _, tags = ingredient.partition("@")
                 tags = tags.split(",")
-                opts._sky_models[filename] = tags
-                opts._predict = True
-                # opts._internal_recipe[recipe_index].append({filename: tags})
-                opts._internal_recipe[recipe_index].append(filename)
+                sky_models.add(filename)
+
+                internal_recipe[recipe_index].append((filename, tags))
 
             elif ingredient != "":
-                opts._model_columns.append(ingredient)
-                opts._internal_recipe[recipe_index].append(ingredient)
+                model_columns.add(ingredient)
+                internal_recipe[recipe_index].append(ingredient)
+
             else:
-                opts._internal_recipe[recipe_index].append(ingredient)
+                internal_recipe[recipe_index].append(ingredient)
 
     logger.info("The following model sources were obtained from "
                 "--input-model-recipe: \n"
                 "   Columns: {} \n"
                 "   Sky Models: {}",
-                opts._model_columns,
-                list(opts._sky_models.keys()))
+                model_columns or 'None',
+                sky_models or 'None')
+
+    # Add processed recipe components to opts Namespace.
+
+    opts._model_columns = model_columns
+    opts._sky_models = sky_models
+    opts._internal_recipe = internal_recipe
+    opts._predict = True if sky_models else False
 
     if opts._predict:
-        logger.info("Enabling prediction step.")
+        logger.info("Recipe contains sky models - enabling prediction step.")

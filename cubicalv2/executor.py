@@ -27,7 +27,7 @@ def execute():
     # TODO: There needs to be a validation step which checks that the config is
     # possible.
 
-    preprocess.preprocess_opts(opts)
+    preprocess.interpret_model(opts)
 
     if opts.parallel_scheduler == "distributed":
         logger.info("Initializing distributed client.")
