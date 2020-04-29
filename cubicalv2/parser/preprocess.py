@@ -61,9 +61,10 @@ def interpret_model(opts):
 
                 filename, _, tags = ingredient.partition("@")
                 tags = tuple(tags.split(",")) if tags else ()
-                sky_models.add(filename)
 
-                internal_recipe[recipe_index].append(sm_tup(filename, tags))
+                sky_model = sm_tup(filename, tags)
+                sky_models.add(sky_model)
+                internal_recipe[recipe_index].append(sky_model)
 
             elif ingredient != "":
                 model_columns.add(ingredient)
@@ -77,7 +78,7 @@ def interpret_model(opts):
                 "   Columns: {} \n"
                 "   Sky Models: {}",
                 model_columns or 'None',
-                sky_models or 'None')
+                {sm.name for sm in sky_models} or 'None')
 
     # Add processed recipe components to opts Namespace.
 

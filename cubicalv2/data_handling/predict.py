@@ -5,7 +5,6 @@ import Tigger
 from daskms import xds_from_table
 
 from cubicalv2.utils.dask import blockwise_unique
-from cubicalv2.parser.preprocess import sm_tup
 
 from africanus.coordinates.dask import radec_to_lm
 from africanus.rime.dask import phase_delay, predict_vis
@@ -79,14 +78,9 @@ def parse_sky_model(opts):
 
     sky_model_dict = {}
 
-    sky_model_components = \
-        {ingredient
-         for component in opts._internal_recipe.values()
-         for ingredient in component if isinstance(ingredient, sm_tup)}
+    for sky_model_tuple in opts._sky_models:
 
-    for component in sky_model_components:
-
-        sky_model_name, sky_model_tags = component
+        sky_model_name, sky_model_tags = sky_model_tuple
 
         sky_model = Tigger.load(sky_model_name, verbose=False)
 
@@ -149,7 +143,7 @@ def parse_sky_model(opts):
             else:
                 raise ValueError("Unknown source morphology %s" % typecode)
 
-        sky_model_dict[component] = groups
+        sky_model_dict[sky_model_tuple] = groups
 
         logger.info("Source groups/clusters for {}:{}",
                     sky_model_name,
