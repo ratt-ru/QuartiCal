@@ -3,6 +3,7 @@ from loguru import logger
 import re
 import dask.array as da
 from collections import namedtuple
+import os.path
 
 
 sm_tup = namedtuple("sky_model", ("name", "tags"))
@@ -26,14 +27,12 @@ def interpret_model(opts):
     sky_models = set()
     internal_recipe = {}
 
+    # Strip accidental whitepsace from input recipe and splits on ":".
     input_recipes = opts.input_model_recipe.replace(" ", "").split(":")
 
     if input_recipes == ['']:
         raise ValueError("No model recipe was specified. Please set/check "
                          "--input-model-recipe.")
-
-    # TODO: Repeated .lsm files overwrite dictionary contents. This needs to
-    # be fixed.
 
     for recipe_index, recipe in enumerate(input_recipes):
 
@@ -61,6 +60,9 @@ def interpret_model(opts):
 
                 filename, _, tags = ingredient.partition("@")
                 tags = tuple(tags.split(",")) if tags else ()
+
+                if not os.path.isfile(filename):
+                    raise FileNotFoundError("{} not found.".format(filename))
 
                 sky_model = sm_tup(filename, tags)
                 sky_models.add(sky_model)

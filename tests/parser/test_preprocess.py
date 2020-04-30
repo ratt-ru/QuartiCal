@@ -2,6 +2,7 @@ import pytest
 from cubicalv2.parser.preprocess import interpret_model, sm_tup
 import dask.array as da
 from argparse import Namespace
+import os.path
 
 
 # A dictionary mapping recipe inputs to expected outputs.
@@ -54,9 +55,13 @@ def opts(input_recipe):
 
 
 @pytest.mark.preprocess
-def test_interpret_model(opts):
+def test_interpret_model(opts, monkeypatch):
+
+    # Patch isfile functionality to allow use of ficticious files.
+    monkeypatch.setattr(os.path, "isfile", lambda filename: True)
 
     interpret_model(opts)
 
     # Check that the opts has been updated with the correct internal recipe.
     assert opts._internal_recipe == test_recipes[opts.input_model_recipe]
+
