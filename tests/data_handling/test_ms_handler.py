@@ -4,9 +4,6 @@ from argparse import Namespace
 import numpy as np
 
 
-ms_name = "/home/jonathan/CubiCalV2/tests/C147_unflagged.MS"
-
-
 @pytest.fixture(params=["UNITY", "WEIGHT", "WEIGHT_SPECTRUM"])
 def weight_column(request):
     return request.param
@@ -28,7 +25,7 @@ def correlation_mode(request):
 
 
 @pytest.fixture
-def opts(weight_column, freq_chunk, time_chunk, correlation_mode):
+def opts(ms_name, weight_column, freq_chunk, time_chunk, correlation_mode):
 
     opt_namepsace = Namespace(**{"input_ms_name": ms_name,
                                  "input_ms_weight_column": weight_column,
@@ -42,6 +39,7 @@ def opts(weight_column, freq_chunk, time_chunk, correlation_mode):
 
 @pytest.mark.slow
 @pytest.mark.data_handling
+@pytest.mark.usefixtures("requires_data")
 def test_read_ms(opts):
 
     col_names = ["TIME",
@@ -58,7 +56,7 @@ def test_read_ms(opts):
     ms_xds_list, col_kwrds = read_ms(opts)
 
     # Check that we produce one xds per scan.
-    assert len(ms_xds_list) == 40
+    assert len(ms_xds_list) == 3
 
     # Check that all requested columns are present on each xds.
     assert np.all([hasattr(xds, cn)
@@ -82,6 +80,7 @@ def test_read_ms(opts):
 
 @pytest.mark.slow
 @pytest.mark.data_handling
+@pytest.mark.usefixtures("requires_data")
 def test_write_columns(opts):
 
     ms_xds_list, col_kwrds = read_ms(opts)

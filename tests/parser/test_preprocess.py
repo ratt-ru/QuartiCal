@@ -53,14 +53,14 @@ invalid_recipes = {
 
 
 @pytest.fixture(params=valid_recipes.keys())
-def input_recipe(request):
+def valid_recipe(request):
     return request.param
 
 
 @pytest.fixture
-def opts(input_recipe):
+def opts(valid_recipe):
 
-    return Namespace(**{"input_model_recipe": input_recipe})
+    return Namespace(**{"input_model_recipe": valid_recipe})
 
 
 @pytest.fixture(params=invalid_recipes.keys())

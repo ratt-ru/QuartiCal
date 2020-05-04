@@ -462,12 +462,12 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # accordance with opts.
 
         updated_xds = \
-            xds.assign({"CUBI_RESIDUAL": (xds.DATA.dims, residuals),
+            xds.assign({opts.output_column: (xds.DATA.dims, residuals),
                         "CUBI_BITFLAG": (xds.BITFLAG.dims, fullres_bitflags),
                         "CUBI_MODEL": (xds.DATA.dims,
                                        model_col.sum(axis=2,
                                                      dtype=np.complex64))})
-        updated_xds.attrs["WRITE_COLS"] += ["CUBI_RESIDUAL"]
+        updated_xds.attrs["WRITE_COLS"] += [opts.output_column]
 
         post_cal_data_xds_list.append(updated_xds)
 
