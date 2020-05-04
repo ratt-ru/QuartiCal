@@ -4,37 +4,20 @@ from argparse import Namespace
 import numpy as np
 
 
-@pytest.fixture(params=["UNITY", "WEIGHT", "WEIGHT_SPECTRUM"])
-def weight_column(request):
-    return request.param
+@pytest.fixture(scope="module")
+def opts(base_opts, weight_column, freq_chunk, time_chunk, correlation_mode):
 
+    # Don't overwrite base config - instead create a new Namespace and update.
 
-@pytest.fixture(params=[0, 7])
-def freq_chunk(request):
-    return request.param
+    options = Namespace(**vars(base_opts))
 
+    options.input_ms_weight_column = weight_column
+    options.input_ms_freq_chunk = freq_chunk
+    options.input_ms_time_chunk = time_chunk
+    options.input_ms_correlation_mode = correlation_mode
+    options._model_columns = ["MODEL_DATA"]
 
-@pytest.fixture(params=[0, 58, 291.0])
-def time_chunk(request):
-    return request.param
-
-
-@pytest.fixture(params=["full", "diag"])
-def correlation_mode(request):
-    return request.param
-
-
-@pytest.fixture
-def opts(ms_name, weight_column, freq_chunk, time_chunk, correlation_mode):
-
-    opt_namepsace = Namespace(**{"input_ms_name": ms_name,
-                                 "input_ms_weight_column": weight_column,
-                                 "input_ms_freq_chunk": freq_chunk,
-                                 "input_ms_time_chunk": time_chunk,
-                                 "input_ms_correlation_mode": correlation_mode,
-                                 "_model_columns": ["MODEL_DATA"]})
-
-    return opt_namepsace
+    return options
 
 
 @pytest.mark.slow

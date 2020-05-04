@@ -1,0 +1,83 @@
+input-ms:
+    _description: Arguments pertaining to the input measurement
+        set.
+    name: C147_subset.MS
+    column: DATA
+    weight-column: UNITY
+    time-chunk: 0
+    freq-chunk: 0
+    rebin-time: '1'
+    rebin-freq: '1'
+    chunk-on: SCAN_NUMBER
+    chunk-jump: 1
+    field: 0
+    ddid:
+    chan:
+    correlation-mode: diag
+input-model:
+    _description: Arguments pertaining to input model parameters.
+    recipe: MODEL_DATA
+    beam:
+    invert-uvw: true
+    source-chunks: 10
+output:
+    _description: Arguments pertaining to output products.
+    directory: cubical
+    file-name: cc
+    overwrite: false
+    backup: true
+    solver-mode: solve
+    data-product: solve_only
+    solver-flags: false
+    column: CORRECTED_DATA
+    model-column:
+    weight-column:
+    subtract-model: 0
+    subtract-directions: 0
+    plots: false
+    casa-tables: false
+flags:
+    _description: Arguments pertaining to flagging behaviour.
+    apply-precal:
+    -   ~cubical
+    add-bitflags:
+    reinit-bitflags: false
+    save-flagset: cubical
+    mad-enable: false
+    bl-mad-threshold: 10
+    global-mad-threshold: 12
+solver:
+    _description: Arguments pertaining to solver behaviour.
+    gain-terms: G
+    mode: full-full
+    precision: single
+    chisq-interval: 5
+    stall-fraction: 0.99
+    iteration-recipe:
+parallel:
+    _description: Arguments pertaining to parallelism and distribution.
+    nthread: 0
+    nworker: 1
+    scheduler: multithreaded
+(gain):
+    _description: Arguments pertaining to a labelled (gain). (gain)
+        MUST be replaced with the labels specified by SOLVER_GAIN_TERMS.
+        This config section can be replicated for each gain term.
+    type: complex
+    parametrisation: f-slope
+    restrict-update: default
+    direction-dependent: false
+    exclude-directions: -1
+    time-interval: 1
+    freq-interval: 1
+    delta-threshold: 1e-06
+    chisq-threshold: 1e-06
+    conv-fraction: 0.99
+    reference-antenna: -1
+    upper-clip: 0
+    lower-clip: 0
+    clip-interval: 5
+    precomputed: false
+    load-from:
+    xfer-from:
+    save-to:

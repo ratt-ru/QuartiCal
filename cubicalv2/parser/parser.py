@@ -228,7 +228,13 @@ def log_final_config(args):
     Args:
         args: A Namespace object.
     """
-    columns, _ = os.get_terminal_size(0)
+
+    # This guards against attempting to get the terminal size when the output
+    # is being piped/redirected.
+    if sys.stdout.isatty():
+        columns, _ = os.get_terminal_size(0)
+    else:
+        columns = 80  # Fall over to some sensible default.
     left_column = columns//2
     right_column = columns - left_column
 
