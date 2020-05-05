@@ -1,8 +1,10 @@
-import os
 import sys
 import pytest
 from pathlib import Path
 from cubicalv2.parser.parser import parse_inputs
+import requests
+import tarfile
+from shutil import rmtree
 
 
 test_root_path = Path(__file__).resolve().parent
@@ -18,7 +20,7 @@ ms_path = Path(test_data_path, _ms_name)
 conf_path = Path(test_data_path, _conf_name)
 lsm_path = Path(test_data_path, _lsm_name)
 
-dl_link = "https://www.dropbox.com/s/q5fxx44wche046v/C147_subset.tar.gz?dl=0"
+dl_link = "https://www.dropbox.com/s/q5fxx44wche046v/C147_subset.tar.gz"
 
 
 def pytest_sessionstart(session):
@@ -28,10 +30,12 @@ def pytest_sessionstart(session):
         print("Test data already present - not downloading.")
     else:
         print("Test data not found - downloading...")
-        os.system("wget -q -P {} {} --content-disposition".format(
-            test_data_path, dl_link))
-        os.system("tar -zxf {} -C {}".format(tar_path, test_data_path))
-        os.system("rm {}".format(tar_path))
+        download = requests.get(dl_link, params={"dl": 1})
+        with open(tar_path, 'wb') as f:
+            f.write(download.content)
+        with tarfile.open(tar_path, "r:gz") as tar:
+            tar.extractall(path=test_data_path)
+        tar_path.unlink()
         print("Test data successfully downloaded.")
 
 
@@ -39,8 +43,8 @@ def pytest_sessionfinish(session, exitstatus):
     """Called after test run finished, before returning exit status."""
 
     if ms_path.exists():
-        print("Removing test data...")
-        os.system("rm -r {}".format(ms_path))
+        print("\nRemoving test data...")
+        rmtree(ms_path)
         print("Test data successfully removed.")
 
 
