@@ -274,6 +274,8 @@ def parse_inputs(bypass_sysargv=None):
 
     config_file_name = None
 
+    # We use sys.argv unless the bypass is set - this is needed for testing.
+
     for arg_ind, arg in enumerate(bypass_sysargv or sys.argv):
         if arg.endswith('.yaml'):
             config_file_name = arg
