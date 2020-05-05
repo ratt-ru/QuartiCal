@@ -22,7 +22,6 @@ def opts(base_opts, weight_column, freq_chunk, time_chunk, correlation_mode):
 
 @pytest.mark.slow
 @pytest.mark.data_handling
-@pytest.mark.usefixtures("requires_data")
 def test_read_ms(opts):
 
     col_names = ["TIME",
@@ -63,7 +62,6 @@ def test_read_ms(opts):
 
 @pytest.mark.slow
 @pytest.mark.data_handling
-@pytest.mark.usefixtures("requires_data")
 def test_write_columns(opts):
 
     ms_xds_list, col_kwrds = read_ms(opts)

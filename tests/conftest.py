@@ -21,25 +21,34 @@ lsm_path = Path(test_data_path, _lsm_name)
 dl_link = "https://www.dropbox.com/s/q5fxx44wche046v/C147_subset.tar.gz?dl=0"
 
 
+def pytest_sessionstart(session):
+    """Called after Session object has been created, before run test loop."""
+
+    if ms_path.exists():
+        print("Test data already present - not downloading.")
+    else:
+        print("Test data not found - downloading...")
+        os.system("wget -q -P {} {} --content-disposition".format(
+            test_data_path, dl_link))
+        os.system("tar -zxf {} -C {}".format(tar_path, test_data_path))
+        os.system("rm {}".format(tar_path))
+        print("Test data successfully downloaded.")
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Called after test run finished, before returning exit status."""
+
+    if ms_path.exists():
+        print("Removing test data...")
+        os.system("rm -r {}".format(ms_path))
+        print("Test data successfully removed.")
+
+
 @pytest.fixture(scope="session")
 def ms_name():
     """Session level fixture for test data path."""
 
     return str(ms_path)
-
-
-@pytest.fixture()
-def requires_data():
-    """Fixture will download the test data if it is not already available."""
-
-    if ms_path.exists():
-        print("Test data already present - not downloading.")
-    else:
-        print("Test data not found - downloading.")
-        os.system("wget -P {} {} --content-disposition".format(test_data_path,
-                                                               dl_link))
-        os.system("tar -zxvf {} -C {}".format(tar_path, test_data_path))
-        os.system("rm {}".format(tar_path))
 
 
 @pytest.fixture(params=["UNITY", "WEIGHT", "WEIGHT_SPECTRUM"], scope="module")
@@ -69,14 +78,16 @@ def model_recipe(request):
 
 
 @pytest.fixture(scope="session")
-def base_opts(request):
+def base_opts(ms_name):
+    """Get basic config from .yaml file."""
 
-    backup_sysargv = sys.argv
+    backup_sysargv = sys.argv  # Back this up.
 
-    sys.argv = ['gocubical', str(conf_path)]
+    sys.argv = ['gocubical', str(conf_path)]  # Fake a command line call.
 
     options = parse_inputs()
+    options.input_ms_name = ms_name  # Ensure the ms path is correct.
 
-    sys.argv = backup_sysargv
+    sys.argv = backup_sysargv  # Restore true sys.argv.
 
     return options

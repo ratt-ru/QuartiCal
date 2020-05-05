@@ -21,13 +21,32 @@ def opts(base_opts, freq_chunk, time_chunk, correlation_mode, model_recipe):
     return options
 
 
-@pytest.mark.slow
-@pytest.mark.data_handling
-@pytest.mark.usefixtures("requires_data")
-def test_predict(opts):
+@pytest.fixture(scope="module")
+def do_predict(opts):
 
     interpret_model(opts)
 
     ms_xds_list, col_kwrds = read_ms(opts)
 
-    predict_schemes = predict(ms_xds_list, opts)
+    return predict(ms_xds_list, opts)
+
+
+def test_predict1(do_predict):
+
+    print(id(do_predict))
+
+    assert 1==1
+
+
+def test_predict2(do_predict):
+
+    print(id(do_predict))
+
+    assert 1==1
+
+
+def test_predict3(do_predict):
+
+    print(id(do_predict))
+
+    assert 1==1
