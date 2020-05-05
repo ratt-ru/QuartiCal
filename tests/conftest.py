@@ -85,13 +85,8 @@ def model_recipe(request):
 def base_opts(ms_name):
     """Get basic config from .yaml file."""
 
-    backup_sysargv = sys.argv  # Back this up.
-
-    sys.argv = ['gocubical', str(conf_path)]  # Fake a command line call.
-
-    options = parse_inputs()
+    # We use bypass_sysargv to avoid mucking with the CLI.
+    options = parse_inputs(bypass_sysargv=['gocubical', str(conf_path)])
     options.input_ms_name = ms_name  # Ensure the ms path is correct.
-
-    sys.argv = backup_sysargv  # Restore true sys.argv.
 
     return options

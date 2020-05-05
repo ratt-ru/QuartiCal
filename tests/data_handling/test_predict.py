@@ -22,7 +22,7 @@ def opts(base_opts, freq_chunk, time_chunk, correlation_mode, model_recipe):
 
 
 @pytest.fixture(scope="module")
-def do_predict(opts):
+def _predict(opts):
 
     interpret_model(opts)
 
@@ -31,22 +31,22 @@ def do_predict(opts):
     return predict(ms_xds_list, opts)
 
 
-def test_predict1(do_predict):
+def test_predict1(_predict):
 
-    print(id(do_predict))
-
-    assert 1==1
-
-
-def test_predict2(do_predict):
-
-    print(id(do_predict))
+    print(id(_predict))
 
     assert 1==1
 
 
-def test_predict3(do_predict):
+def test_predict2(_predict):
 
-    print(id(do_predict))
+    print(id(_predict))
+
+    assert 1==1
+
+
+def test_predict3(_predict):
+
+    print(id(_predict))
 
     assert 1==1

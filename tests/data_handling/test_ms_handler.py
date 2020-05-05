@@ -20,30 +20,47 @@ def opts(base_opts, weight_column, freq_chunk, time_chunk, correlation_mode):
     return options
 
 
-@pytest.mark.slow
+@pytest.fixture(scope="module")
+def _read_ms(opts):
+
+    return read_ms(opts)
+
+
 @pytest.mark.data_handling
-def test_read_ms(opts):
+def test_read_ms_nxds(_read_ms):
 
-    col_names = ["TIME",
-                 "ANTENNA1",
-                 "ANTENNA2",
-                 "DATA",
-                 "FLAG",
-                 "FLAG_ROW",
-                 "UVW",
-                 "BITFLAG",
-                 "BITFLAG_ROW",
-                 *opts._model_columns]
-
-    ms_xds_list, col_kwrds = read_ms(opts)
+    ms_xds_list, col_kwrds = _read_ms
 
     # Check that we produce one xds per scan.
     assert len(ms_xds_list) == 3
 
+
+@pytest.mark.data_handling
+def test_read_ms_cols(_read_ms):
+
+    ms_xds_list, col_kwrds = _read_ms
+
+    expected_col_names = ["TIME",
+                          "ANTENNA1",
+                          "ANTENNA2",
+                          "DATA",
+                          "FLAG",
+                          "FLAG_ROW",
+                          "UVW",
+                          "BITFLAG",
+                          "BITFLAG_ROW",
+                          "MODEL_DATA"]
+
     # Check that all requested columns are present on each xds.
     assert np.all([hasattr(xds, cn)
                    for xds in ms_xds_list
-                   for cn in col_names])
+                   for cn in expected_col_names])
+
+
+@pytest.mark.data_handling
+def test_read_ms_time_chunks(_read_ms, opts):
+
+    ms_xds_list, col_kwrds = _read_ms
 
     # Check that the time axis is correctly chunked.
     expected_t_dim = opts.input_ms_time_chunk or np.inf  # or handles 0.
@@ -51,6 +68,12 @@ def test_read_ms(opts):
     assert np.all([c <= expected_t_dim
                    for xds in ms_xds_list
                    for c in xds.UTIME_CHUNKS])
+
+
+@pytest.mark.data_handling
+def test_read_ms_freq_chunks(_read_ms, opts):
+
+    ms_xds_list, col_kwrds = _read_ms
 
     # Check that the frequency axis is correctly chunked.
     expected_f_dim = opts.input_ms_freq_chunk or np.inf  # or handles 0.
@@ -60,20 +83,21 @@ def test_read_ms(opts):
                    for c in xds.DATA.data.chunks[1]])
 
 
-@pytest.mark.slow
-@pytest.mark.data_handling
-def test_write_columns(opts):
+@pytest.fixture(scope="module")
+def _write_columns(_read_ms, opts):
 
-    ms_xds_list, col_kwrds = read_ms(opts)
+    ms_xds_list, col_kwrds = _read_ms
 
     ms_xds_list = [xds.assign_attrs({"WRITE_COLS": ["DATA"]})
                    for xds in ms_xds_list]
 
-    write_xds_list = write_columns(ms_xds_list, col_kwrds, opts)
+    return write_columns(ms_xds_list, col_kwrds, opts)
+
+
+@pytest.mark.data_handling
+def test_write_columns_present(_write_columns):
+
+    write_xds_list = _write_columns
 
     # Check that the column to be written is on the writable_xds.
     assert np.all([hasattr(xds, "DATA") for xds in write_xds_list])
-
-    # Check that the chunks on the input agree with chunks on the output.
-    assert np.all([ms_xds.DATA.data.npartitions == w_xds.DATA.data.npartitions
-                  for ms_xds, w_xds in zip(ms_xds_list, write_xds_list)])

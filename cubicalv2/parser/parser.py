@@ -261,7 +261,7 @@ def log_final_config(args):
     logger.opt(ansi=True).info(log_message)
 
 
-def parse_inputs():
+def parse_inputs(bypass_sysargv=None):
     """Combines command line and config files to produce a Namespace."""
 
     # Firstly we generate our argparse from the defaults.
@@ -274,7 +274,7 @@ def parse_inputs():
 
     config_file_name = None
 
-    for arg_ind, arg in enumerate(sys.argv):
+    for arg_ind, arg in enumerate(bypass_sysargv or sys.argv):
         if arg.endswith('.yaml'):
             config_file_name = arg
             remaining_args = sys.argv[arg_ind + 1:]
