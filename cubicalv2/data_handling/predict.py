@@ -59,7 +59,7 @@ def parse_sky_model(opts):
     Args:
         opts: A Namespace object containing options.
     Returns:
-        source_data: A dictionary of source data.
+        sky_model_dict: A dictionary of source data.
     """
 
     def dict_factory():

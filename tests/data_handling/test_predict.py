@@ -1,7 +1,7 @@
 import pytest
 from cubicalv2.data_handling.ms_handler import read_ms
 from cubicalv2.parser.preprocess import interpret_model
-from cubicalv2.data_handling.predict import predict
+from cubicalv2.data_handling.predict import predict, parse_sky_model
 from argparse import Namespace
 import numpy as np
 
@@ -18,35 +18,52 @@ def opts(base_opts, freq_chunk, time_chunk, correlation_mode, model_recipe):
     options.input_ms_correlation_mode = correlation_mode
     options.input_model_recipe = model_recipe
 
+    interpret_model(options)
+
     return options
 
 
 @pytest.fixture(scope="module")
 def _predict(opts):
 
-    interpret_model(opts)
-
     ms_xds_list, col_kwrds = read_ms(opts)
 
     return predict(ms_xds_list, opts)
 
 
-def test_predict1(_predict):
+def test_parse_sky_model_di(lsm_name):
 
-    print(id(_predict))
+    options = Namespace(**{"input_model_recipe": lsm_name,
+                           "input_model_source_chunks": 10})
 
-    assert 1==1
+    interpret_model(options)
 
-
-def test_predict2(_predict):
-
-    print(id(_predict))
+    sky_model_dict = parse_sky_model(options)
 
     assert 1==1
 
 
-def test_predict3(_predict):
+def test_parse_sky_model_dd(lsm_name):
 
-    print(id(_predict))
+    options = Namespace(**{"input_model_recipe": lsm_name + "@dE",
+                           "input_model_source_chunks": 10})
+
+    interpret_model(options)
+
+    sky_model_dict = parse_sky_model(options)
 
     assert 1==1
+
+
+# def test_predict2(_predict):
+
+#     print(id(_predict))
+
+#     assert 1==1
+
+
+# def test_predict3(_predict):
+
+#     print(id(_predict))
+
+#     assert 1==1

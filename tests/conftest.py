@@ -39,13 +39,13 @@ def pytest_sessionstart(session):
         print("Test data successfully downloaded.")
 
 
-def pytest_sessionfinish(session, exitstatus):
-    """Called after test run finished, before returning exit status."""
+# def pytest_sessionfinish(session, exitstatus):
+#     """Called after test run finished, before returning exit status."""
 
-    if ms_path.exists():
-        print("\nRemoving test data...")
-        rmtree(ms_path)
-        print("Test data successfully removed.")
+#     if ms_path.exists():
+#         print("\nRemoving test data...")
+#         rmtree(ms_path)
+#         print("Test data successfully removed.")
 
 
 @pytest.fixture(scope="session")
@@ -53,6 +53,13 @@ def ms_name():
     """Session level fixture for test data path."""
 
     return str(ms_path)
+
+
+@pytest.fixture(scope="session")
+def lsm_name():
+    """Session level fixture for lsm path."""
+
+    return str(lsm_path)
 
 
 @pytest.fixture(params=["UNITY", "WEIGHT", "WEIGHT_SPECTRUM"], scope="module")
