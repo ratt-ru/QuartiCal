@@ -62,20 +62,6 @@ def parse_sky_model(opts):
         sky_model_dict: A dictionary of source data.
     """
 
-    def dict_factory():
-
-        return dict(point=dict(radec=[],
-                               stokes=[],
-                               spi=[],
-                               ref_freq=[],
-                               n_src=0),
-                    gauss=dict(radec=[],
-                               stokes=[],
-                               spi=[],
-                               ref_freq=[],
-                               shape=[],
-                               n_src=0))
-
     sky_model_dict = {}
 
     for sky_model_tuple in opts._sky_models:
@@ -86,7 +72,8 @@ def parse_sky_model(opts):
 
         sources = sky_model.sources
 
-        groups = defaultdict(dict_factory)
+        groups = defaultdict(lambda: dict(point=defaultdict(list),
+                                          gauss=defaultdict(list)))
 
         for source in sources:
 
@@ -94,33 +81,22 @@ def parse_sky_model(opts):
 
             parent_group = source.getTag("cluster") if tagged else "DIE"
 
-            gauss_params = groups[parent_group]["gauss"]
             point_params = groups[parent_group]["point"]
+            gauss_params = groups[parent_group]["gauss"]
 
             ra = source.pos.ra
             dec = source.pos.dec
             typecode = source.typecode.lower()
-
-            I = source.flux.I  # noqa
-            Q = source.flux.Q
-            U = source.flux.U
-            V = source.flux.V
-
-            spectrum = (getattr(source, "spectrum", _empty_spectrum)
-                        or _empty_spectrum)
+            flux = [getattr(source.flux, sto, 0) for sto in "IQUV"]
+            spectrum = getattr(source, "spectrum", _empty_spectrum)
 
             # Attempts to grab the source reference frequency. Failing that,
             # the skymodel reference frequency is used. If that isn't set,
             # defaults to 1e9.
             ref_freq = getattr(spectrum, "freq0", sky_model.freq0) or 1e9
 
-            try:
-                # Extract SPI for I.
-                # Zero Q, U and V to get 1 on the exponential
-                spi = [[spectrum.spi, 0, 0, 0]]
-            except AttributeError:
-                # Default I SPI to -0.7
-                spi = [[-0.7, 0, 0, 0]]
+            # Extract SPI for I, defaulting to -0.7.
+            spi = [[getattr(spectrum, "spi", -0.7), 0, 0, 0]]
 
             if typecode == "gau":
                 emaj = source.shape.ex
@@ -128,20 +104,19 @@ def parse_sky_model(opts):
                 pa = source.shape.pa
 
                 gauss_params["radec"].append([ra, dec])
-                gauss_params["stokes"].append([I, Q, U, V])
+                gauss_params["stokes"].append(flux)
                 gauss_params["spi"].append(spi)
                 gauss_params["ref_freq"].append(ref_freq)
                 gauss_params["shape"].append([emaj, emin, pa])
-                gauss_params["n_src"] += 1
 
             elif typecode == "pnt":
                 point_params["radec"].append([ra, dec])
-                point_params["stokes"].append([I, Q, U, V])
+                point_params["stokes"].append(flux)
                 point_params["spi"].append(spi)
                 point_params["ref_freq"].append(ref_freq)
-                point_params["n_src"] += 1
+
             else:
-                raise ValueError("Unknown source morphology %s" % typecode)
+                raise ValueError("Unknown typecode - {}".format(typecode))
 
         sky_model_dict[sky_model_tuple] = groups
 
@@ -150,12 +125,28 @@ def parse_sky_model(opts):
                     "".join("\n  {:<8}: {} point source/s, "
                             "{} Gaussian source/s".format(
                                 key,
-                                value["point"]["n_src"],
-                                value["gauss"]["n_src"])
+                                len(value["point"]["stokes"]),
+                                len(value["gauss"]["stokes"]))
                             for key, value in groups.items()))
 
-    # Currently, we hard code the model chunks to include 10 sources.
-    # TODO: Make this dynamic if necessary.
+    return sky_model_dict
+
+
+def daskify_sky_model_dict(sky_model_dict, opts):
+    """Converts source parameter dictionary into a dictionary of dask arrays.
+
+    Args:
+        sky_model_dict: Dictionary of sources.
+        opts: Namespace object containing options.
+
+    Returns:
+        dask_sky_model_dict: A dicitonary of dask arrays.
+    """
+
+    dask_sky_model_dict = sky_model_dict.copy()  # Avoid mutating input.
+
+    # This single line can have a large impact on memory/performance. Sets
+    # the source chunking strategy for the predict.
 
     chunks = opts.input_model_source_chunks
 
@@ -166,11 +157,14 @@ def parse_sky_model(opts):
     for model_name, model_group in sky_model_dict.items():
         for group_name, group_sources in model_group.items():
 
-            gauss_params = group_sources["gauss"]
             point_params = group_sources["point"]
+            gauss_params = group_sources["gauss"]
 
-            if point_params["n_src"] > 0:
-                sky_model_dict[model_name][group_name]['point'] = \
+            n_point = len(point_params["stokes"])
+            n_gauss = len(gauss_params["stokes"])
+
+            if n_point > 0:
+                dask_sky_model_dict[model_name][group_name]['point'] = \
                     Point(
                         da.from_array(
                             point_params["radec"], chunks=(chunks, -1)),
@@ -181,10 +175,10 @@ def parse_sky_model(opts):
                         da.from_array(
                             point_params["ref_freq"], chunks=chunks))
             else:
-                del sky_model_dict[model_name][group_name]['point']
+                del dask_sky_model_dict[model_name][group_name]['point']
 
-            if gauss_params["n_src"] > 0:
-                sky_model_dict[model_name][group_name]['gauss'] = \
+            if n_gauss > 0:
+                dask_sky_model_dict[model_name][group_name]['gauss'] = \
                     Gauss(
                         da.from_array(
                             gauss_params["radec"], chunks=(chunks, -1)),
@@ -197,9 +191,9 @@ def parse_sky_model(opts):
                         da.from_array(
                             gauss_params["shape"], chunks=(chunks, -1)))
             else:
-                del sky_model_dict[model_name][group_name]['gauss']
+                del dask_sky_model_dict[model_name][group_name]['gauss']
 
-    return sky_model_dict
+    return dask_sky_model_dict
 
 
 def support_tables(opts):
@@ -344,9 +338,15 @@ def vis_factory(opts, source_type, sky_model,
 
 
 def predict(data_xds, opts):
-    # Convert source data into a dictionary of per-model (per-direction) dask
-    # arrays.
+
+    # Read in a Tigger .lsm.html and produce a dictionary of sources per
+    # unique sky model and tag combination. Tags determine clustering.
+
     sky_model_dict = parse_sky_model(opts)
+
+    # Convert sky model dictionary into a dictionary of per-model dask arrays.
+
+    dask_sky_model_dict = daskify_sky_model_dict(sky_model_dict, opts)
 
     # Get the support tables.
     tables = support_tables(opts)
@@ -375,7 +375,7 @@ def predict(data_xds, opts):
 
         # Generate visibility expressions per model, per direction for each
         # source type.
-        for model_name, model_group in sky_model_dict.items():
+        for model_name, model_group in dask_sky_model_dict.items():
             for group_name, group_sources in model_group.items():
 
                 # Generate visibilities per source type.
