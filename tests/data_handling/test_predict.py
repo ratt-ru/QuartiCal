@@ -7,6 +7,18 @@ from cubicalv2.data_handling.predict import (predict,
 from argparse import Namespace
 
 
+expected_clusters = {"DIE": {"n_point": 24, "n_gauss": 24},
+                     "B290": {"n_point": 2, "n_gauss": 1},
+                     "C242": {"n_point": 0, "n_gauss": 1},
+                     "G195": {"n_point": 0, "n_gauss": 1},
+                     "H194": {"n_point": 0, "n_gauss": 2},
+                     "I215": {"n_point": 0, "n_gauss": 1},
+                     "K285": {"n_point": 1, "n_gauss": 0},
+                     "O265": {"n_point": 1, "n_gauss": 0},
+                     "R283": {"n_point": 1, "n_gauss": 0},
+                     "W317": {"n_point": 1, "n_gauss": 0}}
+
+
 @pytest.fixture(scope="module")
 def opts(base_opts, freq_chunk, time_chunk, correlation_mode, model_recipe):
 
@@ -57,13 +69,17 @@ def _dd_sky_dict(lsm_name):
 @pytest.fixture(scope="module")
 def _dask_di_sky_dict(_di_sky_dict):
 
-    return daskify_sky_model_dict(_di_sky_dict)
+    options = Namespace(**{"input_model_source_chunks": 10})
+
+    return daskify_sky_model_dict(_di_sky_dict, options)
 
 
 @pytest.fixture(scope="module")
 def _dask_dd_sky_dict(_dd_sky_dict):
 
-    return daskify_sky_model_dict(_dd_sky_dict)
+    options = Namespace(**{"input_model_source_chunks": 10})
+
+    return daskify_sky_model_dict(_dd_sky_dict, options)
 
 
 # -----------------------------parse_sky_models--------------------------------
@@ -143,18 +159,6 @@ def test_expected_fields_gauss_dd(_dd_sky_dict, field):
     assert check is True
 
 
-expected_clusters = {"DIE": {"n_point": 24, "n_gauss": 24},
-                     "B290": {"n_point": 2, "n_gauss": 1},
-                     "C242": {"n_point": 0, "n_gauss": 1},
-                     "G195": {"n_point": 0, "n_gauss": 1},
-                     "H194": {"n_point": 0, "n_gauss": 2},
-                     "I215": {"n_point": 0, "n_gauss": 1},
-                     "K285": {"n_point": 1, "n_gauss": 0},
-                     "O265": {"n_point": 1, "n_gauss": 0},
-                     "R283": {"n_point": 1, "n_gauss": 0},
-                     "W317": {"n_point": 1, "n_gauss": 0}}
-
-
 def test_npoint_dd(_dd_sky_dict):
 
     # Check for the expected number of point sources.
@@ -186,5 +190,36 @@ def test_ngauss_dd(_dd_sky_dict):
 
     assert check is True
 
+# -------------------------daskify_sky_model_dict------------------------------
 
-# -----------------------daskify_sky_model_dict--------------------------------
+
+def test_chunking_di(_dask_di_sky_dict):
+
+    # Check for consistent chunking.
+
+    check = True
+
+    for sky_model_name, sky_model in _dask_di_sky_dict.items():
+        for cluster_name, cluster in sky_model.items():
+            for source_type, sources in cluster.items():
+                for arr in sources:
+                    check &= all([c <= 10 for c in arr.chunks[0]])
+
+    assert check is True
+
+
+def test_chunking_dd(_dask_dd_sky_dict):
+
+    # Check for consistent chunking.
+
+    check = True
+
+    for sky_model_name, sky_model in _dask_dd_sky_dict.items():
+        for cluster_name, cluster in sky_model.items():
+            for source_type, sources in cluster.items():
+                for arr in sources:
+                    check &= all([c <= 10 for c in arr.chunks[0]])
+
+    assert check is True
+
+# -----------------------------------------------------------------------------
