@@ -3,8 +3,11 @@ from cubicalv2.data_handling.ms_handler import read_ms
 from cubicalv2.parser.preprocess import interpret_model
 from cubicalv2.data_handling.predict import (predict,
                                              parse_sky_models,
-                                             daskify_sky_model_dict)
+                                             daskify_sky_model_dict,
+                                             support_tables)
 from argparse import Namespace
+import dask.array as da
+import numpy as np
 
 
 expected_clusters = {"DIE": {"n_point": 24, "n_gauss": 24},
@@ -80,6 +83,12 @@ def _dask_dd_sky_dict(_dd_sky_dict):
     options = Namespace(**{"input_model_source_chunks": 10})
 
     return daskify_sky_model_dict(_dd_sky_dict, options)
+
+
+@pytest.fixture(scope="module")
+def _support_tables(base_opts):
+
+    return support_tables(base_opts)
 
 
 # -----------------------------parse_sky_models--------------------------------
@@ -221,5 +230,36 @@ def test_chunking_dd(_dask_dd_sky_dict):
                     check &= all([c <= 10 for c in arr.chunks[0]])
 
     assert check is True
+
+# ------------------------------support_tables---------------------------------
+
+
+@pytest.mark.parametrize("table", ["ANTENNA", "DATA_DESCRIPTION", "FIELD",
+                                   "SPECTRAL_WINDOW", "POLARIZATION"])
+def test_support_fields(_support_tables, table):
+
+    # Check that we have all expected support tables.
+
+    assert table in _support_tables
+
+
+@pytest.mark.parametrize("table", ["ANTENNA"])
+def test_lazy_tables(_support_tables, table):
+
+    # Check that the antenna table is lazily evaluated.
+
+    assert all([isinstance(dvar.data, da.Array)
+                for dvar in _support_tables[table][0].data_vars.values()])
+
+
+@pytest.mark.parametrize("table", ["DATA_DESCRIPTION", "FIELD",
+                                   "SPECTRAL_WINDOW", "POLARIZATION"])
+def test_nonlazy_tables(_support_tables, table):
+
+    # Check that the expected tables are not lazily evaluated.
+
+    assert all([isinstance(dvar.data, np.ndarray)
+                for dvar in _support_tables[table][0].data_vars.values()])
+
 
 # -----------------------------------------------------------------------------

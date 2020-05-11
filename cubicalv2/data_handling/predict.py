@@ -89,7 +89,7 @@ def parse_sky_models(opts):
 
             # Attempts to grab the source reference frequency. Failing that,
             # the skymodel reference frequency is used. If that isn't set,
-            # defaults to 1e9.
+            # defaults to 1e9. TODO: Error out? Not sure this is sane.
             ref_freq = getattr(spectrum, "freq0", sky_model.freq0) or 1e9
 
             # Extract SPI for I, defaulting to -0.7.
