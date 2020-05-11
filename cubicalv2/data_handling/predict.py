@@ -5,6 +5,7 @@ import Tigger
 from daskms import xds_from_table
 
 from cubicalv2.utils.dask import blockwise_unique
+from cubicalv2.utils.collections import freeze_default_dict
 
 from africanus.coordinates.dask import radec_to_lm
 from africanus.rime.dask import phase_delay, predict_vis
@@ -53,7 +54,7 @@ _rime_term_map = {
 }
 
 
-def parse_sky_model(opts):
+def parse_sky_models(opts):
     """Parses a Tigger sky model.
 
     Args:
@@ -72,17 +73,13 @@ def parse_sky_model(opts):
 
         sources = sky_model.sources
 
-        groups = defaultdict(lambda: dict(point=defaultdict(list),
-                                          gauss=defaultdict(list)))
+        groups = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
         for source in sources:
 
             tagged = any([source.getTag(tag) for tag in sky_model_tags])
 
             parent_group = source.getTag("cluster") if tagged else "DIE"
-
-            point_params = groups[parent_group]["point"]
-            gauss_params = groups[parent_group]["gauss"]
 
             ra = source.pos.ra
             dec = source.pos.dec
@@ -103,6 +100,8 @@ def parse_sky_model(opts):
                 emin = source.shape.ey
                 pa = source.shape.pa
 
+                gauss_params = groups[parent_group]["gauss"]
+
                 gauss_params["radec"].append([ra, dec])
                 gauss_params["stokes"].append(flux)
                 gauss_params["spi"].append(spi)
@@ -110,6 +109,9 @@ def parse_sky_model(opts):
                 gauss_params["shape"].append([emaj, emin, pa])
 
             elif typecode == "pnt":
+
+                point_params = groups[parent_group]["point"]
+
                 point_params["radec"].append([ra, dec])
                 point_params["stokes"].append(flux)
                 point_params["spi"].append(spi)
@@ -118,16 +120,18 @@ def parse_sky_model(opts):
             else:
                 raise ValueError("Unknown typecode - {}".format(typecode))
 
-        sky_model_dict[sky_model_tuple] = groups
+        # Recursively freeze the default dict so that accessing non-existent
+        # keys will fail as expected hereafter.
+        sky_model_dict[sky_model_tuple] = freeze_default_dict(groups)
 
-        logger.info("Source groups/clusters for {}:{}",
-                    sky_model_name,
-                    "".join("\n  {:<8}: {} point source/s, "
-                            "{} Gaussian source/s".format(
-                                key,
-                                len(value["point"]["stokes"]),
-                                len(value["gauss"]["stokes"]))
-                            for key, value in groups.items()))
+        msg = "".join(
+            "\n  {:<8}: {} point source/s, {} Gaussian source/s".format(
+                key,
+                len(value["point"]["stokes"]) if "point" in value else 0,
+                len(value["gauss"]["stokes"]) if "gauss" in value else 0)
+            for key, value in sky_model_dict[sky_model_tuple].items())
+
+        logger.info("Source groups/clusters for {}:{}", sky_model_name, msg)
 
     return sky_model_dict
 
@@ -157,13 +161,10 @@ def daskify_sky_model_dict(sky_model_dict, opts):
     for model_name, model_group in sky_model_dict.items():
         for group_name, group_sources in model_group.items():
 
-            point_params = group_sources["point"]
-            gauss_params = group_sources["gauss"]
+            if "point" in group_sources:
 
-            n_point = len(point_params["stokes"])
-            n_gauss = len(gauss_params["stokes"])
+                point_params = group_sources["point"]
 
-            if n_point > 0:
                 dask_sky_model_dict[model_name][group_name]['point'] = \
                     Point(
                         da.from_array(
@@ -174,10 +175,11 @@ def daskify_sky_model_dict(sky_model_dict, opts):
                             point_params["spi"], chunks=(chunks, 1, -1)),
                         da.from_array(
                             point_params["ref_freq"], chunks=chunks))
-            else:
-                del dask_sky_model_dict[model_name][group_name]['point']
 
-            if n_gauss > 0:
+            if "gauss" in group_sources:
+
+                gauss_params = group_sources["gauss"]
+
                 dask_sky_model_dict[model_name][group_name]['gauss'] = \
                     Gauss(
                         da.from_array(
@@ -190,8 +192,6 @@ def daskify_sky_model_dict(sky_model_dict, opts):
                             gauss_params["ref_freq"], chunks=chunks),
                         da.from_array(
                             gauss_params["shape"], chunks=(chunks, -1)))
-            else:
-                del dask_sky_model_dict[model_name][group_name]['gauss']
 
     return dask_sky_model_dict
 
@@ -342,7 +342,7 @@ def predict(data_xds, opts):
     # Read in a Tigger .lsm.html and produce a dictionary of sources per
     # unique sky model and tag combination. Tags determine clustering.
 
-    sky_model_dict = parse_sky_model(opts)
+    sky_model_dict = parse_sky_models(opts)
 
     # Convert sky model dictionary into a dictionary of per-model dask arrays.
 
