@@ -197,15 +197,13 @@ def daskify_sky_model_dict(sky_model_dict, opts):
 
 
 def support_tables(opts):
-    """
-    Parameters
-    ----------
-    args : object
-        Script argument objects
-    Returns
-    -------
-    table_map : dict of Dataset
-        {name: dataset}
+    """ Get the support tables necessary for the predict.
+
+    Args:
+        opts: A Namespace object of global options.
+
+    Returns:
+        lazy_tables: Dictionary of support table datasets.
     """
 
     n = {k: '::'.join((opts.input_ms_name, k)) for k
@@ -219,12 +217,12 @@ def support_tables(opts):
         # Fixed shape rows
         "DATA_DESCRIPTION": xds_from_table(n["DATA_DESCRIPTION"]),
         # Variably shaped, need a dataset per row
-        "FIELD": xds_from_table(n["FIELD"],
-                                group_cols="__row__"),
-        "SPECTRAL_WINDOW": xds_from_table(n["SPECTRAL_WINDOW"],
-                                          group_cols="__row__"),
-        "POLARIZATION": xds_from_table(n["POLARIZATION"],
-                                       group_cols="__row__"),
+        "FIELD":
+            xds_from_table(n["FIELD"], group_cols="__row__"),
+        "SPECTRAL_WINDOW":
+            xds_from_table(n["SPECTRAL_WINDOW"], group_cols="__row__"),
+        "POLARIZATION":
+            xds_from_table(n["POLARIZATION"], group_cols="__row__"),
     }
 
     lazy_tables.update(dask.compute(compute_tables)[0])
@@ -287,19 +285,34 @@ def baseline_jones_multiply(corrs, *args):
     return da.einsum(schema, *arrays, optimize=True)
 
 
-def vis_factory(opts, source_type, sky_model,
-                ms, ant, field, spw, pol):
-    try:
-        source = sky_model[source_type]
-    except KeyError:
-        raise ValueError("Source type '%s' unsupported" % source_type)
+def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol):
+    """Generates a graph describing the predict for an xds, model and type.
+
+    Args:
+        opts: A Namepspace of global options.
+        source_type: A string - either "point" or "gauss".
+        sky_model: The daskified sky model containing dask arrays of params.
+        ms: An xarray.dataset containing a piece of the MS.
+        ant: An xarray.dataset corresponding to the antenna subtable.
+        field: An xarray.dataset corresponding to the antenna subtable.
+        spw: An xarray.dataset corresponding to the spectral window subtable.
+        pol: An xarray.dataset corresponding the polarization subtable.
+
+    Returns:
+        The result of predict_vis - a graph describing the predict.
+    """
+
+    # Array containing source parameters.
+    sources = sky_model[source_type]
 
     # Select single dataset rows
     corrs = pol.NUM_CORR.data[0]
-    frequency = spw.CHAN_FREQ.data[0]
+    # Necessary to chunk the predict in frequency. TODO: Make this less hacky
+    # when this is improved in dask-ms.
+    frequency = da.from_array(spw.CHAN_FREQ.data[0], chunks=ms.chunks['chan'])
     phase_dir = field.PHASE_DIR.data[0][0]  # row, poly
 
-    lm = radec_to_lm(source.radec, phase_dir)
+    lm = radec_to_lm(sources.radec, phase_dir)
     uvw = -ms.UVW.data if opts.input_model_invert_uvw else ms.UVW.data
 
     # (source, row, frequency)
@@ -307,9 +320,9 @@ def vis_factory(opts, source_type, sky_model,
 
     # (source, spi, corrs)
     # Apply spectral mode to stokes parameters
-    stokes = spectral_model(source.stokes,
-                            source.spi,
-                            source.ref_freq,
+    stokes = spectral_model(sources.stokes,
+                            sources.spi,
+                            sources.ref_freq,
                             frequency,
                             base=[1, 0, 0, 0])
 
@@ -321,7 +334,7 @@ def vis_factory(opts, source_type, sky_model,
     # Add any visibility amplitude terms
     if source_type == "gauss":
         bl_jones_args.append("gauss_shape")
-        bl_jones_args.append(gaussian_shape(uvw, frequency, source.shape))
+        bl_jones_args.append(gaussian_shape(uvw, frequency, sources.shape))
 
     bl_jones_args.extend(["brightness", brightness])
 
@@ -348,7 +361,7 @@ def predict(data_xds, opts):
 
     dask_sky_model_dict = daskify_sky_model_dict(sky_model_dict, opts)
 
-    # Get the support tables.
+    # Get the support tables, and give them sensible names.
     tables = support_tables(opts)
 
     ant_ds = tables["ANTENNA"]
