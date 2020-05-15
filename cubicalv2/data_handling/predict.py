@@ -8,7 +8,8 @@ from cubicalv2.utils.dask import blockwise_unique
 from cubicalv2.utils.collections import freeze_default_dict
 
 from africanus.coordinates.dask import radec_to_lm
-from africanus.rime.dask import phase_delay, predict_vis
+from africanus.rime.dask import (phase_delay, predict_vis,
+                                 parallactic_angles, feed_rotation)
 from africanus.model.coherency.dask import convert
 from africanus.model.spectral.dask import spectral_model
 from africanus.model.shape.dask import gaussian as gaussian_shape
@@ -92,8 +93,8 @@ def parse_sky_models(opts):
             # defaults to 1e9. TODO: Error out? Not sure this is sane.
             ref_freq = getattr(spectrum, "freq0", sky_model.freq0) or 1e9
 
-            # Extract SPI for I, defaulting to -0.7.
-            spi = [[getattr(spectrum, "spi", -0.7), 0, 0, 0]]
+            # Extract SPI for I, defaulting to -0.7. TODO: Default to 0?
+            spi = [[getattr(spectrum, "spi", 0)]*4]
 
             if typecode == "gau":
                 emaj = source.shape.ex
@@ -324,10 +325,27 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol):
                             sources.spi,
                             sources.ref_freq,
                             frequency,
-                            base=[1, 0, 0, 0])
+                            base=0)
 
     brightness = convert(stokes, ["I", "Q", "U", "V"],
                          corr_schema(pol))
+
+    utime_val, utime_ind = blockwise_unique(ms.TIME.data,
+                                            chunks=(ms.UTIME_CHUNKS,),
+                                            return_inverse=True)
+
+    if opts._feed_type == "circular":
+        parangles = parallactic_angles(utime_val, ant["POSITION"], phase_dir)
+        feed_rot = feed_rotation(parangles, opts._feed_type)
+
+        n_t, n_a, _, _ = feed_rot.shape
+        n_c = frequency.size
+
+        chunks = (ms.UTIME_CHUNKS, n_a, ms.chunks['chan'], 2, 2)
+
+        feed_rot = da.broadcast_to(feed_rot[:, :, None, :, :],
+                                   (n_t, n_a, n_c, 2, 2),
+                                   chunks=chunks)
 
     bl_jones_args = ["phase_delay", phase]
 
@@ -338,16 +356,12 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol):
 
     bl_jones_args.extend(["brightness", brightness])
 
-    utime_val, utime_ind = blockwise_unique(ms.TIME.data,
-                                            chunks=(ms.UTIME_CHUNKS,),
-                                            return_inverse=True)
-
     jones = baseline_jones_multiply(corrs, *bl_jones_args)
     # TODO: This will need to be added eventually.
     # dde = dde_factory(opts, ms, ant, field, pol, lm, utime, frequency)
 
     return predict_vis(utime_ind, ms.ANTENNA1.data, ms.ANTENNA2.data,
-                       None, jones, None, None, None, None)
+                       None, jones, None, feed_rot, None, feed_rot)
 
 
 def predict(data_xds, opts):
