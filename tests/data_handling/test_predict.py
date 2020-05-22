@@ -4,7 +4,7 @@ from cubicalv2.parser.preprocess import interpret_model
 from cubicalv2.data_handling.predict import (predict,
                                              parse_sky_models,
                                              daskify_sky_model_dict,
-                                             support_tables)
+                                             get_support_tables)
 from argparse import Namespace
 import dask.array as da
 import numpy as np
@@ -88,7 +88,7 @@ def _dask_dd_sky_dict(_dd_sky_dict):
 @pytest.fixture(scope="module")
 def _support_tables(base_opts):
 
-    return support_tables(base_opts)
+    return get_support_tables(base_opts)
 
 
 # -----------------------------parse_sky_models--------------------------------
@@ -231,7 +231,7 @@ def test_chunking_dd(_dask_dd_sky_dict):
 
     assert check is True
 
-# ------------------------------support_tables---------------------------------
+# ----------------------------get_support_tables-------------------------------
 
 
 @pytest.mark.parametrize("table", ["ANTENNA", "DATA_DESCRIPTION", "FIELD",

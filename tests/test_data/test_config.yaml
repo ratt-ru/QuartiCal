@@ -40,7 +40,7 @@ flags:
     _description: Arguments pertaining to flagging behaviour.
     apply-precal:
     -   ~cubical
-    add-bitflags:
+    add-bitflags: true
     reinit-bitflags: false
     save-flagset: cubical
     mad-enable: false

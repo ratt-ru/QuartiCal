@@ -100,6 +100,11 @@ input-model:
         help: The number of sources to predict simultaneously. Has a large 
               impact on memory footprint.
         default: 10
+    apply-p-jones:
+        type: bool
+        help: Determines whether P-Jones is incorporated in the predict. This
+              should usually be left enabled.
+        default: True
 
 output:
     _description: Arguments pertaining to output products.
@@ -200,6 +205,7 @@ flags:
         help: If True, will automatically insert a BITFLAG column if one is not
               already present. Will automatically populate the legacy bitflag
               from FLAG and FLAG_ROW.
+        default: True
     reinit-bitflags:
         type: bool
         help: If true, reinitializes BITFLAG column from scratch. Useful if the

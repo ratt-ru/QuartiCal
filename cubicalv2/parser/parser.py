@@ -5,6 +5,7 @@ import sys
 import os
 from pathlib import Path
 from collections import abc
+from distutils.util import strtobool
 import builtins
 from loguru import logger
 import cubicalv2.parser.custom_types as custom_types
@@ -19,6 +20,8 @@ def to_type(type_str):
         return None
     elif type_str in custom_types.custom_types.keys():
         return custom_types.custom_types[type_str]
+    elif type_str == "bool":
+        return lambda arg: bool(strtobool(arg))
     else:
         return getattr(builtins, type_str)
 
@@ -299,6 +302,7 @@ def parse_inputs(bypass_sysargv=None):
         args, remaining_args = cl_parser.parse_known_args(cf_args)
 
     else:
+
         args, remaining_args = cl_parser.parse_known_args()
 
     # This is a piece of dark magic which creates new parsers on the fly. This
