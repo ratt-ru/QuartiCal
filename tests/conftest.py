@@ -1,4 +1,3 @@
-import sys
 import pytest
 from pathlib import Path
 from cubicalv2.parser.parser import parse_inputs

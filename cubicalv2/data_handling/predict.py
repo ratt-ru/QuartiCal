@@ -115,7 +115,7 @@ def parse_sky_models(opts):
             else:
                 fallback_freq0 = fallback_freq0 or ref_freq
 
-            # Extract SPI for I, defaulting to -0.7. TODO: Default to 0?
+            # Extract SPI for I, defaulting to 0 - flat spectrum.
             spi = [[getattr(spectrum, "spi", 0)]*4]
 
             if typecode == "gau":
@@ -221,6 +221,20 @@ def daskify_sky_model_dict(sky_model_dict, opts):
 
 @lru_cache(maxsize=16)
 def load_beams(beam_file_schema, corr_types):
+    """Loads in the beams spcified by the beam schema.
+
+    Adapted from https://github.com/ska-sa/codex-africanus.
+
+    Args:
+        beam_file_schema: String conatining MeqTrees like schema.
+        corr_types: Tuple of correlation types obtained from the MS.
+
+    Returns:
+        beam: (npix, npix, nchan, ncorr) dask array of beam values.
+        beam_lm_ext: (2, 2) dask array of the beam's extent in the lm plane.
+        beam_freq_grid: (nchan) dask array of frequency values at which we
+            have beam samples.
+    """
 
     class FITSFile(object):
         """ Exists so that fits file is closed when last ref is gc'd """
@@ -255,8 +269,10 @@ def load_beams(beam_file_schema, corr_types):
         raise ValueError("BEAM FITS Header Files differ")
 
     #  Map FITS header type to NumPy type
-    BITPIX_MAP = {8: np.dtype('uint8').type, 16: np.dtype('int16').type,
-                  32: np.dtype('int32').type, -32: np.dtype('float32').type,
+    BITPIX_MAP = {8: np.dtype('uint8').type,
+                  16: np.dtype('int16').type,
+                  32: np.dtype('int32').type,
+                  -32: np.dtype('float32').type,
                   -64: np.dtype('float64').type}
 
     header = flat_headers[0]
@@ -309,6 +325,8 @@ def load_beams(beam_file_schema, corr_types):
 def get_support_tables(opts):
     """Get the support tables necessary for the predict.
 
+    Adapted from https://github.com/ska-sa/codex-africanus.
+
     Args:
         opts: A Namespace object of global options.
 
@@ -342,17 +360,17 @@ def get_support_tables(opts):
 
 
 def corr_schema(pol):
-    """
-    Parameters
-    ----------
-    pol : Dataset
-    Returns
-    -------
-    corr_schema : list of list
-        correlation schema from the POLARIZATION table,
-        `[[9, 10], [11, 12]]` for example
-    """
+    """Define correlation schema.
 
+    Adapted from https://github.com/ska-sa/codex-africanus.
+
+    Args:
+        pol: xarray dataset containing POLARIZATION subtable information.
+
+    Returns:
+        corr_schema: A list of lists containing the correlation schema from
+        the POLARIZATION table, e.g. `[[9, 10], [11, 12]]` for example.
+    """
     corrs = pol.NUM_CORR.values
     corr_types = da.squeeze(pol.CORR_TYPE.values)
 
@@ -368,6 +386,17 @@ def corr_schema(pol):
 
 
 def baseline_jones_multiply(corrs, *args):
+    """Multiplies per-baseline Jones terms together.
+
+    Args:
+        corrs: Integer number of corellations.
+        *args: Variable length list of alternating term names and assosciated
+            dask arrays.
+
+    Returns:
+        Dask array contatining the result of multiplying the input Jones terms.
+    """
+
     names = args[::2]
     arrays = args[1::2]
 
@@ -479,6 +508,25 @@ def _unity_ant_scales(parangles, frequency, dtype_):
 
 
 def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
+    """Multiplies per-antenna direction-dependent Jones terms together.
+
+    Adapted from https://github.com/ska-sa/codex-africanus.
+
+    Args:
+        ms: xarray dataset containing measurement set data.
+        utime: A dask array of unique TIME column vales.
+        frequency: A dask array of per-channel frequency values.
+        ant: xarray dataset containing ANTENNA subtable data.
+        feed: xarray dataset containing FEED subtable data.
+        field: xarray dataset containing FIELD subtable data.
+        pol: xarray dataset containing POLARIZATION subtable data.
+        lm: dask array of per-source lm values.
+        opts: A Namespace object containing global options.
+
+    Returns:
+        Dask array containing the result of multiplying the
+            direction-dependent Jones terms together.
+    """
     if opts.input_model_beam is None:
         return None
 
@@ -541,16 +589,18 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
 def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
     """Generates a graph describing the predict for an xds, model and type.
 
+    Adapted from https://github.com/ska-sa/codex-africanus.
+
     Args:
         opts: A Namepspace of global options.
         source_type: A string - either "point" or "gauss".
         sky_model: The daskified sky model containing dask arrays of params.
         ms: An xarray.dataset containing a piece of the MS.
-        ant: An xarray.dataset corresponding to the antenna subtable.
-        field: An xarray.dataset corresponding to the antenna subtable.
-        spw: An xarray.dataset corresponding to the spectral window subtable.
-        pol: An xarray.dataset corresponding the polarization subtable.
-        feed: An xarray.dataset corresponding the feed subtable.
+        ant: An xarray.dataset corresponding to the ANTENNA subtable.
+        field: An xarray.dataset corresponding to the FIELD subtable.
+        spw: An xarray.dataset corresponding to the SPECTRAL_WINDOW subtable.
+        pol: An xarray.dataset corresponding the POLARIZATION subtable.
+        feed: An xarray.dataset corresponding the FEED subtable.
 
     Returns:
         The result of predict_vis - a graph describing the predict.
@@ -609,6 +659,8 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
 
 def predict(data_xds_list, opts):
     """Produces graphs describing predict operations.
+
+    Adapted from https://github.com/ska-sa/codex-africanus.
 
     Args:
         data_xds_list: A list of xarray datasets corresponing to the input
