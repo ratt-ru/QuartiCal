@@ -32,7 +32,7 @@ def test_read_ms_nxds(_read_ms):
     ms_xds_list, col_kwrds = _read_ms
 
     # Check that we produce one xds per scan.
-    assert len(ms_xds_list) == 3
+    assert len(ms_xds_list) == 2
 
 
 @pytest.mark.data_handling

@@ -2,7 +2,9 @@ from loguru import logger
 import dask.array as da
 import dask
 import Tigger
+import weakref
 from daskms import xds_from_table
+import numpy as np
 
 from cubicalv2.utils.dask import blockwise_unique
 from cubicalv2.utils.collections import freeze_default_dict
@@ -12,12 +14,18 @@ from africanus.rime.dask import (phase_delay as compute_phase_delay,
                                  predict_vis,
                                  parallactic_angles as
                                  compute_parallactic_angles,
-                                 feed_rotation as compute_feed_rotation)
+                                 feed_rotation as compute_feed_rotation,
+                                 beam_cube_dde)
 from africanus.model.coherency.dask import convert
 from africanus.model.spectral.dask import spectral_model
 from africanus.model.shape.dask import gaussian as gaussian_shape
+from africanus.util.beams import beam_filenames, beam_grids
+
 
 from collections import namedtuple, defaultdict
+from functools import lru_cache
+from astropy.io import fits
+
 
 _einsum_corr_indices = 'ijkl'
 
@@ -79,6 +87,8 @@ def parse_sky_models(opts):
 
         groups = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
+        fallback_freq0 = sky_model.freq0
+
         for source in sources:
 
             tagged = any([source.getTag(tag) for tag in sky_model_tags])
@@ -92,9 +102,18 @@ def parse_sky_models(opts):
             spectrum = getattr(source, "spectrum", _empty_spectrum)
 
             # Attempts to grab the source reference frequency. Failing that,
-            # the skymodel reference frequency is used. If that isn't set,
-            # defaults to 1e9. TODO: Error out? Not sure this is sane.
-            ref_freq = getattr(spectrum, "freq0", sky_model.freq0) or 1e9
+            # the skymodel reference frequency is used. If that still fails,
+            # will error out. However, if the first source has a reference
+            # frequency set, we will instead default to that.
+            ref_freq = getattr(spectrum, "freq0", fallback_freq0)
+
+            if ref_freq is None:
+                raise ValueError("Reference frequency not found for source {} "
+                                 "in {}. Please set reference frequency for "
+                                 "either this source or the entire file."
+                                 "".format(source.name, sky_model_name))
+            else:
+                fallback_freq0 = fallback_freq0 or ref_freq
 
             # Extract SPI for I, defaulting to -0.7. TODO: Default to 0?
             spi = [[getattr(spectrum, "spi", 0)]*4]
@@ -198,6 +217,93 @@ def daskify_sky_model_dict(sky_model_dict, opts):
                             gauss_params["shape"], chunks=(chunks, -1)))
 
     return dask_sky_model_dict
+
+
+@lru_cache(maxsize=16)
+def load_beams(beam_file_schema, corr_types):
+
+    class FITSFile(object):
+        """ Exists so that fits file is closed when last ref is gc'd """
+
+        def __init__(self, filename):
+            self.hdul = hdul = fits.open(filename)
+            assert len(hdul) == 1
+            self.__del_ref = weakref.ref(self, lambda r: hdul.close())
+
+    # Open files and get headers
+    beam_files = []
+    headers = []
+
+    for corr, (re, im) in beam_filenames(beam_file_schema, corr_types).items():
+        re_f = FITSFile(re)
+        im_f = FITSFile(im)
+        beam_files.append((corr, (re_f, im_f)))
+        headers.append((corr, (re_f.hdul[0].header, im_f.hdul[0].header)))
+
+    # All FITS headers should agree (apart from DATE)
+    flat_headers = []
+
+    for corr, (re_header, im_header) in headers:
+        if "DATE" in re_header:
+            del re_header["DATE"]
+        if "DATE" in im_header:
+            del im_header["DATE"]
+        flat_headers.append(re_header)
+        flat_headers.append(im_header)
+
+    if not all(flat_headers[0] == h for h in flat_headers[1:]):
+        raise ValueError("BEAM FITS Header Files differ")
+
+    #  Map FITS header type to NumPy type
+    BITPIX_MAP = {8: np.dtype('uint8').type, 16: np.dtype('int16').type,
+                  32: np.dtype('int32').type, -32: np.dtype('float32').type,
+                  -64: np.dtype('float64').type}
+
+    header = flat_headers[0]
+    bitpix = header['BITPIX']
+
+    try:
+        dtype = BITPIX_MAP[bitpix]
+    except KeyError:
+        raise ValueError("No mapping from BITPIX %s to a numpy type" % bitpix)
+    else:
+        dtype = np.result_type(dtype, np.complex64)
+
+    if not header['NAXIS'] == 3:
+        raise ValueError("FITS must have exactly three axes. "
+                         "L or X, M or Y and FREQ. NAXIS != 3")
+
+    (l_ax, l_grid), (m_ax, m_grid), (nu_ax, nu_grid) = beam_grids(header)
+
+    # Shape of each correlation
+    shape = (l_grid.shape[0], m_grid.shape[0], nu_grid.shape[0])
+
+    # Axis tranpose, FITS is FORTRAN ordered
+    ax = (nu_ax - 1, m_ax - 1, l_ax - 1)
+
+    def _load_correlation(re, im, ax):
+        # Read real and imaginary for each correlation
+        return (re.hdul[0].data.transpose(ax) +
+                im.hdul[0].data.transpose(ax)*1j)
+
+    # Create delayed loads of the beam
+    beam_loader = dask.delayed(_load_correlation)
+
+    beam_corrs = [beam_loader(re, im, ax)
+                  for c, (corr, (re, im)) in enumerate(beam_files)]
+    beam_corrs = [da.from_delayed(bc, shape=shape, dtype=dtype)
+                  for bc in beam_corrs]
+
+    # Stack correlations and rechunk to one great big block
+    beam = da.stack(beam_corrs, axis=3)
+    beam = beam.rechunk(shape + (len(corr_types),))
+
+    # Dask arrays for the beam extents and beam frequency grid
+    beam_lm_ext = np.array([[l_grid[0], l_grid[-1]], [m_grid[0], m_grid[-1]]])
+    beam_lm_ext = da.from_array(beam_lm_ext, chunks=beam_lm_ext.shape)
+    beam_freq_grid = da.from_array(nu_grid, chunks=nu_grid.shape)
+
+    return beam, beam_lm_ext, beam_freq_grid
 
 
 def get_support_tables(opts):
@@ -358,6 +464,80 @@ def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
     return die_jones
 
 
+def _zero_pes(parangles, frequency, dtype_):
+    """ Create zeroed pointing errors """
+    ntime, na = parangles.shape
+    nchan = frequency.shape[0]
+    return np.zeros((ntime, na, nchan, 2), dtype=dtype_)
+
+
+def _unity_ant_scales(parangles, frequency, dtype_):
+    """ Create zeroed antenna scalings """
+    _, na = parangles[0].shape
+    nchan = frequency.shape[0]
+    return np.ones((na, nchan, 2), dtype=dtype_)
+
+
+def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
+    if opts.input_model_beam is None:
+        return None
+
+    # Beam is requested
+    corr_type = tuple(pol.CORR_TYPE.data[0])
+
+    if not len(corr_type) == 4:
+        raise ValueError("Need four correlations for DDEs")
+
+    parangles = compute_parallactic_angles(utime, ant.POSITION.data,
+                                           field.PHASE_DIR.data[0][0])
+
+    corr_type_set = set(corr_type)
+
+    if corr_type_set.issubset(set([9, 10, 11, 12])):
+        pol_type = 'linear'
+    elif corr_type_set.issubset(set([5, 6, 7, 8])):
+        pol_type = 'circular'
+    else:
+        raise ValueError("Cannot determine polarisation type "
+                         "from correlations %s. Constructing "
+                         "a feed rotation matrix will not be "
+                         "possible." % (corr_type,))
+
+    # Construct feed rotation
+    feed_rot = compute_feed_rotation(parangles, pol_type)
+
+    dtype = np.result_type(parangles, frequency)
+
+    # Create zeroed pointing errors
+    zpe = da.blockwise(_zero_pes, ("time", "ant", "chan", "comp"),
+                       parangles, ("time", "ant"),
+                       frequency, ("chan",),
+                       dtype, None,
+                       new_axes={"comp": 2},
+                       dtype=dtype)
+
+    # Created zeroed antenna scaling factors
+    zas = da.blockwise(_unity_ant_scales, ("ant", "chan", "comp"),
+                       parangles, ("time", "ant"),
+                       frequency, ("chan",),
+                       dtype, None,
+                       new_axes={"comp": 2},
+                       dtype=dtype)
+
+    # Load the beam information
+    beam, lm_ext, freq_map = load_beams(opts.input_model_beam, corr_type)
+
+    # Introduce the correlation axis
+    beam = beam.reshape(beam.shape[:3] + (2, 2))
+
+    beam_dde = beam_cube_dde(beam, lm_ext, freq_map, lm, parangles,
+                             zpe, zas,
+                             frequency)
+
+    # Multiply the beam by the feed rotation to form the DDE term
+    return da.einsum("stafij,tajk->stafik", beam_dde, feed_rot)
+
+
 def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
     """Generates a graph describing the predict for an xds, model and type.
 
@@ -417,13 +597,14 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
     bl_jones_args.extend(["brightness", brightness])
 
     jones = baseline_jones_multiply(corrs, *bl_jones_args)
-    # TODO: Add DI and DD factories. DI will include P-jones when there is no
-    # DE term. Otherwise P must be applied before E.
+    # DI will include P-jones when there is no other DE term. Otherwise P must
+    # be applied before other DD terms.
     die = die_factory(utime_val, frequency, ant, feed, phase_dir, opts)
-    # dde = dde_factory(opts, ms, ant, field, pol, lm, utime, frequency)
+    dde = dde_factory(ms, utime_val, frequency, ant, feed, field, pol, lm,
+                      opts)
 
     return predict_vis(utime_ind, ms.ANTENNA1.data, ms.ANTENNA2.data,
-                       None, jones, None, die, None, die)
+                       dde, jones, dde, die, None, die)
 
 
 def predict(data_xds_list, opts):
