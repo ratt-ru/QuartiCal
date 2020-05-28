@@ -13,13 +13,14 @@ input-ms:
     field: 0
     ddid:
     chan:
-    correlation-mode: diag
+    correlation-mode: full
 input-model:
     _description: Arguments pertaining to input model parameters.
     recipe: MODEL_DATA
     beam:
     invert-uvw: true
     source-chunks: 10
+    apply-p-jones: true
 output:
     _description: Arguments pertaining to output products.
     directory: cubical

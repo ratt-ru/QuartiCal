@@ -9,42 +9,53 @@ from shutil import rmtree
 test_root_path = Path(__file__).resolve().parent
 test_data_path = Path(test_root_path, "test_data")
 
-_tar_name = "C147_subset.tar.gz"
+_data_tar_name = "C147_subset.tar.gz"
+_beam_tar_name = "beams.tar.gz"
 _ms_name = "C147_subset.MS"
+_beam_name = "beams"
 _conf_name = "test_config.yaml"
-_lsm_name = "3C147_apparent.lsm.html"
+_lsm_name = "3C147_intrinsic.lsm.html"
 
-tar_path = Path(test_data_path, _tar_name)
+data_tar_path = Path(test_data_path, _data_tar_name)
+beam_tar_path = Path(test_data_path, _beam_tar_name)
 ms_path = Path(test_data_path, _ms_name)
+beam_path = Path(test_data_path, _beam_name)
 conf_path = Path(test_data_path, _conf_name)
 lsm_path = Path(test_data_path, _lsm_name)
 
-dl_link = "https://www.dropbox.com/s/q5fxx44wche046v/C147_subset.tar.gz"
+data_lnk = "https://www.dropbox.com/s/q5fxx44wche046v/C147_subset.tar.gz"
+beam_lnk = "https://www.dropbox.com/s/26bgrolo1qyfy4k/beams.tar.gz"
+
+tar_lnk_list = [data_lnk, beam_lnk]
+tar_pth_list = [data_tar_path, beam_tar_path]
+dat_pth_list = [ms_path, beam_path]
 
 
 def pytest_sessionstart(session):
     """Called after Session object has been created, before run test loop."""
 
-    if ms_path.exists():
+    if ms_path.exists() and beam_path.exists():
         print("Test data already present - not downloading.")
     else:
         print("Test data not found - downloading...")
-        download = requests.get(dl_link, params={"dl": 1})
-        with open(tar_path, 'wb') as f:
-            f.write(download.content)
-        with tarfile.open(tar_path, "r:gz") as tar:
-            tar.extractall(path=test_data_path)
-        tar_path.unlink()
+        for lnk, pth in zip(tar_lnk_list, tar_pth_list):
+            download = requests.get(lnk, params={"dl": 1})
+            with open(pth, 'wb') as f:
+                f.write(download.content)
+            with tarfile.open(pth, "r:gz") as tar:
+                tar.extractall(path=test_data_path)
+            pth.unlink()
         print("Test data successfully downloaded.")
 
 
 # def pytest_sessionfinish(session, exitstatus):
 #     """Called after test run finished, before returning exit status."""
 
-#     if ms_path.exists():
-#         print("\nRemoving test data...")
-#         rmtree(ms_path)
-#         print("Test data successfully removed.")
+#     for pth in dat_pth_list:
+#         if pth.exists():
+#             print("\nRemoving test data ({}).".format(pth))
+#             rmtree(pth)
+#             print("Test data successfully removed.")
 
 
 @pytest.fixture(scope="session")
@@ -61,6 +72,13 @@ def lsm_name():
     return str(lsm_path)
 
 
+@pytest.fixture(scope="session")
+def beam_name():
+    """Session level fixture for beam path."""
+
+    return str(beam_path)
+
+
 @pytest.fixture(params=["UNITY", "WEIGHT", "WEIGHT_SPECTRUM"], scope="module")
 def weight_column(request):
     return request.param
@@ -71,8 +89,10 @@ def freq_chunk(request):
     return request.param
 
 
-@pytest.fixture(params=[0, 58, 291.0], scope="module")
+@pytest.fixture(params=[0, 291.0], scope="module")
 def time_chunk(request):
+    # Note that 291.0 is equivalent to 58 unique times. This just probes some
+    # addiotional functionality by specifying time in seconds.
     return request.param
 
 

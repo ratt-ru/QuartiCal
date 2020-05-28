@@ -91,6 +91,32 @@ input-model:
         help: Path to beams. Apply beams during predict if specified eg.
               'beam_$(corr)_$(reim).fits' or 'beam_$(CORR)_$(REIM).fits'.
         default: None
+    beam-l-axis:
+        type: str
+        choices: 
+            - X
+            - Y
+            - -Y
+            - -X
+            - L
+            - M
+            - -L
+            - -M
+        help: Determines the orientation of the beam l-axis.
+        default: X
+    beam-m-axis:
+        type: str
+        choices: 
+            - X
+            - Y
+            - -Y
+            - -X
+            - L
+            - M
+            - -L
+            - -M
+        help: Determines the orientation of the beam l-axis.
+        default: Y
     invert-uvw:
         type: bool
         help: The UVW coordinates will be negated if this option is specified.

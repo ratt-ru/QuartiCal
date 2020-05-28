@@ -220,7 +220,7 @@ def daskify_sky_model_dict(sky_model_dict, opts):
 
 
 @lru_cache(maxsize=16)
-def load_beams(beam_file_schema, corr_types):
+def load_beams(beam_file_schema, corr_types, beam_l_axis, beam_m_axis):
     """Loads in the beams spcified by the beam schema.
 
     Adapted from https://github.com/ska-sa/codex-africanus.
@@ -228,6 +228,8 @@ def load_beams(beam_file_schema, corr_types):
     Args:
         beam_file_schema: String conatining MeqTrees like schema.
         corr_types: Tuple of correlation types obtained from the MS.
+        beam_l_axis: String identifying beam l axis.
+        beam_m_axis: String identifying beam m axis.
 
     Returns:
         beam: (npix, npix, nchan, ncorr) dask array of beam values.
@@ -289,7 +291,8 @@ def load_beams(beam_file_schema, corr_types):
         raise ValueError("FITS must have exactly three axes. "
                          "L or X, M or Y and FREQ. NAXIS != 3")
 
-    (l_ax, l_grid), (m_ax, m_grid), (nu_ax, nu_grid) = beam_grids(header)
+    (l_ax, l_grid), (m_ax, m_grid), (nu_ax, nu_grid) = \
+        beam_grids(header, beam_l_axis, beam_m_axis)
 
     # Shape of each correlation
     shape = (l_grid.shape[0], m_grid.shape[0], nu_grid.shape[0])
@@ -573,7 +576,10 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
                        dtype=dtype)
 
     # Load the beam information
-    beam, lm_ext, freq_map = load_beams(opts.input_model_beam, corr_type)
+    beam, lm_ext, freq_map = load_beams(opts.input_model_beam,
+                                        corr_type,
+                                        opts.input_model_beam_l_axis,
+                                        opts.input_model_beam_m_axis)
 
     # Introduce the correlation axis
     beam = beam.reshape(beam.shape[:3] + (2, 2))

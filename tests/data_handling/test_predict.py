@@ -8,22 +8,30 @@ from cubicalv2.data_handling.predict import (predict,
 from argparse import Namespace
 import dask.array as da
 import numpy as np
+from numpy.testing import assert_array_almost_equal
 
 
-expected_clusters = {"DIE": {"n_point": 24, "n_gauss": 24},
-                     "B290": {"n_point": 2, "n_gauss": 1},
+expected_clusters = {"DIE": {"n_point": 22, "n_gauss": 24},
+                     "B290": {"n_point": 1, "n_gauss": 2},
                      "C242": {"n_point": 0, "n_gauss": 1},
                      "G195": {"n_point": 0, "n_gauss": 1},
                      "H194": {"n_point": 0, "n_gauss": 2},
                      "I215": {"n_point": 0, "n_gauss": 1},
-                     "K285": {"n_point": 1, "n_gauss": 0},
-                     "O265": {"n_point": 1, "n_gauss": 0},
+                     #  "K285": {"n_point": 1, "n_gauss": 0},  #noqa
+                     #  "O265": {"n_point": 1, "n_gauss": 0},  #noqa
                      "R283": {"n_point": 1, "n_gauss": 0},
-                     "W317": {"n_point": 1, "n_gauss": 0}}
+                     #  "W317": {"n_point": 1, "n_gauss": 0}}  #noqa
+                     "V317": {"n_point": 0, "n_gauss": 1}}
+
+
+@pytest.fixture(params=["", "@dE"], ids=["di", "dd"],
+                scope="module")
+def model_recipe(request, lsm_name):
+    return lsm_name + request.param
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, freq_chunk, time_chunk, correlation_mode, model_recipe):
+def opts(base_opts, freq_chunk, time_chunk, model_recipe, beam_name):
 
     # Don't overwrite base config - instead create a new Namespace and update.
 
@@ -31,8 +39,12 @@ def opts(base_opts, freq_chunk, time_chunk, correlation_mode, model_recipe):
 
     options.input_ms_freq_chunk = freq_chunk
     options.input_ms_time_chunk = time_chunk
-    options.input_ms_correlation_mode = correlation_mode
+    options.input_ms_correlation_mode = "full"
     options.input_model_recipe = model_recipe
+    options.input_model_beam = \
+        beam_name + "/JVLA-L-centred-$(corr)_$(reim).fits"
+    options.input_model_beam_l_axis = "-X"
+    options.input_model_beam_m_axis = "Y"
 
     interpret_model(options)
 
@@ -42,9 +54,12 @@ def opts(base_opts, freq_chunk, time_chunk, correlation_mode, model_recipe):
 @pytest.fixture(scope="module")
 def _predict(opts):
 
+    # Forcefully add this to ensure that the comparison data is read.
+    opts._model_columns = ["MODEL_DATA"]
+
     ms_xds_list, col_kwrds = read_ms(opts)
 
-    return predict(ms_xds_list, opts)
+    return predict(ms_xds_list, opts), ms_xds_list
 
 
 @pytest.fixture(scope="module")
@@ -94,6 +109,7 @@ def _support_tables(base_opts):
 # -----------------------------parse_sky_models--------------------------------
 
 
+@pytest.mark.predict
 @pytest.mark.parametrize("field", ["radec", "stokes", "spi", "ref_freq"])
 def test_expected_fields_points_di(_di_sky_dict, field):
 
@@ -104,6 +120,7 @@ def test_expected_fields_points_di(_di_sky_dict, field):
     assert field in _di_sky_dict[model]["DIE"]["point"]
 
 
+@pytest.mark.predict
 @pytest.mark.parametrize("field", ["radec", "stokes", "spi", "ref_freq",
                                    "shape"])
 def test_expected_fields_gauss_di(_di_sky_dict, field):
@@ -115,6 +132,7 @@ def test_expected_fields_gauss_di(_di_sky_dict, field):
     assert field in _di_sky_dict[model]["DIE"]["gauss"]
 
 
+@pytest.mark.predict
 def test_npoint_di(_di_sky_dict):
 
     # Check for the expected number of point sources.
@@ -123,11 +141,12 @@ def test_npoint_di(_di_sky_dict):
 
     point = _di_sky_dict[model]["DIE"]["point"]
 
-    expected_n_point = 30
+    expected_n_point = sum([s["n_point"] for s in expected_clusters.values()])
 
     assert all([len(f) == expected_n_point for f in point.values()])
 
 
+@pytest.mark.predict
 def test_ngauss_di(_di_sky_dict):
 
     # Check for the expected number of gaussian sources.
@@ -136,11 +155,12 @@ def test_ngauss_di(_di_sky_dict):
 
     gauss = _di_sky_dict[model]["DIE"]["gauss"]
 
-    expected_n_gauss = 30
+    expected_n_gauss = sum(s["n_gauss"] for s in expected_clusters.values())
 
     assert all([len(f) == expected_n_gauss for f in gauss.values()])
 
 
+@pytest.mark.predict
 @pytest.mark.parametrize("field", ["radec", "stokes", "spi", "ref_freq"])
 def test_expected_fields_points_dd(_dd_sky_dict, field):
 
@@ -154,6 +174,7 @@ def test_expected_fields_points_dd(_dd_sky_dict, field):
     assert check is True
 
 
+@pytest.mark.predict
 @pytest.mark.parametrize("field", ["radec", "stokes", "spi", "ref_freq",
                                    "shape"])
 def test_expected_fields_gauss_dd(_dd_sky_dict, field):
@@ -168,6 +189,7 @@ def test_expected_fields_gauss_dd(_dd_sky_dict, field):
     assert check is True
 
 
+@pytest.mark.predict
 def test_npoint_dd(_dd_sky_dict):
 
     # Check for the expected number of point sources.
@@ -184,6 +206,7 @@ def test_npoint_dd(_dd_sky_dict):
     assert check is True
 
 
+@pytest.mark.predict
 def test_ngauss_dd(_dd_sky_dict):
 
     # Check for the expected number of gaussian sources.
@@ -202,6 +225,7 @@ def test_ngauss_dd(_dd_sky_dict):
 # -------------------------daskify_sky_model_dict------------------------------
 
 
+@pytest.mark.predict
 def test_chunking_di(_dask_di_sky_dict):
 
     # Check for consistent chunking.
@@ -217,6 +241,7 @@ def test_chunking_di(_dask_di_sky_dict):
     assert check is True
 
 
+@pytest.mark.predict
 def test_chunking_dd(_dask_dd_sky_dict):
 
     # Check for consistent chunking.
@@ -234,6 +259,7 @@ def test_chunking_dd(_dask_dd_sky_dict):
 # ----------------------------get_support_tables-------------------------------
 
 
+@pytest.mark.predict
 @pytest.mark.parametrize("table", ["ANTENNA", "DATA_DESCRIPTION", "FIELD",
                                    "SPECTRAL_WINDOW", "POLARIZATION"])
 def test_support_fields(_support_tables, table):
@@ -243,6 +269,7 @@ def test_support_fields(_support_tables, table):
     assert table in _support_tables
 
 
+@pytest.mark.predict
 @pytest.mark.parametrize("table", ["ANTENNA"])
 def test_lazy_tables(_support_tables, table):
 
@@ -252,6 +279,7 @@ def test_lazy_tables(_support_tables, table):
                 for dvar in _support_tables[table][0].data_vars.values()])
 
 
+@pytest.mark.predict
 @pytest.mark.parametrize("table", ["DATA_DESCRIPTION", "FIELD",
                                    "SPECTRAL_WINDOW", "POLARIZATION"])
 def test_nonlazy_tables(_support_tables, table):
@@ -261,5 +289,27 @@ def test_nonlazy_tables(_support_tables, table):
     assert all([isinstance(dvar.data, np.ndarray)
                 for dvar in _support_tables[table][0].data_vars.values()])
 
+
+# ---------------------------------predict-------------------------------------
+
+# NOTE: No coverage attempt is made for the predict internals copied from
+# https://github.com/ska-sa/codex-africanus. This is because the majority
+# of this functionality should be tested by codex-africanus. We do check that
+# both the direction-independent predict and direction-dependent predict work
+# for a number of different input values.
+
+@pytest.mark.predict
+def test_predict(_predict):
+
+    # Check that the predicted visibilities are consistent with the MeqTrees
+    # visibilities stored in MODEL_DATA.
+
+    predict_per_xds, ms_xds_list = _predict
+
+    for xds_ind in range(len(predict_per_xds)):
+        for predict_list in predict_per_xds[xds_ind].values():
+            predicted_vis = sum(predict_list)
+            expected_vis = ms_xds_list[xds_ind].MODEL_DATA.data
+            assert_array_almost_equal(predicted_vis, expected_vis)
 
 # -----------------------------------------------------------------------------

@@ -6,3 +6,4 @@ __pycache__
 user_config.yaml
 *.MS
 .cache
+tests/test_data/beams
