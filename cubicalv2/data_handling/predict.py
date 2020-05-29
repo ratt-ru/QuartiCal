@@ -460,6 +460,8 @@ def compute_p_jones(parallactic_angles, feed_xds, opts):
 def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
     """Produces a net direction-independent matrix per time, channe, antenna.
 
+    NOTE: This lacks test coverage.
+
     Args:
         utime_val: Dask array of unique time values.
         frequency: Dask array of frequency values.
@@ -544,20 +546,8 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
     parangles = compute_parallactic_angles(utime, ant.POSITION.data,
                                            field.PHASE_DIR.data[0][0])
 
-    corr_type_set = set(corr_type)
-
-    if corr_type_set.issubset(set([9, 10, 11, 12])):
-        pol_type = 'linear'
-    elif corr_type_set.issubset(set([5, 6, 7, 8])):
-        pol_type = 'circular'
-    else:
-        raise ValueError("Cannot determine polarisation type "
-                         "from correlations %s. Constructing "
-                         "a feed rotation matrix will not be "
-                         "possible." % (corr_type,))
-
     # Construct feed rotation
-    feed_rot = compute_feed_rotation(parangles, pol_type)
+    p_jones = compute_p_jones(parangles, feed, opts)
 
     dtype = np.result_type(parangles, frequency)
 
@@ -591,7 +581,7 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
                              frequency)
 
     # Multiply the beam by the feed rotation to form the DDE term
-    return da.einsum("stafij,tajk->stafik", beam_dde, feed_rot)
+    return da.einsum("stafij,tajk->stafik", beam_dde, p_jones)
 
 
 def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
