@@ -18,6 +18,8 @@ input-model:
     _description: Arguments pertaining to input model parameters.
     recipe: MODEL_DATA
     beam:
+    beam-l-axis: "X"
+    beam-m-axis: "Y"
     invert-uvw: true
     source-chunks: 10
     apply-p-jones: true

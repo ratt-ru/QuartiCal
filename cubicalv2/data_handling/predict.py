@@ -292,7 +292,9 @@ def load_beams(beam_file_schema, corr_types, beam_l_axis, beam_m_axis):
                          "L or X, M or Y and FREQ. NAXIS != 3")
 
     (l_ax, l_grid), (m_ax, m_grid), (nu_ax, nu_grid) = \
-        beam_grids(header, beam_l_axis, beam_m_axis)
+        beam_grids(header,
+                   beam_l_axis.replace("~", "-"),
+                   beam_m_axis.replace("~", "-"))
 
     # Shape of each correlation
     shape = (l_grid.shape[0], m_grid.shape[0], nu_grid.shape[0])

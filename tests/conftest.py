@@ -23,7 +23,7 @@ beam_path = Path(test_data_path, _beam_name)
 conf_path = Path(test_data_path, _conf_name)
 lsm_path = Path(test_data_path, _lsm_name)
 
-data_lnk = "https://www.dropbox.com/s/q5fxx44wche046v/C147_subset.tar.gz"
+data_lnk = "https://www.dropbox.com/s/8e49mfgsh4h6skq/C147_subset.tar.gz"
 beam_lnk = "https://www.dropbox.com/s/26bgrolo1qyfy4k/beams.tar.gz"
 
 tar_lnk_list = [data_lnk, beam_lnk]

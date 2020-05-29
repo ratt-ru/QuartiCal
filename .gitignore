@@ -7,3 +7,5 @@ user_config.yaml
 *.MS
 .cache
 tests/test_data/beams
+*.log
+.tdl.conf

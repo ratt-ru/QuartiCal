@@ -94,29 +94,29 @@ input-model:
     beam-l-axis:
         type: str
         choices: 
-            - X
-            - Y
-            - -Y
-            - -X
-            - L
-            - M
-            - -L
-            - -M
+            - "X"
+            - "Y"
+            - "~Y"
+            - "~X"
+            - "L"
+            - "M"
+            - "~L"
+            - "~M"
         help: Determines the orientation of the beam l-axis.
-        default: X
+        default: "X"
     beam-m-axis:
         type: str
         choices: 
-            - X
-            - Y
-            - -Y
-            - -X
-            - L
-            - M
-            - -L
-            - -M
+            - "X"
+            - "Y"
+            - "~Y"
+            - "~X"
+            - "L"
+            - "M"
+            - "~L"
+            - "~M"
         help: Determines the orientation of the beam l-axis.
-        default: Y
+        default: "Y"
     invert-uvw:
         type: bool
         help: The UVW coordinates will be negated if this option is specified.
