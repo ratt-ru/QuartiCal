@@ -9,7 +9,8 @@ from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              assign_presolve_data_stats,
                                              create_data_stats_xds)
 from cubicalv2.flagging.flagging import (make_bitmask,
-                                         initialise_fullres_bitflags,
+                                         initialise_bitflags,
+                                         initialise_gainflags,
                                          is_set,
                                          set_bitflag,
                                          compute_mad_flags)
@@ -123,29 +124,26 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         time_col = xds.TIME.data
         flag_col = xds.FLAG.data
         flag_row_col = xds.FLAG_ROW.data
-
-        # We immediately apply the bitmask so that we only have the bitflags
-        # we intend to use.
-        bitflag_col = xds.BITFLAG.data & bitmask
-        bitflag_row_col = xds.BITFLAG_ROW.data & bitmask
+        bitflag_col = xds.BITFLAG.data
+        bitflag_row_col = xds.BITFLAG_ROW.data
 
         utime_chunks = xds.UTIME_CHUNKS
 
         weight_col = initialize_weights(xds, data_col, opts)
 
-        fullres_bitflags = initialise_fullres_bitflags(data_col,
-                                                       weight_col,
-                                                       flag_col,
-                                                       flag_row_col,
-                                                       bitflag_col,
-                                                       bitflag_row_col,
-                                                       bitmask)
+        bitflags = initialise_bitflags(data_col,
+                                       weight_col,
+                                       flag_col,
+                                       flag_row_col,
+                                       bitflag_col,
+                                       bitflag_row_col,
+                                       bitmask)
 
         # If we raised the invalid bitflag, zero those data points.
-        data_col[is_set(fullres_bitflags, "INVALID")] = 0
+        data_col[is_set(bitflags, "INVALID")] = 0
 
         # Anywhere we have a full resolution bitflag, we set the weight to 0.
-        weight_col[fullres_bitflags] = 0
+        weight_col[bitflags] = 0
 
         # Convert the time column data into indices. Chunks is expected to be a
         # tuple of tuples.
@@ -195,7 +193,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                        data_col,
                                        model_col,
                                        weight_col,
-                                       fullres_bitflags,
+                                       bitflags,
                                        ant1_col,
                                        ant2_col,
                                        utime_ind,
@@ -266,20 +264,10 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                           "dir": n_dir if dd_term else 1,
                           "corr": n_corr},
                 adjust_chunks={"rowlike": ti_chunks[term],
-                               "chan": fi_chunks[term]})
+                               "chan": fi_chunks[term]},
+                name="gain{}-".format(term) + uuid4().hex)
 
             gain_list.append(gain)
-
-            # Create a an array for gain resolution bitflags. These have the
-            # same shape as the gains. We use an explicit creation routine
-            # to ensure we don't have accidental aliasing.
-
-            gain_flags = da.zeros(gain.shape,
-                                  chunks=gain.chunks,
-                                  dtype=np.uint8,
-                                  name="gflags-" + uuid4().hex)
-
-            gain_flag_list.append(gain_flags)
 
             # If this term in parameterised, we need to set up its parameter
             # array. TODO: This probably needs to be more sophisticated. I am
@@ -348,9 +336,13 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             # After computing the stats we need to do some flagging operations/
             # construct the gain flags.
 
-            # Empty intervals corresponds to missing gains.
+            # Initialise the gain resolution bitflags. These have the
+            # same shape as the gains. Empty intervals correspond to missing
+            # gains.
 
-            gain_flags = set_bitflag(gain_flags, "MISSING", empty_intervals)
+            gain_flags = initialise_gainflags(gain, empty_intervals)
+
+            gain_flag_list.append(gain_flags)
 
             gain_xds_dict[term].append(gain_xds)
 
@@ -442,7 +434,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                           n_t_chunk,
                                           opts)
 
-            fullres_bitflags = set_bitflag(fullres_bitflags, "MAD", mad_flags)
+            bitflags = set_bitflag(bitflags, "MAD", mad_flags)
 
         #######################################################################
 
@@ -463,7 +455,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         updated_xds = \
             xds.assign({opts.output_column: (xds.DATA.dims, residuals),
-                        "CUBI_BITFLAG": (xds.BITFLAG.dims, fullres_bitflags),
+                        "CUBI_BITFLAG": (xds.BITFLAG.dims, bitflags),
                         "CUBI_MODEL": (xds.DATA.dims,
                                        model_col.sum(axis=2,
                                                      dtype=np.complex64))})

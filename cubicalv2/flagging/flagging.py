@@ -1,7 +1,7 @@
 import dask.array as da
 import numpy as np
-from copy import deepcopy
 from uuid import uuid4
+from copy import deepcopy
 from loguru import logger
 from cubicalv2.flagging.flagging_kernels import madmax, threshold
 
@@ -52,13 +52,6 @@ def _set_bitflag(bitflag_arr, bitflag_names, selection=None):
         bitflag_arr: Modified version of input bitflag_arr.
     """
 
-    # NOTE: This is a nasty catch for using the distributed scheduler with
-    # multiple workers. Bitflag arrays may become non-writable. TODO: Consider
-    # alternatives.
-    if not bitflag_arr.flags["W"]:
-        print("WRITABLE: False")
-        bitflag_arr = bitflag_arr.copy()
-
     flag_mask = _make_flagmask(bitflag_names)
 
     if selection is None:
@@ -80,13 +73,6 @@ def _unset_bitflag(bitflag_arr, bitflag_names, selection=None):
     Returns:
         bitflag_arr: Modified version of input bitflag_arr.
     """
-
-    # NOTE: This is a nasty catch for using the distributed scheduler with
-    # multiple workers. Bitflag arrays may become non-writable. TODO: Consider
-    # alternatives.
-    if not bitflag_arr.flags["W"]:
-        print("WRITABLE: False")
-        bitflag_arr = bitflag_arr.copy()
 
     flag_mask = _make_flagmask(bitflag_names)
 
@@ -127,25 +113,14 @@ def _bitflagger(bitflag_arr, bitflag_names, selection, setter):
         Dask array for blockwise flagging.
     """
 
-    if bitflag_arr.ndim == 3:
-        bitflag_axes = ("rowlike", "chan", "corr")
-    elif bitflag_arr.ndim == 5:
-        bitflag_axes = ("rowlike", "chan", "ant", "dir", "corr")
-    else:
-        raise ValueError("BITFLAG is missing one or more dimensions.")
-
     if selection is None:
         selection_args = []
-    elif isinstance(selection, da.Array):
-        selection_args = [selection, bitflag_axes[:selection.ndim]]
+    elif isinstance(selection, np.ndarray):
+        selection_args = [selection]
     else:
         raise ValueError("Invalid selection when attempting to set bitflags.")
 
-    return da.blockwise(setter, bitflag_axes,
-                        bitflag_arr, bitflag_axes,
-                        bitflag_names, None,
-                        *selection_args,
-                        dtype=bitflag_arr.dtype)
+    return setter(bitflag_arr, bitflag_names, *selection_args)
 
 
 def update_kwrds(col_kwrds, opts):
@@ -252,8 +227,10 @@ def finalise_flags(xds_list, col_kwrds, opts):
             legacy_flags = legacy_flags.astype(ebfdtype) << legacy_bit
             bitflag_col |= legacy_flags
 
-        # Set the CubiCal bit in the bitflag column.
-        cubi_bitflags = unset_bitflag(cubi_bitflags, "PRIOR")
+        # Set the CubiCal bit in the bitflag column. TODO: This will not work
+        # in the distributed scheduler as we CANNOT do any operation in place.
+        # Restore once solver has evolved.
+        # cubi_bitflags = unset_bitflag(cubi_bitflags, "PRIOR")
         cubi_bitflag = (cubi_bitflags > 0).astype(ebfdtype) << cubical_bit
 
         bitflag_col |= cubi_bitflag
@@ -350,8 +327,8 @@ def is_set(bitflag_arr, bitflag_names):
                         dtype=np.bool)
 
 
-def initialise_fullres_bitflags(data_col, weight_col, flag_col, flag_row_col,
-                                bitflag_col, bitflag_row_col, bitmask):
+def initialise_bitflags(data_col, weight_col, flag_col, flag_row_col,
+                        bitflag_col, bitflag_row_col, bitmask):
     """Given input data, weights and flags, initialise the internal bitflags.
 
     Populates the internal bitflag array based on existing flags and data
@@ -367,59 +344,87 @@ def initialise_fullres_bitflags(data_col, weight_col, flag_col, flag_row_col,
         bitmask: A binary (integer) mask for selecting relevant bitflags.
 
     Returns:
-        fullres_bitflags: A dask.array containing the initialized internal
+        bitflags: A dask.array containing the initialized internal
             bitflags.
     """
 
-    fullres_bitflags = da.zeros(bitflag_col.shape,
-                                dtype=ibfdtype,
-                                chunks=bitflag_col.chunks,
-                                name="zeros-" + uuid4().hex)
+    return da.map_blocks(_initialise_bitflags, data_col, weight_col, flag_col,
+                         flag_row_col, bitflag_col, bitflag_row_col, bitmask,
+                         dtype=ibfdtype, name="bflags-" + uuid4().hex)
+
+
+def _initialise_bitflags(data_col, weight_col, flag_col, flag_row_col,
+                         bitflag_col, bitflag_row_col, bitmask):
+    """See docstring for initialise_bitflags."""
+
+    bitflags = np.zeros(bitflag_col.shape, dtype=ibfdtype)
 
     # If no bitmask is generated, we presume that we are using the
     # conventional FLAG and FLAG_ROW columns. TODO: Consider whether this
     # is safe behaviour.
+
     if bitmask == 0:
-        fullres_bitflags = set_bitflag(fullres_bitflags, "PRIOR",
-                                       flag_col)
-        fullres_bitflags = set_bitflag(fullres_bitflags, "PRIOR",
-                                       flag_row_col)
+        set_bitflag(bitflags, "PRIOR", flag_col)
+        set_bitflag(bitflags, "PRIOR", flag_row_col)
     else:
-        fullres_bitflags = set_bitflag(fullres_bitflags, "PRIOR",
-                                       (bitflag_col & bitmask) > 0)
-        fullres_bitflags = set_bitflag(fullres_bitflags, "PRIOR",
-                                       (bitflag_row_col & bitmask) > 0)
+        set_bitflag(bitflags, "PRIOR", (bitflag_col & bitmask) > 0)
+        set_bitflag(bitflags, "PRIOR", (bitflag_row_col & bitmask) > 0)
 
-    # The following does some sanity checking on the input data and weights.
-    # Specifically, we look for bad data points, points with missing data,
-    # and points with null weights. These operations implicitly broadcast the
-    # weights to the same frequency dimension as the data. This unavoidable as
-    # we want to exploit the weights to effectively flag.
+    # The following does some sanity checking on the input data and
+    # weights. Specifically, we look for bad data points, points with
+    # missing data, and points with null weights. These operations
+    # implicitly broadcast the weights to the same frequency dimension as
+    # the data. This unavoidable as we want to exploit the weights to
+    # effectively flag.
 
-    invalid_points = ~da.isfinite(data_col)
+    invalid_points = ~np.isfinite(data_col)
 
-    fullres_bitflags = set_bitflag(fullres_bitflags,
-                                   "INVALID",
-                                   invalid_points)
+    set_bitflag(bitflags, "INVALID", invalid_points)
 
-    # TODO: This is likely incorrect for different number of correlations. We
-    # assume that the first and last entries of the correlation axis are the
-    # on-diagonal terms. This should be safe provided we don't have
-    # off-diagonal only data, although in that case the flagging logic is
-    # probablly equally applicable.
-    missing_points = da.logical_or(data_col[..., 0] == 0,
+    # TODO: This is likely incorrect for different number of correlations.
+    # We assume that the first and last entries of the correlation axis
+    # are the on-diagonal terms. This should be safe provided we don't
+    # have off-diagonal only data, although in that case the flagging
+    # logic is probablly equally applicable.
+
+    missing_points = np.logical_or(data_col[..., 0] == 0,
                                    data_col[..., -1] == 0)
-    missing_points = da.logical_or(missing_points[..., None], data_col == 0)
+    missing_points = np.logical_or(missing_points[..., None],
+                                   data_col == 0)
 
-    fullres_bitflags = set_bitflag(fullres_bitflags,
-                                   "MISSING",
-                                   missing_points)
+    set_bitflag(bitflags, "MISSING", missing_points)
 
-    fullres_bitflags = set_bitflag(fullres_bitflags,
-                                   "NULLWGHT",
-                                   weight_col == 0)
+    set_bitflag(bitflags, "NULLWGHT", weight_col == 0)
 
-    return fullres_bitflags
+    return bitflags
+
+
+def initialise_gainflags(gain, empty_intervals):
+    """Given input data, weights and flags, initialise the internal bitflags.
+
+    Populates the internal bitflag array based on existing flags and data
+    points/weights which appear invalid.
+
+    Args:
+        gain: A dask.array containing the gains.
+        empty_intervals: A dask.array containing intervals containing no data.
+
+    Returns:
+        A dask.array containing the initialized gainflags.
+    """
+
+    return da.map_blocks(_initialise_gainflags, gain, empty_intervals,
+                         dtype=np.uint8, name="gflags-" + uuid4().hex)
+
+
+def _initialise_gainflags(gain, empty_intervals):
+    """See docstring for initialise_gainflags."""
+
+    gainflags = np.zeros(gain.shape, dtype=np.uint8)
+
+    set_bitflag(gainflags, "MISSING", empty_intervals)
+
+    return gainflags
 
 
 def compute_mad_flags(residuals, bitflag_col, ant1_col, ant2_col, n_ant,
