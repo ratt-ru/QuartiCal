@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from cubicalv2.calibration.gain_types import term_solvers
+import gc
 
 
 def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
@@ -19,5 +20,7 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                    d_map_arr, corr_mode, gain_ind, inverse_gain_list,
                    **term_tuple._asdict())
+
+    gc.collect()
 
     return gain_list, info_dict

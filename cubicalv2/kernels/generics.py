@@ -18,8 +18,8 @@ def invert_gains(gain_list, inverse_gain_list, mode):
                 for a in range(n_ant):
                     for d in range(n_dir):
 
-                        _invert(gain[d, t, f, a, :],
-                                inverse_gain[d, t, f, a, :],
+                        _invert(gain[t, f, a, d, :],
+                                inverse_gain[t, f, a, d, :],
                                 literally(mode))
 
 

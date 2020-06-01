@@ -46,13 +46,13 @@ slice_scheme = {1: {"scalar": slice(None)},
                     "scalar": slice(0, 1)}}
 
 
-def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr, mode,
-                  *gains):
+def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
+                  corr_mode, *gains):
 
     gain_list = [g for g in gains]
 
     return compute_residual(data, model, gain_list, a1, a2, t_map_arr,
-                            f_map_arr, d_map_arr, mode)
+                            f_map_arr, d_map_arr, corr_mode)
 
 
 def initialize_gain(shape):
@@ -94,14 +94,14 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
     # Figure out how to slice the correlation axis.
 
-    corr_slice = slice_scheme[opts._ms_ncorr].get(opts.solver_mode, None)
+    # corr_slice = slice_scheme[opts._ms_ncorr].get(opts.solver_mode, None)
 
-    mode = opts.input_ms_correlation_mode
+    corr_mode = opts.input_ms_correlation_mode
 
-    if not isinstance(corr_slice, slice):
-        raise ValueError("{} solver mode incompatible with measurement set "
-                         "containing {} correlations.".format(
-                             opts.solver_mode, opts._ms_ncorr, ))
+    # if not isinstance(corr_slice, slice):
+    #     raise ValueError("{} solver mode incompatible with measurement set "
+    #                      "containing {} correlations.".format(
+    #                          opts.solver_mode, opts._ms_ncorr,))
 
     # In the event that not all input BITFLAGS are required, generate a mask
     # which can be applied to select the appropriate bits.
@@ -372,7 +372,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                                   t_map_arr,
                                                   f_map_arr,
                                                   d_map_arr,
-                                                  mode,
+                                                  corr_mode,
                                                   gain_list,
                                                   gain_flag_list,
                                                   param_list,
@@ -422,7 +422,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             t_map_arr, ("rowlike", "term"),
             f_map_arr, ("chan", "term"),
             d_map_arr, None,
-            mode, None,
+            corr_mode, None,
             *gain_list,
             dtype=data_col.dtype,
             align_arrays=False,
@@ -462,12 +462,12 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # accordance with opts.
 
         updated_xds = \
-            xds.assign({"CUBI_RESIDUAL": (xds.DATA.dims, residuals),
+            xds.assign({opts.output_column: (xds.DATA.dims, residuals),
                         "CUBI_BITFLAG": (xds.BITFLAG.dims, fullres_bitflags),
                         "CUBI_MODEL": (xds.DATA.dims,
                                        model_col.sum(axis=2,
                                                      dtype=np.complex64))})
-        updated_xds.attrs["WRITE_COLS"] += ["CUBI_RESIDUAL"]
+        updated_xds.attrs["WRITE_COLS"] += [opts.output_column]
 
         post_cal_data_xds_list.append(updated_xds)
 

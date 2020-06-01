@@ -5,6 +5,7 @@ import sys
 import os
 from pathlib import Path
 from collections import abc
+from distutils.util import strtobool
 import builtins
 from loguru import logger
 import cubicalv2.parser.custom_types as custom_types
@@ -19,6 +20,8 @@ def to_type(type_str):
         return None
     elif type_str in custom_types.custom_types.keys():
         return custom_types.custom_types[type_str]
+    elif type_str == "bool":
+        return lambda arg: bool(strtobool(arg))
     else:
         return getattr(builtins, type_str)
 
@@ -228,7 +231,13 @@ def log_final_config(args):
     Args:
         args: A Namespace object.
     """
-    columns, _ = os.get_terminal_size(0)
+
+    # This guards against attempting to get the terminal size when the output
+    # is being piped/redirected.
+    if sys.stdout.isatty():
+        columns, _ = os.get_terminal_size(0)
+    else:
+        columns = 80  # Fall over to some sensible default.
     left_column = columns//2
     right_column = columns - left_column
 
@@ -255,7 +264,7 @@ def log_final_config(args):
     logger.opt(ansi=True).info(log_message)
 
 
-def parse_inputs():
+def parse_inputs(bypass_sysargv=None):
     """Combines command line and config files to produce a Namespace."""
 
     # Firstly we generate our argparse from the defaults.
@@ -268,7 +277,9 @@ def parse_inputs():
 
     config_file_name = None
 
-    for arg_ind, arg in enumerate(sys.argv):
+    # We use sys.argv unless the bypass is set - this is needed for testing.
+
+    for arg_ind, arg in enumerate(bypass_sysargv or sys.argv):
         if arg.endswith('.yaml'):
             config_file_name = arg
             remaining_args = sys.argv[arg_ind + 1:]
@@ -291,6 +302,7 @@ def parse_inputs():
         args, remaining_args = cl_parser.parse_known_args(cf_args)
 
     else:
+
         args, remaining_args = cl_parser.parse_known_args()
 
     # This is a piece of dark magic which creates new parsers on the fly. This
