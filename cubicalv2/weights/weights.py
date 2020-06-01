@@ -21,8 +21,9 @@ def initialize_weights(xds, data_col, opts):
     if opts._unity_weights:
         n_row, n_chan, n_corr = data_col.shape
         row_chunks, chan_chunks, corr_chunks = data_col.chunks
-        weight_col = da.ones((n_row, 1, n_corr), chunks=(row_chunks, (1,),
-                             corr_chunks), name="weights-" + uuid.uuid4().hex,
+        weight_col = da.ones((n_row, n_chan, n_corr),
+                             chunks=data_col.chunks,
+                             name="weights-" + uuid.uuid4().hex,
                              dtype=np.float32)
     else:
         # We use a copy to prevent mutating the xds.
@@ -32,7 +33,7 @@ def initialize_weights(xds, data_col, opts):
     # not have a frequency axis.
 
     if weight_col.ndim == 2:
-        weight_col = weight_col.map_blocks(
-            lambda w: np.expand_dims(w, 1), new_axis=1)
+        weight_col = da.broadcast_to(weight_col[:, None, :],
+                                     chunks=data_col.chunks)
 
     return weight_col
