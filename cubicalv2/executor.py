@@ -31,9 +31,10 @@ def execute():
 
     if opts.parallel_scheduler == "distributed":
         logger.info("Initializing distributed client.")
-        cluster = LocalCluster(processes=False,
+        cluster = LocalCluster(processes=opts.parallel_nworker > 1,
                                n_workers=opts.parallel_nworker,
-                               threads_per_worker=opts.parallel_nthread,)
+                               threads_per_worker=opts.parallel_nthread,
+                               memory_limit=0)
         client = Client(cluster) # noqa
         logger.info("Distributed client sucessfully initialized.")
 
@@ -126,12 +127,12 @@ def execute():
     #                filename='model.pdf',
     #                optimize_graph=False)
 
-    # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    # dask.visualize([dask.delayed(tuple)([x[0]]) for x in outputs],
     #                color='order', cmap='autumn',
-    #                filename='model_order.pdf', node_attr={'penwidth': '10'})
+    #                filename='graph_order.pdf', node_attr={'penwidth': '10'})
 
-    # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
-    #                filename='model.pdf',
+    # dask.visualize([dask.delayed(tuple)([x[0]]) for x in outputs],
+    #                filename='graph.pdf',
     #                optimize_graph=True)
 
     # dask.visualize(model_xds_list,

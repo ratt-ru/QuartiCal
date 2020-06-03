@@ -348,9 +348,19 @@ def initialise_bitflags(data_col, weight_col, flag_col, flag_row_col,
             bitflags.
     """
 
-    return da.map_blocks(_initialise_bitflags, data_col, weight_col, flag_col,
-                         flag_row_col, bitflag_col, bitflag_row_col, bitmask,
-                         dtype=ibfdtype, name="bflags-" + uuid4().hex)
+    return da.blockwise(_initialise_bitflags, ("rowlike", "chan", "corr"),
+                        data_col, ("rowlike", "chan", "corr"),
+                        weight_col, ("rowlike", "chan", "corr"),
+                        flag_col, ("rowlike", "chan", "corr"),
+                        flag_row_col, ("rowlike",),
+                        bitflag_col, ("rowlike", "chan", "corr"),
+                        bitflag_row_col, ("rowlike",),
+                        bitmask, None,
+                        dtype=ibfdtype,
+                        name="bflags-" + uuid4().hex,
+                        adjust_chunks=data_col.chunks,
+                        align_arrays=False,
+                        concatenate=True)
 
 
 def _initialise_bitflags(data_col, weight_col, flag_col, flag_row_col,
