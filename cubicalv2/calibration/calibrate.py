@@ -10,7 +10,6 @@ from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_data_stats_xds)
 from cubicalv2.flagging.flagging import (make_bitmask,
                                          initialise_bitflags,
-                                         initialise_gainflags,
                                          is_set,
                                          set_bitflag,
                                          compute_mad_flags)
@@ -188,14 +187,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 fi_chunks[term] = tuple(1 for _ in range(n_f_chunk))
 
             n_fint = np.sum(fi_chunks[term])
-
-            # Convert the chunk dimensions into dask arrays.
-            t_int_per_chunk = da.from_array(ti_chunks[term],
-                                            chunks=(1,),
-                                            name="tipc-" + uuid4().hex)
-            f_int_per_chunk = da.from_array(fi_chunks[term],
-                                            chunks=(1,),
-                                            name="fipc-" + uuid4().hex)
 
             freqs_per_chunk = da.from_array(data_col.chunks[1],
                                             chunks=(1,),
