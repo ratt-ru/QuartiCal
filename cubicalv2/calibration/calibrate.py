@@ -278,12 +278,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         # This has been improved substantially but likely still needs work.
 
-        stats_dict = {}
         for ind, term in enumerate(opts.solver_gain_terms):
-
-            dd_term = getattr(opts, "{}_direction_dependent".format(term))
-
-            stats_dict[term] = {}
 
             gain_xds_dict[term][-1] = gain_xds_dict[term][-1].assign(
                 {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
