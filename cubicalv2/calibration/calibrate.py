@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from cubicalv2.kernels.complex import stat_fields
 from cubicalv2.kernels.generics import (compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_gain_stats_xds,
@@ -222,6 +221,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                 dtype=np.uint32)
             f_maps.append(f_map)
 
+            # Generate direction mapping - necessary for mixing terms.
             d_maps.append(list(range(n_dir)) if dd_term else [0]*n_dir)
 
             # Create an xds in which to store the gain values and assosciated
@@ -237,7 +237,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                              term,
                                              xds_ind)   # TODO: Unchecked
 
-            # Update the gain xds with relevant interval statistics.
+            # Update the gain xds with relevant interval statistics. This is
+            # INSANELY expensive. TODO: Investigate necessity/improve.
 
             gain_xds, empty_intervals = \
                 assign_interval_stats(gain_xds,
@@ -262,23 +263,21 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
         # as we now have a blueprint for pulling values out of the solver
         # layer.
 
-        gain_list, solver_info = construct_solver(model_col,
-                                                  data_col,
-                                                  ant1_col,
-                                                  ant2_col,
-                                                  weight_col,
-                                                  t_map_arr,
-                                                  f_map_arr,
-                                                  d_map_arr,
-                                                  corr_mode,
-                                                  gain_shape_list,
-                                                  gain_chunk_list,
-                                                  opts)
+        gain_list, conv_perc_list, conv_iter_list = \
+            construct_solver(model_col,
+                             data_col,
+                             ant1_col,
+                             ant2_col,
+                             weight_col,
+                             t_map_arr,
+                             f_map_arr,
+                             d_map_arr,
+                             corr_mode,
+                             gain_shape_list,
+                             gain_chunk_list,
+                             opts)
 
-        # Info is still in limbo at this point - this can likely be entirely
-        # replaced by modifying the solver constructor to pull out the
-        # different info values rather than the somewhat cludgy named tuple
-        # approach I was resorting to due to blockwise.
+        # This has been improved substantially but likely still needs work.
 
         stats_dict = {}
         for ind, term in enumerate(opts.solver_gain_terms):
@@ -287,24 +286,14 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
             stats_dict[term] = {}
 
-            for field, field_dtype in stat_fields.items():
-                stats_dict[term][field] = da.blockwise(
-                    lambda d, t, n: np.atleast_2d(getattr(d[t], n)),
-                    ("rowlike", "chan"),
-                    solver_info, ("rowlike", "chan"),
-                    ind, None,
-                    field, None,
-                    dtype=field_dtype,
-                    align_arrays=False)
+            gain_xds_dict[term][-1] = gain_xds_dict[term][-1].assign(
+                {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
+                           gain_list[ind]),
+                 "conv_perc": (("t_chunk", "f_chunk"), conv_perc_list[ind]),
+                 "conv_iter": (("t_chunk", "f_chunk"), conv_iter_list[ind])})
 
-            gain_xds_dict[term][-1] = \
-                gain_xds_dict[term][-1].assign(
-                    {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
-                               gain_list[ind]),
-                     "conv_perc": (("t_chunk", "f_chunk"),
-                                   stats_dict[term]["conv_perc"]),
-                     "conv_iters": (("t_chunk", "f_chunk"),
-                                    stats_dict[term]["conv_iters"])})
+        # TODO: I want to remove this code if possible - I think V2 should
+        # split solve and apply into two separate tasks.
 
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
 
@@ -331,7 +320,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
 
         #######################################################################
         # This is the madmax flagging step which is not always enabled. TODO:
-        # Likely needs to be moved into the solver.
+        # This likely needs to be moved into the solver.
 
         if opts.flags_mad_enable:
             mad_flags = compute_mad_flags(residuals,

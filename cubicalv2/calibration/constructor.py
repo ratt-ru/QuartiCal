@@ -138,48 +138,68 @@ def construct_solver(model_col,
     deps.update({solver_name: {inp.name for inp in dask_inputs}})
 
     # The following constructs the getitem layer which is necessary to handle
-    # returning several results from the solver.
-    gain_names = ["gain-{}-{}".format(i, token) for i in range(n_term)]
+    # returning several results from the solver. TODO: This is improving but
+    # can I add convenience functions to streamline this process?
 
-    # TODO: Can we return a dict from the wrapper and remove the double get
-    # item?. This will also be easier to work with.
-    for gi, gn in enumerate(gain_names):
-        get_gain = {(gn, k[1], k[2], 0, 0, 0): (getitem, (getitem, k, 0), gi)
+    gain_keys = \
+        ["gain-{}-{}".format(gn, token) for gn in opts.solver_gain_terms]
+
+    conv_iter_keys = \
+        ["conviter-{}-{}".format(gn, token) for gn in opts.solver_gain_terms]
+
+    conv_perc_keys = \
+        ["convperc-{}-{}".format(gn, token) for gn in opts.solver_gain_terms]
+
+    for gi, gn in enumerate(opts.solver_gain_terms):
+
+        get_gain = {(gain_keys[gi], k[1], k[2], 0, 0, 0):
+                    (getitem, (getitem, k, gn), "gain")
                     for i, k in enumerate(solver_dsk.keys())}
 
-        layers.update({gn: get_gain})
-        deps.update({gn: {solver_name}})
+        layers.update({gain_keys[gi]: get_gain})
+        deps.update({gain_keys[gi]: {solver_name}})
 
-    # We also want to get the named tuple of convergance info - note that this
-    # may no longer be needed as we have a way to pull out values from the
-    # solver in a more transparent fashion than before. TODO: Change this.
-    info_name = "info-" + token
+        get_conv_iters = \
+            {(conv_iter_keys[gi], k[1], k[2]):
+             (np.atleast_2d, (getitem, (getitem, k, gn), "conv_iter"))
+             for i, k in enumerate(solver_dsk.keys())}
 
-    get_info = \
-        {(info_name, k[1], k[2]): (getitem, k, 1)
-         for i, k in enumerate(solver_dsk.keys())}
+        layers.update({conv_iter_keys[gi]: get_conv_iters})
+        deps.update({conv_iter_keys[gi]: {solver_name}})
 
-    layers.update({info_name: get_info})
-    deps.update({info_name: {solver_name}})
+        get_conv_perc = \
+            {(conv_perc_keys[gi], k[1], k[2]):
+             (np.atleast_2d, (getitem, (getitem, k, gn), "conv_perc"))
+             for i, k in enumerate(solver_dsk.keys())}
+
+        layers.update({conv_perc_keys[gi]: get_conv_perc})
+        deps.update({conv_perc_keys[gi]: {solver_name}})
 
     # Turn the layers and dependencies into a high level graph.
     graph = HighLevelGraph(layers, deps)
 
     # Now that we have the graph, we need to construct arrays from the results.
     # We loop over the output gains and pack them into a list of dask arrays.
-    output_gain_list = []
-    for gi, gn in enumerate(gain_names):
-        output_gain_list.append(da.Array(graph,
-                                         name=gn,
-                                         chunks=term_chunk_list[gi],
-                                         dtype=np.complex64))
+    gain_list = []
+    conv_iter_list = []
+    conv_perc_list = []
 
-    # We also partially unpack the info tuple, but see earlier comment. This
-    # can probably be refined.
-    info_array = da.Array(graph,
-                          name=info_name,
-                          chunks=((1,)*n_t_chunks,
-                                  (1,)*n_f_chunks),
-                          dtype=np.float32)
+    for gi, gn in enumerate(opts.solver_gain_terms):
+        gain_list.append(da.Array(graph,
+                         name=gain_keys[gi],
+                         chunks=term_chunk_list[gi],
+                         dtype=np.complex64))
 
-    return output_gain_list, info_array
+        conv_perc_list.append(da.Array(graph,
+                                       name=conv_perc_keys[gi],
+                                       chunks=((1,)*n_t_chunks,
+                                               (1,)*n_f_chunks),
+                                       dtype=np.float32))
+
+        conv_iter_list.append(da.Array(graph,
+                                       name=conv_iter_keys[gi],
+                                       chunks=((1,)*n_t_chunks,
+                                               (1,)*n_f_chunks),
+                                       dtype=np.float32))
+
+    return gain_list, conv_perc_list, conv_iter_list
