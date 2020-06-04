@@ -31,9 +31,10 @@ def execute():
 
     if opts.parallel_scheduler == "distributed":
         logger.info("Initializing distributed client.")
-        cluster = LocalCluster(processes=False,
+        cluster = LocalCluster(processes=opts.parallel_nworker > 1,
                                n_workers=opts.parallel_nworker,
-                               threads_per_worker=opts.parallel_nthread,)
+                               threads_per_worker=opts.parallel_nthread,
+                               memory_limit=0)
         client = Client(cluster) # noqa
         logger.info("Distributed client sucessfully initialized.")
 
@@ -42,7 +43,7 @@ def execute():
     # Reads the measurement set using the relavant configuration from opts.
     ms_xds_list, col_kwrds = read_ms(opts)
 
-    # ms_xds_list = ms_xds_list[:1]
+    # ms_xds_list = ms_xds_list[:4]
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
@@ -128,10 +129,18 @@ def execute():
 
     # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
     #                color='order', cmap='autumn',
-    #                filename='model_order.pdf', node_attr={'penwidth': '10'})
+    #                filename='graph_order.pdf', node_attr={'penwidth': '10'})
 
     # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
-    #                filename='model.pdf',
+    #                filename='graph.pdf',
+    #                optimize_graph=True)
+
+    # dask.visualize([dask.delayed(tuple)([x[0]]) for x in outputs],
+    #                color='order', cmap='autumn',
+    #                filename='graph_order.pdf', node_attr={'penwidth': '10'})
+
+    # dask.visualize([dask.delayed(tuple)([x[0]]) for x in outputs],
+    #                filename='graph.pdf',
     #                optimize_graph=True)
 
     # dask.visualize(model_xds_list,

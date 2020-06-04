@@ -3,47 +3,12 @@ import dask.array as da
 from dask.array.core import HighLevelGraph
 from operator import getitem
 from dask.base import tokenize
-from cubicalv2.calibration.gain_types import term_types
 from cubicalv2.calibration.solver import solver_wrapper
+from dask.core import flatten
+from collections import namedtuple
 
 
-def flatten(l):
-    for el in l:
-        if isinstance(el, list):
-            yield from flatten(el)
-        else:
-            yield el
-
-
-def tuplify(gains, flags, params, term_type):
-    """Converts solver intputs into a term specific named tuple.
-
-    This function should not be altered/extended. It makes use of locals()
-    and therefore adding code rashly can lead to unexpected behaviour. Uses
-    the contents of locals() to dynamically generate named tuples of inputs
-    for the solver layer. This allows us to keep the solver interface a little
-    neater though this still needs further work.
-
-    Args:
-        gains: List of np.arrays containing the various gains.
-        flags: List of np.arrays containing the gain flags.
-        params: List of np.arrays containing the parameterisations.
-        term_type: String determining term type.
-
-    Returns:
-        Named tuple contatining the appropriate inputs for the solver.
-    """
-
-    frozen_locals = locals()
-    fields = {k: frozen_locals[k] for k in term_types[term_type]._fields}
-
-    return term_types[term_type](**fields)
-
-
-def listify(*args):
-    """Convenience function - just list that accepts multiple arguments."""
-
-    return list(args)
+term_spec_tup = namedtuple("term_spec", "name type shape")
 
 
 def construct_solver(model_col,
@@ -55,9 +20,8 @@ def construct_solver(model_col,
                      f_map_arr,
                      d_map_arr,
                      corr_mode,
-                     gain_list,
-                     flag_list,
-                     param_list,
+                     term_shape_list,
+                     term_chunk_list,
                      opts):
     """Constructs the dask graph for the solver layer.
 
@@ -75,14 +39,17 @@ def construct_solver(model_col,
         f_map_arr: dask.Array containing frequency mappings.
         d_map_arr: dask.Array containing direction mappings.
         corr_mode: A string indicating the correlation mode.
-        gain_list: A list of dask.Arrays corresponding to the gain terms.
-        flag_list: A list of dask.Arrays corresponding to the gain flags.
-        param_list: A list of dask.Arrays corresponding to parameterisations.
+        term_shape_list: A list of named tuples containing per-term shapes.
+        term_chunk_list: A list of named tuples containing per-term chunk
+            shapes.
         opts: A Namespace object containing global options.
 
     Returns:
-        output_gain_list: A list of dask.Arrays containing the gains.
-        info_array: An dask.Array containing convergence info.
+        gain_list: A list of dask.Arrays containing the gains.
+        conv_perc_list: A list of dask.Arrays containing the converged
+            percentages.
+        conv_iter_list: A list of dask.Arrays containing the iterations taken
+            to reach convergence.
     """
 
     # This is slightly ugly but works for now. Grab and flatten the keys of all
@@ -95,74 +62,33 @@ def construct_solver(model_col,
     weight_col_keys = list(flatten(weight_col.__dask_keys__()))
     t_map_arr_keys = list(flatten(t_map_arr.__dask_keys__()))
     f_map_arr_keys = list(flatten(f_map_arr.__dask_keys__()))
-    gain_keys = [list(flatten(gain.__dask_keys__())) for gain in gain_list]
-    flag_keys = [list(flatten(flag.__dask_keys__())) for flag in flag_list]
-    param_keys = [list(flatten(parm.__dask_keys__())) for parm in param_list]
 
     # Tuple of all dasky inputs over which we will loop for establishing
     # dependencies.
-    args = (model_col, data_col, ant1_col, ant2_col, weight_col,
-            t_map_arr, f_map_arr, *gain_list, *flag_list, *param_list)
+    dask_inputs = (model_col,
+                   data_col,
+                   ant1_col,
+                   ant2_col,
+                   weight_col,
+                   t_map_arr,
+                   f_map_arr)
 
     # These should be guarateed to have the correct dimension in each chunking
     # axis. This is important for key matching.
     n_t_chunks = len(t_map_arr_keys)
     n_f_chunks = len(f_map_arr_keys)
-    n_term = len(gain_list)
+
+    term_type_list = [getattr(opts, "{}_type".format(t))
+                      for t in opts.solver_gain_terms]
 
     # Based on the inputs, generate a unique hash which can be used to uniquely
     # identify nodes in the graph.
-    token = tokenize(*args)
+    token = tokenize(*dask_inputs)
 
     # Layers are the high level graph structure. Initialise with the dasky
     # inputs. Similarly for the their dependencies.
-    layers = {inp.name: inp.__dask_graph__() for inp in args}
-    deps = {inp.name: inp.__dask_graph__().dependencies for inp in args}
-
-    tupler_dsks = []
-    term_types = \
-        [getattr(opts, "{}_type".format(t)) for t in opts.solver_gain_terms]
-    consumed_params = 0
-
-    for ind in range(n_term):
-
-        tupler_name = "tupler-{}-{}".format(ind, token)
-
-        # For now assume that non-complex terms are parameterised. TODO: Make
-        # this behaviour a little neater.
-
-        param_term = term_types[ind] != "complex"
-
-        term_param_keys = param_keys[consumed_params] if param_term \
-            else [None]*len(gain_keys[ind])
-
-        # Generators for grouping the gains and flags. This has to be done on
-        # each loop as the generators are consumed. TODO: We are deliberately
-        # aliasing the gains into each tuple - we need to carefully consider
-        # whether this is safe.
-
-        grouped_gains = ((listify, *gk) for gk in zip(*gain_keys))
-        grouped_flags = ((listify, *fk) for fk in zip(*flag_keys))
-
-        tupler_dsk = {(tupler_name, gk[1][1], gk[1][2]):
-                      (tuplify, gk, fk, pk, term_types[ind])
-                      for gk, fk, pk in zip(grouped_gains,
-                                            grouped_flags,
-                                            term_param_keys)}
-
-        term_param_vals = param_list[consumed_params] if param_term else ()
-        term_param_name = term_param_vals.name if param_term else ()
-
-        # Add a tupler layer per gain with its dependencies.
-        layers.update({tupler_name: tupler_dsk})
-        deps.update({tupler_name: {g.name for g in gain_list} |
-                                  {f.name for f in flag_list} |
-                                  {term_param_name}})
-
-        if param_term:
-            consumed_params = consumed_params + 1
-
-        tupler_dsks.append(list(tupler_dsk.keys()))
+    layers = {inp.name: inp.__dask_graph__() for inp in dask_inputs}
+    deps = {inp.name: inp.__dask_graph__().dependencies for inp in dask_inputs}
 
     solver_name = "solver-" + token
 
@@ -172,12 +98,30 @@ def construct_solver(model_col,
     for t in range(n_t_chunks):
         for f in range(n_f_chunks):
 
+            # Convert time and freq chunk indices to a flattened index.
             ind = t*n_f_chunks + f
 
-            # Interleave these keys (solver expects this).
-            gain_inputs = list(zip(*tupler_dsks))
+            # Each term may differ in both type and shape - we build a spec
+            # per term, per chunk. TODO: This can possibly be refined.
+            term_spec_list = []
+
+            spec_iterator = zip(opts.solver_gain_terms,
+                                term_type_list,
+                                term_chunk_list)
+
+            for tn, tt, cs in spec_iterator:
+
+                shape = (cs.tchunk[t],
+                         cs.fchunk[f],
+                         cs.achunk[0],
+                         cs.dchunk[0],
+                         cs.cchunk[0])
+
+                term_spec_list.append(term_spec_tup(tn, tt, shape))
 
             # Set up the per-chunk solves. Note how keys are assosciated.
+            # TODO: Figure out how to pass ancilliary information into the
+            # solver wrapper. Possibly via a dict constructed above.
             solver_dsk[(solver_name, t, f,)] = \
                 (solver_wrapper,
                  model_col_keys[ind],
@@ -189,55 +133,75 @@ def construct_solver(model_col,
                  f_map_arr_keys[f],
                  d_map_arr,
                  corr_mode,
-                 *gain_inputs[ind])
+                 term_spec_list)
 
     # Add the solver layer and its dependencies.
     layers.update({solver_name: solver_dsk})
-    deps.update({solver_name: {inp.name for inp in args}})
+    deps.update({solver_name: {inp.name for inp in dask_inputs}})
 
     # The following constructs the getitem layer which is necessary to handle
-    # returning several results from the solver.
-    gain_names = \
-        ["gain-{}-{}".format(i, token) for i in range(len(gain_list))]
+    # returning several results from the solver. TODO: This is improving but
+    # can I add convenience functions to streamline this process?
 
-    for gi, gn in enumerate(gain_names):
-        get_gain = \
-            {(gn, k[1], k[2], 0, 0, 0): (getitem, (getitem, k, 0), gi)
+    gain_keys = \
+        ["gain-{}-{}".format(gn, token) for gn in opts.solver_gain_terms]
+
+    conv_iter_keys = \
+        ["conviter-{}-{}".format(gn, token) for gn in opts.solver_gain_terms]
+
+    conv_perc_keys = \
+        ["convperc-{}-{}".format(gn, token) for gn in opts.solver_gain_terms]
+
+    for gi, gn in enumerate(opts.solver_gain_terms):
+
+        get_gain = {(gain_keys[gi], k[1], k[2], 0, 0, 0):
+                    (getitem, (getitem, k, gn), "gain")
+                    for i, k in enumerate(solver_dsk.keys())}
+
+        layers.update({gain_keys[gi]: get_gain})
+        deps.update({gain_keys[gi]: {solver_name}})
+
+        get_conv_iters = \
+            {(conv_iter_keys[gi], k[1], k[2]):
+             (np.atleast_2d, (getitem, (getitem, k, gn), "conv_iter"))
              for i, k in enumerate(solver_dsk.keys())}
 
-        layers.update({gn: get_gain})
-        deps.update({gn: {solver_name}})
+        layers.update({conv_iter_keys[gi]: get_conv_iters})
+        deps.update({conv_iter_keys[gi]: {solver_name}})
 
-    # We also want to get the named tuple of convergance info - note that this
-    # may no longer be needed as we have a way to pull out values from the
-    # solver in a more transparent fashion than before. TODO: Change this.
-    info_name = "info-" + token
+        get_conv_perc = \
+            {(conv_perc_keys[gi], k[1], k[2]):
+             (np.atleast_2d, (getitem, (getitem, k, gn), "conv_perc"))
+             for i, k in enumerate(solver_dsk.keys())}
 
-    get_info = \
-        {(info_name, k[1], k[2]): (getitem, k, 1)
-         for i, k in enumerate(solver_dsk.keys())}
-
-    layers.update({info_name: get_info})
-    deps.update({info_name: {solver_name}})
+        layers.update({conv_perc_keys[gi]: get_conv_perc})
+        deps.update({conv_perc_keys[gi]: {solver_name}})
 
     # Turn the layers and dependencies into a high level graph.
     graph = HighLevelGraph(layers, deps)
 
     # Now that we have the graph, we need to construct arrays from the results.
     # We loop over the output gains and pack them into a list of dask arrays.
-    output_gain_list = []
-    for gi, gn in enumerate(gain_names):
-        output_gain_list.append(da.Array(graph,
-                                         name=gn,
-                                         chunks=gain_list[gi].chunks,
-                                         dtype=np.complex64))
+    gain_list = []
+    conv_iter_list = []
+    conv_perc_list = []
 
-    # We also partially unpack the info tuple, but see earlier comment. This
-    # can probably be refined.
-    info_array = da.Array(graph,
-                          name=info_name,
-                          chunks=((1,)*n_t_chunks,
-                                  (1,)*n_f_chunks),
-                          dtype=np.float32)
+    for gi, gn in enumerate(opts.solver_gain_terms):
+        gain_list.append(da.Array(graph,
+                         name=gain_keys[gi],
+                         chunks=term_chunk_list[gi],
+                         dtype=np.complex64))
 
-    return output_gain_list, info_array
+        conv_perc_list.append(da.Array(graph,
+                                       name=conv_perc_keys[gi],
+                                       chunks=((1,)*n_t_chunks,
+                                               (1,)*n_f_chunks),
+                                       dtype=np.float32))
+
+        conv_iter_list.append(da.Array(graph,
+                                       name=conv_iter_keys[gi],
+                                       chunks=((1,)*n_t_chunks,
+                                               (1,)*n_f_chunks),
+                                       dtype=np.float32))
+
+    return gain_list, conv_perc_list, conv_iter_list
