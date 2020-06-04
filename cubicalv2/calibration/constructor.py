@@ -8,7 +8,7 @@ from dask.core import flatten
 from collections import namedtuple
 
 
-term_spec_tup = namedtuple("term_spec", "type shape")
+term_spec_tup = namedtuple("term_spec", "name type shape")
 
 
 def construct_solver(model_col,
@@ -62,8 +62,13 @@ def construct_solver(model_col,
 
     # Tuple of all dasky inputs over which we will loop for establishing
     # dependencies.
-    args = (model_col, data_col, ant1_col, ant2_col, weight_col,
-            t_map_arr, f_map_arr)
+    dask_inputs = (model_col,
+                   data_col,
+                   ant1_col,
+                   ant2_col,
+                   weight_col,
+                   t_map_arr,
+                   f_map_arr)
 
     # These should be guarateed to have the correct dimension in each chunking
     # axis. This is important for key matching.
@@ -76,12 +81,12 @@ def construct_solver(model_col,
 
     # Based on the inputs, generate a unique hash which can be used to uniquely
     # identify nodes in the graph.
-    token = tokenize(*args)
+    token = tokenize(*dask_inputs)
 
     # Layers are the high level graph structure. Initialise with the dasky
     # inputs. Similarly for the their dependencies.
-    layers = {inp.name: inp.__dask_graph__() for inp in args}
-    deps = {inp.name: inp.__dask_graph__().dependencies for inp in args}
+    layers = {inp.name: inp.__dask_graph__() for inp in dask_inputs}
+    deps = {inp.name: inp.__dask_graph__().dependencies for inp in dask_inputs}
 
     solver_name = "solver-" + token
 
@@ -91,10 +96,18 @@ def construct_solver(model_col,
     for t in range(n_t_chunks):
         for f in range(n_f_chunks):
 
+            # Convert time and freq chunk indices to a flattened index.
             ind = t*n_f_chunks + f
 
+            # Each term may differ in both type and shape - we build a spec
+            # per term, per chunk. TODO: This can possibly be refined.
             term_spec_list = []
-            for tt, cs in zip(term_type_list, term_chunk_list):
+
+            spec_iterator = zip(opts.solver_gain_terms,
+                                term_type_list,
+                                term_chunk_list)
+
+            for tn, tt, cs in spec_iterator:
 
                 shape = (cs.tchunk[t],
                          cs.fchunk[f],
@@ -102,9 +115,11 @@ def construct_solver(model_col,
                          cs.dchunk[0],
                          cs.cchunk[0])
 
-                term_spec_list.append(term_spec_tup(tt, shape))
+                term_spec_list.append(term_spec_tup(tn, tt, shape))
 
             # Set up the per-chunk solves. Note how keys are assosciated.
+            # TODO: Figure out how to pass ancilliary information into the
+            # solver wrapper. Possibly via a dict constructed above.
             solver_dsk[(solver_name, t, f,)] = \
                 (solver_wrapper,
                  model_col_keys[ind],
@@ -120,13 +135,14 @@ def construct_solver(model_col,
 
     # Add the solver layer and its dependencies.
     layers.update({solver_name: solver_dsk})
-    deps.update({solver_name: {inp.name for inp in args}})
+    deps.update({solver_name: {inp.name for inp in dask_inputs}})
 
     # The following constructs the getitem layer which is necessary to handle
     # returning several results from the solver.
-    gain_names = \
-        ["gain-{}-{}".format(i, token) for i in range(n_term)]
+    gain_names = ["gain-{}-{}".format(i, token) for i in range(n_term)]
 
+    # TODO: Can we return a dict from the wrapper and remove the double get
+    # item?. This will also be easier to work with.
     for gi, gn in enumerate(gain_names):
         get_gain = {(gn, k[1], k[2], 0, 0, 0): (getitem, (getitem, k, 0), gi)
                     for i, k in enumerate(solver_dsk.keys())}

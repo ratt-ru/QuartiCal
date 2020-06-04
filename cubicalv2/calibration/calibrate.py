@@ -330,7 +330,8 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                            "chan": data_col.chunks[1]})
 
         #######################################################################
-        # This is the madmax flagging step which is not always enabled.
+        # This is the madmax flagging step which is not always enabled. TODO:
+        # Likely needs to be moved into the solver.
 
         if opts.flags_mad_enable:
             mad_flags = compute_mad_flags(residuals,

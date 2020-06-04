@@ -14,6 +14,7 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
     gain_list = []
     additional_args = []
+    results_dict = {}
 
     for term_spec in term_spec_list:
         gain = np.zeros(term_spec.shape, dtype=np.complex128)
@@ -33,6 +34,10 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                                          dtype=gain.real.dtype)})
         else:
             additional_args.append({})
+
+        results_dict[term_spec.name] = {"gain": gain,
+                                        "conv_iters": 0,
+                                        "conv_perc": 0}
 
     flag_list = [np.zeros_like(g, dtype=np.uint8) for g in gain_list]
     inverse_gain_list = [np.empty_like(g) for g in gain_list]
