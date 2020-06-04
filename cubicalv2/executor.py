@@ -43,7 +43,7 @@ def execute():
     # Reads the measurement set using the relavant configuration from opts.
     ms_xds_list, col_kwrds = read_ms(opts)
 
-    # ms_xds_list = ms_xds_list[:1]
+    # ms_xds_list = ms_xds_list[:4]
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
@@ -126,6 +126,14 @@ def execute():
     # dask.visualize([xds.MODEL_DATA.data for xds in model_xds_list],
     #                filename='model.pdf',
     #                optimize_graph=False)
+
+    # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    #                color='order', cmap='autumn',
+    #                filename='graph_order.pdf', node_attr={'penwidth': '10'})
+
+    # dask.visualize([dask.delayed(tuple)(x) for x in outputs],
+    #                filename='graph.pdf',
+    #                optimize_graph=True)
 
     # dask.visualize([dask.delayed(tuple)([x[0]]) for x in outputs],
     #                color='order', cmap='autumn',

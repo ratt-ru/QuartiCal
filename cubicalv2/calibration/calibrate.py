@@ -165,7 +165,6 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
             atomic_t_int = getattr(opts, "{}_time_interval".format(term))
             atomic_f_int = getattr(opts, "{}_freq_interval".format(term))
             dd_term = getattr(opts, "{}_direction_dependent".format(term))
-            term_type = getattr(opts, "{}_type".format(term))
 
             # Number of time intervals per data chunk. If this is zero,
             # solution interval is the entire axis per chunk.

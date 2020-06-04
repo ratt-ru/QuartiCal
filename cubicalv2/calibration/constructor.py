@@ -39,14 +39,17 @@ def construct_solver(model_col,
         f_map_arr: dask.Array containing frequency mappings.
         d_map_arr: dask.Array containing direction mappings.
         corr_mode: A string indicating the correlation mode.
-        gain_list: A list of dask.Arrays corresponding to the gain terms.
-        flag_list: A list of dask.Arrays corresponding to the gain flags.
-        param_list: A list of dask.Arrays corresponding to parameterisations.
+        term_shape_list: A list of named tuples containing per-term shapes.
+        term_chunk_list: A list of named tuples containing per-term chunk
+            shapes.
         opts: A Namespace object containing global options.
 
     Returns:
-        output_gain_list: A list of dask.Arrays containing the gains.
-        info_array: An dask.Array containing convergence info.
+        gain_list: A list of dask.Arrays containing the gains.
+        conv_perc_list: A list of dask.Arrays containing the converged
+            percentages.
+        conv_iter_list: A list of dask.Arrays containing the iterations taken
+            to reach convergence.
     """
 
     # This is slightly ugly but works for now. Grab and flatten the keys of all
@@ -74,7 +77,6 @@ def construct_solver(model_col,
     # axis. This is important for key matching.
     n_t_chunks = len(t_map_arr_keys)
     n_f_chunks = len(f_map_arr_keys)
-    n_term = len(opts.solver_gain_terms)
 
     term_type_list = [getattr(opts, "{}_type".format(t))
                       for t in opts.solver_gain_terms]
