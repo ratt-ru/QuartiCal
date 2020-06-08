@@ -5,8 +5,7 @@ from cubicalv2.data_handling.model_handler import add_model_graph
 from argparse import Namespace
 
 
-recipes = {
-           "{col1}:{sky_model}@dE": 9,
+recipes = {"{col1}:{sky_model}@dE": 9,
            "{sky_model}:{sky_model}@dE": 9,
            "{col1}~{col2}": 1,
            "{col1}+{col2}": 1,

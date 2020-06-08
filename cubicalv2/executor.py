@@ -43,7 +43,7 @@ def execute():
     # Reads the measurement set using the relavant configuration from opts.
     ms_xds_list, col_kwrds = read_ms(opts)
 
-    # ms_xds_list = ms_xds_list[:4]
+    # ms_xds_list = ms_xds_list[:1]
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.

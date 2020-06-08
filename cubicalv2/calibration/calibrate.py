@@ -45,14 +45,14 @@ def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
                             f_map_arr, d_map_arr, corr_mode)
 
 
-def add_calibration_graph(data_xds, col_kwrds, opts):
+def add_calibration_graph(data_xds_list, col_kwrds, opts):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
     calibration and in accordance with the options Namespace.
 
     Args:
-        data_xds: A list of xarray data sets/graphs providing input data.
+        data_xds_list: A list of xarray data sets/graphs providing input data.
         col_kwrds: A dictionary containing column keywords.
         opts: A Namespace object containing all necessary configuration.
 
@@ -74,7 +74,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
     data_stats_xds_list = []
     post_cal_data_xds_list = []
 
-    for xds_ind, xds in enumerate(data_xds):
+    for xds_ind, xds in enumerate(data_xds_list):
 
         # Unpack the data on the xds into variables with understandable names.
         # We create copies of arrays we intend to mutate as otherwise we end
@@ -122,7 +122,7 @@ def add_calibration_graph(data_xds, col_kwrds, opts):
                                         name="utpc-" + uuid4().hex)
 
         # Set up some values relating to problem dimensions.
-        n_ant = opts._n_ant
+        n_ant = xds.dims["ant"]
         n_row, n_chan, n_dir, n_corr = model_col.shape
         n_t_chunk, n_f_chunk, _ = data_col.numblocks
         n_term = len(opts.solver_gain_terms)  # Number of gain terms.
