@@ -23,18 +23,24 @@ def create_data_stats_xds(utime_val, n_chan, n_ant, n_t_chunk, n_f_chunk):
     return stats_xds
 
 
-def create_gain_stats_xds(n_tint, n_fint, n_ant, n_dir, n_corr, n_t_chunk,
-                          n_f_chunk, name, ind):
+def create_gain_stats_xds(gain_shape, n_t_chunk, n_f_chunk, name, ind):
     """Set up a gain stats xarray dataset and define its coordinates."""
 
     stats_xds = xarray.Dataset(
-        coords={"ant": ("ant", np.arange(n_ant, dtype=np.int32)),
-                "time_int": ("time_int", np.arange(n_tint, dtype=np.int32)),
-                "freq_int": ("freq_int", np.arange(n_fint, dtype=np.int32)),
-                "dir": ("dir", np.arange(n_dir, dtype=np.int32)),
-                "corr": ("corr", np.arange(n_corr, dtype=np.int32)),
-                "t_chunk": ("t_chunk", np.arange(n_t_chunk, dtype=np.int32)),
-                "f_chunk": ("f_chunk", np.arange(n_f_chunk, dtype=np.int32))},
+        coords={"ant": ("ant",
+                        np.arange(gain_shape.n_ant, dtype=np.int32)),
+                "time_int": ("time_int",
+                             np.arange(gain_shape.n_t_int, dtype=np.int32)),
+                "freq_int": ("freq_int",
+                             np.arange(gain_shape.n_f_int, dtype=np.int32)),
+                "dir": ("dir",
+                        np.arange(gain_shape.n_dir, dtype=np.int32)),
+                "corr": ("corr",
+                         np.arange(gain_shape.n_corr, dtype=np.int32)),
+                "t_chunk": ("t_chunk",
+                            np.arange(n_t_chunk, dtype=np.int32)),
+                "f_chunk": ("f_chunk",
+                            np.arange(n_f_chunk, dtype=np.int32))},
         attrs={"name": "{}-{}".format(name, ind)})
 
     return stats_xds
