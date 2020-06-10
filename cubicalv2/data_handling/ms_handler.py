@@ -3,11 +3,15 @@ import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
 from cubicalv2.flagging.flagging import update_kwrds, ibfdtype
+from cubicalv2.weights.weights import initialize_weights
+from cubicalv2.flagging.flagging import (is_set,
+                                         make_bitmask,
+                                         initialise_bitflags)
 from uuid import uuid4
 from loguru import logger
 
 
-def read_ms(opts):
+def read_xds_list(opts):
     """Reads a measurement set and generates a list of xarray data sets.
 
     Args:
@@ -291,11 +295,11 @@ def read_ms(opts):
     return data_xds_list, updated_kwrds
 
 
-def write_columns(xds_list, col_kwrds, opts):
+def write_xds_list(xds_list, col_kwrds, opts):
     """Writes fields spicified in the WRITE_COLS attribute to the MS.
 
     Args:
-        xds-list: A list of xarray datasets.
+        xds_list: A list of xarray datasets.
         col_kwrds: A dictionary of column keywords.
         opts: A Namepsace of global options.
 
@@ -322,9 +326,77 @@ def write_columns(xds_list, col_kwrds, opts):
     logger.info("Outputs will be written to {}.".format(
         ", ".join(output_cols)))
 
+    # TODO: Nasty hack due to bug in daskms. Remove ASAP.
+    xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ"]) for xds in xds_list]
+
     write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
                                   columns=output_cols,
                                   column_keywords=output_kwrds,
                                   descriptor="ratt_ms(fixed=False)")
 
     return write_xds_list
+
+
+def preprocess_xds_list(xds_list, col_kwrds, opts):
+    """Adds data preprocessing steps - inits flags, weights and fixes bad data.
+
+    Given a list of xarray.DataSet objects, initializes the bitflag data,
+    the weight data and fixes bad data points (NaN, inf, etc). TODO: This
+    function cal likely be improved/extended.
+
+    Args:
+        xds_list: A list of xarray.DataSet objects containing MS data.
+        col_kwrds: Column keywords - necessary for figuring out bitflags.
+        opts: A Namepsace object of glabal options.
+
+    Returns:
+        output_xds_list: A list of xarray.DataSet objects containing MS data
+            with preprocessing operations applied.
+    """
+
+    # In the event that not all input BITFLAGS are required, generate a mask
+    # which can be applied to select the appropriate bits.
+
+    bitmask = make_bitmask(col_kwrds, opts)
+
+    output_xds_list = []
+
+    for xds_ind, xds in enumerate(xds_list):
+
+        # Unpack the data on the xds into variables with understandable names.
+        # We create copies of arrays we intend to mutate as otherwise we end
+        # up implicitly updating the xds.
+        data_col = xds.DATA.data.copy()
+        flag_col = xds.FLAG.data
+        flag_row_col = xds.FLAG_ROW.data
+        bitflag_col = xds.BITFLAG.data
+        bitflag_row_col = xds.BITFLAG_ROW.data
+
+        weight_col = initialize_weights(xds, data_col, opts)
+
+        data_bitflags = initialise_bitflags(data_col,
+                                            weight_col,
+                                            flag_col,
+                                            flag_row_col,
+                                            bitflag_col,
+                                            bitflag_row_col,
+                                            bitmask)
+
+        # Selections of the following form generate where operations - this
+        # will return a new array and is therefore distribution safe. It might
+        # be suboptimal though.
+
+        # If we raised the invalid bitflag, zero those data points.
+        data_col[is_set(data_bitflags, "INVALID")] = 0
+
+        # Anywhere we have a full resolution bitflag, we set the weight to 0.
+        weight_col[data_bitflags] = 0
+
+        output_xds = xds.assign(
+            {"DATA": (("row", "chan", "corr"), data_col),
+             "WEIGHT": (("row", "chan", "corr"), weight_col),
+             "DATA_BITFLAGS": (("row", "chan", "corr"), data_bitflags)})
+
+        output_xds_list.append(output_xds)
+
+    return output_xds_list

@@ -1,5 +1,5 @@
 import pytest
-from cubicalv2.data_handling.ms_handler import read_ms
+from cubicalv2.data_handling.ms_handler import read_xds_list
 from cubicalv2.parser.preprocess import interpret_model
 from cubicalv2.data_handling.predict import (predict,
                                              parse_sky_models,
@@ -57,7 +57,7 @@ def _predict(opts):
     # Forcefully add this to ensure that the comparison data is read.
     opts._model_columns = ["MODEL_DATA"]
 
-    ms_xds_list, col_kwrds = read_ms(opts)
+    ms_xds_list, col_kwrds = read_xds_list(opts)
 
     return predict(ms_xds_list, opts), ms_xds_list
 

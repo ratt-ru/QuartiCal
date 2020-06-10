@@ -14,12 +14,12 @@ import numpy as np
 import xarray
 
 
-def create_data_stats_xds(utime_val, n_chan, n_ant, n_t_chunk, n_f_chunk):
+def create_data_stats_xds(n_time, n_chan, n_ant, n_t_chunk, n_f_chunk):
     """Set up a data stats xarray dataset and define its coordinates."""
 
     stats_xds = xarray.Dataset(
         coords={"ant": ("ant", np.arange(n_ant, dtype=np.int32)),
-                "time": ("time", utime_val),
+                "time": ("time", np.arange(n_time, dtype=np.int32)),
                 "chan": ("chan", np.arange(n_chan, dtype=np.int32)),
                 "t_chunk": ("t_chunk", np.arange(n_t_chunk, dtype=np.int32)),
                 "f_chunk": ("f_chunk", np.arange(n_f_chunk, dtype=np.int32))})
@@ -645,9 +645,10 @@ def _assign_chisq(stats_xds, data_col, model_col, weight_col,
     return modified_stats_xds
 
 
-def assign_presolve_data_stats(stats_xds, data_col, model_col, weight_col,
-                               fullres_bitflags, ant1_col, ant2_col,
-                               utime_ind, utime_per_chunk, utime_chunks):
+def assign_presolve_data_stats(dstat_dims, data_col, model_col,
+                               weight_col, fullres_bitflags, ant1_col,
+                               ant2_col, utime_ind, utime_per_chunk,
+                               utime_chunks):
     """Conveneience function which computes majority of pre-solve statistics.
 
     Given an input stats xds and a number of column arrays, produces and
@@ -672,6 +673,12 @@ def assign_presolve_data_stats(stats_xds, data_col, model_col, weight_col,
         avg_abs_sqrd_model: A dask.array of per-antenna |model|^2 values of
             shape (time, freq, ant, dir, corr).
     """
+
+    stats_xds = create_data_stats_xds(dstat_dims.n_utime,
+                                      dstat_dims.n_chan,
+                                      dstat_dims.n_ant,
+                                      dstat_dims.n_t_chunk,
+                                      dstat_dims.n_f_chunk)
 
     # Determine the estimated noise.
 

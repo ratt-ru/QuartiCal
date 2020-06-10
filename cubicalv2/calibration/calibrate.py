@@ -5,15 +5,11 @@ from cubicalv2.kernels.generics import (compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
                                              create_gain_stats_xds,
                                              assign_post_solve_chisq,
-                                             assign_presolve_data_stats,
-                                             create_data_stats_xds)
-from cubicalv2.flagging.flagging import (make_bitmask,
-                                         initialise_bitflags,
-                                         is_set,
-                                         set_bitflag,
+                                             assign_presolve_data_stats,)
+from cubicalv2.flagging.flagging import (set_bitflag,
                                          compute_mad_flags)
 from cubicalv2.calibration.constructor import construct_solver
-from cubicalv2.weights.weights import initialize_weights
+
 from cubicalv2.utils.dask import blockwise_unique
 from itertools import chain, zip_longest
 from uuid import uuid4
@@ -32,8 +28,12 @@ warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
 warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
 
 
-gain_shape_tup = namedtuple("gain_shape", "n_t_int n_f_int n_ant n_dir n_corr")
-gain_chunk_tup = namedtuple("gain_chunk", "tchunk fchunk achunk dchunk cchunk")
+gain_shape_tup = namedtuple("gain_shape",
+                            "n_t_int n_f_int n_ant n_dir n_corr")
+gain_chunk_tup = namedtuple("gain_chunk",
+                            "tchunk fchunk achunk dchunk cchunk")
+dstat_dims_tup = namedtuple("dstat_dims",
+                            "n_utime n_chan n_ant n_t_chunk n_f_chunk")
 
 
 def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
@@ -66,10 +66,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
     corr_mode = opts.input_ms_correlation_mode
 
-    # In the event that not all input BITFLAGS are required, generate a mask
-    # which can be applied to select the appropriate bits.
-    bitmask = make_bitmask(col_kwrds, opts)
-
     gain_xds_dict = {name: [] for name in opts.solver_gain_terms}
     data_stats_xds_list = []
     post_cal_data_xds_list = []
@@ -79,34 +75,14 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # Unpack the data on the xds into variables with understandable names.
         # We create copies of arrays we intend to mutate as otherwise we end
         # up implicitly updating the xds.
-        data_col = xds.DATA.data.copy()
+        data_col = xds.DATA.data
         model_col = xds.MODEL_DATA.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         time_col = xds.TIME.data
-        flag_col = xds.FLAG.data
-        flag_row_col = xds.FLAG_ROW.data
         bitflag_col = xds.BITFLAG.data
-        bitflag_row_col = xds.BITFLAG_ROW.data
-        weight_col = initialize_weights(xds, data_col, opts)
-
-        bitflags = initialise_bitflags(data_col,
-                                       weight_col,
-                                       flag_col,
-                                       flag_row_col,
-                                       bitflag_col,
-                                       bitflag_row_col,
-                                       bitmask)  # TODO: Move
-
-        # Selections of the following form generate where operations - this
-        # will return a new array and is therefore distribution safe. It might
-        # be suboptimal though.
-
-        # If we raised the invalid bitflag, zero those data points.
-        data_col[is_set(bitflags, "INVALID")] = 0
-
-        # Anywhere we have a full resolution bitflag, we set the weight to 0.
-        weight_col[bitflags] = 0
+        weight_col = xds.WEIGHT.data
+        data_bitflags = xds.DATA_BITFLAGS.data
 
         # Convert the time column data into indices. Chunks is expected to be a
         # tuple of tuples.
@@ -132,6 +108,30 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
             [len(c) for c in [xds.chunks["row"], xds.chunks["chan"]]]
         n_term = len(opts.solver_gain_terms)  # Number of gain terms.
 
+        # Create and populate xds for statisics at data resolution. Returns
+        # some useful arrays required for future computations. TODO: I really
+        # dislike this layer. Consider revising.
+
+        dstat_dims = dstat_dims_tup(sum(utime_chunks),
+                                    n_chan,
+                                    n_ant,
+                                    n_t_chunk,
+                                    n_f_chunk)
+
+        data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
+            assign_presolve_data_stats(dstat_dims,
+                                       data_col,
+                                       model_col,
+                                       weight_col,
+                                       data_bitflags,
+                                       ant1_col,
+                                       ant2_col,
+                                       utime_ind,
+                                       utime_per_chunk,
+                                       utime_chunks)  # TODO: Unchecked
+
+        # TODO: I want to isolate the mapping creation.
+
         # Initialise some empty containers for mappings/dimensions.
         t_maps = []
         f_maps = []
@@ -142,27 +142,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
         gain_shape_list = []
         gain_chunk_list = []
-
-        # Create and populate xds for statisics at data resolution. Returns
-        # some useful arrays required for future computations. TODO: I really
-        # dislike this layer. Consider revising.
-        data_stats_xds = create_data_stats_xds(utime_val,
-                                               n_chan,
-                                               n_ant,
-                                               n_t_chunk,
-                                               n_f_chunk)  # TODO: Unchecked
-
-        data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
-            assign_presolve_data_stats(data_stats_xds,
-                                       data_col,
-                                       model_col,
-                                       weight_col,
-                                       bitflags,
-                                       ant1_col,
-                                       ant2_col,
-                                       utime_ind,
-                                       utime_per_chunk,
-                                       utime_chunks)  # TODO: Unchecked
 
         for term in opts.solver_gain_terms:
 
@@ -329,7 +308,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                                           n_t_chunk,
                                           opts)
 
-            bitflags = set_bitflag(bitflags, "MAD", mad_flags)
+            data_bitflags = set_bitflag(data_bitflags, "MAD", mad_flags)
 
         #######################################################################
 
@@ -350,7 +329,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
         updated_xds = \
             xds.assign({opts.output_column: (xds.DATA.dims, residuals),
-                        "CUBI_BITFLAG": (xds.BITFLAG.dims, bitflags),
+                        "CUBI_BITFLAG": (xds.BITFLAG.dims, data_bitflags),
                         "CUBI_MODEL": (xds.DATA.dims,
                                        model_col.sum(axis=2,
                                                      dtype=np.complex64))})

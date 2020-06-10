@@ -3,7 +3,9 @@
 import cubicalv2.logging.init_logger  # noqa
 from loguru import logger
 from cubicalv2.parser import parser, preprocess
-from cubicalv2.data_handling.ms_handler import read_ms, write_columns
+from cubicalv2.data_handling.ms_handler import (read_xds_list,
+                                                write_xds_list,
+                                                preprocess_xds_list)
 from cubicalv2.data_handling.model_handler import add_model_graph
 from cubicalv2.calibration.calibrate import add_calibration_graph
 from cubicalv2.flagging.flagging import finalise_flags
@@ -41,20 +43,23 @@ def execute():
     t0 = time.time()
 
     # Reads the measurement set using the relavant configuration from opts.
-    ms_xds_list, col_kwrds = read_ms(opts)
+    ms_xds_list, col_kwrds = read_xds_list(opts)
 
-    # ms_xds_list = ms_xds_list[:1]
+    # ms_xds_list = ms_xds_list[:2]
+
+    # Preprocess the xds_list - initialise some values and fix bad data.
+    preprocessed_xds_list = preprocess_xds_list(ms_xds_list, col_kwrds, opts)
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
-    model_xds_list = add_model_graph(ms_xds_list, opts)
+    model_xds_list = add_model_graph(preprocessed_xds_list, opts)
 
     gains_per_xds, post_gain_xds = \
         add_calibration_graph(model_xds_list, col_kwrds, opts)
 
     writable_xds = finalise_flags(post_gain_xds, col_kwrds, opts)
 
-    writes = write_columns(writable_xds, col_kwrds, opts)
+    writes = write_xds_list(writable_xds, col_kwrds, opts)
 
     import zarr
     store = zarr.DirectoryStore("cc_gains")
@@ -135,13 +140,13 @@ def execute():
     #                filename='graph.pdf',
     #                optimize_graph=True)
 
-    # dask.visualize([dask.delayed(tuple)([x[0]]) for x in outputs],
+    # dask.visualize([dask.delayed(tuple)([x[:2]]) for x in outputs],
     #                color='order', cmap='autumn',
     #                filename='graph_order.pdf', node_attr={'penwidth': '10'})
 
-    # dask.visualize([dask.delayed(tuple)([x[0]]) for x in outputs],
+    # dask.visualize([dask.delayed(tuple)([x[:2]]) for x in outputs],
     #                filename='graph.pdf',
-    #                optimize_graph=True)
+    #                optimize_graph=False)
 
     # dask.visualize(model_xds_list,
     #                color='order', cmap='autumn',
