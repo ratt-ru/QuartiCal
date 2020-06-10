@@ -84,6 +84,8 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         weight_col = xds.WEIGHT.data
         data_bitflags = xds.DATA_BITFLAGS.data
 
+        chan_freqs = xds.CHAN_FREQ.data
+
         # Convert the time column data into indices. Chunks is expected to be a
         # tuple of tuples.
         utime_chunks = xds.UTIME_CHUNKS
@@ -97,16 +99,11 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                                         chunks=(1,),
                                         name="utpc-" + uuid4().hex)
 
-        freqs_per_chunk = da.from_array(xds.chunks["chan"],
-                                        chunks=(1,),
-                                        name="fpc-" + uuid4().hex)
-
         # Set up some values relating to problem dimensions.
         n_row, n_chan, n_ant, n_dir, n_corr = \
             [xds.dims[d] for d in ["row", "chan", "ant", "dir", "corr"]]
         n_t_chunk, n_f_chunk = \
             [len(c) for c in [xds.chunks["row"], xds.chunks["chan"]]]
-        n_term = len(opts.solver_gain_terms)  # Number of gain terms.
 
         # Create and populate xds for statisics at data resolution. Returns
         # some useful arrays required for future computations. TODO: I really
@@ -133,8 +130,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # TODO: I want to isolate the mapping creation.
 
         # Initialise some empty containers for mappings/dimensions.
-        t_maps = []
-        f_maps = []
         d_maps = []
 
         # We preserve the gain chunking scheme here - returning multiple arrays
@@ -188,25 +183,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                                         (n_corr,))
             gain_chunk_list.append(gain_chunk)
 
-            # Generate a mapping between time at data resolution and time
-            # intervals. The or handles the 0 (full axis) case.
-
-            t_map = utime_ind.map_blocks(np.floor_divide,
-                                         t_int or n_row,
-                                         chunks=utime_ind.chunks,
-                                         dtype=np.uint32)
-            t_maps.append(t_map)
-
-            # Generate a mapping between frequency at data resolution and
-            # frequency intervals. The or handles the 0 (full axis) case.
-
-            f_map = freqs_per_chunk.map_blocks(
-                lambda f, f_i: np.array([i//f_i for i in range(f.item())]),
-                f_int or n_chan,
-                chunks=(xds.chunks["chan"],),
-                dtype=np.uint32)
-            f_maps.append(f_map)
-
             # Generate direction mapping - necessary for mixing terms.
             d_maps.append(list(range(n_dir)) if dd_term else [0]*n_dir)
 
@@ -236,8 +212,8 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
             gain_xds_dict[term].append(gain_xds)
 
         # For each chunk, stack the per-gain mappings into a single array.
-        t_map_arr = da.stack(t_maps, axis=1).rechunk({1: n_term})
-        f_map_arr = da.stack(f_maps, axis=1).rechunk({1: n_term})
+        t_map_arr = make_t_mappings(utime_ind, opts)
+        f_map_arr = make_f_mappings(chan_freqs, opts)
         d_map_arr = np.array(d_maps, dtype=np.uint32)
 
         # This has been fixed - this now constructs a custom graph which
@@ -339,3 +315,53 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
     # Return the resulting graphs for the gains and updated xds.
     return gain_xds_dict, post_cal_data_xds_list
+
+
+def make_t_mappings(utime_ind, opts):
+    """Generate time to solution interval mapping."""
+
+    terms = opts.solver_gain_terms
+    n_term = len(terms)
+    n_row = utime_ind.size
+
+    # Get frequency intervals for all terms. Or handles the zero case.
+    t_ints = \
+        [getattr(opts, term + "_time_interval") or n_row for term in terms]
+
+    # Generate a mapping between time at data resolution and time
+    # intervals. The or handles the 0 (full axis) case.
+
+    t_map_arr = utime_ind.map_blocks(
+        lambda t, t_i: np.floor_divide(t[:, None], t_i, dtype=np.int32),
+        t_ints,
+        chunks=(utime_ind.chunks[0], (n_term,)),
+        new_axis=1,
+        dtype=np.int32,
+        name="tmaps-" + uuid4().hex)
+
+    return t_map_arr
+
+
+def make_f_mappings(chan_freqs, opts):
+    """Generate channel to solution interval mapping."""
+
+    terms = opts.solver_gain_terms
+    n_term = len(terms)
+    n_chan = chan_freqs.size
+
+    # Get frequency intervals for all terms. Or handles the zero case.
+    f_ints = \
+        [getattr(opts, term + "_freq_interval") or n_chan for term in terms]
+
+    # Generate a mapping between frequency at data resolution and
+    # frequency intervals.
+
+    f_map_arr = chan_freqs.map_blocks(
+        lambda f, f_i: np.arange(f.size, dtype=np.int32)[:, None]//f_i,
+        f_ints,
+        chunks=(chan_freqs.chunks[0], (n_term,)),
+        new_axis=1,
+        dtype=np.int32,
+        name="fmaps-" + uuid4().hex)
+
+    return f_map_arr
