@@ -214,7 +214,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # For each chunk, stack the per-gain mappings into a single array.
         t_map_arr = make_t_mappings(utime_ind, opts)
         f_map_arr = make_f_mappings(chan_freqs, opts)
-        d_map_arr = np.array(d_maps, dtype=np.uint32)
+        d_map_arr = make_d_mappings(n_dir, opts)
 
         # This has been fixed - this now constructs a custom graph which
         # preserves gain chunking. It also somewhat simplifies future work
@@ -365,3 +365,18 @@ def make_f_mappings(chan_freqs, opts):
         name="fmaps-" + uuid4().hex)
 
     return f_map_arr
+
+
+def make_d_mappings(n_dir, opts):
+    """Generate direction to solution interval mapping."""
+
+    terms = opts.solver_gain_terms
+
+    # Get direction dependence for all terms. Or handles the zero case.
+    dd_terms = [getattr(opts, term + "_direction_dependent") for term in terms]
+
+    # Generate a mapping between model directions gain directions.
+
+    d_map_arr = (np.arange(n_dir, dtype=np.int32)[:, None] * dd_terms).T
+
+    return d_map_arr
