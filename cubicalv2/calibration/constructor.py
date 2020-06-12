@@ -20,8 +20,7 @@ def construct_solver(model_col,
                      f_map_arr,
                      d_map_arr,
                      corr_mode,
-                     term_shape_list,
-                     term_chunk_list,
+                     gain_xds_list,
                      opts):
     """Constructs the dask graph for the solver layer.
 
@@ -107,7 +106,7 @@ def construct_solver(model_col,
 
             spec_iterator = zip(opts.solver_gain_terms,
                                 term_type_list,
-                                term_chunk_list)
+                                [gxds.CHUNK_SPEC for gxds in gain_xds_list])
 
             for tn, tt, cs in spec_iterator:
 
@@ -189,7 +188,7 @@ def construct_solver(model_col,
     for gi, gn in enumerate(opts.solver_gain_terms):
         gain_list.append(da.Array(graph,
                          name=gain_keys[gi],
-                         chunks=term_chunk_list[gi],
+                         chunks=gain_xds_list[gi].CHUNK_SPEC,
                          dtype=np.complex64))
 
         conv_perc_list.append(da.Array(graph,

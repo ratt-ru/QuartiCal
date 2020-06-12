@@ -3,7 +3,6 @@ import numpy as np
 import dask.array as da
 from cubicalv2.kernels.generics import (compute_residual)
 from cubicalv2.statistics.statistics import (assign_interval_stats,
-                                             create_gain_stats_xds,
                                              assign_post_solve_chisq,
                                              assign_presolve_data_stats,)
 from cubicalv2.flagging.flagging import (set_bitflag,
@@ -15,6 +14,7 @@ from itertools import chain, zip_longest
 from uuid import uuid4
 from loguru import logger  # noqa
 from collections import namedtuple
+import xarray
 
 
 # The following supresses the egregious numba pending deprecation warnings.
@@ -30,7 +30,7 @@ warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
 
 gain_shape_tup = namedtuple("gain_shape",
                             "n_t_int n_f_int n_ant n_dir n_corr")
-gain_chunk_tup = namedtuple("gain_chunk",
+chunk_spec_tup = namedtuple("chunk_spec",
                             "tchunk fchunk achunk dchunk cchunk")
 dstat_dims_tup = namedtuple("dstat_dims",
                             "n_utime n_chan n_ant n_t_chunk n_f_chunk")
@@ -127,91 +127,28 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                                        utime_per_chunk,
                                        utime_chunks)  # TODO: Unchecked
 
-        # TODO: I want to isolate the mapping creation.
+        # Generate an xds per gain term - these conveniently store dimension
+        # info. We can assign results to them later.
 
-        # Initialise some empty containers for mappings/dimensions.
-        d_maps = []
+        gain_xds_list = make_gain_xds_list(xds, opts)
 
-        # We preserve the gain chunking scheme here - returning multiple arrays
-        # in later calls can obliterate chunking information.
+        # Update the gain xds with relevant interval statistics. This is
+        # INSANELY expensive. TODO: Investigate necessity/improve. This has
+        # also been broken by changed to overall calibration code. Fix it.
 
-        gain_shape_list = []
-        gain_chunk_list = []
+        # gain_xds, empty_intervals = \
+        #     assign_interval_stats(gain_xds,
+        #                           data_stats_xds,
+        #                           unflagged_tfac,
+        #                           avg_abs_sqrd_model,
+        #                           n_t_int_per_chunk,
+        #                           n_f_int_per_chunk,
+        #                           t_int or n_row,
+        #                           f_int or n_chan,
+        #                           utime_per_chunk)
 
-        for term in opts.solver_gain_terms:
-
-            t_int = getattr(opts, "{}_time_interval".format(term))
-            f_int = getattr(opts, "{}_freq_interval".format(term))
-            dd_term = getattr(opts, "{}_direction_dependent".format(term))
-
-            # Number of time intervals per data chunk. If this is zero,
-            # solution interval is the entire axis per chunk.
-            if t_int:
-                n_t_int_per_chunk = tuple(int(np.ceil(nt/t_int))
-                                          for nt in utime_chunks)
-            else:
-                n_t_int_per_chunk = tuple(1 for nt in utime_chunks)
-
-            n_t_int = np.sum(n_t_int_per_chunk)
-
-            # Number of frequency intervals per data chunk. If this is zero,
-            # solution interval is the entire axis per chunk.
-            if f_int:
-                n_f_int_per_chunk = tuple(int(np.ceil(nc/f_int))
-                                          for nc in data_col.chunks[1])
-            else:
-                n_f_int_per_chunk = tuple(1 for _ in range(n_f_chunk))
-
-            n_f_int = np.sum(n_f_int_per_chunk)
-
-            # Determine the per-chunk gain shapes from the time and frequency
-            # intervals per chunk. Note that this uses the number of
-            # correlations in the measurement set. TODO: This should depend
-            # on the solver mode.
-
-            gain_shape = gain_shape_tup(n_t_int,
-                                        n_f_int,
-                                        n_ant,
-                                        n_dir if dd_term else 1,
-                                        n_corr)
-            gain_shape_list.append(gain_shape)
-
-            gain_chunk = gain_chunk_tup(n_t_int_per_chunk,
-                                        n_f_int_per_chunk,
-                                        (n_ant,),
-                                        (n_dir if dd_term else 1,),
-                                        (n_corr,))
-            gain_chunk_list.append(gain_chunk)
-
-            # Generate direction mapping - necessary for mixing terms.
-            d_maps.append(list(range(n_dir)) if dd_term else [0]*n_dir)
-
-            # Create an xds in which to store the gain values and assosciated
-            # interval statistics. TODO: This can be refined.
-
-            gain_xds = create_gain_stats_xds(gain_shape,
-                                             n_t_chunk,
-                                             n_f_chunk,
-                                             term,
-                                             xds_ind)
-
-            # Update the gain xds with relevant interval statistics. This is
-            # INSANELY expensive. TODO: Investigate necessity/improve.
-
-            gain_xds, empty_intervals = \
-                assign_interval_stats(gain_xds,
-                                      data_stats_xds,
-                                      unflagged_tfac,
-                                      avg_abs_sqrd_model,
-                                      n_t_int_per_chunk,
-                                      n_f_int_per_chunk,
-                                      t_int or n_row,
-                                      f_int or n_chan,
-                                      utime_per_chunk)    # TODO: Unchecked
-
-            gain_xds_dict[term].append(gain_xds)
-
-        # For each chunk, stack the per-gain mappings into a single array.
+        # Construct arrays containing mappings between data resolution and
+        # solution intervals per term.
         t_map_arr = make_t_mappings(utime_ind, opts)
         f_map_arr = make_f_mappings(chan_freqs, opts)
         d_map_arr = make_d_mappings(n_dir, opts)
@@ -231,19 +168,20 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                              f_map_arr,
                              d_map_arr,
                              corr_mode,
-                             gain_shape_list,
-                             gain_chunk_list,
+                             gain_xds_list,
                              opts)
 
         # This has been improved substantially but likely still needs work.
 
         for ind, term in enumerate(opts.solver_gain_terms):
 
-            gain_xds_dict[term][-1] = gain_xds_dict[term][-1].assign(
+            updated_gain_xds = gain_xds_list[ind].assign(
                 {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
                            gain_list[ind]),
                  "conv_perc": (("t_chunk", "f_chunk"), conv_perc_list[ind]),
                  "conv_iter": (("t_chunk", "f_chunk"), conv_iter_list[ind])})
+
+            gain_xds_dict[term].append(updated_gain_xds)
 
         # TODO: I want to remove this code if possible - I think V2 should
         # split solve and apply into two separate tasks.
@@ -380,3 +318,94 @@ def make_d_mappings(n_dir, opts):
     d_map_arr = (np.arange(n_dir, dtype=np.int32)[:, None] * dd_terms).T
 
     return d_map_arr
+
+
+def make_gain_xds_list(data_xds, opts):
+    """Returns a list of xarray.Dataset objects describing the gain terms.
+
+    For a given input xds containing data, creates an xarray.Dataset object
+    per term which describes the term's dimensions.
+
+    Args:
+        data_xds: xarray.Dataset object containing input data.
+        opts: Namepsace object containing global config.
+
+    Returns:
+        gain_xds_list: A list of xarray.Dataset objects describing the gain
+            terms assosciated with the data_xds.
+    """
+
+    gain_xds_list = []
+
+    for term in opts.solver_gain_terms:
+
+        t_int = getattr(opts, "{}_time_interval".format(term))
+        f_int = getattr(opts, "{}_freq_interval".format(term))
+        dd_term = getattr(opts, "{}_direction_dependent".format(term))
+
+        utime_chunks = data_xds.UTIME_CHUNKS
+        freq_chunks = data_xds.chunks["chan"]
+
+        n_t_chunk = len(utime_chunks)
+        n_f_chunk = len(freq_chunks)
+
+        n_chan, n_ant, n_dir, n_corr = \
+            [data_xds.dims[d] for d in ["chan", "ant", "dir", "corr"]]
+
+        # Number of time intervals per data chunk. If this is zero,
+        # solution interval is the entire axis per chunk.
+        if t_int:
+            n_t_int_per_chunk = tuple(int(np.ceil(nt/t_int))
+                                      for nt in utime_chunks)
+        else:
+            n_t_int_per_chunk = tuple(1 for nt in utime_chunks)
+
+        n_t_int = np.sum(n_t_int_per_chunk)
+
+        # Number of frequency intervals per data chunk. If this is zero,
+        # solution interval is the entire axis per chunk.
+        if f_int:
+            n_f_int_per_chunk = tuple(int(np.ceil(nc/f_int))
+                                      for nc in freq_chunks)
+        else:
+            n_f_int_per_chunk = tuple(1 for _ in range(len(freq_chunks)))
+
+        n_f_int = np.sum(n_f_int_per_chunk)
+
+        # Determine the per-chunk gain shapes from the time and frequency
+        # intervals per chunk. Note that this uses the number of
+        # correlations in the measurement set. TODO: This should depend
+        # on the solver mode.
+
+        chunk_spec = chunk_spec_tup(n_t_int_per_chunk,
+                                    n_f_int_per_chunk,
+                                    (n_ant,),
+                                    (n_dir if dd_term else 1,),
+                                    (n_corr,))
+
+        # Stored fields which identify the data with which this gain is
+        # assosciated.
+        id_fields = {f: data_xds.attrs[f]
+                     for f in ["FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"]}
+
+        # Set up an xarray.Dataset describing the gain term.
+        gain_xds = xarray.Dataset(
+            coords={"time_int": ("time_int",
+                                 np.arange(n_t_int, dtype=np.int32)),
+                    "freq_int": ("freq_int",
+                                 np.arange(n_f_int, dtype=np.int32)),
+                    "ant": ("ant",
+                            np.arange(n_ant, dtype=np.int32)),
+                    "dir": ("dir",
+                            np.arange(n_dir, dtype=np.int32)),
+                    "corr": ("corr",
+                             np.arange(n_corr, dtype=np.int32)),
+                    "t_chunk": ("t_chunk",
+                                np.arange(n_t_chunk, dtype=np.int32)),
+                    "f_chunk": ("f_chunk",
+                                np.arange(n_f_chunk, dtype=np.int32))},
+            attrs={"NAME": term, "CHUNK_SPEC": chunk_spec, **id_fields})
+
+        gain_xds_list.append(gain_xds)
+
+    return gain_xds_list
