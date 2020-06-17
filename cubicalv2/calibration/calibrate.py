@@ -106,23 +106,11 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # some useful arrays required for future computations. TODO: I really
         # dislike this layer. Consider revising.
 
-        dstat_dims = dstat_dims_tup(sum(utime_chunks),
-                                    n_chan,
-                                    n_ant,
-                                    n_t_chunk,
-                                    n_f_chunk)
-
         data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
-            assign_presolve_data_stats(dstat_dims,
-                                       data_col,
-                                       model_col,
-                                       weight_col,
-                                       data_bitflags,
-                                       ant1_col,
-                                       ant2_col,
-                                       utime_ind,
-                                       utime_per_chunk,
-                                       utime_chunks)  # TODO: Unchecked
+            assign_presolve_data_stats(xds, utime_ind, utime_per_chunk)
+
+        # da.compute(data_stats_xds)
+        # import pdb;pdb.set_trace()
 
         # Generate an xds per gain term - these conveniently store dimension
         # info. We can assign results to them later.

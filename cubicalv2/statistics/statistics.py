@@ -27,19 +27,20 @@ def create_data_stats_xds(n_time, n_chan, n_ant, n_t_chunk, n_f_chunk):
     return stats_xds
 
 
-def assign_noise_estimates(stats_xds, data_col, fullres_bitflags, ant1_col,
+def assign_noise_estimates(stats_xds, data_col, data_bitflags, ant1_col,
                            ant2_col):
-    """Wrapper and unpacker for the Numba noise estimator code.
+    """Generates a graph describing the computation of the noise estimates.
 
-    Uses blockwise and the numba kernel function to produce a noise estimate
-    and inverse variance per channel per chunk of data_col.
+    A custom graph descibing the production of a noise estimate and inverse
+    variance per channel per chunk of data_col.
 
     Args:
+        stats_xds: An xarray.Dataset object to which we can assign the
+            estimates.
         data_col: A chunked dask array containing data (or the residual).
-        fullres_bitflags: An chunked dask array containing bitflags.
+        data_bitflags: An chunked dask array containing bitflags.
         ant1_col: A chunked dask array of antenna values.
         ant2_col: A chunked dask array of antenna values.
-        n_ant: Integer number of antennas.
 
     Returns:
         noise_est: Graph which produces noise estimates.
@@ -47,11 +48,11 @@ def assign_noise_estimates(stats_xds, data_col, fullres_bitflags, ant1_col,
     """
 
     data_col_keys = list(flatten(data_col.__dask_keys__()))
-    fullres_bitflags_keys = list(flatten(fullres_bitflags.__dask_keys__()))
+    data_bitflags_keys = list(flatten(data_bitflags.__dask_keys__()))
     ant1_col_keys = list(flatten(ant1_col.__dask_keys__()))
     ant2_col_keys = list(flatten(ant2_col.__dask_keys__()))
 
-    dask_inputs = (data_col, fullres_bitflags, ant1_col, ant2_col)
+    dask_inputs = (data_col, data_bitflags, ant1_col, ant2_col)
 
     # Based on the inputs, generate a unique hash which can be used to uniquely
     # identify nodes in the graph.
@@ -81,7 +82,7 @@ def assign_noise_estimates(stats_xds, data_col, fullres_bitflags, ant1_col,
             datastats_dsk[(datastats_name, t, f,)] = \
                 (estimate_noise_kernel,
                  data_col_keys[ind],
-                 fullres_bitflags_keys[ind],
+                 data_bitflags_keys[ind],
                  ant1_col_keys[t],
                  ant2_col_keys[t],
                  stats_xds.ant.size)
@@ -128,8 +129,8 @@ def assign_noise_estimates(stats_xds, data_col, fullres_bitflags, ant1_col,
     return updated_stats_xds
 
 
-def assign_tf_stats(stats_xds, fullres_bitflags, ant1_col,
-                    ant2_col, utime_ind, n_utime, chunk_spec):
+def assign_tf_stats(stats_xds, data_bitflags, ant1_col, ant2_col, utime_ind,
+                    n_utime, chunk_spec):
     """Computes and assigns a host of data resolution statistics.
 
     Updates an input data stats xds with counts of equations per antenna and
@@ -138,7 +139,7 @@ def assign_tf_stats(stats_xds, fullres_bitflags, ant1_col,
 
     Args:
         stats_xds: An xarray.dataset on which data resolution stats live.
-        fullres_bitflags: dask.array of bitflags at full resolution.
+        data_bitflags: dask.array of bitflags at full resolution.
         ant1_col: A dask.array of antenna1 values.
         ant2_col: A dask.array of antenna1 values.
         utime_ind: A dask.array of indices corresponding to unique time values.
@@ -155,9 +156,14 @@ def assign_tf_stats(stats_xds, fullres_bitflags, ant1_col,
             avoid wasteful recomputation.
     """
 
+    # Set up some dimensions.
+
+    n_t_chunk, n_f_chunk, n_ant = \
+        [stats_xds.dims[d] for d in ["t_chunk", "f_chunk", "ant"]]
+
     # Get all the unflagged points.
 
-    unflagged = fullres_bitflags == 0
+    unflagged = data_bitflags == 0
 
     # Convert the bitflags (column-like) to a (time, freq, antenna,
     # correlation) array. This is smaller (no baseline dimension) and can
@@ -170,11 +176,11 @@ def assign_tf_stats(stats_xds, fullres_bitflags, ant1_col,
                      ant2_col, ("rowlike",),
                      utime_ind, ("rowlike",),
                      n_utime, ("rowlike",),
-                     stats_xds.ant.size, None,
+                     n_ant, None,
                      dtype=np.int32,
                      concatenate=True,
                      align_arrays=False,
-                     new_axes={"ant": stats_xds.ant.size},
+                     new_axes={"ant": n_ant},
                      adjust_chunks={"rowlike": chunk_spec})
 
     # Determine the number of equations per antenna by summing the appropriate
@@ -182,21 +188,22 @@ def assign_tf_stats(stats_xds, fullres_bitflags, ant1_col,
     # the conjugate points.
 
     eqs_per_ant = da.map_blocks(
-        lambda x, **kw: 2*np.sum(x, **kw)[..., 0],
+        lambda a, **kw: 2*np.sum(a, **kw)[..., 0],
         unflagged_tfac,
         axis=(0, 1, 3),
         keepdims=True,
         drop_axis=3,
-        chunks=((1,)*stats_xds.t_chunk.size,
-                (1,)*stats_xds.f_chunk.size,
-                (stats_xds.ant.size,)))
+        chunks=((1,)*n_t_chunk,
+                (1,)*n_f_chunk,
+                (n_ant,)))
 
     # Determine the number of equations per time-frequency slot. The factor of
     # 2 accounts for the conjugate points.
     eqs_per_tf = da.map_blocks(
-        lambda x, **kw: 2*np.atleast_2d(np.sum(x, **kw)),
+        lambda a, **kw: 2*np.sum(a, **kw)[..., 0, 0],
         unflagged_tfac,
         axis=(2, 3),
+        keepdims=True,
         drop_axis=(2, 3))
 
     # Determine the normalisation factor as the reciprocal of the equations
@@ -205,10 +212,13 @@ def assign_tf_stats(stats_xds, fullres_bitflags, ant1_col,
                                    dtype=np.float64)
 
     # Compute the total number of equations per chunk.
-    total_eqs = da.map_blocks(lambda x: np.atleast_2d(np.sum(x)),
-                              eqs_per_tf, dtype=np.int32,
-                              chunks=((1,)*stats_xds.t_chunk.size,
-                                      (1,)*stats_xds.f_chunk.size))
+    total_eqs = da.map_blocks(
+        lambda a, **kw: np.sum(a, **kw),
+        eqs_per_tf,
+        keepdims=True,
+        dtype=np.int64,
+        chunks=((1,)*n_t_chunk,
+                (1,)*n_f_chunk))
 
     # Compute the overall normalisation factor.
     total_norm_factor = da.map_blocks(silent_divide, 1, total_eqs,
@@ -623,26 +633,17 @@ def _assign_chisq(stats_xds, data_col, model_col, weight_col,
     return modified_stats_xds
 
 
-def assign_presolve_data_stats(dstat_dims, data_col, model_col,
-                               weight_col, fullres_bitflags, ant1_col,
-                               ant2_col, utime_ind, utime_per_chunk,
-                               utime_chunks):
+def assign_presolve_data_stats(data_xds, utime_ind, utime_per_chunk):
     """Conveneience function which computes majority of pre-solve statistics.
 
-    Given an input stats xds and a number of column arrays, produces and
-    assigns several data-resolution statistics.
+    Given an input data xarray.Dataset and unique time information, produces
+    and assigns pre-solve statistics to a new xarray.Dataset.
 
     Args:
-        stats_xds: An xarray.Dataset on which data stats live.
-        data_col: A dask.array containing the data/residual.
-        model_col: A dask.array containing the model or None.
-        weight_col: A dask.array containing the weights.
-        fullres_bitflags: A dask.array containing the internal bitflags.
-        ant1_col: A dask.array containing antenna indices.
-        ant2_col: A dask.array containing antenna indices.
-        utime_ind: A dask.array containing unique time indices.
-        utime_per_chunk: A dask.array containing unique times per chunk.
-        utime_chunks: A non-dask equivalent of utime_per_chunk.
+        data_xds: A xarray.Dataset object conatining input data.
+        utime_ind: A dask.Array containing unique time indices.
+        utime_per_chunk: A dask.Array containing the number of unique times
+            per chunk.
 
     Returns:
         stats_xds: xarray.Dataset updated with new values.
@@ -652,17 +653,36 @@ def assign_presolve_data_stats(dstat_dims, data_col, model_col,
             shape (time, freq, ant, dir, corr).
     """
 
-    stats_xds = create_data_stats_xds(dstat_dims.n_utime,
-                                      dstat_dims.n_chan,
-                                      dstat_dims.n_ant,
-                                      dstat_dims.n_t_chunk,
-                                      dstat_dims.n_f_chunk)
+    # Set up some sensible names for xds fields.
+    data_col = data_xds.DATA.data
+    model_col = data_xds.MODEL_DATA.data
+    ant1_col = data_xds.ANTENNA1.data
+    ant2_col = data_xds.ANTENNA2.data
+    weight_col = data_xds.WEIGHT.data
+    data_bitflags = data_xds.DATA_BITFLAGS.data
+
+    utime_chunks = data_xds.UTIME_CHUNKS
+
+    # Set up some values relating to problem dimensions.
+    n_row, n_chan, n_ant, n_dir, n_corr = \
+        [data_xds.dims[d] for d in ["row", "chan", "ant", "dir", "corr"]]
+    n_t_chunk, n_f_chunk = \
+        [len(c) for c in [data_xds.chunks["row"], data_xds.chunks["chan"]]]
+    n_utime = sum(utime_chunks)
+
+    # Create an xarray.Dataset object to store the statistics.
+
+    stats_xds = create_data_stats_xds(n_utime,
+                                      n_chan,
+                                      n_ant,
+                                      n_t_chunk,
+                                      n_f_chunk)
 
     # Determine the estimated noise.
 
     stats_xds = assign_noise_estimates(stats_xds,
                                        data_col - model_col.sum(axis=2),
-                                       fullres_bitflags,
+                                       data_bitflags,
                                        ant1_col,
                                        ant2_col)
 
@@ -670,7 +690,7 @@ def assign_presolve_data_stats(dstat_dims, data_col, model_col,
     # useful (time, chan, ant, corr) version of flag counts.
 
     stats_xds, unflagged_tfac = assign_tf_stats(stats_xds,
-                                                fullres_bitflags,
+                                                data_bitflags,
                                                 ant1_col,
                                                 ant2_col,
                                                 utime_ind,
