@@ -182,9 +182,10 @@ def assign_tf_stats(stats_xds, fullres_bitflags, ant1_col,
     # the conjugate points.
 
     eqs_per_ant = da.map_blocks(
-        lambda x, **kw: 2*np.atleast_3d(np.sum(x, **kw)),
+        lambda x, **kw: 2*np.sum(x, **kw)[..., 0],
         unflagged_tfac,
         axis=(0, 1, 3),
+        keepdims=True,
         drop_axis=3,
         chunks=((1,)*stats_xds.t_chunk.size,
                 (1,)*stats_xds.f_chunk.size,

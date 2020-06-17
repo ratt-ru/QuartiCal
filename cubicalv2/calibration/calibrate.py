@@ -10,7 +10,6 @@ from cubicalv2.flagging.flagging import (set_bitflag,
 from cubicalv2.calibration.constructor import construct_solver
 
 from cubicalv2.utils.dask import blockwise_unique
-from itertools import chain, zip_longest
 from uuid import uuid4
 from loguru import logger  # noqa
 from collections import namedtuple
@@ -39,9 +38,7 @@ dstat_dims_tup = namedtuple("dstat_dims",
 def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
                   corr_mode, *gains):
 
-    gain_list = [g for g in gains]
-
-    return compute_residual(data, model, gain_list, a1, a2, t_map_arr,
+    return compute_residual(data, model, gains, a1, a2, t_map_arr,
                             f_map_arr, d_map_arr, corr_mode)
 
 
@@ -134,7 +131,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
         # Update the gain xds with relevant interval statistics. This is
         # INSANELY expensive. TODO: Investigate necessity/improve. This has
-        # also been broken by changed to overall calibration code. Fix it.
+        # also been broken by changes to overall calibration code. Fix it.
 
         # gain_xds, empty_intervals = \
         #     assign_interval_stats(gain_xds,
@@ -156,41 +153,36 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # This has been fixed - this now constructs a custom graph which
         # preserves gain chunking. It also somewhat simplifies future work
         # as we now have a blueprint for pulling values out of the solver
-        # layer.
+        # layer. Note that we reuse the variable name gain_xds_list to keep
+        # things succinct.
 
-        gain_list, conv_perc_list, conv_iter_list = \
-            construct_solver(model_col,
-                             data_col,
-                             ant1_col,
-                             ant2_col,
-                             weight_col,
-                             t_map_arr,
-                             f_map_arr,
-                             d_map_arr,
-                             corr_mode,
-                             gain_xds_list,
-                             opts)
+        gain_xds_list = construct_solver(model_col,
+                                         data_col,
+                                         ant1_col,
+                                         ant2_col,
+                                         weight_col,
+                                         t_map_arr,
+                                         f_map_arr,
+                                         d_map_arr,
+                                         corr_mode,
+                                         gain_xds_list,
+                                         opts)
 
         # This has been improved substantially but likely still needs work.
 
         for ind, term in enumerate(opts.solver_gain_terms):
 
-            updated_gain_xds = gain_xds_list[ind].assign(
-                {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
-                           gain_list[ind]),
-                 "conv_perc": (("t_chunk", "f_chunk"), conv_perc_list[ind]),
-                 "conv_iter": (("t_chunk", "f_chunk"), conv_iter_list[ind])})
-
-            gain_xds_dict[term].append(updated_gain_xds)
+            gain_xds_dict[term].append(gain_xds_list[ind])
 
         # TODO: I want to remove this code if possible - I think V2 should
-        # split solve and apply into two separate tasks.
+        # split solve and apply into two separate tasks. This is problematic
+        # in the direction dependent case, as it necessiates recomputing the
+        # model visibilities (expensive).
 
         gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
 
-        gain_list_gen = chain.from_iterable(zip_longest(gain_list, [],
-                                            fillvalue=gain_schema))
-        gain_list = [x for x in gain_list_gen]
+        gain_list = [x for gxds in gain_xds_list
+                     for x in (gxds.gains.data, gain_schema)]
 
         residuals = da.blockwise(
             dask_residual, ("rowlike", "chan", "corr"),
