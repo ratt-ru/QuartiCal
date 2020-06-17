@@ -109,7 +109,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
             assign_presolve_data_stats(xds, utime_ind, utime_per_chunk)
 
-        # da.compute(data_stats_xds)
+        # print(da.compute(data_stats_xds))
         # import pdb;pdb.set_trace()
 
         # Generate an xds per gain term - these conveniently store dimension
@@ -120,6 +120,8 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # Update the gain xds with relevant interval statistics. This is
         # INSANELY expensive. TODO: Investigate necessity/improve. This has
         # also been broken by changes to overall calibration code. Fix it.
+        # I think the actual problem calculation was in computing the average
+        # model. This is now 10x faster.
 
         # gain_xds, empty_intervals = \
         #     assign_interval_stats(gain_xds,

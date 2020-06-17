@@ -163,12 +163,16 @@ def column_to_abs_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
 
         for chan in range(n_chan):
 
-            selection = in_col[row, chan, :, :]
+            for d in range(n_dir):
 
-            abs_val = selection.real**2 + selection.imag**2
+                for c in range(n_corr):
 
-            out_arr[t_m, chan, a1_m, :, :] += abs_val
-            out_arr[t_m, chan, a2_m, :, :] += abs_val
+                    elem = in_col[row, chan, d, c]
+
+                    abs_val = elem.real**2 + elem.imag**2
+
+                    out_arr[t_m, chan, a1_m, d, c] += abs_val
+                    out_arr[t_m, chan, a2_m, d, c] += abs_val
 
     return out_arr
 

@@ -129,8 +129,7 @@ def assign_noise_estimates(stats_xds, data_col, data_bitflags, ant1_col,
     return updated_stats_xds
 
 
-def assign_tf_stats(stats_xds, data_bitflags, ant1_col, ant2_col, utime_ind,
-                    n_utime, chunk_spec):
+def assign_tf_stats(stats_xds, unflagged_tfac):
     """Computes and assigns a host of data resolution statistics.
 
     Updates an input data stats xds with counts of equations per antenna and
@@ -139,15 +138,8 @@ def assign_tf_stats(stats_xds, data_bitflags, ant1_col, ant2_col, utime_ind,
 
     Args:
         stats_xds: An xarray.dataset on which data resolution stats live.
-        data_bitflags: dask.array of bitflags at full resolution.
-        ant1_col: A dask.array of antenna1 values.
-        ant2_col: A dask.array of antenna1 values.
-        utime_ind: A dask.array of indices corresponding to unique time values.
-        n_utime: A dask.array of number of unique times per chunk.
-        n_ant: An integer number of antennas.
-        n_chunk: An integer number of chunks in this xarray.dataset.
-        n_chan: An integer number of channels.
-        chunk_spec: A tuple of integers describing the times per chunk.
+        unflagged_tfac: A dask.Array of unflagged points at unique time
+            resolution.
 
     Returns:
         modified_stats_xds: xarray.dataset onto which the stats have been
@@ -161,31 +153,9 @@ def assign_tf_stats(stats_xds, data_bitflags, ant1_col, ant2_col, utime_ind,
     n_t_chunk, n_f_chunk, n_ant = \
         [stats_xds.dims[d] for d in ["t_chunk", "f_chunk", "ant"]]
 
-    # Get all the unflagged points.
-
-    unflagged = data_bitflags == 0
-
-    # Convert the bitflags (column-like) to a (time, freq, antenna,
-    # correlation) array. This is smaller (no baseline dimension) and can
-    # be easily manipulated to produce other quantities of interest.
-
-    unflagged_tfac = \
-        da.blockwise(column_to_tfac, ("rowlike", "chan", "ant", "corr"),
-                     unflagged, ("rowlike", "chan", "corr"),
-                     ant1_col, ("rowlike",),
-                     ant2_col, ("rowlike",),
-                     utime_ind, ("rowlike",),
-                     n_utime, ("rowlike",),
-                     n_ant, None,
-                     dtype=np.int32,
-                     concatenate=True,
-                     align_arrays=False,
-                     new_axes={"ant": n_ant},
-                     adjust_chunks={"rowlike": chunk_spec})
-
     # Determine the number of equations per antenna by summing the appropriate
     # values from the per-row unflagged values. The factor of 2 accounts for
-    # the conjugate points.
+    # the conjugate points. Slicing sqeezes out dimensions.
 
     eqs_per_ant = da.map_blocks(
         lambda a, **kw: 2*np.sum(a, **kw)[..., 0],
@@ -198,7 +168,7 @@ def assign_tf_stats(stats_xds, data_bitflags, ant1_col, ant2_col, utime_ind,
                 (n_ant,)))
 
     # Determine the number of equations per time-frequency slot. The factor of
-    # 2 accounts for the conjugate points.
+    # 2 accounts for the conjugate points. Slicing squeezes out dimenions.
     eqs_per_tf = da.map_blocks(
         lambda a, **kw: 2*np.sum(a, **kw)[..., 0, 0],
         unflagged_tfac,
@@ -231,11 +201,11 @@ def assign_tf_stats(stats_xds, data_bitflags, ant1_col, ant2_col, utime_ind,
          "tf_norm_factor": (("time", "chan"), tf_norm_factor),
          "tot_norm_factor": (("t_chunk", "f_chunk"), total_norm_factor)})
 
-    return modified_stats_xds, unflagged_tfac
+    return modified_stats_xds
 
 
 def compute_average_model(stats_xds, model_col, unflagged_tfac, ant1_col,
-                          ant2_col, utime_ind, n_utime, chunk_spec):
+                          ant2_col, utime_ind, n_utime, utime_chunks):
     """Computes average value of |model|^2.
 
     Given model data, accumulates |model|^2 into a (time, freq, ant, dir, corr)
@@ -250,12 +220,14 @@ def compute_average_model(stats_xds, model_col, unflagged_tfac, ant1_col,
         utime_ind: A dask.array of indices corresponding to unique time values.
         n_utime: A dask.array of number of unique times per chunk.
         n_chan: An integer number of channels.
-        chunk_spec: A tuple of integers describing the times per chunk.
+        utime_chunks: A tuple of integers describing the times per chunk.
 
     Returns:
         avg_abs_sqrd_model: A dask.array of per-antenna |model|^2 values of
             shape (time, freq, ant, dir, corr).
     """
+
+    n_ant = stats_xds.dims["ant"]
 
     # Note that we currently do not use the weights here - this differs from
     # V1 and needs to be discussed. This collapses the model values into a
@@ -269,27 +241,34 @@ def compute_average_model(stats_xds, model_col, unflagged_tfac, ant1_col,
         ant2_col, ("rowlike",),
         utime_ind, ("rowlike",),
         n_utime, ("rowlike",),
-        stats_xds.ant.size, None,
+        n_ant, None,
         dtype=model_col.real.dtype,
         concatenate=True,
         align_arrays=False,
-        new_axes={"ant": stats_xds.ant.size},
-        adjust_chunks={"rowlike": chunk_spec})
+        new_axes={"ant": n_ant},
+        adjust_chunks={"rowlike": utime_chunks})
 
     # Sum over the correlation axis as is done in V1. Note that we retain
     # correlation as a dummy index (D) so that we don't confuse arrays with
     # similar dimensions.
 
-    abs_sqrd_model_tfadD = \
-        abs_sqrd_model_tfadc.map_blocks(np.sum, axis=4, drop_axis=4,
-                                        new_axis=4, keepdims=True)
+    abs_sqrd_model_tfadD = da.map_blocks(
+        np.sum,
+        abs_sqrd_model_tfadc,
+        axis=4,
+        keepdims=True,
+        chunks=abs_sqrd_model_tfadc.chunks[:-1] + (1,))
 
     # Sum over the correlation axis as is done in V1. Note that we retain
     # correlation as a dummy index (D) so that we don't confuse arrays with
     # similar dimensions.
 
-    unflagged_tfaD = unflagged_tfac.map_blocks(np.sum, axis=3, drop_axis=3,
-                                               new_axis=3, keepdims=True)
+    unflagged_tfaD = da.map_blocks(
+        np.sum,
+        unflagged_tfac,
+        axis=3,
+        keepdims=True,
+        chunks=unflagged_tfac.chunks[:-1] + (1,))
 
     # This is appropriate for the case where we sum over correlation.
 
@@ -305,6 +284,254 @@ def compute_average_model(stats_xds, model_col, unflagged_tfac, ant1_col,
     #                                     unflagged_tfac[..., None, :])
 
     return avg_abs_sqrd_model
+
+
+def silent_divide(in1, in2, undefined=0):
+    """Divides in1 by in2, supressing warnings. Division by zero gives zero."""
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        out_arr = np.where(in2 != 0, in1/in2, undefined)
+
+    return out_arr
+
+
+def per_chan_to_per_int(sigma_sqrd_per_chan, avg_abs_sqrd_model_int, n_time,
+                        t_int, f_int):
+    """Converts per channel sigma squared into per interval sigma squared."""
+
+    n_chan = sigma_sqrd_per_chan.shape[1]
+
+    sigma_sqrd_per_int = np.zeros_like(avg_abs_sqrd_model_int,
+                                       dtype=sigma_sqrd_per_chan.dtype)
+
+    chan_per_int = np.add.reduceat(sigma_sqrd_per_chan,
+                                   np.arange(0, n_chan, f_int),
+                                   axis=1)
+    time_per_int = np.add.reduceat(np.ones(n_time),
+                                   np.arange(0, n_time, t_int))
+
+    sigma_sqrd_per_int[:] = \
+        (time_per_int[:, None]*chan_per_int)[..., None, None, None]
+
+    return sigma_sqrd_per_int
+
+
+def assign_pre_solve_chisq(stats_xds, data_col, model_col, weight_col,
+                           ant1_col, ant2_col, utime_ind, n_utime, chunk_spec):
+    """See _assign_chisq. Suitable for OTF residual values with no gains."""
+
+    modified_stats_xds = _assign_chisq(stats_xds,
+                                       data_col,
+                                       model_col,
+                                       weight_col,
+                                       ant1_col,
+                                       ant2_col,
+                                       utime_ind,
+                                       n_utime,
+                                       chunk_spec,
+                                       "pre")
+
+    return modified_stats_xds
+
+
+def assign_post_solve_chisq(stats_xds, residual_col, weight_col,
+                            ant1_col, ant2_col, utime_ind, n_utime,
+                            chunk_spec):
+    """See _assign_chisq. Suitable for pre-computed residual values."""
+
+    modified_stats_xds = _assign_chisq(stats_xds,
+                                       residual_col,
+                                       None,
+                                       weight_col,
+                                       ant1_col,
+                                       ant2_col,
+                                       utime_ind,
+                                       n_utime,
+                                       chunk_spec,
+                                       "post")
+
+    return modified_stats_xds
+
+
+def _assign_chisq(stats_xds, data_col, model_col, weight_col,
+                  ant1_col, ant2_col, utime_ind, n_utime, chunk_spec, prefix):
+    """Assigns the value of the chi-squared onto a data stats xds.
+
+    Given an input stats xds, computes the chi-quared from the value of the
+    residual. If model_col is None, it is presumed that data_col already
+    contains the residual value. Otherwise the resdual is computed on the
+    fly as data_col - model_col. Note that this does not incude the weights.
+
+    Args:
+        stats_xds: An xarray.Dataset on which data stats live.
+        data_col: A dask.array containing the data/residual.
+        model_col: A dask.array containing the model or None.
+        weight_col: A dask.array containing the weights.
+        ant1_col: A dask.array containing antenna indices.
+        ant2_col: A dask.array containing antenna indices.
+        utime_ind: A dask.array containing unique time indices.
+        n_utime: A dask.array containing the number of unique times.
+        chunk_spec: A non-dask equivalent of n_utime.
+        prefix: String prefix for chi-squared xds fields.
+
+    Returns:
+        modified_stats_xds: xarray.Dataset updated with new values.
+    """
+
+    # Grab the weights from the xds.
+    inv_var_per_chan = stats_xds.inv_var_per_chan.data
+    tf_norm_factor = stats_xds.tf_norm_factor.data
+    tot_norm_factor = stats_xds.tot_norm_factor.data
+
+    # Account for the model is None case - prior to calibration the residuals
+    # can easily be computed as data - model. Thereafter we want to feed in
+    # precomputed residual values.
+    if model_col is None:
+        model_arg = [None, None]
+    else:
+        model_arg = [model_col.sum(axis=2), ("rowlike", "chan", "corr")]
+
+    # Compute the chi-squared value per time, frequency and antenna.
+    chisq_tfa = da.blockwise(
+        compute_chi_squared, ("rowlike", "chan", "ant"),
+        data_col, ("rowlike", "chan", "corr"),
+        *model_arg,
+        weight_col, ("rowlike", "chan", "corr"),
+        inv_var_per_chan, ("rowlike", "chan"),
+        utime_ind, ("rowlike",),
+        ant1_col, ("rowlike",),
+        ant2_col, ("rowlike",),
+        n_utime, ("rowlike",),
+        stats_xds.ant.size, None,
+        dtype=data_col.real.dtype,
+        concatenate=True,
+        align_arrays=False,
+        new_axes={"ant": stats_xds.ant.size},
+        adjust_chunks={"rowlike": chunk_spec})
+
+    # Compute and weight the chi-squared per time and frequency.
+    chisq_tf = chisq_tfa.sum(axis=-1) * tf_norm_factor
+
+    # Compute and weight the total chi-squared value.
+    chisq = tot_norm_factor * chisq_tfa.map_blocks(
+        lambda x: np.atleast_2d(np.sum(x)),
+        drop_axis=2,
+        chunks=((1,)*stats_xds.t_chunk.size,
+                (1,)*stats_xds.f_chunk.size))
+
+    # Assign the relevant chi-squared values with the specified prefix.
+    modified_stats_xds = \
+        stats_xds.assign(
+            {"{}_chisq_tfa".format(prefix): (("time", "chan", "ant"),
+                                             chisq_tfa),
+             "{}_chisq_tf".format(prefix): (("time", "chan"), chisq_tf),
+             "{}_chisq".format(prefix): (("t_chunk", "f_chunk"), chisq)})
+
+    return modified_stats_xds
+
+
+def assign_presolve_data_stats(data_xds, utime_ind, utime_per_chunk):
+    """Conveneience function which computes majority of pre-solve statistics.
+
+    Given an input data xarray.Dataset and unique time information, produces
+    and assigns pre-solve statistics to a new xarray.Dataset.
+
+    Args:
+        data_xds: A xarray.Dataset object conatining input data.
+        utime_ind: A dask.Array containing unique time indices.
+        utime_per_chunk: A dask.Array containing the number of unique times
+            per chunk.
+
+    Returns:
+        stats_xds: xarray.Dataset updated with new values.
+        unflagged_tfac:  dask.array of unflagged points. Returned here to
+            avoid wasteful recomputation.
+        avg_abs_sqrd_model: A dask.array of per-antenna |model|^2 values of
+            shape (time, freq, ant, dir, corr).
+    """
+
+    # Set up some sensible names for xds fields.
+    data_col = data_xds.DATA.data
+    model_col = data_xds.MODEL_DATA.data
+    ant1_col = data_xds.ANTENNA1.data
+    ant2_col = data_xds.ANTENNA2.data
+    weight_col = data_xds.WEIGHT.data
+    data_bitflags = data_xds.DATA_BITFLAGS.data
+
+    utime_chunks = data_xds.UTIME_CHUNKS
+
+    # Set up some values relating to problem dimensions.
+    n_row, n_chan, n_ant, n_dir, n_corr = \
+        [data_xds.dims[d] for d in ["row", "chan", "ant", "dir", "corr"]]
+    n_t_chunk, n_f_chunk = \
+        [len(c) for c in [data_xds.chunks["row"], data_xds.chunks["chan"]]]
+    n_utime = sum(utime_chunks)
+
+    # Convert the bitflags (column-like) to a (time, freq, antenna,
+    # correlation) array. This is smaller (no baseline dimension) and can
+    # be easily manipulated to produce other quantities of interest.
+
+    unflagged_tfac = \
+        da.blockwise(column_to_tfac, ("rowlike", "chan", "ant", "corr"),
+                     data_bitflags == 0, ("rowlike", "chan", "corr"),
+                     ant1_col, ("rowlike",),
+                     ant2_col, ("rowlike",),
+                     utime_ind, ("rowlike",),
+                     utime_per_chunk, ("rowlike",),
+                     n_ant, None,
+                     dtype=np.int32,
+                     concatenate=True,
+                     align_arrays=False,
+                     new_axes={"ant": n_ant},
+                     adjust_chunks={"rowlike": utime_chunks})
+
+    # Create an xarray.Dataset object to store the statistics.
+
+    stats_xds = create_data_stats_xds(n_utime,
+                                      n_chan,
+                                      n_ant,
+                                      n_t_chunk,
+                                      n_f_chunk)
+
+    # Determine the estimated noise. Return updated (new) xds.
+
+    stats_xds = assign_noise_estimates(stats_xds,
+                                       data_col - model_col.sum(axis=2),
+                                       data_bitflags,
+                                       ant1_col,
+                                       ant2_col)
+
+    # Compute statistics at time/frequency (data) resolution and return a
+    # useful (time, chan, ant, corr) version of flag counts. Return updated
+    # (new) xds.
+
+    stats_xds = assign_tf_stats(stats_xds, unflagged_tfac)
+
+    # Compute the average value of the |model|^2. This is used to compute
+    # gain errors.
+
+    avg_abs_sqrd_model = compute_average_model(stats_xds,
+                                               model_col,
+                                               unflagged_tfac,
+                                               ant1_col,
+                                               ant2_col,
+                                               utime_ind,
+                                               utime_per_chunk,
+                                               utime_chunks)
+
+    # Compute the pre solve chi-squared values. TODO: Needs to be weighted.
+
+    stats_xds = assign_pre_solve_chisq(stats_xds,
+                                       data_col,
+                                       model_col,
+                                       weight_col,
+                                       ant1_col,
+                                       ant2_col,
+                                       utime_ind,
+                                       utime_per_chunk,
+                                       utime_chunks)
+
+    return stats_xds, unflagged_tfac, avg_abs_sqrd_model
 
 
 def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
@@ -486,239 +713,3 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
     # TODO: Handle direction pinning. Handle logging/stat reporting.
 
     return updated_gain_xds, flagged_tifia
-
-
-def silent_divide(in1, in2, undefined=0):
-    """Divides in1 by in2, supressing warnings. Division by zero gives zero."""
-
-    with np.errstate(divide='ignore', invalid='ignore'):
-        out_arr = np.where(in2 != 0, in1/in2, undefined)
-
-    return out_arr
-
-
-def per_chan_to_per_int(sigma_sqrd_per_chan, avg_abs_sqrd_model_int, n_time,
-                        t_int, f_int):
-    """Converts per channel sigma squared into per interval sigma squared."""
-
-    n_chan = sigma_sqrd_per_chan.shape[1]
-
-    sigma_sqrd_per_int = np.zeros_like(avg_abs_sqrd_model_int,
-                                       dtype=sigma_sqrd_per_chan.dtype)
-
-    chan_per_int = np.add.reduceat(sigma_sqrd_per_chan,
-                                   np.arange(0, n_chan, f_int),
-                                   axis=1)
-    time_per_int = np.add.reduceat(np.ones(n_time),
-                                   np.arange(0, n_time, t_int))
-
-    sigma_sqrd_per_int[:] = \
-        (time_per_int[:, None]*chan_per_int)[..., None, None, None]
-
-    return sigma_sqrd_per_int
-
-
-def assign_pre_solve_chisq(stats_xds, data_col, model_col, weight_col,
-                           ant1_col, ant2_col, utime_ind, n_utime, chunk_spec):
-    """See _assign_chisq. Suitable for OTF residual values with no gains."""
-
-    modified_stats_xds = _assign_chisq(stats_xds,
-                                       data_col,
-                                       model_col,
-                                       weight_col,
-                                       ant1_col,
-                                       ant2_col,
-                                       utime_ind,
-                                       n_utime,
-                                       chunk_spec,
-                                       "pre")
-
-    return modified_stats_xds
-
-
-def assign_post_solve_chisq(stats_xds, residual_col, weight_col,
-                            ant1_col, ant2_col, utime_ind, n_utime,
-                            chunk_spec):
-    """See _assign_chisq. Suitable for pre-computed residual values."""
-
-    modified_stats_xds = _assign_chisq(stats_xds,
-                                       residual_col,
-                                       None,
-                                       weight_col,
-                                       ant1_col,
-                                       ant2_col,
-                                       utime_ind,
-                                       n_utime,
-                                       chunk_spec,
-                                       "post")
-
-    return modified_stats_xds
-
-
-def _assign_chisq(stats_xds, data_col, model_col, weight_col,
-                  ant1_col, ant2_col, utime_ind, n_utime, chunk_spec, prefix):
-    """Assigns the value of the chi-squared onto a data stats xds.
-
-    Given an input stats xds, computes the chi-quared from the value of the
-    residual. If model_col is None, it is presumed that data_col already
-    contains the residual value. Otherwise the resdual is computed on the
-    fly as data_col - model_col. Note that this does not incude the weights.
-
-    Args:
-        stats_xds: An xarray.Dataset on which data stats live.
-        data_col: A dask.array containing the data/residual.
-        model_col: A dask.array containing the model or None.
-        weight_col: A dask.array containing the weights.
-        ant1_col: A dask.array containing antenna indices.
-        ant2_col: A dask.array containing antenna indices.
-        utime_ind: A dask.array containing unique time indices.
-        n_utime: A dask.array containing the number of unique times.
-        chunk_spec: A non-dask equivalent of n_utime.
-        prefix: String prefix for chi-squared xds fields.
-
-    Returns:
-        modified_stats_xds: xarray.Dataset updated with new values.
-    """
-
-    # Grab the weights from the xds. Note that these may be worth computing
-    # here.
-    inv_var_per_chan = stats_xds.inv_var_per_chan.data
-    tf_norm_factor = stats_xds.tf_norm_factor.data
-    tot_norm_factor = stats_xds.tot_norm_factor.data
-
-    # Account for the model is None case - prior to calibration the residuals
-    # can easily be computed as data - model. Thereafter we want to feed in
-    # precomputed residual values.
-    if model_col is None:
-        model_arg = [None, None]
-    else:
-        model_arg = [model_col.sum(axis=2), ("rowlike", "chan", "corr")]
-
-    # Compute the chi-squared value per time, frequency and antenna.
-    chisq_tfa = da.blockwise(
-        compute_chi_squared, ("rowlike", "chan", "ant"),
-        data_col, ("rowlike", "chan", "corr"),
-        *model_arg,
-        weight_col, ("rowlike", "chan", "corr"),
-        inv_var_per_chan, ("rowlike", "chan"),
-        utime_ind, ("rowlike",),
-        ant1_col, ("rowlike",),
-        ant2_col, ("rowlike",),
-        n_utime, ("rowlike",),
-        stats_xds.ant.size, None,
-        dtype=data_col.real.dtype,
-        concatenate=True,
-        align_arrays=False,
-        new_axes={"ant": stats_xds.ant.size},
-        adjust_chunks={"rowlike": chunk_spec})
-
-    # Compute and weight the chi-squared per time and frequency.
-    chisq_tf = chisq_tfa.sum(axis=-1) * tf_norm_factor
-
-    # Compute and weight the total chi-squared value.
-    chisq = tot_norm_factor * chisq_tfa.map_blocks(
-        lambda x: np.atleast_2d(np.sum(x)),
-        drop_axis=2,
-        chunks=((1,)*stats_xds.t_chunk.size,
-                (1,)*stats_xds.f_chunk.size))
-
-    # Assign the relevant chi-squared values with the specified prefix.
-    modified_stats_xds = \
-        stats_xds.assign(
-            {"{}_chisq_tfa".format(prefix): (("time", "chan", "ant"),
-                                             chisq_tfa),
-             "{}_chisq_tf".format(prefix): (("time", "chan"), chisq_tf),
-             "{}_chisq".format(prefix): (("t_chunk", "f_chunk"), chisq)})
-
-    return modified_stats_xds
-
-
-def assign_presolve_data_stats(data_xds, utime_ind, utime_per_chunk):
-    """Conveneience function which computes majority of pre-solve statistics.
-
-    Given an input data xarray.Dataset and unique time information, produces
-    and assigns pre-solve statistics to a new xarray.Dataset.
-
-    Args:
-        data_xds: A xarray.Dataset object conatining input data.
-        utime_ind: A dask.Array containing unique time indices.
-        utime_per_chunk: A dask.Array containing the number of unique times
-            per chunk.
-
-    Returns:
-        stats_xds: xarray.Dataset updated with new values.
-        unflagged_tfac:  dask.array of unflagged points. Returned here to
-            avoid wasteful recomputation.
-        avg_abs_sqrd_model: A dask.array of per-antenna |model|^2 values of
-            shape (time, freq, ant, dir, corr).
-    """
-
-    # Set up some sensible names for xds fields.
-    data_col = data_xds.DATA.data
-    model_col = data_xds.MODEL_DATA.data
-    ant1_col = data_xds.ANTENNA1.data
-    ant2_col = data_xds.ANTENNA2.data
-    weight_col = data_xds.WEIGHT.data
-    data_bitflags = data_xds.DATA_BITFLAGS.data
-
-    utime_chunks = data_xds.UTIME_CHUNKS
-
-    # Set up some values relating to problem dimensions.
-    n_row, n_chan, n_ant, n_dir, n_corr = \
-        [data_xds.dims[d] for d in ["row", "chan", "ant", "dir", "corr"]]
-    n_t_chunk, n_f_chunk = \
-        [len(c) for c in [data_xds.chunks["row"], data_xds.chunks["chan"]]]
-    n_utime = sum(utime_chunks)
-
-    # Create an xarray.Dataset object to store the statistics.
-
-    stats_xds = create_data_stats_xds(n_utime,
-                                      n_chan,
-                                      n_ant,
-                                      n_t_chunk,
-                                      n_f_chunk)
-
-    # Determine the estimated noise.
-
-    stats_xds = assign_noise_estimates(stats_xds,
-                                       data_col - model_col.sum(axis=2),
-                                       data_bitflags,
-                                       ant1_col,
-                                       ant2_col)
-
-    # Compute statistics at time/frequency (data) resolution and return a
-    # useful (time, chan, ant, corr) version of flag counts.
-
-    stats_xds, unflagged_tfac = assign_tf_stats(stats_xds,
-                                                data_bitflags,
-                                                ant1_col,
-                                                ant2_col,
-                                                utime_ind,
-                                                utime_per_chunk,
-                                                utime_chunks)
-
-    # Compute the average value of the |model|^2. This is used to compute
-    # gain errors.
-
-    avg_abs_sqrd_model = compute_average_model(stats_xds,
-                                               model_col,
-                                               unflagged_tfac,
-                                               ant1_col,
-                                               ant2_col,
-                                               utime_ind,
-                                               utime_per_chunk,
-                                               utime_chunks)
-
-    # Compute the pre solve chi-squared values. TODO: Needs to be weighted.
-
-    stats_xds = assign_pre_solve_chisq(stats_xds,
-                                       data_col,
-                                       model_col,
-                                       weight_col,
-                                       ant1_col,
-                                       ant2_col,
-                                       utime_ind,
-                                       utime_per_chunk,
-                                       utime_chunks)
-
-    return stats_xds, unflagged_tfac, avg_abs_sqrd_model
