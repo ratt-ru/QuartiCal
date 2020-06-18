@@ -88,8 +88,8 @@ def execute():
     with ProgressBar():
         dask.compute([dask.delayed(tuple)(x) for x in outputs],
                      num_workers=opts.parallel_nthread,
-                     optimize_graph=True,)
-                    #  scheduler="single-threaded") # noqa
+                     optimize_graph=True,
+                     scheduler=opts.parallel_scheduler)
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
     # This code can be used to save gain xarray datasets imeediately. This is

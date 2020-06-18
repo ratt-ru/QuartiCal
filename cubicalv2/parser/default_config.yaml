@@ -336,6 +336,7 @@ parallel:
         choices:
             - multithreaded
             - distributed
+            - single-threaded
         default: multithreaded
 
 (gain):
