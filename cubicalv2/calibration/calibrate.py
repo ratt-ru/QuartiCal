@@ -120,11 +120,8 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
         gain_xds_list = make_gain_xds_list(xds, opts)
 
-        # Update the gain xds with relevant interval statistics. This is
-        # INSANELY expensive. TODO: Investigate necessity/improve. This has
-        # also been broken by changes to overall calibration code. Fix it.
-        # I think the actual problem calculation was in computing the average
-        # model. This is now 10x faster.
+        # Update the gain xds with relevant interval statistics. Used to be
+        # very expensive - has been improved.
 
         gain_xds_list, empty_intervals = \
             assign_interval_stats(gain_xds_list,

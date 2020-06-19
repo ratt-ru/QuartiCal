@@ -537,21 +537,19 @@ def assign_presolve_data_stats(data_xds, utime_ind, utime_per_chunk):
 
 def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
                           avg_abs_sqrd_model, utime_per_chunk, opts):
-    """Assign interval based statistics to the gain xarray.Dataset.
+    """Assign interval based statistics to gain xarray.Datasets.
 
     Computes and assigns the prior gain error, missing fraction, and
     chisq correction factors per interval and over each block.
 
     Args:
-        gain_xds: xarray.Dataset on which the gains and their stats live.
-        data_stats_xds: xarray.Dataset on which the data and their stats live.
-        unflagged_tfac: dask.array of unflagged values per (t, f, a, c).
-        avg_abs_sqrd_model: dask.array containing average abs squared model.
-        ti_chunks: Tuple of integer time chunk values.
-        fi_chunks: Tuple of integer frequency chunk values.
-        t_int: Integer time interval.
-        f_int: Integer frequency interal.
-        n_utime: Dask.array of number of unique times per chunk.
+        gain_xds_list: A list of xarray.Dataset objects on which the gains
+            and their stats live.
+        data_stats_xds: xarray.Dataset on which the data stats live.
+        unflagged_tfac: dask.Array of unflagged values per (t, f, a, c).
+        avg_abs_sqrd_model: dask.Array containing average abs squared model.
+        utime_per_chunk: dask.Array of number of unique times per chunk.
+        opts: A Namespce object containing global options.
 
     Returns:
         updated_gain_xds: xarray.Dataset with new values.
@@ -599,7 +597,7 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
             chunks=((1,)*n_t_chunk,
                     (1,)*n_f_chunk),
             drop_axis=2,
-            dtype=np.int32)
+            dtype=np.float32)
 
         # Sum the average abs^2 model over solution intervals.
 

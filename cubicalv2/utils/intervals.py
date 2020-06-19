@@ -80,17 +80,18 @@ def column_to_tfac(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
 
         for chan in range(n_chan):
 
-            tfac_inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m)
+            tfac_inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m,
+                            n_corr)
 
     return out_arr
 
 
-def tfac_inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+def tfac_inner_loop(out_arr, in_col, t_m, row, chan, a1_m, a2_m, n_corr):
     pass
 
 
 @overload(tfac_inner_loop, inline='always')
-def tfac_inner_loop_impl(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+def tfac_inner_loop_impl(out_arr, in_col, t_m, row, chan, a1_m, a2_m, n_corr):
 
     if isinstance(in_col.dtype, types.Complex):
         return tfac_inner_loop_cmplx
@@ -98,16 +99,19 @@ def tfac_inner_loop_impl(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
         return tfac_inner_loop_noncmplx
 
 
-def tfac_inner_loop_noncmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+def tfac_inner_loop_noncmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m,
+                             n_corr):
 
-    out_arr[t_m, chan, a1_m, :] += in_col[row, chan, :]
-    out_arr[t_m, chan, a2_m, :] += in_col[row, chan, :]
+    for c in range(n_corr):
+        out_arr[t_m, chan, a1_m, c] += in_col[row, chan, c]
+        out_arr[t_m, chan, a2_m, c] += in_col[row, chan, c]
 
 
-def tfac_inner_loop_cmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m):
+def tfac_inner_loop_cmplx(out_arr, in_col, t_m, row, chan, a1_m, a2_m, n_corr):
 
-    out_arr[t_m, chan, a1_m, :] += in_col[row, chan, :]
-    out_arr[t_m, chan, a2_m, :] += in_col[row, chan, :].conjugate()
+    for c in range(n_corr):
+        out_arr[t_m, chan, a1_m, c] += in_col[row, chan, c]
+        out_arr[t_m, chan, a2_m, c] += in_col[row, chan, c].conjugate()
 
 
 def get_output_dtype(in_col):
