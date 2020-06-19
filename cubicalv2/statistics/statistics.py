@@ -520,6 +520,7 @@ def assign_presolve_data_stats(data_xds, utime_ind, utime_per_chunk):
                                                utime_chunks)
 
     # Compute the pre solve chi-squared values. TODO: Needs to be weighted.
+    # I may have already added the weighting. Check?
 
     stats_xds = assign_pre_solve_chisq(stats_xds,
                                        data_col,
@@ -534,9 +535,8 @@ def assign_presolve_data_stats(data_xds, utime_ind, utime_per_chunk):
     return stats_xds, unflagged_tfac, avg_abs_sqrd_model
 
 
-def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
-                          avg_abs_sqrd_model, ti_chunks, fi_chunks,
-                          t_int, f_int, n_utime):
+def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
+                          avg_abs_sqrd_model, utime_per_chunk, opts):
     """Assign interval based statistics to the gain xarray.Dataset.
 
     Computes and assigns the prior gain error, missing fraction, and
@@ -557,159 +557,187 @@ def assign_interval_stats(gain_xds, data_stats_xds, unflagged_tfac,
         updated_gain_xds: xarray.Dataset with new values.
         flagged_tifia: dask.array of flagged values per (ti, fi, a).
     """
-    n_dir = gain_xds.dir.size  # TODO: Add fixed direction logic.
-    n_ant = gain_xds.ant.size
 
-    # This creates an (n_t_int, n_f_int, n_ant, n_corr) array of unflagged
-    # points by summing over solution interval. Note that V1 did not retain a
-    # correlation axis.
+    updated_gain_xds_list = []
 
-    unflagged_tifiac = da.blockwise(sum_intervals, data_schema,
-                                    unflagged_tfac, data_schema,
-                                    t_int, None,
-                                    f_int, None,
-                                    dtype=np.int32,
-                                    concatenate=True,
-                                    align_arrays=False,
-                                    adjust_chunks={"rowlike": ti_chunks,
-                                                   "chan": fi_chunks})
+    for gain_xds in gain_xds_list:
 
-    # Antennas which have no unflagged points in an interval must be fully
-    # flagged. Note that we reduce over the correlation axis here.
+        n_dir = gain_xds.dims["dir"]  # TODO: Add fixed direction logic.
+        n_ant = gain_xds.dims["ant"]
 
-    flagged_tifia = da.all(unflagged_tifiac == 0, axis=-1)
+        t_int = getattr(opts, "{}_time_interval".format(gain_xds.NAME))
+        f_int = getattr(opts, "{}_freq_interval".format(gain_xds.NAME))
 
-    missing_fraction = da.map_blocks(
-        lambda x: np.atleast_2d(np.sum(x)/x.size),
-        flagged_tifia,
-        chunks=((1,)*gain_xds.t_chunk.size,
-                (1,)*gain_xds.f_chunk.size),
-        drop_axis=2,
-        dtype=np.int32)
+        ti_chunks = gain_xds.CHUNK_SPEC.tchunk
+        fi_chunks = gain_xds.CHUNK_SPEC.fchunk
 
-    # Sum the average abs^2 model over solution intervals.
+        n_t_chunk = gain_xds.dims["t_chunk"]
+        n_f_chunk = gain_xds.dims["f_chunk"]
 
-    if n_dir == 1 and avg_abs_sqrd_model.shape[3] != 1:
-        avg_abs_sqrd_model = avg_abs_sqrd_model.map_blocks(np.sum,
-                                                           axis=3,
-                                                           keepdims=True,
-                                                           drop_axis=3,
-                                                           new_axis=3)
+        # This creates an (n_t_int, n_f_int, n_ant, n_corr) array of unflagged
+        # points by summing over solution interval. Note that V1 did not
+        # retain a correlation axis.
 
-    avg_abs_sqrd_model_int = \
-        da.blockwise(sum_intervals, model_schema,
-                     avg_abs_sqrd_model, model_schema,
-                     t_int, None,
-                     f_int, None,
-                     dtype=np.float32,
-                     concatenate=True,
-                     align_arrays=False,
-                     adjust_chunks={"rowlike": ti_chunks,
-                                    "chan": fi_chunks})
+        unflagged_tifiac = da.blockwise(sum_intervals, data_schema,
+                                        unflagged_tfac, data_schema,
+                                        t_int, None,
+                                        f_int, None,
+                                        dtype=np.int32,
+                                        concatenate=True,
+                                        align_arrays=False,
+                                        adjust_chunks={"rowlike": ti_chunks,
+                                                       "chan": fi_chunks})
 
-    # Determine the noise^2 per channel by inverting the varaince^2.
+        # Antennas which have no unflagged points in an interval must be fully
+        # flagged. Note that we reduce over the correlation axis here.
 
-    sigma_sqrd_per_chan = \
-        da.map_blocks(silent_divide, 1, data_stats_xds.inv_var_per_chan.data,
-                      dtype=np.float64)
+        flagged_tifia = da.all(unflagged_tifiac == 0, axis=-1)
 
-    # Map the per channel estimates to per interval estimates.
+        missing_fraction = da.map_blocks(
+            lambda x: np.atleast_2d(np.sum(x)/x.size),
+            flagged_tifia,
+            chunks=((1,)*n_t_chunk,
+                    (1,)*n_f_chunk),
+            drop_axis=2,
+            dtype=np.int32)
 
-    sigma_sqrd_per_int = \
-        da.blockwise(per_chan_to_per_int, model_schema,
-                     sigma_sqrd_per_chan, ("rowlike", "chan"),
-                     avg_abs_sqrd_model_int, model_schema,
-                     n_utime, ("rowlike",),
-                     t_int, None,
-                     f_int, None,
-                     dtype=np.float32,
-                     concatenate=True,
-                     align_arrays=False)
+        # Sum the average abs^2 model over solution intervals.
 
-    # Sum over the correlation axis.
+        if n_dir == 1 and avg_abs_sqrd_model.shape[3] != 1:
+            avg_abs_sqrd_model = da.map_blocks(
+                np.sum,
+                avg_abs_sqrd_model,
+                axis=3,
+                keepdims=True,
+                drop_axis=3,
+                new_axis=3)
 
-    unflagged_tifiaD = unflagged_tifiac.map_blocks(np.sum, axis=3, drop_axis=3,
-                                                   new_axis=3, keepdims=True)
+        avg_abs_sqrd_model_int = \
+            da.blockwise(sum_intervals, model_schema,
+                         avg_abs_sqrd_model, model_schema,
+                         t_int, None,
+                         f_int, None,
+                         dtype=np.float32,
+                         concatenate=True,
+                         align_arrays=False,
+                         adjust_chunks={"rowlike": ti_chunks,
+                                        "chan": fi_chunks})
 
-    # Note the egregious fudge factor of four. This was introduced to be
-    # consistent with V1 which abandons doesn't count correlations. TODO:
-    # Sit down with Oleg and figure out exactly what we want to happen in V2.
+        # Determine the noise^2 per channel by inverting the varaince^2.
 
-    noise_to_signal_ratio = da.map_blocks(
-        silent_divide,
-        4*sigma_sqrd_per_int,
-        unflagged_tifiaD[:, :, :, None, :]*avg_abs_sqrd_model_int,
-        undefined=np.inf,
-        dtype=np.float64,
-        chunks=(ti_chunks, fi_chunks, (n_ant,), (n_dir,), (1,)))
+        sigma_sqrd_per_chan = da.map_blocks(
+            silent_divide,
+            1,
+            data_stats_xds.inv_var_per_chan.data,
+            dtype=np.float64)
 
-    # The prior gain error is the square root of the noise to signal ratio.
+        # Map the per channel estimates to per interval estimates.
 
-    prior_gain_error = da.sqrt(noise_to_signal_ratio)
+        sigma_sqrd_per_int = \
+            da.blockwise(per_chan_to_per_int, model_schema,
+                         sigma_sqrd_per_chan, ("rowlike", "chan"),
+                         avg_abs_sqrd_model_int, model_schema,
+                         utime_per_chunk, ("rowlike",),
+                         t_int, None,
+                         f_int, None,
+                         dtype=np.float32,
+                         concatenate=True,
+                         align_arrays=False)
 
-    # Determine the number of equations per interval by collapsing the
-    # equations per time-frequency array.
+        # Sum over the correlation axis.
 
-    eqs_per_interval = \
-        da.blockwise(sum_intervals, ("rowlike", "chan"),
-                     data_stats_xds.eqs_per_tf.data, ("rowlike", "chan"),
-                     t_int, None,
-                     f_int, None,
-                     dtype=np.int32,
-                     concatenate=True,
-                     align_arrays=False,
-                     adjust_chunks={"rowlike": ti_chunks,
-                                    "chan": fi_chunks})
+        unflagged_tifiaD = da.map_blocks(
+            np.sum,
+            unflagged_tifiac,
+            axis=3,
+            keepdims=True,
+            drop_axis=3,
+            new_axis=3)
 
-    dof_per_ant = 8  # TODO: Should depend on solver mode.
+        # Note the egregious fudge factor of four. This was introduced to be
+        # consistent with V1 which abandons doesn't count correlations. TODO:
+        # Sit down with Oleg and figure out exactly what we want to happen in
+        # V2.
 
-    n_unknowns = dof_per_ant*n_ant*n_dir  # TODO: Add fixed direction logic.
+        noise_to_signal_ratio = da.map_blocks(
+            silent_divide,
+            4*sigma_sqrd_per_int,
+            unflagged_tifiaD[:, :, :, None, :]*avg_abs_sqrd_model_int,
+            undefined=np.inf,
+            dtype=np.float64,
+            chunks=(ti_chunks, fi_chunks, (n_ant,), (n_dir,), (1,)))
 
-    # Check for intervals with a sufficient number of equations.
+        # The prior gain error is the square root of the noise to signal ratio.
 
-    valid_intervals = eqs_per_interval > n_unknowns
-    n_valid_intervals = da.map_blocks(
-        lambda x: np.atleast_2d(np.sum(x)),
-        valid_intervals,
-        chunks=((1,)*gain_xds.t_chunk.size,
-                (1,)*gain_xds.f_chunk.size),
-        dtype=np.int32)
+        prior_gain_error = da.sqrt(noise_to_signal_ratio)
 
-    n_valid_solutions = n_valid_intervals*n_dir
+        # Determine the number of equations per interval by collapsing the
+        # equations per time-frequency array.
 
-    # Compute chi-squared correction factor for time-frequency and overall
-    # data.
+        eqs_per_interval = \
+            da.blockwise(sum_intervals, ("rowlike", "chan"),
+                         data_stats_xds.eqs_per_tf.data, ("rowlike", "chan"),
+                         t_int, None,
+                         f_int, None,
+                         dtype=np.int32,
+                         concatenate=True,
+                         align_arrays=False,
+                         adjust_chunks={"rowlike": ti_chunks,
+                                        "chan": fi_chunks})
 
-    chisq_tf_factor = da.map_blocks(
-        silent_divide,
-        eqs_per_interval,
-        eqs_per_interval - n_unknowns,
-        dtype=np.float64)
-    chisq_tf_factor[~valid_intervals] = 0
+        # TODO: Should depend on solver mode.
+        dof_per_ant = 8
 
-    chisq_tot_factor = da.map_blocks(
-        lambda x: np.atleast_2d(np.sum(x)),
-        chisq_tf_factor,
-        chunks=((1,)*gain_xds.t_chunk.size,
-                (1,)*gain_xds.f_chunk.size),
-        dtype=np.float32)
-    chisq_tot_factor = da.map_blocks(
-        silent_divide,
-        chisq_tot_factor,
-        n_valid_intervals,
-        dtype=np.float64)
+        # TODO: Add fixed direction logic.
+        n_unknowns = dof_per_ant*n_ant*n_dir
 
-    # Zero the PGE in intervals which are considered unsolvable.
+        # Check for intervals with a sufficient number of equations.
 
-    prior_gain_error[~valid_intervals[..., None, None, None]] = 0
+        valid_intervals = eqs_per_interval > n_unknowns
+        n_valid_intervals = da.map_blocks(
+            lambda x: np.atleast_2d(np.sum(x)),
+            valid_intervals,
+            chunks=((1,)*n_t_chunk,
+                    (1,)*n_f_chunk),
+            dtype=np.int32)
 
-    updated_gain_xds = gain_xds.assign(
-        {"prior_gain_error": (("time_int", "freq_int", "ant", "dir"),
-                              prior_gain_error[..., 0]),
-         "missing_fraction": (("t_chunk", "f_chunk"), missing_fraction),
-         "chisq_tf_correction": (("time_int", "freq_int"), chisq_tf_factor),
-         "chisq_tot_correction": (("t_chunk", "f_chunk"), chisq_tot_factor)})
+        n_valid_solutions = n_valid_intervals*n_dir
 
-    # TODO: Handle direction pinning. Handle logging/stat reporting.
+        # Compute chi-squared correction factor for time-frequency and overall
+        # data.
 
-    return updated_gain_xds, flagged_tifia
+        chisq_tf_factor = da.map_blocks(
+            silent_divide,
+            eqs_per_interval,
+            eqs_per_interval - n_unknowns,
+            dtype=np.float64)
+        chisq_tf_factor[~valid_intervals] = 0
+
+        chisq_tot_factor = da.map_blocks(
+            lambda a1, a2, **kw: silent_divide(np.sum(a1, **kw), a2),
+            chisq_tf_factor,
+            n_valid_intervals,
+            keepdims=True,
+            chunks=((1,)*n_t_chunk,
+                    (1,)*n_f_chunk),
+            dtype=np.float32)
+
+        # Zero the PGE in intervals which are considered unsolvable.
+
+        prior_gain_error[~valid_intervals[..., None, None, None]] = 0
+
+        updated_gain_xds = gain_xds.assign(
+            {"prior_gain_error": (("time_int", "freq_int", "ant", "dir"),
+                                  prior_gain_error[..., 0]),
+             "missing_fraction": (("t_chunk", "f_chunk"),
+                                  missing_fraction),
+             "chisq_tf_correction": (("time_int", "freq_int"),
+                                     chisq_tf_factor),
+             "chisq_tot_correction": (("t_chunk", "f_chunk"),
+                                      chisq_tot_factor)})
+
+        updated_gain_xds_list.append(updated_gain_xds)
+
+        # TODO: Handle direction pinning. Handle logging/stat reporting.
+
+    return updated_gain_xds_list, flagged_tifia

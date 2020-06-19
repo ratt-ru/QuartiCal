@@ -190,7 +190,9 @@ def sum_intervals(in_arr, t_int, f_int):
 
     out_dtype = get_output_dtype(in_arr)
 
-    out_arr = np.zeros((n_tint, n_fint, *in_arr_shape[2:]), dtype=out_dtype)
+    trailing_dims = in_arr_shape[2:]
+
+    out_arr = np.zeros((n_tint, n_fint, *trailing_dims), dtype=out_dtype)
 
     for t in range(n_time):
 
@@ -200,6 +202,58 @@ def sum_intervals(in_arr, t_int, f_int):
 
             f_m = f//f_int
 
-            out_arr[t_m, f_m, ...] += in_arr[t, f, ...]
+            sum_intervals_inner_loop(out_arr, in_arr, t, f, t_m, f_m,
+                                     trailing_dims)
 
     return out_arr
+
+
+def sum_intervals_inner_loop(out_arr, in_arr, t, f, t_m, f_m, trailing_dims):
+    pass
+
+
+@overload(sum_intervals_inner_loop, inline='always')
+def sum_intervals_inner_loop_impl(out_arr, in_arr, t, f, t_m, f_m,
+                                  trailing_dims):
+
+    if len(trailing_dims) == 3:
+        return sum_intervals_inner_loop_3D
+    elif len(trailing_dims) == 2:
+        return sum_intervals_inner_loop_2D
+    elif len(trailing_dims) == 1:
+        return sum_intervals_inner_loop_1D
+    else:
+        return sum_intervals_inner_loop_0D
+
+
+def sum_intervals_inner_loop_3D(out_arr, in_arr, t, f, t_m, f_m,
+                                trailing_dims):
+
+    for i in range(trailing_dims[0]):
+        for j in range(trailing_dims[1]):
+            for k in range(trailing_dims[2]):
+
+                out_arr[t_m, f_m, i, j, k] += in_arr[t, f, i, j, k]
+
+
+def sum_intervals_inner_loop_2D(out_arr, in_arr, t, f, t_m, f_m,
+                                trailing_dims):
+
+    for i in range(trailing_dims[0]):
+        for j in range(trailing_dims[1]):
+
+            out_arr[t_m, f_m, i, j] += in_arr[t, f, i, j]
+
+
+def sum_intervals_inner_loop_1D(out_arr, in_arr, t, f, t_m, f_m,
+                                trailing_dims):
+
+    for i in range(trailing_dims[0]):
+
+        out_arr[t_m, f_m, i] += in_arr[t, f, i]
+
+
+def sum_intervals_inner_loop_0D(out_arr, in_arr, t, f, t_m, f_m,
+                                trailing_dims):
+
+    out_arr[t_m, f_m] += in_arr[t, f]

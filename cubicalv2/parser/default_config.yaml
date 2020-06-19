@@ -334,10 +334,10 @@ parallel:
         help: Which dask scheduler to use. The default, multithreaded, is the
               most appropriate for non-server use.
         choices:
-            - multithreaded
+            - threads
             - distributed
             - single-threaded
-        default: multithreaded
+        default: threads
 
 (gain):
     _description: Arguments pertaining to a labelled (gain). (gain) MUST be

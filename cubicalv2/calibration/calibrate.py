@@ -109,8 +109,11 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
             assign_presolve_data_stats(xds, utime_ind, utime_per_chunk)
 
-        # print(da.compute(data_stats_xds))
-        # import pdb;pdb.set_trace()
+        # Construct arrays containing mappings between data resolution and
+        # solution intervals per term.
+        t_map_arr = make_t_mappings(utime_ind, opts)
+        f_map_arr = make_f_mappings(chan_freqs, opts)
+        d_map_arr = make_d_mappings(n_dir, opts)
 
         # Generate an xds per gain term - these conveniently store dimension
         # info. We can assign results to them later.
@@ -123,22 +126,13 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # I think the actual problem calculation was in computing the average
         # model. This is now 10x faster.
 
-        # gain_xds, empty_intervals = \
-        #     assign_interval_stats(gain_xds,
-        #                           data_stats_xds,
-        #                           unflagged_tfac,
-        #                           avg_abs_sqrd_model,
-        #                           n_t_int_per_chunk,
-        #                           n_f_int_per_chunk,
-        #                           t_int or n_row,
-        #                           f_int or n_chan,
-        #                           utime_per_chunk)
-
-        # Construct arrays containing mappings between data resolution and
-        # solution intervals per term.
-        t_map_arr = make_t_mappings(utime_ind, opts)
-        f_map_arr = make_f_mappings(chan_freqs, opts)
-        d_map_arr = make_d_mappings(n_dir, opts)
+        gain_xds_list, empty_intervals = \
+            assign_interval_stats(gain_xds_list,
+                                  data_stats_xds,
+                                  unflagged_tfac,
+                                  avg_abs_sqrd_model,
+                                  utime_per_chunk,
+                                  opts)
 
         # This has been fixed - this now constructs a custom graph which
         # preserves gain chunking. It also somewhat simplifies future work
