@@ -1,8 +1,8 @@
 from cubicalv2.statistics.stat_kernels import (estimate_noise_kernel,
                                                compute_chi_squared)
-from cubicalv2.utils.intervals import (column_to_abs_tfadc,
-                                       column_to_tfac,
-                                       sum_intervals,
+from cubicalv2.utils.intervals import (rfdc_to_abs_tfadc,
+                                       rfc_to_tfac,
+                                       tfx_to_tifix,
                                        model_schema,
                                        data_schema)
 from dask.core import flatten
@@ -235,7 +235,7 @@ def compute_average_model(stats_xds, model_col, unflagged_tfac, ant1_col,
     # operation to avoid creating an array the size of the model.
 
     abs_sqrd_model_tfadc = da.blockwise(
-        column_to_abs_tfadc, ("rowlike", "chan", "ant", "dir", "corr"),
+        rfdc_to_abs_tfadc, ("rowlike", "chan", "ant", "dir", "corr"),
         model_col, ("rowlike", "chan", "dir", "corr"),
         ant1_col, ("rowlike",),
         ant2_col, ("rowlike",),
@@ -472,7 +472,7 @@ def assign_presolve_data_stats(data_xds, utime_ind, utime_per_chunk):
     # be easily manipulated to produce other quantities of interest.
 
     unflagged_tfac = \
-        da.blockwise(column_to_tfac, ("rowlike", "chan", "ant", "corr"),
+        da.blockwise(rfc_to_tfac, ("rowlike", "chan", "ant", "corr"),
                      data_bitflags == 0, ("rowlike", "chan", "corr"),
                      ant1_col, ("rowlike",),
                      ant2_col, ("rowlike",),
@@ -576,7 +576,7 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
         # points by summing over solution interval. Note that V1 did not
         # retain a correlation axis.
 
-        unflagged_tifiac = da.blockwise(sum_intervals, data_schema,
+        unflagged_tifiac = da.blockwise(tfx_to_tifix, data_schema,
                                         unflagged_tfac, data_schema,
                                         t_int, None,
                                         f_int, None,
@@ -617,7 +617,7 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
         # Sum the average abs^2 model over solution intervals.
 
         avg_abs_sqrd_model_int = \
-            da.blockwise(sum_intervals, model_schema,
+            da.blockwise(tfx_to_tifix, model_schema,
                          local_avg_abs_sqrd_model, model_schema,
                          t_int, None,
                          f_int, None,
@@ -679,7 +679,7 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
         # equations per time-frequency array.
 
         eqs_per_interval = \
-            da.blockwise(sum_intervals, ("rowlike", "chan"),
+            da.blockwise(tfx_to_tifix, ("rowlike", "chan"),
                          data_stats_xds.eqs_per_tf.data, ("rowlike", "chan"),
                          t_int, None,
                          f_int, None,
