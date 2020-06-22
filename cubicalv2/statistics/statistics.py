@@ -599,20 +599,26 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
             drop_axis=2,
             dtype=np.float32)
 
-        # Sum the average abs^2 model over solution intervals.
+        # If the model is direction dependent but the current gain term is not,
+        # we sum over the direction axis. Local version is necessary to ensure
+        # we don't accidentally change the original value.
 
         if n_dir == 1 and avg_abs_sqrd_model.shape[3] != 1:
-            avg_abs_sqrd_model = da.map_blocks(
+            local_avg_abs_sqrd_model = da.map_blocks(
                 np.sum,
                 avg_abs_sqrd_model,
                 axis=3,
                 keepdims=True,
                 drop_axis=3,
                 new_axis=3)
+        else:
+            local_avg_abs_sqrd_model = avg_abs_sqrd_model
+
+        # Sum the average abs^2 model over solution intervals.
 
         avg_abs_sqrd_model_int = \
             da.blockwise(sum_intervals, model_schema,
-                         avg_abs_sqrd_model, model_schema,
+                         local_avg_abs_sqrd_model, model_schema,
                          t_int, None,
                          f_int, None,
                          dtype=np.float32,

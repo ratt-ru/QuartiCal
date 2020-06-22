@@ -153,6 +153,7 @@ def column_to_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
 
 @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
 def column_to_abs_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
+    """TODO: This actually only works for columns with a direction axis."""
 
     n_row, n_chan, n_dir, n_corr = in_col.shape
 
