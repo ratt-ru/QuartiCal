@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from cubicalv2.kernels.generics import (compute_residual)
-from cubicalv2.statistics.statistics import (assign_interval_stats,
+from quartical.kernels.generics import (compute_residual)
+from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_post_solve_chisq,
                                              assign_presolve_data_stats,)
-from cubicalv2.flagging.flagging import (set_bitflag,
+from quartical.flagging.flagging import (set_bitflag,
                                          compute_mad_flags)
-from cubicalv2.calibration.constructor import construct_solver
+from quartical.calibration.constructor import construct_solver
 
-from cubicalv2.utils.dask import blockwise_unique
+from quartical.utils.dask import blockwise_unique
 from uuid import uuid4
 from loguru import logger  # noqa
 from collections import namedtuple

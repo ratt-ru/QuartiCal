@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from cubicalv2.calibration.gain_types import term_solvers
+from quartical.calibration.gain_types import term_solvers
 import gc
 
 

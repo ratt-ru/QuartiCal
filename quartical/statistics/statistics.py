@@ -1,6 +1,6 @@
-from cubicalv2.statistics.stat_kernels import (estimate_noise_kernel,
+from quartical.statistics.stat_kernels import (estimate_noise_kernel,
                                                compute_chi_squared)
-from cubicalv2.utils.intervals import (rfdc_to_abs_tfadc,
+from quartical.utils.intervals import (rfdc_to_abs_tfadc,
                                        rfc_to_tfac,
                                        tfx_to_tifix,
                                        model_schema,

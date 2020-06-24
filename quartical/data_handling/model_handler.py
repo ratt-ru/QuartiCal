@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
-from cubicalv2.data_handling.predict import predict
+from quartical.data_handling.predict import predict
 from loguru import logger  # noqa
 
 

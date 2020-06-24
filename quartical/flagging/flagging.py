@@ -3,7 +3,7 @@ import numpy as np
 from uuid import uuid4
 from copy import deepcopy
 from loguru import logger
-from cubicalv2.flagging.flagging_kernels import madmax, threshold
+from quartical.flagging.flagging_kernels import madmax, threshold
 
 
 ibfdtype = np.uint16  # Data type for internal bitflags.
@@ -124,10 +124,10 @@ def _bitflagger(bitflag_arr, bitflag_names, selection, setter):
 
 
 def update_kwrds(col_kwrds, opts):
-    """Updates the columns keywords to reflect cubical bitflags.
+    """Updates the columns keywords to reflect QuartiCal bitflags.
 
     Given the existing column keywords (from the MS), updates them to include
-    CubiCal's bitflags and legacy bitflags if necessary.
+    QuartiCal's bitflags and legacy bitflags if necessary.
 
     Args:
         col_kwrds: A dictionary of column keywords.
@@ -173,9 +173,9 @@ def update_kwrds(col_kwrds, opts):
             opts._init_legacy = True
             logger.info("LEGACY bitflag will be populated from FLAG/FLAG_ROW.")
 
-        if "cubical" not in flagsets:
-            flagsets |= set(("cubical",))
-            bitflag_kwrds.update(FLAGSET_cubical=available_bits.pop(0))
+        if "quartical" not in flagsets:
+            flagsets |= set(("quartical",))
+            bitflag_kwrds.update(FLAGSET_quartical=available_bits.pop(0))
     except IndexError:
         raise ValueError("BITFLAG is full - aborting.")
 
@@ -187,7 +187,7 @@ def update_kwrds(col_kwrds, opts):
 def finalise_flags(xds_list, col_kwrds, opts):
     """ Combines internal and input bitflags to produce writable flag data.
 
-    Given a list of xds and appropriately updated keywords, combines CubiCal's
+    Given a list of xds and appropriately updated keywords, combines QuartiCal's
     internal bitflags with the input bitflags and creates a new list of xds
     on which the combined flagging data is assigned. Also handles legacy flags.
 
@@ -202,7 +202,7 @@ def finalise_flags(xds_list, col_kwrds, opts):
 
     ebfdtype = opts._ebfdtype
 
-    cubical_bit = ebfdtype(col_kwrds["BITFLAG"]["FLAGSET_cubical"])
+    quartical_bit = ebfdtype(col_kwrds["BITFLAG"]["FLAGSET_quartical"])
     legacy_bit = ebfdtype(col_kwrds["BITFLAG"]["FLAGSET_legacy"])
 
     writable_xds = []
@@ -210,15 +210,15 @@ def finalise_flags(xds_list, col_kwrds, opts):
     for xds in xds_list:
 
         # The following may be slightly incorrect as we assume that no
-        # information from the current contents of the cubical bitflag needs
-        # to be retained. It might be necessary to have a "cubical_to_legacy"
-        # option which merges existing cubical flags into legacy so that we
-        # are free to only retain the latest round of CubiCal flags.
+        # information from the current contents of the QuartiCal bitflag needs
+        # to be retained. It might be necessary to have a "quartical_to_legacy"
+        # option which merges existing QuartiCal flags into legacy so that we
+        # are free to only retain the latest round of QuartiCal flags.
 
         flag_col = xds.FLAG.data
         flag_row_col = xds.FLAG_ROW.data
-        bitflag_col = xds.BITFLAG.data & ~ebfdtype(1 << cubical_bit)
-        bitflag_row_col = xds.BITFLAG_ROW.data & ~ebfdtype(1 << cubical_bit)
+        bitflag_col = xds.BITFLAG.data & ~ebfdtype(1 << quartical_bit)
+        bitflag_row_col = xds.BITFLAG_ROW.data & ~ebfdtype(1 << quartical_bit)
         cubi_bitflags = xds.CUBI_BITFLAG.data
 
         # If legacy doesn't exist, it will be added.
@@ -227,11 +227,11 @@ def finalise_flags(xds_list, col_kwrds, opts):
             legacy_flags = legacy_flags.astype(ebfdtype) << legacy_bit
             bitflag_col |= legacy_flags
 
-        # Set the CubiCal bit in the bitflag column. TODO: This will not work
+        # Set the QuartiCal bit in the bitflag column. TODO: This will not work
         # in the distributed scheduler as we CANNOT do any operation in place.
         # Restore once solver has evolved.
         # cubi_bitflags = unset_bitflag(cubi_bitflags, "PRIOR")
-        cubi_bitflag = (cubi_bitflags > 0).astype(ebfdtype) << cubical_bit
+        cubi_bitflag = (cubi_bitflags > 0).astype(ebfdtype) << quartical_bit
 
         bitflag_col |= cubi_bitflag
         bitflag_row_col = da.map_blocks(np.bitwise_and.reduce,

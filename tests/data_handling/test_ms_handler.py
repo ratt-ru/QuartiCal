@@ -1,5 +1,5 @@
 import pytest
-from cubicalv2.data_handling.ms_handler import read_xds_list, write_xds_list
+from quartical.data_handling.ms_handler import read_xds_list, write_xds_list
 from argparse import Namespace
 import numpy as np
 

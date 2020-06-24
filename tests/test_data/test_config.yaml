@@ -25,7 +25,7 @@ input-model:
     apply-p-jones: true
 output:
     _description: Arguments pertaining to output products.
-    directory: cubical
+    directory: quartical
     file-name: cc
     overwrite: false
     backup: true
@@ -42,10 +42,10 @@ output:
 flags:
     _description: Arguments pertaining to flagging behaviour.
     apply-precal:
-    -   ~cubical
+    -   ~quartical
     add-bitflags: true
     reinit-bitflags: false
-    save-flagset: cubical
+    save-flagset: quartical
     mad-enable: false
     bl-mad-threshold: 10
     global-mad-threshold: 12

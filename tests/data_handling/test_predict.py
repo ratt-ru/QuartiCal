@@ -1,7 +1,7 @@
 import pytest
-from cubicalv2.data_handling.ms_handler import read_xds_list
-from cubicalv2.parser.preprocess import interpret_model
-from cubicalv2.data_handling.predict import (predict,
+from quartical.data_handling.ms_handler import read_xds_list
+from quartical.parser.preprocess import interpret_model
+from quartical.data_handling.predict import (predict,
                                              parse_sky_models,
                                              daskify_sky_model_dict,
                                              get_support_tables)

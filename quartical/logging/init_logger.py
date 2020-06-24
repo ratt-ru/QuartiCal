@@ -30,7 +30,7 @@ config = {
         {"sink": sys.stderr,
          "level": "INFO",
          "format": fmt},
-        {"sink": "{time:YYYYMMDD_HHmmss}_cubicalv2.log",
+        {"sink": "{time:YYYYMMDD_HHmmss}_quartical.log",
          "level": "DEBUG",
          "format": fmt,
          }

@@ -8,7 +8,7 @@ from collections import abc
 from distutils.util import strtobool
 import builtins
 from loguru import logger
-import cubicalv2.parser.custom_types as custom_types
+import quartical.parser.custom_types as custom_types
 
 path_to_default = Path(__file__).parent.joinpath("default_config.yaml")
 
@@ -81,7 +81,7 @@ def create_command_line_parser():
     """Instantiates and populates a parser from default_config.yaml."""
 
     parser = argparse.ArgumentParser(
-        usage="""gocubical [<args>]
+        usage="""goquartical [<args>]
 
         Performs calibration in accordance with args. If the first argument is
         positional, it is assumed to be a user-defined config file in .yaml
@@ -161,7 +161,7 @@ def strip_dict(argdict):
 def create_user_config():
     """Creates a blank .yaml file with up-to-date field names and defaults."""
 
-    if not sys.argv[-1].endswith("gocubical-config"):
+    if not sys.argv[-1].endswith("goquartical-config"):
         config_file_path = sys.argv[-1]
     else:
         config_file_path = "user_config.yaml"

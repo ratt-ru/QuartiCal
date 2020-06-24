@@ -3,7 +3,7 @@ import dask.array as da
 from dask.array.core import HighLevelGraph
 from operator import getitem
 from dask.base import tokenize
-from cubicalv2.calibration.solver import solver_wrapper
+from quartical.calibration.solver import solver_wrapper
 from dask.core import flatten
 from collections import namedtuple
 

@@ -1,1 +1,1 @@
-include cubicalv2/parser/default_config.yaml
+include quartical/parser/default_config.yaml

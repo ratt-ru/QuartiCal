@@ -2,9 +2,9 @@
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-from cubicalv2.flagging.flagging import update_kwrds, ibfdtype
-from cubicalv2.weights.weights import initialize_weights
-from cubicalv2.flagging.flagging import (is_set,
+from quartical.flagging.flagging import update_kwrds, ibfdtype
+from quartical.weights.weights import initialize_weights
+from quartical.flagging.flagging import (is_set,
                                          make_bitmask,
                                          initialise_bitflags)
 from uuid import uuid4

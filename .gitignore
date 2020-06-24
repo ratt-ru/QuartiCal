@@ -1,6 +1,6 @@
 .vscode
 build
-cubicalv2.egg-info
+quartical.egg-info
 dist
 __pycache__
 user_config.yaml

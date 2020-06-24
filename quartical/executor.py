@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 # Sets up logger - hereafter import logger from Loguru.
-import cubicalv2.logging.init_logger  # noqa
+import quartical.logging.init_logger  # noqa
 from loguru import logger
-from cubicalv2.parser import parser, preprocess
-from cubicalv2.data_handling.ms_handler import (read_xds_list,
+from quartical.parser import parser, preprocess
+from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
                                                 preprocess_xds_list)
-from cubicalv2.data_handling.model_handler import add_model_graph
-from cubicalv2.calibration.calibrate import add_calibration_graph
-from cubicalv2.flagging.flagging import finalise_flags
+from quartical.data_handling.model_handler import add_model_graph
+from quartical.calibration.calibrate import add_calibration_graph
+from quartical.flagging.flagging import finalise_flags
 import time
 from dask.diagnostics import ProgressBar
 import dask
