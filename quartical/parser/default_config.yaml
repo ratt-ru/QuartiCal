@@ -351,6 +351,7 @@ parallel:
             - phase
             - robust
             - parametric
+            - kalman
         default: complex
     parametrisation:
         type: str
