@@ -184,7 +184,8 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
         #######################################################################
         # This is the madmax flagging step which is not always enabled. TODO:
-        # This likely needs to be moved into the solver.
+        # This likely needs to be moved into the solver. Note that this use of
+        # set bitflags is likely to break the distributed scheduler.
 
         if opts.flags_mad_enable:
             mad_flags = compute_mad_flags(residuals,
