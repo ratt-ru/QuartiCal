@@ -30,8 +30,6 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
     last_gain = gains[active_term].copy()
 
-    cnv_perc = 0.
-
     jhj = np.empty((1, n_fint, n_ant, n_dir, n_corr), dtype=last_gain.dtype)
     jhr = np.empty((1, n_fint, n_ant, n_dir, n_corr), dtype=last_gain.dtype)
     g_update = \
@@ -86,18 +84,28 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                 gains[active_term][i, :, :, :, :]
             P[i+1, :, :, :, :] = P[i, :, :, :, :] + Q[0]
 
-        # Check for gain convergence. TODO: This can be affected by the
-        # weights. Currently unsure how or why, but using unity weights
-        # leads to monotonic convergence in all solution intervals.
+    smooth_gains = gains[active_term].copy()
+    smooth_P = P.copy()
 
-        cnv_perc = 0
+    for i in range(n_tint-2, -1, -1):
 
-        last_gain[:] = gains[active_term][:]
+        compute_smoother_update(g_update,
+                                p_update,
+                                gains[active_term][i:i+1, :, :, :, :],
+                                smooth_gains[i+1:i+2, :, :, :, :],
+                                P[i:i+1, :, :, :, :],
+                                smooth_P[i+1:i+2, :, :, :, :],
+                                Q[i:i+1, :, :, :, :],
+                                literally(corr_mode))
 
-        if cnv_perc > 0.99:
-            break
+        # print(g_update)
 
-    return term_conv_info(i, cnv_perc)
+        smooth_gains[i:i+1, :, :, :, :] += g_update
+        smooth_P[i:i+1, :, :, :, :] += p_update
+
+    gains[active_term][:] = smooth_gains[:]
+
+    return term_conv_info(i, 0)
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
@@ -217,5 +225,126 @@ def update_full(g_update, p_update, jhj, jhr, P, corr_mode):
                     p_update[t, f, a, d, 1] = pup[1, 1].real
                     p_update[t, f, a, d, 2] = pup[2, 2].real
                     p_update[t, f, a, d, 3] = pup[3, 3].real
+
+    return
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def compute_smoother_update(g_update, p_update, gains, smooth_gains, P,
+                            smooth_P, Q, corr_mode):
+
+    return _compute_smoother_update(g_update, p_update, gains, smooth_gains,
+                                    P, smooth_P, Q, literally(corr_mode))
+
+
+def _compute_smoother_update(g_update, p_update, gains, smooth_gains, P,
+                             smooth_P, Q, corr_mode):
+    pass
+
+
+@overload(_compute_smoother_update, inline="always")
+def _compute_smoother_update_impl(g_update, p_update, gains, smooth_gains, P,
+                                  smooth_P, Q, corr_mode):
+
+    if corr_mode.literal_value == "diag":
+        return smoother_update_diag
+    else:
+        return smoother_update_full
+
+
+def smoother_update_diag(g_update, p_update, gains, smooth_gains, P, smooth_P,
+                         Q, corr_mode):
+
+    n_tint, n_fint, n_ant, n_dir, n_corr = g_update.shape
+
+    for t in range(n_tint):
+        for f in range(n_fint):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    P00 = P[t, f, a, d, 0]
+                    P11 = P[t, f, a, d, 1]
+
+                    Q00 = Q[t, f, a, d, 0]
+                    Q11 = Q[t, f, a, d, 1]
+
+                    Pp00 = P00 + Q00
+                    Pp11 = P11 + Q11
+
+                    G00 = P00/Pp00
+                    G11 = P11/Pp11
+
+                    g00 = gains[t, f, a, d, 0]
+                    g11 = gains[t, f, a, d, 1]
+
+                    gs00 = smooth_gains[t, f, a, d, 0]
+                    gs11 = smooth_gains[t, f, a, d, 1]
+
+                    g_update[t, f, a, d, 0] = G00*(gs00 - g00)
+                    g_update[t, f, a, d, 1] = G11*(gs11 - g11)
+
+                    Ps00 = smooth_P[t, f, a, d, 0]
+                    Ps11 = smooth_P[t, f, a, d, 1]
+
+                    p_update[t, f, a, d, 0] = G00*(Ps00 - Pp00)*G00
+                    p_update[t, f, a, d, 1] = G11*(Ps11 - Pp11)*G11
+
+    return
+
+
+def smoother_update_full(g_update, p_update, gains, smooth_gains, P, smooth_P,
+                         Q, corr_mode):
+
+    n_tint, n_fint, n_ant, n_dir, n_corr = g_update.shape
+
+    for t in range(n_tint):
+        for f in range(n_fint):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    P0 = P[t, f, a, d, 0]
+                    P1 = P[t, f, a, d, 1]
+                    P2 = P[t, f, a, d, 2]
+                    P3 = P[t, f, a, d, 3]
+
+                    Q0 = Q[t, f, a, d, 0]
+                    Q1 = Q[t, f, a, d, 1]
+                    Q2 = Q[t, f, a, d, 2]
+                    Q3 = Q[t, f, a, d, 3]
+
+                    Pp0 = P0 + Q0
+                    Pp1 = P1 + Q1
+                    Pp2 = P2 + Q2
+                    Pp3 = P3 + Q3
+
+                    G0 = P0/Pp0
+                    G1 = P1/Pp1
+                    G2 = P2/Pp2
+                    G3 = P3/Pp3
+
+                    g0 = gains[t, f, a, d, 0]
+                    g1 = gains[t, f, a, d, 1]
+                    g2 = gains[t, f, a, d, 2]
+                    g3 = gains[t, f, a, d, 3]
+
+                    gs0 = smooth_gains[t, f, a, d, 0]
+                    gs1 = smooth_gains[t, f, a, d, 1]
+                    gs2 = smooth_gains[t, f, a, d, 2]
+                    gs3 = smooth_gains[t, f, a, d, 3]
+
+                    g_update[t, f, a, d, 0] = G0*(gs0 - g0)
+                    g_update[t, f, a, d, 1] = G1*(gs1 - g1)
+                    g_update[t, f, a, d, 2] = G2*(gs2 - g2)
+                    g_update[t, f, a, d, 3] = G3*(gs3 - g3)
+
+                    Ps0 = smooth_P[t, f, a, d, 0]
+                    Ps1 = smooth_P[t, f, a, d, 1]
+                    Ps2 = smooth_P[t, f, a, d, 2]
+                    Ps3 = smooth_P[t, f, a, d, 3]
+
+                    p_update[t, f, a, d, 0] = G0*(Ps0 - Pp0)*G0
+                    p_update[t, f, a, d, 1] = G1*(Ps1 - Pp1)*G1
+                    p_update[t, f, a, d, 2] = G2*(Ps2 - Pp2)*G2
+                    p_update[t, f, a, d, 3] = G3*(Ps3 - Pp3)*G3
 
     return
