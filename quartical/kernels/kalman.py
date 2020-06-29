@@ -3,8 +3,7 @@ import numpy as np
 from numba import jit, prange, literally
 from numba.extending import overload
 from quartical.kernels.generics import (invert_gains,
-                                        compute_residual,
-                                        compute_convergence)
+                                        compute_residual)
 from quartical.kernels.complex import compute_jhj_jhr
 from collections import namedtuple
 
@@ -26,8 +25,6 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
     invert_gains(gains, inverse_gain_list, literally(corr_mode))
 
-    dd_term = n_dir > 1
-
     last_gain = gains[active_term].copy()
 
     jhj = np.empty((1, n_fint, n_ant, n_dir, n_corr), dtype=last_gain.dtype)
@@ -38,73 +35,88 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         np.empty((1, n_fint, n_ant, n_dir, n_corr), dtype=last_gain.real.dtype)
     Q = np.ones_like(gains[active_term], dtype=last_gain.real.dtype)
     P = np.ones_like(gains[active_term], dtype=last_gain.real.dtype)
-    P = P + Q
+    P[0] += Q[0]
 
-    for i in range(n_tint):
+    n_epoch = 3
 
-        sel = np.where(t_map_arr[:, active_term] == i)[0]
+    for _ in range(n_epoch):
 
-        residual = compute_residual(data[sel, :, :],
-                                    model[sel, :, :, :],
-                                    [gains[active_term][i:i+1, :, :, :, :]],
-                                    a1[sel],
-                                    a2[sel],
-                                    np.zeros_like(t_map_arr[sel]),
-                                    f_map_arr,
-                                    d_map_arr,
-                                    literally(corr_mode))
+        for i in range(n_tint):
 
-        compute_jhj_jhr(jhj,
-                        jhr,
-                        model[sel, :, :, :],
-                        [gains[active_term][i:i+1, :, :, :, :]],
-                        inverse_gain_list,
-                        residual,
-                        a1[sel],
-                        a2[sel],
-                        weights[sel, :, :],
-                        np.zeros_like(t_map_arr[sel]),
-                        f_map_arr,
-                        d_map_arr,
-                        active_term,
-                        literally(corr_mode))
+            sel = np.where(t_map_arr[:, active_term] == i)[0]
 
-        compute_update(g_update,
-                       p_update,
-                       jhj,
-                       jhr,
-                       P[i:i+1, :, :, :, :],
-                       literally(corr_mode))
+            residual = \
+                compute_residual(data[sel, :, :],
+                                 model[sel, :, :, :],
+                                 [gains[active_term][i:i+1, :, :, :, :]],
+                                 a1[sel],
+                                 a2[sel],
+                                 np.zeros_like(t_map_arr[sel]),
+                                 f_map_arr,
+                                 d_map_arr,
+                                 literally(corr_mode))
 
-        gains[active_term][i:i+1, :, :, :, :] += g_update
-        P[i:i+1, :, :, :, :] -= p_update
+            compute_jhj_jhr(jhj,
+                            jhr,
+                            model[sel, :, :, :],
+                            [gains[active_term][i:i+1, :, :, :, :]],
+                            inverse_gain_list,
+                            residual,
+                            a1[sel],
+                            a2[sel],
+                            weights[sel, :, :],
+                            np.zeros_like(t_map_arr[sel]),
+                            f_map_arr,
+                            d_map_arr,
+                            active_term,
+                            literally(corr_mode))
 
-        if i < n_tint - 1:
-            gains[active_term][i+1, :, :, :, :] = \
-                gains[active_term][i, :, :, :, :]
-            P[i+1, :, :, :, :] = P[i, :, :, :, :] + Q[0]
+            compute_update(g_update,
+                           p_update,
+                           jhj,
+                           jhr,
+                           P[i:i+1, :, :, :, :],
+                           literally(corr_mode))
 
-    smooth_gains = np.zeros_like(gains[active_term])
-    smooth_P = np.zeros_like(P)
+            gains[active_term][i:i+1, :, :, :, :] += g_update
+            P[i:i+1, :, :, :, :] -= p_update
 
-    smooth_gains[-1] = gains[active_term][-1]
-    smooth_P[-1] = P[-1]
+            if i < n_tint - 1:
+                gains[active_term][i+1, :, :, :, :] = \
+                    gains[active_term][i, :, :, :, :]
+                P[i+1, :, :, :, :] = P[i, :, :, :, :] + Q[0]
 
-    for i in range(n_tint-2, -1, -1):
+        smooth_gains = np.zeros_like(gains[active_term])
+        smooth_P = np.zeros_like(P)
+        Gs = np.zeros_like(P)
 
-        compute_smoother_update(g_update,
-                                p_update,
-                                gains[active_term][i:i+1, :, :, :, :],
-                                smooth_gains[i+1:i+2, :, :, :, :],
-                                P[i:i+1, :, :, :, :],
-                                smooth_P[i+1:i+2, :, :, :, :],
-                                Q[i:i+1, :, :, :, :],
-                                literally(corr_mode))
+        smooth_gains[-1] = gains[active_term][-1]
+        smooth_P[-1] = P[-1]
 
-        smooth_gains[i:i+1, :, :, :, :] = gains[active_term][i:i+1] + g_update
-        smooth_P[i:i+1, :, :, :, :] = P[i:i+1] + p_update
+        for i in range(n_tint-2, -1, -1):
 
-    gains[active_term][:] = smooth_gains[:]
+            Gs[i:i+1] = \
+                compute_smoother_update(g_update,
+                                        p_update,
+                                        gains[active_term][i:i+1, :, :, :, :],
+                                        smooth_gains[i+1:i+2, :, :, :, :],
+                                        P[i:i+1, :, :, :, :],
+                                        smooth_P[i+1:i+2, :, :, :, :],
+                                        Q[i:i+1, :, :, :, :],
+                                        literally(corr_mode))
+
+            smooth_gains[i:i+1, :, :, :, :] = \
+                gains[active_term][i:i+1] + g_update
+            smooth_P[i:i+1, :, :, :, :] = P[i:i+1] + p_update
+
+        Q[:] = give_Qstar(smooth_gains, smooth_P, Gs)
+
+        P[0] = (smooth_P[0] + (smooth_gains[0] - gains[active_term][0]) *
+               (smooth_gains[0] - gains[active_term][0]).conjugate()).real
+
+        print(Q)
+
+        gains[active_term][:] = smooth_gains[:]
 
     return term_conv_info(i, 0)
 
@@ -258,6 +270,8 @@ def smoother_update_diag(g_update, p_update, gains, smooth_gains, P, smooth_P,
 
     n_tint, n_fint, n_ant, n_dir, n_corr = g_update.shape
 
+    Gs = np.zeros(g_update.shape, dtype=p_update.dtype)
+
     for t in range(n_tint):
         for f in range(n_fint):
             for a in range(n_ant):
@@ -290,7 +304,10 @@ def smoother_update_diag(g_update, p_update, gains, smooth_gains, P, smooth_P,
                     p_update[t, f, a, d, 0] = G00*(Ps00 - Pp00)*G00
                     p_update[t, f, a, d, 1] = G11*(Ps11 - Pp11)*G11
 
-    return
+                    Gs[t, f, a, d, 0] = G00
+                    Gs[t, f, a, d, 1] = G11
+
+    return Gs
 
 
 def smoother_update_full(g_update, p_update, gains, smooth_gains, P, smooth_P,
@@ -349,3 +366,48 @@ def smoother_update_full(g_update, p_update, gains, smooth_gains, P, smooth_P,
                     p_update[t, f, a, d, 3] = G3*(Ps3 - Pp3)*G3
 
     return
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def give_Qstar(ms, Ps, G):
+    """
+    Here we compute the optimal prior parameters resulting from estimation for
+    a linear state-space model as defined by eq. 12.44-12.47 of the filtering and
+    smoothing textbook. Note that we can only compute parameters of the prior
+    since our H matrix implicitly depends on time.
+    """
+
+    n_tint, n_fint, n_ant, n_dir, n_corr = ms.shape
+    # compute the auxilary params
+    Sigma = np.zeros((n_fint, n_ant, n_dir, n_corr), dtype=np.complex128)
+    Phi = np.zeros((n_fint, n_ant, n_dir, n_corr), dtype=np.complex128)
+    C = np.zeros((n_fint, n_ant, n_dir, n_corr), dtype=np.complex128)
+
+    for t in range(n_tint):
+        for f in range(n_fint):
+            for a in range(n_ant):
+                for d in range(n_dir):
+                    Sigma[f, a, d, 0] += \
+                        Ps[t, f, a, d, 0] + np.abs(ms[t, f, a, d, 0])**2
+                    Sigma[f, a, d, 1] += \
+                        Ps[t, f, a, d, 1] + np.abs(ms[t, f, a, d, 1])**2
+                    # assuming the equations are not defined when t=0 for
+                    # these two
+                    if t > 0:
+                        Phi[f, a, d, 0] += \
+                            Ps[t-1, f, a, d, 0] + np.abs(ms[t-1, f, a, d, 0])**2
+                        Phi[f, a, d, 1] += \
+                            Ps[t-1, f, a, d, 1] + np.abs(ms[t-1, f, a, d, 1])**2
+                        C[f, a, d, 0] += \
+                            Ps[t, f, a, d, 0] * G[t-1, f, a, d, 0] + \
+                            ms[t, f, a, d, 0] * ms[t-1, f, a, d, 0].conjugate()
+                        C[f, a, d, 1] += \
+                            Ps[t, f, a, d, 1] * G[t-1, f, a, d, 1] + \
+                            ms[t, f, a, d, 1] * ms[t-1, f, a, d, 1].conjugate()
+    # normalise
+    Sigma /= n_tint
+    Phi /= n_tint
+    C /= n_tint
+
+    # Return real diagonal part
+    return (Sigma - C - C.conjugate() + Phi).real
