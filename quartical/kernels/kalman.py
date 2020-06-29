@@ -76,16 +76,19 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                        P[i:i+1, :, :, :, :],
                        literally(corr_mode))
 
-        gains[active_term][i:i+1, :, :, :, :] += 0.5*g_update
-        P[i:i+1, :, :, :, :] -= 0.5*p_update
+        gains[active_term][i:i+1, :, :, :, :] += g_update
+        P[i:i+1, :, :, :, :] -= p_update
 
         if i < n_tint - 1:
             gains[active_term][i+1, :, :, :, :] = \
                 gains[active_term][i, :, :, :, :]
             P[i+1, :, :, :, :] = P[i, :, :, :, :] + Q[0]
 
-    smooth_gains = gains[active_term].copy()
-    smooth_P = P.copy()
+    smooth_gains = np.zeros_like(gains[active_term])
+    smooth_P = np.zeros_like(P)
+
+    smooth_gains[-1] = gains[active_term][-1]
+    smooth_P[-1] = P[-1]
 
     for i in range(n_tint-2, -1, -1):
 
@@ -98,10 +101,8 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                                 Q[i:i+1, :, :, :, :],
                                 literally(corr_mode))
 
-        # print(g_update)
-
-        smooth_gains[i:i+1, :, :, :, :] += g_update
-        smooth_P[i:i+1, :, :, :, :] += p_update
+        smooth_gains[i:i+1, :, :, :, :] = gains[active_term][i:i+1] + g_update
+        smooth_P[i:i+1, :, :, :, :] = P[i:i+1] + p_update
 
     gains[active_term][:] = smooth_gains[:]
 
