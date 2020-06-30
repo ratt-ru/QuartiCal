@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import jit, prange, literally
+from numba import jit, literally
 from numba.extending import overload
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual)
@@ -25,26 +25,38 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
     invert_gains(gains, inverse_gain_list, literally(corr_mode))
 
-    last_gain = gains[active_term].copy()
+    complex_dtype = gains[active_term].dtype
+    real_dtype = gains[active_term].real.dtype
 
-    jhj = np.empty((1, n_fint, n_ant, n_dir, n_corr), dtype=last_gain.dtype)
-    jhr = np.empty((1, n_fint, n_ant, n_dir, n_corr), dtype=last_gain.dtype)
-    g_update = \
-        np.empty((1, n_fint, n_ant, n_dir, n_corr), dtype=last_gain.dtype)
-    p_update = \
-        np.empty((1, n_fint, n_ant, n_dir, n_corr), dtype=last_gain.real.dtype)
-    Q = np.ones_like(gains[active_term], dtype=last_gain.real.dtype)
-    P = np.ones_like(gains[active_term], dtype=last_gain.real.dtype)
-    P[0] += Q[0]
+    # Initialise arrays for storing intemediary results. TODO: Custom
+    # kernels might make the leading time dimension superfluous.
+
+    intemediary_shape = (1, n_fint, n_ant, n_dir, n_corr)
+
+    jhj = np.empty(intemediary_shape, dtype=complex_dtype)
+    jhr = np.empty(intemediary_shape, dtype=complex_dtype)
+    g_update = np.empty(intemediary_shape, dtype=complex_dtype)
+    p_update = np.empty(intemediary_shape, dtype=real_dtype)
+
+    # Q and P have the same dimensions as the gain (or we represent them as
+    # though they do).
+
+    Q = np.ones_like(gains[active_term], dtype=real_dtype)
+    P = np.ones_like(gains[active_term], dtype=real_dtype)
+    P[0] += Q[0]  # Add Q to P for for first iteration.
 
     n_epoch = 3
 
     for _ in range(n_epoch):
 
+        # ------------------------------FILTER---------------------------------
+
         for i in range(n_tint):
 
+            # TODO: This is a dirty hack - implement special jhj and jhr code.
             sel = np.where(t_map_arr[:, active_term] == i)[0]
 
+            # Compute the (unweighted) residual values at the current time.
             residual = \
                 compute_residual(data[sel, :, :],
                                  model[sel, :, :, :],
@@ -56,6 +68,7 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                                  d_map_arr,
                                  literally(corr_mode))
 
+            # Compute the entries of JHWr and the diagonal entries of JHWJ.
             compute_jhj_jhr(jhj,
                             jhr,
                             model[sel, :, :, :],
@@ -71,6 +84,7 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             active_term,
                             literally(corr_mode))
 
+            # Compute the updates - this is where the inverse happens.
             compute_update(g_update,
                            p_update,
                            jhj,
@@ -78,23 +92,33 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                            P[i:i+1, :, :, :, :],
                            literally(corr_mode))
 
+            # Update the gains and covariances (P).
             gains[active_term][i:i+1, :, :, :, :] += g_update
             P[i:i+1, :, :, :, :] -= p_update
 
+            # On all except the last iteration, we need to add Q to P and set
+            # the gain at t+1 equal to the gain at the current t.
             if i < n_tint - 1:
                 gains[active_term][i+1, :, :, :, :] = \
                     gains[active_term][i, :, :, :, :]
-                P[i+1, :, :, :, :] = P[i, :, :, :, :] + Q[0]
+                P[i+1, :, :, :, :] = P[i, :, :, :, :] + Q[i, :, :, :, :]
+
+        # -----------------------------SMOOTHER--------------------------------
+
+        # Set up the arrays to store the smoothed versions of G and P. Gs are
+        # needed to update Q.
 
         smooth_gains = np.zeros_like(gains[active_term])
         smooth_P = np.zeros_like(P)
         Gs = np.zeros_like(P)
 
+        # The filter and smoother are set to agree at the final time step.
         smooth_gains[-1] = gains[active_term][-1]
         smooth_P[-1] = P[-1]
 
         for i in range(n_tint-2, -1, -1):
 
+            # TODO: This shouldn't be returning G - this was just PoC.
             Gs[i:i+1] = \
                 compute_smoother_update(g_update,
                                         p_update,
@@ -109,16 +133,17 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                 gains[active_term][i:i+1] + g_update
             smooth_P[i:i+1, :, :, :, :] = P[i:i+1] + p_update
 
-        Q[:] = give_Qstar(smooth_gains, smooth_P, Gs)
+        # TODO: Q really shouldn't have a time axis - I was just being lazy.
+        Q[:] = update_q(smooth_gains, smooth_P, Gs)
 
-        P[0] = (smooth_P[0] + (smooth_gains[0] - gains[active_term][0]) *
-               (smooth_gains[0] - gains[active_term][0]).conjugate()).real
+        # Add Q here for the first step of the next filter run.
+        g0_diff = smooth_gains[0] - gains[active_term][0]
+        P[0] = (smooth_P[0] + g0_diff * g0_diff.conjugate()).real + Q[0]
 
-        print(Q)
-
+        # Gains are set to the last set of smoothed gains.
         gains[active_term][:] = smooth_gains[:]
 
-    return term_conv_info(i, 0)
+    return term_conv_info(0, 0)  # This has no meaning for this solver.
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
@@ -161,8 +186,8 @@ def update_diag(g_update, p_update, jhj, jhr, P, corr_mode):
                     if det.real < 1e-6:
                         jhjinv00 = 0
                         jhjinv11 = 0
-                    else:
 
+                    else:
                         P00inv = 1/P00
                         P11inv = 1/P11
 
@@ -369,19 +394,23 @@ def smoother_update_full(g_update, p_update, gains, smooth_gains, P, smooth_P,
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def give_Qstar(ms, Ps, G):
+def update_q(ms, Ps, G):
     """
     Here we compute the optimal prior parameters resulting from estimation for
-    a linear state-space model as defined by eq. 12.44-12.47 of the filtering and
-    smoothing textbook. Note that we can only compute parameters of the prior
-    since our H matrix implicitly depends on time.
+    a linear state-space model as defined by eq. 12.44-12.47 of the filtering
+    and smoothing textbook. Note that we can only compute parameters of the
+    prior since our H matrix implicitly depends on time.
     """
 
     n_tint, n_fint, n_ant, n_dir, n_corr = ms.shape
-    # compute the auxilary params
+
     Sigma = np.zeros((n_fint, n_ant, n_dir, n_corr), dtype=np.complex128)
     Phi = np.zeros((n_fint, n_ant, n_dir, n_corr), dtype=np.complex128)
     C = np.zeros((n_fint, n_ant, n_dir, n_corr), dtype=np.complex128)
+
+    # This is doing unecessary referencing at the moment. TODO: Properly
+    # unpack the various elements onto variables. Will also need a
+    # non-diagonal version of this eventually.
 
     for t in range(n_tint):
         for f in range(n_fint):
@@ -394,10 +423,10 @@ def give_Qstar(ms, Ps, G):
                     # assuming the equations are not defined when t=0 for
                     # these two
                     if t > 0:
-                        Phi[f, a, d, 0] += \
-                            Ps[t-1, f, a, d, 0] + np.abs(ms[t-1, f, a, d, 0])**2
-                        Phi[f, a, d, 1] += \
-                            Ps[t-1, f, a, d, 1] + np.abs(ms[t-1, f, a, d, 1])**2
+                        Phi[f, a, d, 0] += (Ps[t-1, f, a, d, 0] +
+                                            np.abs(ms[t-1, f, a, d, 0])**2)
+                        Phi[f, a, d, 1] += (Ps[t-1, f, a, d, 1] +
+                                            np.abs(ms[t-1, f, a, d, 1])**2)
                         C[f, a, d, 0] += \
                             Ps[t, f, a, d, 0] * G[t-1, f, a, d, 0] + \
                             ms[t, f, a, d, 0] * ms[t-1, f, a, d, 0].conjugate()
