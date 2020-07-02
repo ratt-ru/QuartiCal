@@ -37,6 +37,7 @@ dstat_dims_tup = namedtuple("dstat_dims",
 
 def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
                   corr_mode, *gains):
+    """Thin wrapper to handle an unknown number of input gains."""
 
     return compute_residual(data, model, gains, a1, a2, t_map_arr,
                             f_map_arr, d_map_arr, corr_mode)
