@@ -61,7 +61,7 @@ parallel:
     _description: Arguments pertaining to parallelism and distribution.
     nthread: 0
     nworker: 1
-    scheduler: multithreaded
+    scheduler: threads
 (gain):
     _description: Arguments pertaining to a labelled (gain). (gain)
         MUST be replaced with the labels specified by SOLVER_GAIN_TERMS.
