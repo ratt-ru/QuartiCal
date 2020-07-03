@@ -87,6 +87,9 @@ def _unset_bitflag(bitflag_arr, bitflag_names, selection=None):
 def set_bitflag(bitflag_arr, bitflag_names, selection=None):
     """Convenience function for setting bitflags."""
 
+    # If the bitflags are a dask array, we copy them first to ensure that
+    # we don't run into data ownership issues in the distributed case. TODO:
+    # It might be possible to only copy when OWNDATA is False.
     if isinstance(bitflag_arr, da.Array):
         return da.map_blocks(lambda bf, *args: _bitflagger(bf.copy(), *args),
                              bitflag_arr,
@@ -100,6 +103,9 @@ def set_bitflag(bitflag_arr, bitflag_names, selection=None):
 def unset_bitflag(bitflag_arr, bitflag_names, selection=None):
     """Convenience function for unsetting bitflags."""
 
+    # If the bitflags are a dask array, we copy them first to ensure that
+    # we don't run into data ownership issues in the distributed case. TODO:
+    # It might be possible to only copy when OWNDATA is False.
     if isinstance(bitflag_arr, da.Array):
         return da.map_blocks(lambda bf, *args: _bitflagger(bf.copy(), *args),
                              bitflag_arr,
