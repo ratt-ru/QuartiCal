@@ -262,3 +262,5 @@ def test_chunk_spec(data_xds, xds_opts):
 
     assert all(spec == gxds.attrs["CHUNK_SPEC"]
                for spec, gxds in zip(specs, gain_xds_list))
+
+# -----------------------------------------------------------------------------
