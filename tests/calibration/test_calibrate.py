@@ -1,8 +1,11 @@
 import pytest
+from quartical.parser import preprocess
 from quartical.data_handling.ms_handler import read_xds_list
+from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import (make_t_mappings,
                                              make_f_mappings,
-                                             make_d_mappings)
+                                             make_d_mappings,
+                                             make_gain_xds_list)
 from argparse import Namespace
 import dask.array as da
 import numpy as np
@@ -10,7 +13,7 @@ from numpy.testing import assert_array_equal
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts):
+def mapping_opts(base_opts):
 
     # Don't overwrite base config - instead create a new Namespace and update.
 
@@ -22,18 +25,48 @@ def opts(base_opts):
 
 
 @pytest.fixture(scope="module")
-def _read_xds_list(opts):
+def xds_opts(base_opts, time_chunk, freq_chunk, time_int, freq_int):
 
-    return read_xds_list(opts)
+    # Don't overwrite base config - instead create a new Namespace and update.
 
+    options = Namespace(**vars(base_opts))
+
+    options._model_columns = ["MODEL_DATA"]
+    options.input_ms_time_chunk = time_chunk
+    options.input_ms_freq_chunk = freq_chunk
+    options.G_time_interval = time_int
+    options.B_time_interval = 2*time_int
+    options.G_freq_interval = freq_int
+    options.B_freq_interval = 2*freq_int
+
+    return options
+
+
+@pytest.fixture(scope="module")
+def _read_xds_list(xds_opts):
+
+    return read_xds_list(xds_opts)
+
+
+@pytest.fixture(scope="module")
+def data_xds(xds_opts):
+
+    preprocess.interpret_model(xds_opts)
+
+    ms_xds_list, _ = read_xds_list(xds_opts)
+
+    data_xds_list = add_model_graph(ms_xds_list, xds_opts)
+
+    return data_xds_list[0]  # We only need to test on one.
 
 # ------------------------------make_t_mappings--------------------------------
 
 
 @pytest.mark.parametrize("time_chunk", [33, 60])
-def test_t_mappings(time_int, time_chunk, opts):
+def test_t_mappings(time_int, time_chunk, mapping_opts):
     """Test construction of time mappings for different chunks/intervals."""
 
+    opts = mapping_opts
     opts.G_time_interval = time_int  # Setting time interval on first gain.
     opts.B_time_interval = time_int*2  # Setting time interval on second gain.
 
@@ -69,9 +102,10 @@ def test_t_mappings(time_int, time_chunk, opts):
 
 
 @pytest.mark.parametrize("freq_chunk", [30, 64])
-def test_f_mappings(freq_int, freq_chunk, opts):
+def test_f_mappings(freq_int, freq_chunk, mapping_opts):
     """Test construction of freq mappings for different chunks/intervals."""
 
+    opts = mapping_opts
     opts.G_time_interval = freq_int  # Setting time interval on first gain.
     opts.B_time_interval = freq_int*2  # Setting time interval on second gain.
 
@@ -98,9 +132,10 @@ def test_f_mappings(freq_int, freq_chunk, opts):
 
 @pytest.mark.parametrize("n_dir", [2, 10])
 @pytest.mark.parametrize("has_dd_term", [False, True])
-def test_d_mappings(n_dir, has_dd_term, opts):
+def test_d_mappings(n_dir, has_dd_term, mapping_opts):
     """Test construction of direction mappings for different n_dir."""
 
+    opts = mapping_opts
     opts.B_direction_dependent = has_dd_term
 
     d_maps = make_d_mappings(n_dir, opts)  # Not a dask array.
@@ -116,3 +151,114 @@ def test_d_mappings(n_dir, has_dd_term, opts):
 
 
 # ----------------------------make_gain_xds_list-------------------------------
+
+
+def test_nterm(data_xds, xds_opts):
+    """Each gain term should produce a gain xds."""
+
+    gain_xds_list = make_gain_xds_list(data_xds, xds_opts)
+
+    assert len(xds_opts.solver_gain_terms) == len(gain_xds_list)
+
+
+def test_data_coords(data_xds, xds_opts):
+    """Check that dimensions shared between the gains and data are the same."""
+
+    gain_xds_list = make_gain_xds_list(data_xds, xds_opts)
+
+    data_coords = ["ant", "dir", "corr"]
+
+    assert all(data_xds.dims[d] == gxds.dims[d]
+               for gxds in gain_xds_list
+               for d in data_coords)
+
+
+def test_t_chunking(data_xds, xds_opts):
+    """Check that time chunking of the gain xds list is correct."""
+
+    gain_xds_list = make_gain_xds_list(data_xds, xds_opts)
+
+    assert all(len(data_xds.UTIME_CHUNKS) == gxds.dims["t_chunk"]
+               for gxds in gain_xds_list)
+
+
+def test_f_chunking(data_xds, xds_opts):
+    """Check that frequency chunking of the gain xds list is correct."""
+
+    gain_xds_list = make_gain_xds_list(data_xds, xds_opts)
+
+    assert all(len(data_xds.chunks["chan"]) == gxds.dims["f_chunk"]
+               for gxds in gain_xds_list)
+
+
+def test_t_ints(data_xds, xds_opts):
+    """Check that the time intervals are correct."""
+
+    gain_xds_list = make_gain_xds_list(data_xds, xds_opts)
+
+    n_row = data_xds.dims["row"]
+    t_ints = [getattr(xds_opts, term + "_time_interval") or n_row
+              for term in xds_opts.solver_gain_terms]
+
+    expected_t_ints = [sum([np.ceil(tc/ti) for tc in data_xds.UTIME_CHUNKS])
+                       for ti in t_ints]
+
+    assert all(int(eti) == gxds.dims["time_int"]
+               for eti, gxds in zip(expected_t_ints, gain_xds_list))
+
+
+def test_f_ints(data_xds, xds_opts):
+    """Check that the frequency intervals are correct."""
+
+    gain_xds_list = make_gain_xds_list(data_xds, xds_opts)
+
+    n_chan = data_xds.dims["chan"]
+    f_ints = [getattr(xds_opts, term + "_freq_interval") or n_chan
+              for term in xds_opts.solver_gain_terms]
+
+    expected_f_ints = [sum([np.ceil(fc/fi) for fc in data_xds.chunks["chan"]])
+                       for fi in f_ints]
+
+    assert all(int(efi) == gxds.dims["freq_int"]
+               for efi, gxds in zip(expected_f_ints, gain_xds_list))
+
+
+def test_attribues(data_xds, xds_opts):
+    """Check that the attributes of the gains are the same as the data."""
+
+    gain_xds_list = make_gain_xds_list(data_xds, xds_opts)
+
+    data_attributes = ["FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"]
+
+    assert all(data_xds.attrs[a] == gxds.attrs[a]
+               for gxds in gain_xds_list
+               for a in data_attributes)
+
+
+def test_chunk_spec(data_xds, xds_opts):
+    """Check that the chunking specs are correct."""
+
+    gain_xds_list = make_gain_xds_list(data_xds, xds_opts)
+
+    n_row, n_chan, n_ant, n_dir, n_corr = \
+        [data_xds.dims[d] for d in ["row", "chan", "ant", "dir", "corr"]]
+
+    t_ints = [getattr(xds_opts, term + "_time_interval") or n_row
+              for term in xds_opts.solver_gain_terms]
+
+    expected_t_ints = [[np.int(np.ceil(tc/ti))
+                        for tc in data_xds.UTIME_CHUNKS]
+                       for ti in t_ints]
+
+    f_ints = [getattr(xds_opts, term + "_freq_interval") or n_chan
+              for term in xds_opts.solver_gain_terms]
+
+    expected_f_ints = [[np.int(np.ceil(fc/fi))
+                        for fc in data_xds.chunks["chan"]]
+                       for fi in f_ints]
+
+    specs = [tuple([tuple(tic), tuple(fic), (n_ant,), (n_dir,), (n_corr,)])
+             for tic, fic in zip(expected_t_ints, expected_f_ints)]
+
+    assert all(spec == gxds.attrs["CHUNK_SPEC"]
+               for spec, gxds in zip(specs, gain_xds_list))
