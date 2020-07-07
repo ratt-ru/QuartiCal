@@ -1,11 +1,13 @@
 import pytest
 from quartical.parser import preprocess
-from quartical.data_handling.ms_handler import read_xds_list
+from quartical.data_handling.ms_handler import (read_xds_list,
+                                                preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import (make_t_mappings,
                                              make_f_mappings,
                                              make_d_mappings,
-                                             make_gain_xds_list)
+                                             make_gain_xds_list,
+                                             add_calibration_graph)
 from argparse import Namespace
 import dask.array as da
 import numpy as np
@@ -38,6 +40,7 @@ def xds_opts(base_opts, time_chunk, freq_chunk, time_int, freq_int):
     options.B_time_interval = 2*time_int
     options.G_freq_interval = freq_int
     options.B_freq_interval = 2*freq_int
+    options.flags_mad_enable = True
 
     return options
 
@@ -45,19 +48,52 @@ def xds_opts(base_opts, time_chunk, freq_chunk, time_int, freq_int):
 @pytest.fixture(scope="module")
 def _read_xds_list(xds_opts):
 
+    preprocess.interpret_model(xds_opts)
+
     return read_xds_list(xds_opts)
 
 
 @pytest.fixture(scope="module")
-def data_xds(xds_opts):
+def data_xds_list(_read_xds_list, xds_opts):
 
-    preprocess.interpret_model(xds_opts)
+    ms_xds_list, col_kwrds = _read_xds_list
 
-    ms_xds_list, _ = read_xds_list(xds_opts)
+    preprocessed_xds_list = \
+        preprocess_xds_list(ms_xds_list, col_kwrds, xds_opts)
 
-    data_xds_list = add_model_graph(ms_xds_list, xds_opts)
+    data_xds_list = add_model_graph(preprocessed_xds_list, xds_opts)
+
+    return data_xds_list
+
+
+@pytest.fixture(scope="module")
+def col_kwrds(_read_xds_list):
+
+    return _read_xds_list[1]
+
+
+@pytest.fixture(scope="module")
+def data_xds(data_xds_list):
 
     return data_xds_list[0]  # We only need to test on one.
+
+
+@pytest.fixture(scope="module")
+def _add_calibration_graph(data_xds_list, col_kwrds, xds_opts):
+
+    return add_calibration_graph(data_xds_list, col_kwrds, xds_opts)
+
+
+@pytest.fixture(scope="module")
+def post_cal_gain_xds_dict(_add_calibration_graph):
+
+    return _add_calibration_graph[0]
+
+
+@pytest.fixture(scope="module")
+def post_cal_data_xds_list(_add_calibration_graph):
+
+    return _add_calibration_graph[1]
 
 # ------------------------------make_t_mappings--------------------------------
 
@@ -262,5 +298,42 @@ def test_chunk_spec(data_xds, xds_opts):
 
     assert all(spec == gxds.attrs["CHUNK_SPEC"]
                for spec, gxds in zip(specs, gain_xds_list))
+
+# ---------------------------add_calibration_graph-----------------------------
+
+
+def test_ngains(post_cal_gain_xds_dict, xds_opts):
+    """Check that calibration produces one xds per gain per input xds."""
+
+    assert len(post_cal_gain_xds_dict) == len(xds_opts.solver_gain_terms)
+
+
+def test_has_gain_field(post_cal_gain_xds_dict):
+    """Check that calibration assigns the gains to the relevant xds."""
+
+    assert all([hasattr(gxds, "gains")
+                for gxds_list in post_cal_gain_xds_dict.values()
+                for gxds in gxds_list])
+
+
+def test_has_output_field(post_cal_data_xds_list, xds_opts):
+    """Check that calibration assigns the output to the data xds."""
+
+    assert all([hasattr(xds, xds_opts.output_column)
+                for xds in post_cal_data_xds_list])
+
+
+def test_has_bitflag_field(post_cal_data_xds_list):
+    """Check that calibration assigns the bitflags to the data xds."""
+
+    assert all([hasattr(xds, "CUBI_BITFLAG")
+                for xds in post_cal_data_xds_list])
+
+
+def test_write_columns(post_cal_data_xds_list, xds_opts):
+    """Check that the output column name is added to WRTIE_COLS."""
+
+    assert all([xds_opts.output_column in xds.attrs["WRITE_COLS"]
+                for xds in post_cal_data_xds_list])
 
 # -----------------------------------------------------------------------------
