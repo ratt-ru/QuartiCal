@@ -138,7 +138,7 @@ output:
         type: str
         help: Base name of directory for output files. The suffix .cc-out will
               be implicitly appended, unless OUTDIR ends with a slash.
-        default: cubical
+        default: quartical
     file-name:
         type: str
         help: Base name for output files. Full base path will be
@@ -212,7 +212,7 @@ output:
     casa-tables:
         type: bool
         help: Export gaintables to CASA caltable format. Tables are exported to
-              same directory as set for cubical databases.
+              same directory as set for QuartiCal databases.
         default: False
 
 flags:
@@ -222,10 +222,10 @@ flags:
         type: str
         help: Which flagsets will be applied prior to calibration. Use
               "~FLAGSET" to apply all bitflags except the named flagset
-              ("~cubical" is will ignore preexisting CubiCal flags).
+              ("~quartical" is will ignore preexisting QuartiCal flags).
               Use "FLAG" to just apply FLAG/FLAG_ROW.
         default:
-            - ~cubical
+            - ~quartical
     add-bitflags:
         type: bool
         help: If True, will automatically insert a BITFLAG column if one is not
@@ -242,7 +242,7 @@ flags:
         type: str
         help: Save solver flags to the named flagset. If None or zero, the
               solver flags will not be saved.
-        default: cubical
+        default: quartical
     mad-enable:
         type: bool
         help: Enables the MAD flagging routines.
@@ -334,9 +334,10 @@ parallel:
         help: Which dask scheduler to use. The default, multithreaded, is the
               most appropriate for non-server use.
         choices:
-            - multithreaded
+            - threads
             - distributed
-        default: multithreaded
+            - single-threaded
+        default: threads
 
 (gain):
     _description: Arguments pertaining to a labelled (gain). (gain) MUST be

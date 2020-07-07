@@ -1,5 +1,5 @@
 import pytest
-from cubicalv2.parser.preprocess import interpret_model, sm_tup
+from quartical.parser.preprocess import interpret_model, sm_tup
 import dask.array as da
 from argparse import Namespace
 import os.path

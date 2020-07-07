@@ -1,12 +1,11 @@
 import pytest
-from cubicalv2.data_handling.ms_handler import read_ms
-from cubicalv2.parser.preprocess import interpret_model
-from cubicalv2.data_handling.model_handler import add_model_graph
+from quartical.data_handling.ms_handler import read_xds_list
+from quartical.parser.preprocess import interpret_model
+from quartical.data_handling.model_handler import add_model_graph
 from argparse import Namespace
 
 
-recipes = {
-           "{col1}:{sky_model}@dE": 9,
+recipes = {"{col1}:{sky_model}@dE": 9,
            "{sky_model}:{sky_model}@dE": 9,
            "{col1}~{col2}": 1,
            "{col1}+{col2}": 1,
@@ -57,7 +56,7 @@ def opts(base_opts, freq_chunk, time_chunk, model_recipe):
 @pytest.fixture(scope="module")
 def _add_model_graph(opts):
 
-    ms_xds_list, col_kwrds = read_ms(opts)
+    ms_xds_list, col_kwrds = read_xds_list(opts)
 
     return add_model_graph(ms_xds_list, opts)
 

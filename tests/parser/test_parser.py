@@ -1,5 +1,5 @@
 # import pytest
-# import cubicalv2.parser.parser as parser
+# import quartical.parser.parser as parser
 
 # def test_parser():
 

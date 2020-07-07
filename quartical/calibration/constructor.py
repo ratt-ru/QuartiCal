@@ -3,7 +3,7 @@ import dask.array as da
 from dask.array.core import HighLevelGraph
 from operator import getitem
 from dask.base import tokenize
-from cubicalv2.calibration.solver import solver_wrapper
+from quartical.calibration.solver import solver_wrapper
 from dask.core import flatten
 from collections import namedtuple
 
@@ -20,8 +20,7 @@ def construct_solver(model_col,
                      f_map_arr,
                      d_map_arr,
                      corr_mode,
-                     term_shape_list,
-                     term_chunk_list,
+                     gain_xds_list,
                      opts):
     """Constructs the dask graph for the solver layer.
 
@@ -39,9 +38,7 @@ def construct_solver(model_col,
         f_map_arr: dask.Array containing frequency mappings.
         d_map_arr: dask.Array containing direction mappings.
         corr_mode: A string indicating the correlation mode.
-        term_shape_list: A list of named tuples containing per-term shapes.
-        term_chunk_list: A list of named tuples containing per-term chunk
-            shapes.
+        gain_xds_list: A list of xarray.Dataset objects describing gain terms.
         opts: A Namespace object containing global options.
 
     Returns:
@@ -52,8 +49,8 @@ def construct_solver(model_col,
             to reach convergence.
     """
 
-    # This is slightly ugly but works for now. Grab and flatten the keys of all
-    # the inputs we intend to pass to the solver.
+    # Grab and flatten the keys of all the inputs we intend to pass to the
+    # solver.
 
     model_col_keys = list(flatten(model_col.__dask_keys__()))
     data_col_keys = list(flatten(data_col.__dask_keys__()))
@@ -86,7 +83,7 @@ def construct_solver(model_col,
     token = tokenize(*dask_inputs)
 
     # Layers are the high level graph structure. Initialise with the dasky
-    # inputs. Similarly for the their dependencies.
+    # inputs. Similarly for their dependencies.
     layers = {inp.name: inp.__dask_graph__() for inp in dask_inputs}
     deps = {inp.name: inp.__dask_graph__().dependencies for inp in dask_inputs}
 
@@ -107,7 +104,7 @@ def construct_solver(model_col,
 
             spec_iterator = zip(opts.solver_gain_terms,
                                 term_type_list,
-                                term_chunk_list)
+                                [gxds.CHUNK_SPEC for gxds in gain_xds_list])
 
             for tn, tt, cs in spec_iterator:
 
@@ -181,27 +178,35 @@ def construct_solver(model_col,
     graph = HighLevelGraph(layers, deps)
 
     # Now that we have the graph, we need to construct arrays from the results.
-    # We loop over the output gains and pack them into a list of dask arrays.
-    gain_list = []
-    conv_iter_list = []
-    conv_perc_list = []
+    # We loop over the outputs and construct appropriate dask arrays. These are
+    # then assigned to the relevant gain xarray.Dataset object.
 
-    for gi, gn in enumerate(opts.solver_gain_terms):
-        gain_list.append(da.Array(graph,
-                         name=gain_keys[gi],
-                         chunks=term_chunk_list[gi],
-                         dtype=np.complex64))
+    solved_xds_list = []
 
-        conv_perc_list.append(da.Array(graph,
-                                       name=conv_perc_keys[gi],
-                                       chunks=((1,)*n_t_chunks,
-                                               (1,)*n_f_chunks),
-                                       dtype=np.float32))
+    for gi, gain_xds in enumerate(gain_xds_list):
 
-        conv_iter_list.append(da.Array(graph,
-                                       name=conv_iter_keys[gi],
-                                       chunks=((1,)*n_t_chunks,
-                                               (1,)*n_f_chunks),
-                                       dtype=np.float32))
+        gain = da.Array(graph,
+                        name=gain_keys[gi],
+                        chunks=gain_xds.CHUNK_SPEC,
+                        dtype=np.complex64)
 
-    return gain_list, conv_perc_list, conv_iter_list
+        conv_perc = da.Array(graph,
+                             name=conv_perc_keys[gi],
+                             chunks=((1,)*n_t_chunks,
+                                     (1,)*n_f_chunks),
+                             dtype=np.float32)
+
+        conv_iter = da.Array(graph,
+                             name=conv_iter_keys[gi],
+                             chunks=((1,)*n_t_chunks,
+                                     (1,)*n_f_chunks),
+                             dtype=np.float32)
+
+        solved_xds = gain_xds.assign(
+            {"gains": (("time_int", "freq_int", "ant", "dir", "corr"), gain),
+             "conv_perc": (("t_chunk", "f_chunk"), conv_perc),
+             "conv_iter": (("t_chunk", "f_chunk"), conv_iter)})
+
+        solved_xds_list.append(solved_xds)
+
+    return solved_xds_list

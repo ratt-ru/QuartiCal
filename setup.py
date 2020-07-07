@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 #
-# CubiCalV2: a radio interferometric calibration suite
+# QuartiCal: a radio interferometric calibration suite
 # (c) 2019 Rhodes University & Jonathan S. Kenyon
-# http://github.com/ratt-ru/CubiCal
+# https://github.com/JSKenyon/QuartiCal
 # This code is distributed under the terms of GPLv2, see LICENSE.md for
 # details.
 #
 # Copyright (c) 2019 SKA South Africa
 #
-# This file is part of CubiCalV2.
+# This file is part of QuartiCal.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,7 +24,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
-import cubicalv2
+import quartical
 from setuptools import setup, find_packages
 
 with open('README.md') as f:
@@ -37,29 +37,31 @@ on_rtd = os.environ.get('READTHEDOCS') == 'True'
 if on_rtd:
     requirements = ["ruamel.yaml",
                     "numpy",
-                    "dask-ms[xarray]==0.2.0a2",
+                    "dask-ms[xarray]"
+                    "@git+https://github.com/ska-sa/dask-ms.git"
+                    "@master",
                     "loguru",
                     "numba"]
 else:
     requirements = ["ruamel.yaml",
                     "numpy",
                     "dask-ms[xarray]"
-                        "@git+https://github.com/ska-sa/dask-ms.git"
-                        "@master",
+                    "@git+https://github.com/ska-sa/dask-ms.git"
+                    "@master",
                     "codex-africanus[complete]"
-                        "@git+https://github.com/ska-sa/codex-africanus.git"
-                        "@master",
+                    "@git+https://github.com/ska-sa/codex-africanus.git"
+                    "@master",
                     "astro-tigger-lsm",
                     "loguru",
                     "numba",
                     "distributed",
                     "zarr"]
 
-setup(name='cubicalv2',
-      version=cubicalv2.__version__,
+setup(name='quartical',
+      version=quartical.__version__,
       description="""Fast calibration implementation exploiting complex
                         optimisation.""",
-      url='https://github.com/JSKenyon/CubiCalV2',
+      url='https://github.com/JSKenyon/QuartiCal',
       classifiers=[
         "Development Status :: 1 - Planning",
         "Intended Audience :: Science/Research",
@@ -79,6 +81,6 @@ setup(name='cubicalv2',
       include_package_data=True,
       zip_safe=False,
       entry_points={'console_scripts':
-                    ['gocubical = cubicalv2.executor:execute',
-                     'gocubical-config ='
-                        'cubicalv2.parser.parser:create_user_config']},)
+                    ['goquartical = quartical.executor:execute',
+                     'goquartical-config ='
+                        'quartical.parser.parser:create_user_config']},)

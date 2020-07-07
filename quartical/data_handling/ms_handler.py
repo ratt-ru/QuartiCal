@@ -2,19 +2,23 @@
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-from cubicalv2.flagging.flagging import update_kwrds, ibfdtype
+from quartical.flagging.flagging import update_kwrds, ibfdtype
+from quartical.weights.weights import initialize_weights
+from quartical.flagging.flagging import (is_set,
+                                         make_bitmask,
+                                         initialise_bitflags)
 from uuid import uuid4
 from loguru import logger
 
 
-def read_ms(opts):
+def read_xds_list(opts):
     """Reads a measurement set and generates a list of xarray data sets.
 
     Args:
         opts: A Namepsace of global options.
 
     Returns:
-        data_xds: A list of appropriately chunked xarray datasets.
+        data_xds_list: A list of appropriately chunked xarray datasets.
         updated_kwrds: A dictionary of updated column keywords.
     """
 
@@ -31,7 +35,8 @@ def read_ms(opts):
                                     index_cols=("TIME",),
                                     group_cols=("SCAN_NUMBER",
                                                 "FIELD_ID",
-                                                "DATA_DESC_ID"))
+                                                "DATA_DESC_ID"),
+                                    chunks={"row": -1})
 
     # Read the antenna table and add the number of antennas to the options
     # namespace/dictionary. Leading underscore indiciates that this option is
@@ -39,10 +44,10 @@ def read_ms(opts):
 
     antenna_xds = xds_from_table(opts.input_ms_name + "::ANTENNA")[0]
 
-    opts._n_ant = antenna_xds.dims["row"]
+    n_ant = antenna_xds.dims["row"]
 
     logger.info("Antenna table indicates {} antennas were present for this "
-                "observation.", opts._n_ant)
+                "observation.", n_ant)
 
     # Determine the number of correlations present in the measurement set.
 
@@ -118,20 +123,17 @@ def read_ms(opts):
                            "Falling back to unity weights.")
             opts._unity_weights = True
 
-    # Determine the channels in the measurement set. TODO: Handle multiple
-    # SPWs.
+    # Determine the channels in the measurement set. Or handles unchunked case.
+    # TODO: Handle multiple SPWs and specification in bandwidth.
 
-    spw_xds = xds_from_table(opts.input_ms_name + "::SPECTRAL_WINDOW")[0]
-    n_chan = spw_xds.dims["chan"]
+    spw_xds = xds_from_table(
+        opts.input_ms_name + "::SPECTRAL_WINDOW",
+        columns="CHAN_FREQ",
+        chunks={"row": 1, "chan": opts.input_ms_freq_chunk or -1})[0]
 
-    # Set up chunking in frequency.
+    # The spectral window xds should be currectly chunked in frequency.
 
-    if opts.input_ms_freq_chunk:
-        chan_chunks = np.add.reduceat(
-            np.ones(n_chan, dtype=np.int32),
-            np.arange(0, n_chan, opts.input_ms_freq_chunk)).tolist()
-    else:
-        chan_chunks = [n_chan]
+    chan_chunks = spw_xds.chunks["chan"]
 
     # row_chunks is a list of dictionaries containing row chunks per data set.
 
@@ -183,12 +185,12 @@ def read_ms(opts):
 
         chunk_spec_per_xds.append(tuple(utime_per_chunk))
 
-        chunks = np.add.reduceat(utime_counts, cum_utime_per_chunk).tolist()
+        row_chunks = \
+            np.add.reduceat(utime_counts, cum_utime_per_chunk).tolist()
 
-        # TODO: Restore this once dask-ms frequency chunking works.
-        chunks_per_xds.append({"row": chunks, "chan": chan_chunks})
+        chunks_per_xds.append({"row": row_chunks, "chan": chan_chunks})
 
-        logger.debug("Scan {}: row chunks: {}", xds.SCAN_NUMBER, chunks)
+        logger.debug("Scan {}: row chunks: {}", xds.SCAN_NUMBER, row_chunks)
 
     # Once we have determined the row chunks from the indexing columns, we set
     # up an xarray data set for the data. Note that we will reload certain
@@ -203,7 +205,7 @@ def read_ms(opts):
     data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "FLAG", "FLAG_ROW",
                     "UVW") + extra_columns
 
-    data_xds, col_kwrds = xds_from_ms(
+    data_xds_list, col_kwrds = xds_from_ms(
         opts.input_ms_name,
         columns=data_columns,
         index_cols=("TIME",),
@@ -216,9 +218,27 @@ def read_ms(opts):
 
     # Add coordinates to the xarray datasets - this becomes immensely useful
     # down the line.
-    data_xds = [xds.assign_coords({"corr": np.arange(opts._ms_ncorr),
-                                   "chan": np.arange(n_chan)})
-                for xds in data_xds]
+    data_xds_list = [xds.assign_coords({"corr": np.arange(xds.dims["corr"]),
+                                        "chan": np.arange(xds.dims["chan"]),
+                                        "ant": np.arange(n_ant)})
+                     for xds in data_xds_list]
+
+    # Add the actual channel frequecies to the xds - this is in preparation
+    # for solvers which require this information.
+    data_xds_list = [xds.assign({"CHAN_FREQ": (("chan",),
+                                               spw_xds.CHAN_FREQ.data[0]),
+                                 "ANT_NAME": (("ant",),
+                                              antenna_xds.NAME.data)})
+                     for xds in data_xds_list]
+
+    # Add an attribute to the xds on which we will store the names of fields
+    # which must be written to the MS. Also add the attribute which stores
+    # the unique time chunking per xds.
+
+    data_xds_list = \
+        [xds.assign_attrs({"WRITE_COLS": [],
+                           "UTIME_CHUNKS": chunk_spec_per_xds[xds_ind]})
+         for xds_ind, xds in enumerate(data_xds_list)]
 
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
     # appropriately sized dask arrays to the data sets. These can be written
@@ -233,37 +253,37 @@ def read_ms(opts):
     # has a neat syntax for this. #TODO: This needs to depend on the number of
     # correlations actually present in the MS/on the xds.
 
-    if opts.input_ms_correlation_mode == "diag":
-        data_xds = [xds.sel(corr=[0, 3]) for xds in data_xds]
+    if opts.input_ms_correlation_mode == "diag" and opts._ms_ncorr == 4:
+        data_xds_list = [xds.sel(corr=[0, 3]) for xds in data_xds_list]
 
     # The use of name below guaratees that dask produces unique arrays and
-    # avoids accidental aliasing. TODO: Make these names more descriptive.
+    # avoids accidental aliasing.
 
-    for xds_ind, xds in enumerate(data_xds):
+    for xds_ind, xds in enumerate(data_xds_list):
         xds_updates = {}
         if not opts._bitflag_exists:
             data = da.zeros(xds.FLAG.data.shape,
                             dtype=ibfdtype,
                             chunks=xds.FLAG.data.chunks,
-                            name="zeros-" + uuid4().hex)
+                            name="bfzeros-" + uuid4().hex)
             schema = ("row", "chan", "corr")
             xds_updates["BITFLAG"] = (schema, data)
         if not opts._bitflagrow_exists:
             data = da.zeros(xds.FLAG_ROW.data.shape,
                             dtype=ibfdtype,
                             chunks=xds.FLAG_ROW.data.chunks,
-                            name="zeros-" + uuid4().hex)
+                            name="bfrzeros-" + uuid4().hex)
             schema = ("row",)
             xds_updates["BITFLAG_ROW"] = (schema, data)
         if xds_updates:
-            data_xds[xds_ind] = xds.assign(xds_updates)
+            data_xds_list[xds_ind] = xds.assign(xds_updates)
 
     # Add the external bitflag dtype to the opts Namespace. This is necessary
     # as internal bitflags may have a different dtype and we need to reconcile
     # the two. Note that we elect to interpret the input as an unsigned int
     # to avoid issues with negation. TODO: Check/warn that the maximal bit
     # is correct.
-    ebfdtype = data_xds[0].BITFLAG.dtype
+    ebfdtype = data_xds_list[0].BITFLAG.dtype
 
     if ebfdtype == np.int32:
         opts._ebfdtype = np.uint32
@@ -272,22 +292,14 @@ def read_ms(opts):
     else:
         raise TypeError("BITFLAG type {} not supported.".format(ebfdtype))
 
-    # Add an attribute to the xds on which we will store the names of fields
-    # which must be written to the MS. Also add the attribute which stores
-    # the unique times per xds.
-    for xds_ind, xds in enumerate(data_xds):
-        data_xds[xds_ind] = \
-            xds.assign_attrs(WRITE_COLS=[],
-                             UTIME_CHUNKS=chunk_spec_per_xds[xds_ind])
-
-    return data_xds, updated_kwrds
+    return data_xds_list, updated_kwrds
 
 
-def write_columns(xds_list, col_kwrds, opts):
+def write_xds_list(xds_list, col_kwrds, opts):
     """Writes fields spicified in the WRITE_COLS attribute to the MS.
 
     Args:
-        xds-list: A list of xarray datasets.
+        xds_list: A list of xarray datasets.
         col_kwrds: A dictionary of column keywords.
         opts: A Namepsace of global options.
 
@@ -314,9 +326,77 @@ def write_columns(xds_list, col_kwrds, opts):
     logger.info("Outputs will be written to {}.".format(
         ", ".join(output_cols)))
 
+    # TODO: Nasty hack due to bug in daskms. Remove ASAP.
+    xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ"]) for xds in xds_list]
+
     write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
                                   columns=output_cols,
                                   column_keywords=output_kwrds,
                                   descriptor="ratt_ms(fixed=False)")
 
     return write_xds_list
+
+
+def preprocess_xds_list(xds_list, col_kwrds, opts):
+    """Adds data preprocessing steps - inits flags, weights and fixes bad data.
+
+    Given a list of xarray.DataSet objects, initializes the bitflag data,
+    the weight data and fixes bad data points (NaN, inf, etc). TODO: This
+    function cal likely be improved/extended.
+
+    Args:
+        xds_list: A list of xarray.DataSet objects containing MS data.
+        col_kwrds: Column keywords - necessary for figuring out bitflags.
+        opts: A Namepsace object of glabal options.
+
+    Returns:
+        output_xds_list: A list of xarray.DataSet objects containing MS data
+            with preprocessing operations applied.
+    """
+
+    # In the event that not all input BITFLAGS are required, generate a mask
+    # which can be applied to select the appropriate bits.
+
+    bitmask = make_bitmask(col_kwrds, opts)
+
+    output_xds_list = []
+
+    for xds_ind, xds in enumerate(xds_list):
+
+        # Unpack the data on the xds into variables with understandable names.
+        # We create copies of arrays we intend to mutate as otherwise we end
+        # up implicitly updating the xds.
+        data_col = xds.DATA.data.copy()
+        flag_col = xds.FLAG.data
+        flag_row_col = xds.FLAG_ROW.data
+        bitflag_col = xds.BITFLAG.data
+        bitflag_row_col = xds.BITFLAG_ROW.data
+
+        weight_col = initialize_weights(xds, data_col, opts)
+
+        data_bitflags = initialise_bitflags(data_col,
+                                            weight_col,
+                                            flag_col,
+                                            flag_row_col,
+                                            bitflag_col,
+                                            bitflag_row_col,
+                                            bitmask)
+
+        # Selections of the following form generate where operations - this
+        # will return a new array and is therefore distribution safe. It might
+        # be suboptimal though.
+
+        # If we raised the invalid bitflag, zero those data points.
+        data_col[is_set(data_bitflags, "INVALID")] = 0
+
+        # Anywhere we have a full resolution bitflag, we set the weight to 0.
+        weight_col[data_bitflags] = 0
+
+        output_xds = xds.assign(
+            {"DATA": (("row", "chan", "corr"), data_col),
+             "WEIGHT": (("row", "chan", "corr"), weight_col),
+             "DATA_BITFLAGS": (("row", "chan", "corr"), data_bitflags)})
+
+        output_xds_list.append(output_xds)
+
+    return output_xds_list

@@ -6,8 +6,8 @@ import weakref
 from daskms import xds_from_table
 import numpy as np
 
-from cubicalv2.utils.dask import blockwise_unique
-from cubicalv2.utils.collections import freeze_default_dict
+from quartical.utils.dask import blockwise_unique
+from quartical.utils.collections import freeze_default_dict
 
 from africanus.coordinates.dask import radec_to_lm
 from africanus.rime.dask import (phase_delay as compute_phase_delay,

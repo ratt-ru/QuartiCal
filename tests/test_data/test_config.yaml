@@ -25,14 +25,14 @@ input-model:
     apply-p-jones: true
 output:
     _description: Arguments pertaining to output products.
-    directory: cubical
+    directory: quartical
     file-name: cc
     overwrite: false
     backup: true
     solver-mode: solve
     data-product: solve_only
     solver-flags: false
-    column: CORRECTED_DATA
+    column: TEST_RESIDUALS
     model-column:
     weight-column:
     subtract-model: 0
@@ -42,16 +42,18 @@ output:
 flags:
     _description: Arguments pertaining to flagging behaviour.
     apply-precal:
-    -   ~cubical
+    -   ~quartical
     add-bitflags: true
     reinit-bitflags: false
-    save-flagset: cubical
+    save-flagset: quartical
     mad-enable: false
     bl-mad-threshold: 10
     global-mad-threshold: 12
 solver:
     _description: Arguments pertaining to solver behaviour.
-    gain-terms: G
+    gain-terms: 
+        - G 
+        - B
     mode: full-full
     precision: single
     chisq-interval: 5
@@ -61,8 +63,30 @@ parallel:
     _description: Arguments pertaining to parallelism and distribution.
     nthread: 0
     nworker: 1
-    scheduler: multithreaded
-(gain):
+    scheduler: threads
+G:
+    _description: Arguments pertaining to a labelled (gain). (gain)
+        MUST be replaced with the labels specified by SOLVER_GAIN_TERMS.
+        This config section can be replicated for each gain term.
+    type: complex
+    parametrisation: f-slope
+    restrict-update: default
+    direction-dependent: false
+    exclude-directions: -1
+    time-interval: 1
+    freq-interval: 1
+    delta-threshold: 1e-06
+    chisq-threshold: 1e-06
+    conv-fraction: 0.99
+    reference-antenna: -1
+    upper-clip: 0
+    lower-clip: 0
+    clip-interval: 5
+    precomputed: false
+    load-from:
+    xfer-from:
+    save-to:
+B:
     _description: Arguments pertaining to a labelled (gain). (gain)
         MUST be replaced with the labels specified by SOLVER_GAIN_TERMS.
         This config section can be replicated for each gain term.

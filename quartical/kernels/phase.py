@@ -2,7 +2,7 @@
 import numpy as np
 from numba import jit, prange, literally
 from numba.extending import overload
-from cubicalv2.kernels.generics import (invert_gains,
+from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
 from collections import namedtuple

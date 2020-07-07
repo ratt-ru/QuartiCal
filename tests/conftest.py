@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from cubicalv2.parser.parser import parse_inputs
+from quartical.parser.parser import parse_inputs
 import requests
 import tarfile
 from shutil import rmtree
@@ -101,6 +101,21 @@ def correlation_mode(request):
     return request.param
 
 
+@pytest.fixture(params=[0, 1, 10], scope="module")
+def time_int(request):
+    return request.param
+
+
+@pytest.fixture(params=[0, 1, 10], scope="module")
+def freq_int(request):
+    return request.param
+
+
+@pytest.fixture(params=[['G'], ['G', 'B']], scope="module")
+def gain_terms(request):
+    return request.param
+
+
 @pytest.fixture(params=["MODEL_DATA", str(lsm_path)],
                 scope="module")
 def model_recipe(request):
@@ -112,7 +127,7 @@ def base_opts(ms_name):
     """Get basic config from .yaml file."""
 
     # We use bypass_sysargv to avoid mucking with the CLI.
-    options = parse_inputs(bypass_sysargv=['gocubical', str(conf_path)])
+    options = parse_inputs(bypass_sysargv=['goquartical', str(conf_path)])
     options.input_ms_name = ms_name  # Ensure the ms path is correct.
 
     return options
