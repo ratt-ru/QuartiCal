@@ -7,6 +7,7 @@ from quartical.calibration.solver import solver_wrapper
 from dask.core import flatten
 from collections import namedtuple
 
+from dask.utils import apply
 
 term_spec_tup = namedtuple("term_spec", "name type shape")
 
@@ -119,18 +120,22 @@ def construct_solver(model_col,
             # Set up the per-chunk solves. Note how keys are assosciated.
             # TODO: Figure out how to pass ancilliary information into the
             # solver wrapper. Possibly via a dict constructed above.
+
+            args = [model_col_keys[ind],
+                    data_col_keys[ind],
+                    ant1_col_keys[t],
+                    ant2_col_keys[t],
+                    weight_col_keys[ind],
+                    t_map_arr_keys[t],
+                    f_map_arr_keys[f],
+                    d_map_arr,
+                    corr_mode,
+                    term_spec_list]
+
+            kwargs = (dict, [["foo", model_col_keys[ind]]])
+
             solver_dsk[(solver_name, t, f,)] = \
-                (solver_wrapper,
-                 model_col_keys[ind],
-                 data_col_keys[ind],
-                 ant1_col_keys[t],
-                 ant2_col_keys[t],
-                 weight_col_keys[ind],
-                 t_map_arr_keys[t],
-                 f_map_arr_keys[f],
-                 d_map_arr,
-                 corr_mode,
-                 term_spec_list)
+                (apply, solver_wrapper, args, kwargs)
 
     # Add the solver layer and its dependencies.
     layers.update({solver_name: solver_dsk})

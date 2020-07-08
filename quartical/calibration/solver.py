@@ -5,7 +5,7 @@ import gc
 
 
 def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, term_spec_list):
+                   d_map_arr, corr_mode, term_spec_list, **kwargs):
 
     # This is rudimentary - it practice we may have more initialisation code
     # here for setting up parameters etc. TODO: Init actually needs to depend
