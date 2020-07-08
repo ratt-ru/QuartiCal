@@ -6,7 +6,7 @@ from dask.base import tokenize
 from quartical.calibration.solver import solver_wrapper
 from dask.core import flatten
 from collections import namedtuple
-
+from itertools import product
 from dask.utils import apply
 
 term_spec_tup = namedtuple("term_spec", "name type shape")
@@ -76,9 +76,6 @@ def construct_solver(model_col,
     n_t_chunks = len(t_map_arr_keys)
     n_f_chunks = len(f_map_arr_keys)
 
-    term_type_list = [getattr(opts, "{}_type".format(t))
-                      for t in opts.solver_gain_terms]
-
     # Based on the inputs, generate a unique hash which can be used to uniquely
     # identify nodes in the graph.
     token = tokenize(*dask_inputs)
@@ -92,6 +89,9 @@ def construct_solver(model_col,
 
     solver_dsk = {}
 
+    # Take the compact chunking info on the gain xdss and expand it.
+    spec_list = expand_specs(gain_xds_list)
+
     # Set up the solver graph. Loop over the chunked axes.
     for t in range(n_t_chunks):
         for f in range(n_f_chunks):
@@ -99,27 +99,8 @@ def construct_solver(model_col,
             # Convert time and freq chunk indices to a flattened index.
             ind = t*n_f_chunks + f
 
-            # Each term may differ in both type and shape - we build a spec
-            # per term, per chunk. TODO: This can possibly be refined.
-            term_spec_list = []
-
-            spec_iterator = zip(opts.solver_gain_terms,
-                                term_type_list,
-                                [gxds.CHUNK_SPEC for gxds in gain_xds_list])
-
-            for tn, tt, cs in spec_iterator:
-
-                shape = (cs.tchunk[t],
-                         cs.fchunk[f],
-                         cs.achunk[0],
-                         cs.dchunk[0],
-                         cs.cchunk[0])
-
-                term_spec_list.append(term_spec_tup(tn, tt, shape))
-
             # Set up the per-chunk solves. Note how keys are assosciated.
-            # TODO: Figure out how to pass ancilliary information into the
-            # solver wrapper. Possibly via a dict constructed above.
+            # TODO: Pass in extra variables using kwargs.
 
             args = [model_col_keys[ind],
                     data_col_keys[ind],
@@ -130,7 +111,7 @@ def construct_solver(model_col,
                     f_map_arr_keys[f],
                     d_map_arr,
                     corr_mode,
-                    term_spec_list]
+                    spec_list[ind]]
 
             kwargs = (dict, [["foo", model_col_keys[ind]]])
 
@@ -215,3 +196,29 @@ def construct_solver(model_col,
         solved_xds_list.append(solved_xds)
 
     return solved_xds_list
+
+
+def expand_specs(gain_xds_list):
+    """Convert compact spec to a per-term list per-chunk."""
+
+    spec_lists = []
+
+    for gxds in gain_xds_list:
+
+        term_name = gxds.NAME
+        term_type = gxds.TYPE
+        chunk_spec = gxds.CHUNK_SPEC
+
+        ac = chunk_spec.achunk[0]  # No chunking along antenna axis.
+        dc = chunk_spec.dchunk[0]  # No chunking along direction axis.
+        cc = chunk_spec.cchunk[0]  # No chunking along correlation axis.
+
+        shapes = [(tc, fc, ac, dc, cc)
+                  for tc, fc in product(chunk_spec.tchunk, chunk_spec.fchunk)]
+
+        term_spec_list = [term_spec_tup(term_name, term_type, shape)
+                          for shape in shapes]
+
+        spec_lists.append(term_spec_list)
+
+    return list(zip(*spec_lists))
