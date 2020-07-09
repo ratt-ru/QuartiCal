@@ -100,20 +100,23 @@ def construct_solver(model_col,
             ind = t*n_f_chunks + f
 
             # Set up the per-chunk solves. Note how keys are assosciated.
-            # TODO: Pass in extra variables using kwargs.
+            # We will pass everything in as a kwarg - this means we don't need
+            # to worry about maintaining argument order. This will make
+            # adding additional arguments simple.
 
-            args = [model_col_keys[ind],
-                    data_col_keys[ind],
-                    ant1_col_keys[t],
-                    ant2_col_keys[t],
-                    weight_col_keys[ind],
-                    t_map_arr_keys[t],
-                    f_map_arr_keys[f],
-                    d_map_arr,
-                    corr_mode,
-                    spec_list[ind]]
+            args = []
 
-            kwargs = (dict, [["foo", model_col_keys[ind]]])
+            # This is a dasky description of dict creation.
+            kwargs = (dict, [["model", model_col_keys[ind]],
+                             ["data", data_col_keys[ind]],
+                             ["a1", ant1_col_keys[t]],
+                             ["a2", ant2_col_keys[t]],
+                             ["weights", weight_col_keys[ind]],
+                             ["t_map_arr", t_map_arr_keys[t]],
+                             ["f_map_arr", f_map_arr_keys[f]],
+                             ["d_map_arr", d_map_arr],
+                             ["corr_mode", corr_mode],
+                             ["term_spec_list", spec_list[ind]]])
 
             solver_dsk[(solver_name, t, f,)] = \
                 (apply, solver_wrapper, args, kwargs)
