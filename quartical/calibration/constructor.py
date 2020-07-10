@@ -50,80 +50,28 @@ def construct_solver(model_col,
             to reach convergence.
     """
 
-    # Grab and flatten the keys of all the inputs we intend to pass to the
-    # solver.
-
-    model_col_keys = list(flatten(model_col.__dask_keys__()))
-    data_col_keys = list(flatten(data_col.__dask_keys__()))
-    ant1_col_keys = list(flatten(ant1_col.__dask_keys__()))
-    ant2_col_keys = list(flatten(ant2_col.__dask_keys__()))
-    weight_col_keys = list(flatten(weight_col.__dask_keys__()))
-    t_map_arr_keys = list(flatten(t_map_arr.__dask_keys__()))
-    f_map_arr_keys = list(flatten(f_map_arr.__dask_keys__()))
-
-    # Tuple of all dasky inputs over which we will loop for establishing
-    # dependencies.
-    dask_inputs = (model_col,
-                   data_col,
-                   ant1_col,
-                   ant2_col,
-                   weight_col,
-                   t_map_arr,
-                   f_map_arr)
-
-    # These should be guarateed to have the correct dimension in each chunking
-    # axis. This is important for key matching.
-    n_t_chunks = len(t_map_arr_keys)
-    n_f_chunks = len(f_map_arr_keys)
-
-    # Based on the inputs, generate a unique hash which can be used to uniquely
-    # identify nodes in the graph.
-    token = tokenize(*dask_inputs)
-
-    # Layers are the high level graph structure. Initialise with the dasky
-    # inputs. Similarly for their dependencies.
-    layers = {inp.name: inp.__dask_graph__() for inp in dask_inputs}
-    deps = {inp.name: inp.__dask_graph__().dependencies for inp in dask_inputs}
-
-    solver_name = "solver-" + token
-
-    solver_dsk = {}
+    # Grab the number of input chunks - doing this on the data should be safe.
+    n_t_chunks, n_f_chunks, _ = data_col.numblocks
 
     # Take the compact chunking info on the gain xdss and expand it.
     spec_list = expand_specs(gain_xds_list)
 
-    # Set up the solver graph. Loop over the chunked axes.
-    for t in range(n_t_chunks):
-        for f in range(n_f_chunks):
+    C = Constructor(n_t_chunks, n_f_chunks)
 
-            # Convert time and freq chunk indices to a flattened index.
-            ind = t*n_f_chunks + f
+    C.add_input("model", model_col, "tf")
+    C.add_input("data", data_col, "tf")
+    C.add_input("a1", ant1_col, "t")
+    C.add_input("a2", ant2_col, "t")
+    C.add_input("weights", weight_col, "tf")
+    C.add_input("t_map_arr", t_map_arr, "t")
+    C.add_input("f_map_arr", f_map_arr, "t")
+    C.add_input("d_map_arr", d_map_arr)
+    C.add_input("corr_mode", corr_mode)
+    C.add_input("term_spec_list", spec_list, "tf")
 
-            # Set up the per-chunk solves. Note how keys are assosciated.
-            # We will pass everything in as a kwarg - this means we don't need
-            # to worry about maintaining argument order. This will make
-            # adding additional arguments simple.
+    solver_dsk, layers, deps, token = C.make_graph()
 
-            args = []
-
-            # This is a dasky description of dict creation.
-            kwargs = (dict, [["model", model_col_keys[ind]],
-                             ["data", data_col_keys[ind]],
-                             ["a1", ant1_col_keys[t]],
-                             ["a2", ant2_col_keys[t]],
-                             ["weights", weight_col_keys[ind]],
-                             ["t_map_arr", t_map_arr_keys[t]],
-                             ["f_map_arr", f_map_arr_keys[f]],
-                             ["d_map_arr", d_map_arr],
-                             ["corr_mode", corr_mode],
-                             ["term_spec_list", spec_list[ind]]])
-
-            solver_dsk[(solver_name, t, f,)] = \
-                (apply, solver_wrapper, args, kwargs)
-
-    # Add the solver layer and its dependencies.
-    layers.update({solver_name: solver_dsk})
-    deps.update({solver_name: {inp.name for inp in dask_inputs}})
+    solver_name = "solver-" + token  # TODO: This is a hack for now.
 
     # The following constructs the getitem layer which is necessary to handle
     # returning several results from the solver. TODO: This is improving but
@@ -225,3 +173,82 @@ def expand_specs(gain_xds_list):
         spec_lists.append(term_spec_list)
 
     return list(zip(*spec_lists))
+
+
+class Constructor:
+
+    _input = namedtuple("input", "name value index_string")
+
+    def __init__(self, n_t_chunks, n_f_chunks):
+
+        self.n_t_chunks = n_t_chunks
+        self.n_f_chunks = n_f_chunks
+
+        self.inputs = []
+
+    def add_input(self, name, value, index_string=None):
+
+        self.inputs.append(self._input(name, value, index_string))
+
+    def make_graph(self):
+        """Given the current state of the Constructor, create a graph."""
+
+        token = tokenize(*[inp.value for inp in self.inputs])
+
+        solver_name = "solver-" + token
+
+        graph = {}
+
+        layers = {inp.value.name: inp.value.__dask_graph__()
+                  for inp in self.inputs
+                  if hasattr(inp.value, "__dask_graph__")}
+
+        deps = {inp.value.name: inp.value.__dask_graph__().dependencies
+                for inp in self.inputs
+                if hasattr(inp.value, "__dask_graph__")}
+
+        # Set up the solver graph. Loop over the chunked axes.
+        for t_ind in range(self.n_t_chunks):
+            for f_ind in range(self.n_f_chunks):
+
+                # Set up the per-chunk solves. Note how keys are assosciated.
+                # We will pass everything in as a kwarg - this means we don't
+                # need to worry about maintaining argument order. This will
+                # make adding additional arguments simple.
+
+                kwargs = [[inp.name, self._get_key_or_value(inp, t_ind, f_ind)]
+                          for inp in self. inputs]
+
+                graph[(solver_name, t_ind, f_ind)] = \
+                    (apply, solver_wrapper, [], (dict, kwargs))
+
+        layers.update({solver_name: graph})
+        deps.update({solver_name: {k for k in deps.keys()}})
+
+        return graph, layers, deps, token
+
+    def _get_key_or_value(self, inp, t_ind, f_ind):
+        """Given an input, returns appropriate key/value based on indices."""
+
+        if isinstance(inp.value, da.Array):
+            chunked_values = list(flatten(inp.value.__dask_keys__()))
+        else:
+            chunked_values = inp.value
+
+        if inp.index_string is None:
+            return inp.value
+        elif inp.index_string == "tf":
+            ind = np.ravel_multi_index((t_ind, f_ind),
+                                       (self.n_t_chunks, self.n_f_chunks))
+            return chunked_values[ind]
+        elif inp.index_string == "t":
+            return chunked_values[t_ind]
+        elif inp.index_string == "f":
+            return chunked_values[f_ind]
+
+
+# def rec_list_get(lst, ind):
+#     if len(ind) > 1:
+#         return rec_list_get(lst[ind[0]], ind[1:])
+#     else:
+#         return lst[ind[0]]
