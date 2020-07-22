@@ -6,7 +6,7 @@ from dask.base import tokenize
 from quartical.calibration.solver import solver_wrapper
 from collections import namedtuple
 from itertools import product
-from dask.utils import apply
+from dask.utils import apply, funcname
 
 term_spec_tup = namedtuple("term_spec", "name type shape")
 
@@ -55,8 +55,10 @@ def construct_solver(model_col,
     # Take the compact chunking info on the gain xdss and expand it.
     spec_list = expand_specs(gain_xds_list)
 
+    # Create a constructor object.
     C = Constructor(solver_wrapper, "rf")
 
+    # Add relevant inputs to constructor object.
     C.add_input("model", model_col, "rfdc")
     C.add_input("data", data_col, "rfc")
     C.add_input("a1", ant1_col, "r")
@@ -68,55 +70,32 @@ def construct_solver(model_col,
     C.add_input("corr_mode", corr_mode)
     C.add_input("term_spec_list", spec_list, "rf")
 
-    for gn in opts.solver_gain_terms:
-        C.add_output("{}-gain".format(gn), "rfadc")
-        C.add_output("{}-conviter".format(gn), "rf")
-        C.add_output("{}-convperc".format(gn), "rf")
+    # Add relevant outputs to constructor object.
+    for gi, gn in enumerate(opts.solver_gain_terms):
 
-    graph, token = C.make_graph()
+        chunks = gain_xds_list[gi].CHUNK_SPEC
+        C.add_output("{}-gain".format(gn), "rfadc", chunks, np.complex128)
 
-    # The following constructs the getitem layer which is necessary to handle
-    # returning several results from the solver. TODO: This is improving but
-    # can I add convenience functions to streamline this process?
+        chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
+        C.add_output("{}-conviter".format(gn), "rf", chunks, np.int64)
+        C.add_output("{}-convperc".format(gn), "rf", chunks, np.float64)
 
-    gain_keys = \
-        ["{}-gain-{}".format(gn, token) for gn in opts.solver_gain_terms]
+    # Apply function to inputs to produce dask array outputs (as dict).
+    output_array_dict = C.get_output_arrays()
 
-    conv_iter_keys = \
-        ["{}-conviter-{}".format(gn, token) for gn in opts.solver_gain_terms]
-
-    conv_perc_keys = \
-        ["{}-convperc-{}".format(gn, token) for gn in opts.solver_gain_terms]
-
-    # Now that we have the graph, we need to construct arrays from the results.
-    # We loop over the outputs and construct appropriate dask arrays. These are
-    # then assigned to the relevant gain xarray.Dataset object.
-
+    # Assign results to the relevant gain xarray.Dataset object.
     solved_xds_list = []
 
     for gi, gain_xds in enumerate(gain_xds_list):
 
-        gain = da.Array(graph,
-                        name=gain_keys[gi],
-                        chunks=gain_xds.CHUNK_SPEC,
-                        dtype=np.complex64)
-
-        conv_perc = da.Array(graph,
-                             name=conv_perc_keys[gi],
-                             chunks=((1,)*n_t_chunks,
-                                     (1,)*n_f_chunks),
-                             dtype=np.float32)
-
-        conv_iter = da.Array(graph,
-                             name=conv_iter_keys[gi],
-                             chunks=((1,)*n_t_chunks,
-                                     (1,)*n_f_chunks),
-                             dtype=np.float32)
+        gain = output_array_dict[gain_xds.NAME + "-gain"]
+        convperc = output_array_dict[gain_xds.NAME + "-convperc"]
+        conviter = output_array_dict[gain_xds.NAME + "-conviter"]
 
         solved_xds = gain_xds.assign(
             {"gains": (("time_int", "freq_int", "ant", "dir", "corr"), gain),
-             "conv_perc": (("t_chunk", "f_chunk"), conv_perc),
-             "conv_iter": (("t_chunk", "f_chunk"), conv_iter)})
+             "conv_perc": (("t_chunk", "f_chunk"), convperc),
+             "conv_iter": (("t_chunk", "f_chunk"), conviter)})
 
         solved_xds_list.append(solved_xds)
 
@@ -152,7 +131,7 @@ def expand_specs(gain_xds_list):
 class Constructor:
 
     _input = namedtuple("input", "name value index_list")
-    _output = namedtuple("output", "name index_list")
+    _output = namedtuple("output", "name index_list chunks dtype")
 
     def __init__(self, func, index_string):
 
@@ -175,18 +154,18 @@ class Constructor:
 
         self.inputs.append(self._input(name, value, index_list))
 
-    def add_output(self, name, index_string):
+    def add_output(self, name, index_string, chunks, dtype):
 
         index_list = list(index_string)
 
-        self.outputs.append(self._output(name, index_list))
+        self.outputs.append(self._output(name, index_list, chunks, dtype))
 
-    def make_graph(self):
+    def get_output_arrays(self):
         """Given the current state of the Constructor, create a graph."""
 
         token = tokenize(*[inp.value for inp in self.inputs])
 
-        layer_name = "-".join([self.func.__name__, token])
+        layer_name = "-".join([funcname(self.func), token])
 
         graph = {}
 
@@ -216,7 +195,7 @@ class Constructor:
         deps.update({layer_name: {k for k in deps.keys()}})
 
         # At this point we have a dictionary which describes the chunkwise
-        # application of func. TODO: Add the getitem layer.
+        # application of func.
 
         input_keys = list(graph.keys())
 
@@ -237,7 +216,20 @@ class Constructor:
             layers.update({output_layer_name: output_graph})
             deps.update({output_layer_name: {layer_name}})
 
-        return HighLevelGraph(layers, deps), token
+        hlg = HighLevelGraph(layers, deps)
+
+        output_dict = {}
+
+        for o in self.outputs:
+
+            output_layer_name = "-".join([o.name, token])
+
+            output_dict[o.name] = da.Array(hlg,
+                                           name=output_layer_name,
+                                           chunks=o.chunks,
+                                           dtype=o.dtype)
+
+        return output_dict
 
     def _get_key_or_value(self, inp, idx, block_ids):
         """Given an input, returns appropriate key/value based on indices."""
