@@ -12,6 +12,10 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     # on the term type. We also probably need to consider how to parse
     # **kwargs into the solver for terms requiring ancilliary info.
 
+    # print(model.shape, data.shape, a1.shape, a2.shape, t_map_arr.shape,
+    #       f_map_arr.shape, d_map_arr.shape, corr_mode, term_spec_list,
+    #       kwargs)
+
     gain_list = []
     additional_args = []
     results_dict = {}

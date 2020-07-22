@@ -56,20 +56,23 @@ def construct_solver(model_col,
     # Take the compact chunking info on the gain xdss and expand it.
     spec_list = expand_specs(gain_xds_list)
 
-    C = Constructor(n_t_chunks, n_f_chunks)
+    C = Constructor(solver_wrapper, "rf")
 
-    C.add_input("model", model_col, "tf")
-    C.add_input("data", data_col, "tf")
-    C.add_input("a1", ant1_col, "t")
-    C.add_input("a2", ant2_col, "t")
-    C.add_input("weights", weight_col, "tf")
-    C.add_input("t_map_arr", t_map_arr, "t")
-    C.add_input("f_map_arr", f_map_arr, "t")
+    C.add_input("model", model_col, "rfdc")
+    C.add_input("data", data_col, "rfc")
+    C.add_input("a1", ant1_col, "r")
+    C.add_input("a2", ant2_col, "r")
+    C.add_input("weights", weight_col, "rfc")
+    C.add_input("t_map_arr", t_map_arr, "rj")
+    C.add_input("f_map_arr", f_map_arr, "rj")
     C.add_input("d_map_arr", d_map_arr)
     C.add_input("corr_mode", corr_mode)
-    C.add_input("term_spec_list", spec_list, "tf")
+    C.add_input("term_spec_list", spec_list, "rf")
+    # C.add_input("foo", da.ones((2, 2), chunks=(1, 1)), "rf")
 
     solver_dsk, layers, deps, token = C.make_graph()
+
+    # import pdb; pdb.set_trace()
 
     solver_name = "solver-" + token  # TODO: This is a hack for now.
 
@@ -177,18 +180,26 @@ def expand_specs(gain_xds_list):
 
 class Constructor:
 
-    _input = namedtuple("input", "name value index_string")
+    _input = namedtuple("input", "name value index_list")
 
-    def __init__(self, n_t_chunks, n_f_chunks):
+    def __init__(self, func, index_string):
 
-        self.n_t_chunks = n_t_chunks
-        self.n_f_chunks = n_f_chunks
+        self.func_axes = list(index_string)
+        self.input_axes = {}
+        self.dask_inputs = []
 
         self.inputs = []
 
     def add_input(self, name, value, index_string=None):
 
-        self.inputs.append(self._input(name, value, index_string))
+        index_list = list(index_string) if index_string else None
+
+        if isinstance(value, da.Array):
+            blockdims = {k: v for k, v in zip(index_list, value.numblocks)}
+            self._merge_dict(self.input_axes, blockdims)
+            self.dask_inputs.append(value)
+
+        self.inputs.append(self._input(name, value, index_list))
 
     def make_graph(self):
         """Given the current state of the Constructor, create a graph."""
@@ -199,56 +210,55 @@ class Constructor:
 
         graph = {}
 
-        layers = {inp.value.name: inp.value.__dask_graph__()
-                  for inp in self.inputs
-                  if hasattr(inp.value, "__dask_graph__")}
+        layers = {inp.name: inp.__dask_graph__() for inp in self.dask_inputs}
 
-        deps = {inp.value.name: inp.value.__dask_graph__().dependencies
-                for inp in self.inputs
-                if hasattr(inp.value, "__dask_graph__")}
+        deps = {inp.name: inp.__dask_graph__().dependencies
+                for inp in self.dask_inputs}
 
-        # Set up the solver graph. Loop over the chunked axes.
-        for t_ind in range(self.n_t_chunks):
-            for f_ind in range(self.n_f_chunks):
+        axes_lengths = list([self.input_axes[k] for k in self.func_axes])
 
-                # Set up the per-chunk solves. Note how keys are assosciated.
-                # We will pass everything in as a kwarg - this means we don't
-                # need to worry about maintaining argument order. This will
-                # make adding additional arguments simple.
+        # Set up the solver graph. Loop over the chunked axes. TODO: This is
+        # the part the bothers me - it is way too explicit/hard-coded.
+        for i, k in enumerate(product(*map(range, axes_lengths))):
 
-                kwargs = [[inp.name, self._get_key_or_value(inp, t_ind, f_ind)]
-                          for inp in self. inputs]
+            # Set up the per-chunk solves. Note how keys are assosciated.
+            # We will pass everything in as a kwarg - this means we don't
+            # need to worry about maintaining argument order. This will
+            # make adding additional arguments simple.
 
-                graph[(solver_name, t_ind, f_ind)] = \
-                    (apply, solver_wrapper, [], (dict, kwargs))
+            block_ids = dict(zip(self.func_axes, k))
+
+            kwargs = [[inp.name, self._get_key_or_value(inp, i, block_ids)]
+                      for inp in self.inputs]
+
+            graph[(solver_name, *k)] = \
+                (apply, solver_wrapper, [], (dict, kwargs))
 
         layers.update({solver_name: graph})
         deps.update({solver_name: {k for k in deps.keys()}})
 
         return graph, layers, deps, token
 
-    def _get_key_or_value(self, inp, t_ind, f_ind):
+    def _get_key_or_value(self, inp, idx, block_ids):
         """Given an input, returns appropriate key/value based on indices."""
 
-        if isinstance(inp.value, da.Array):
-            chunked_values = list(flatten(inp.value.__dask_keys__()))
-        else:
-            chunked_values = inp.value
-
-        if inp.index_string is None:
+        if inp.index_list is None:
             return inp.value
-        elif inp.index_string == "tf":
-            ind = np.ravel_multi_index((t_ind, f_ind),
-                                       (self.n_t_chunks, self.n_f_chunks))
-            return chunked_values[ind]
-        elif inp.index_string == "t":
-            return chunked_values[t_ind]
-        elif inp.index_string == "f":
-            return chunked_values[f_ind]
+        elif isinstance(inp.value, da.Array):
+            name = inp.value.name
+            block_idxs = list(map(lambda ax: block_ids.get(ax, 0),
+                              inp.index_list))
+            return (name, *block_idxs)
+        elif isinstance(inp.value, list):
+            return inp.value[idx]
+        else:
+            raise ValueError("Cannot generate graph input for {}".format(inp))
 
+    def _merge_dict(self, dict0, dict1):
+        """Merge two dicts, raising an error when values do not agree."""
 
-# def rec_list_get(lst, ind):
-#     if len(ind) > 1:
-#         return rec_list_get(lst[ind[0]], ind[1:])
-#     else:
-#         return lst[ind[0]]
+        for k, v in dict1.items():
+            if k not in dict0:
+                dict0.update({k: v})
+            elif k in dict0 and dict0[k] != v:
+                raise ValueError("Block dimensions are not in agreement.")
