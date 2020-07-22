@@ -4,7 +4,6 @@ from dask.array.core import HighLevelGraph
 from operator import getitem
 from dask.base import tokenize
 from quartical.calibration.solver import solver_wrapper
-from dask.core import flatten
 from collections import namedtuple
 from itertools import product
 from dask.utils import apply
@@ -70,50 +69,24 @@ def construct_solver(model_col,
     C.add_input("term_spec_list", spec_list, "rf")
 
     for gn in opts.solver_gain_terms:
-        C.add_output("gain-{}".format(gn), "rfadc")
+        C.add_output("{}-gain".format(gn), "rfadc")
+        C.add_output("{}-conviter".format(gn), "rf")
+        C.add_output("{}-convperc".format(gn), "rf")
 
-    solver_name, solver_dsk, layers, deps, token = C.make_graph()
+    graph, token = C.make_graph()
 
     # The following constructs the getitem layer which is necessary to handle
     # returning several results from the solver. TODO: This is improving but
     # can I add convenience functions to streamline this process?
 
     gain_keys = \
-        ["gain-{}-{}".format(gn, token) for gn in opts.solver_gain_terms]
+        ["{}-gain-{}".format(gn, token) for gn in opts.solver_gain_terms]
 
     conv_iter_keys = \
-        ["conviter-{}-{}".format(gn, token) for gn in opts.solver_gain_terms]
+        ["{}-conviter-{}".format(gn, token) for gn in opts.solver_gain_terms]
 
     conv_perc_keys = \
-        ["convperc-{}-{}".format(gn, token) for gn in opts.solver_gain_terms]
-
-    for gi, gn in enumerate(opts.solver_gain_terms):
-
-        get_gain = {(gain_keys[gi], k[1], k[2], 0, 0, 0):
-                    (getitem, (getitem, k, gn), "gain")
-                    for i, k in enumerate(solver_dsk.keys())}
-
-        layers.update({gain_keys[gi]: get_gain})
-        deps.update({gain_keys[gi]: {solver_name}})
-
-        get_conv_iters = \
-            {(conv_iter_keys[gi], k[1], k[2]):
-             (np.atleast_2d, (getitem, (getitem, k, gn), "conv_iter"))
-             for i, k in enumerate(solver_dsk.keys())}
-
-        layers.update({conv_iter_keys[gi]: get_conv_iters})
-        deps.update({conv_iter_keys[gi]: {solver_name}})
-
-        get_conv_perc = \
-            {(conv_perc_keys[gi], k[1], k[2]):
-             (np.atleast_2d, (getitem, (getitem, k, gn), "conv_perc"))
-             for i, k in enumerate(solver_dsk.keys())}
-
-        layers.update({conv_perc_keys[gi]: get_conv_perc})
-        deps.update({conv_perc_keys[gi]: {solver_name}})
-
-    # Turn the layers and dependencies into a high level graph.
-    graph = HighLevelGraph(layers, deps)
+        ["{}-convperc-{}".format(gn, token) for gn in opts.solver_gain_terms]
 
     # Now that we have the graph, we need to construct arrays from the results.
     # We loop over the outputs and construct appropriate dask arrays. These are
@@ -245,7 +218,26 @@ class Constructor:
         # At this point we have a dictionary which describes the chunkwise
         # application of func. TODO: Add the getitem layer.
 
-        return layer_name, graph, layers, deps, token
+        input_keys = list(graph.keys())
+
+        for o in self.outputs:
+
+            output_layer_name = "-".join([o.name, token])
+
+            axes_lengths = \
+                list([self.input_axes.get(k, 1) for k in o.index_list])
+
+            output_graph = {}
+
+            for i, k in enumerate(product(*map(range, axes_lengths))):
+
+                output_graph[(output_layer_name, *k)] = \
+                    (getitem, input_keys[i], o.name)
+
+            layers.update({output_layer_name: output_graph})
+            deps.update({output_layer_name: {layer_name}})
+
+        return HighLevelGraph(layers, deps), token
 
     def _get_key_or_value(self, inp, idx, block_ids):
         """Given an input, returns appropriate key/value based on indices."""

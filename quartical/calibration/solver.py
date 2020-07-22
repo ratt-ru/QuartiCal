@@ -39,9 +39,9 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         else:
             additional_args.append({})
 
-        results_dict[term_spec.name] = {"gain": gain,
-                                        "conv_iter": 0,
-                                        "conv_perc": 0}
+        results_dict[term_spec.name + "-gain"] = gain
+        results_dict[term_spec.name + "-conviter"] = 0
+        results_dict[term_spec.name + "-convperc"] = 0
 
     flag_list = [np.zeros_like(g, dtype=np.uint8) for g in gain_list]
     inverse_gain_list = [np.empty_like(g) for g in gain_list]
@@ -55,8 +55,10 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                    d_map_arr, corr_mode, gain_ind, inverse_gain_list,
                    gain_list, flag_list, **additional_args[gain_ind])
 
-        results_dict[term_spec.name]["conv_iter"] += info_tup.conv_iters
-        results_dict[term_spec.name]["conv_perc"] += info_tup.conv_perc
+        results_dict[term_spec.name + "-conviter"] += \
+            np.atleast_2d(info_tup.conv_iters)
+        results_dict[term_spec.name + "-convperc"] += \
+            np.atleast_2d(info_tup.conv_perc)
 
     gc.collect()
 
