@@ -68,13 +68,11 @@ def construct_solver(model_col,
     C.add_input("d_map_arr", d_map_arr)
     C.add_input("corr_mode", corr_mode)
     C.add_input("term_spec_list", spec_list, "rf")
-    # C.add_input("foo", da.ones((2, 2), chunks=(1, 1)), "rf")
 
-    solver_dsk, layers, deps, token = C.make_graph()
+    for gn in opts.solver_gain_terms:
+        C.add_output("gain-{}".format(gn), "rfadc")
 
-    # import pdb; pdb.set_trace()
-
-    solver_name = "solver-" + token  # TODO: This is a hack for now.
+    solver_name, solver_dsk, layers, deps, token = C.make_graph()
 
     # The following constructs the getitem layer which is necessary to handle
     # returning several results from the solver. TODO: This is improving but
@@ -181,14 +179,17 @@ def expand_specs(gain_xds_list):
 class Constructor:
 
     _input = namedtuple("input", "name value index_list")
+    _output = namedtuple("output", "name index_list")
 
     def __init__(self, func, index_string):
 
+        self.func = func
         self.func_axes = list(index_string)
         self.input_axes = {}
         self.dask_inputs = []
 
         self.inputs = []
+        self.outputs = []
 
     def add_input(self, name, value, index_string=None):
 
@@ -201,12 +202,18 @@ class Constructor:
 
         self.inputs.append(self._input(name, value, index_list))
 
+    def add_output(self, name, index_string):
+
+        index_list = list(index_string)
+
+        self.outputs.append(self._output(name, index_list))
+
     def make_graph(self):
         """Given the current state of the Constructor, create a graph."""
 
         token = tokenize(*[inp.value for inp in self.inputs])
 
-        solver_name = "solver-" + token
+        layer_name = "-".join([self.func.__name__, token])
 
         graph = {}
 
@@ -217,27 +224,28 @@ class Constructor:
 
         axes_lengths = list([self.input_axes[k] for k in self.func_axes])
 
-        # Set up the solver graph. Loop over the chunked axes. TODO: This is
-        # the part the bothers me - it is way too explicit/hard-coded.
+        # Set up the solver graph. Loop over the chunked axes.
         for i, k in enumerate(product(*map(range, axes_lengths))):
 
-            # Set up the per-chunk solves. Note how keys are assosciated.
-            # We will pass everything in as a kwarg - this means we don't
-            # need to worry about maintaining argument order. This will
-            # make adding additional arguments simple.
+            # Set up the per-chunk functions calls. Note how keys are
+            # assosciated. We will pass everything in as a kwarg - this
+            # means we don't need to worry about maintaining argument order.
+            # This will make adding additional arguments simple.
 
             block_ids = dict(zip(self.func_axes, k))
 
             kwargs = [[inp.name, self._get_key_or_value(inp, i, block_ids)]
                       for inp in self.inputs]
 
-            graph[(solver_name, *k)] = \
-                (apply, solver_wrapper, [], (dict, kwargs))
+            graph[(layer_name, *k)] = (apply, self.func, [], (dict, kwargs))
 
-        layers.update({solver_name: graph})
-        deps.update({solver_name: {k for k in deps.keys()}})
+        layers.update({layer_name: graph})
+        deps.update({layer_name: {k for k in deps.keys()}})
 
-        return graph, layers, deps, token
+        # At this point we have a dictionary which describes the chunkwise
+        # application of func. TODO: Add the getitem layer.
+
+        return layer_name, graph, layers, deps, token
 
     def _get_key_or_value(self, inp, idx, block_ids):
         """Given an input, returns appropriate key/value based on indices."""
