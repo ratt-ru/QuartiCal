@@ -41,11 +41,11 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     # Q and P have the same dimensions as the gain (or we represent them as
     # though they do).
 
-    Q = np.ones_like(gains[active_term], dtype=real_dtype)
+    Q = np.zeros_like(gains[active_term], dtype=real_dtype)
     P = np.ones_like(gains[active_term], dtype=real_dtype)
     P[0] += Q[0]  # Add Q to P for for first iteration.
 
-    n_epoch = 3
+    n_epoch = 2
 
     for _ in range(n_epoch):
 
@@ -93,8 +93,8 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                            literally(corr_mode))
 
             # Update the gains and covariances (P).
-            gains[active_term][i:i+1, :, :, :, :] += g_update
-            P[i:i+1, :, :, :, :] -= p_update
+            gains[active_term][i:i+1, :, :, :, :] += 0.5*g_update
+            P[i:i+1, :, :, :, :] -= 0.5*p_update
 
             # On all except the last iteration, we need to add Q to P and set
             # the gain at t+1 equal to the gain at the current t.
@@ -130,8 +130,8 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                                         literally(corr_mode))
 
             smooth_gains[i:i+1, :, :, :, :] = \
-                gains[active_term][i:i+1] + g_update
-            smooth_P[i:i+1, :, :, :, :] = P[i:i+1] + p_update
+                gains[active_term][i:i+1] + 0.5*g_update
+            smooth_P[i:i+1, :, :, :, :] = P[i:i+1] + 0.5*p_update
 
         # TODO: Q really shouldn't have a time axis - I was just being lazy.
         Q[:] = update_q(smooth_gains, smooth_P, Gs)
@@ -340,6 +340,8 @@ def smoother_update_full(g_update, p_update, gains, smooth_gains, P, smooth_P,
 
     n_tint, n_fint, n_ant, n_dir, n_corr = g_update.shape
 
+    Gs = np.zeros(g_update.shape, dtype=p_update.dtype)
+
     for t in range(n_tint):
         for f in range(n_fint):
             for a in range(n_ant):
@@ -390,7 +392,12 @@ def smoother_update_full(g_update, p_update, gains, smooth_gains, P, smooth_P,
                     p_update[t, f, a, d, 2] = G2*(Ps2 - Pp2)*G2
                     p_update[t, f, a, d, 3] = G3*(Ps3 - Pp3)*G3
 
-    return
+                    Gs[t, f, a, d, 0] = G0
+                    Gs[t, f, a, d, 1] = G1
+                    Gs[t, f, a, d, 2] = G2
+                    Gs[t, f, a, d, 3] = G3
+
+    return Gs
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
