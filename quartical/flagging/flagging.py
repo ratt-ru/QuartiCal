@@ -181,6 +181,10 @@ def update_kwrds(col_kwrds, opts):
 
     bitflag_kwrds["FLAGSETS"] = ",".join(flagsets)
 
+    for k, v in bitflag_kwrds.items():
+        if k.startswith("FLAGSET_"):
+            bitflag_kwrds[k] = np.int32(v)
+
     return col_kwrds
 
 

@@ -91,9 +91,9 @@ def estimate_noise_kernel(data, flags, a1, a2, n_ant):
     # VERY dodgy. Fix at some point.
 
     inv_var = valid_counts.sum() / (chan_diff_sqrd.sum() or 1.)
-    noise_est = np.float32(np.sqrt(1 / inv_var))
+    noise_est = np.float32(np.sqrt(1 / (inv_var or 1)))
 
-    inv_var_per_chan = valid_counts.sum(axis=1) / chan_diff_sqrd.sum(axis=1)
+    inv_var_per_chan = valid_counts.sum(axis=1) / (chan_diff_sqrd.sum(axis=1) + 1)
 
     # Isolated but valid channels may end up with no noise estimate at all.
     # These are assumed to be equal to the overall inverse variance.
