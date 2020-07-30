@@ -87,12 +87,13 @@ def estimate_noise_kernel(data, flags, a1, a2, n_ant):
     chan_diff_sqrd /= 4
 
     # TODO: Consider returning here and doing the last bit with map_blocks/
-    # blockwise. This is just to make it a little neater.
+    # blockwise. This is just to make it a little neater. TODO: This or is
+    # VERY dodgy. Fix at some point. The ors and +1s are awful. Fix!!!
 
-    inv_var = valid_counts.sum() / chan_diff_sqrd.sum()
-    noise_est = np.float32(np.sqrt(1 / inv_var))
+    inv_var = valid_counts.sum() / (chan_diff_sqrd.sum() or 1.)
+    noise_est = np.float32(np.sqrt(1 / (inv_var or 1)))
 
-    inv_var_per_chan = valid_counts.sum(axis=1) / chan_diff_sqrd.sum(axis=1)
+    inv_var_per_chan = valid_counts.sum(axis=1) / (chan_diff_sqrd.sum(axis=1) + 1)
 
     # Isolated but valid channels may end up with no noise estimate at all.
     # These are assumed to be equal to the overall inverse variance.
