@@ -37,6 +37,7 @@ dstat_dims_tup = namedtuple("dstat_dims",
 
 def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
                   corr_mode, *gains):
+    """Thin wrapper to handle an unknown number of input gains."""
 
     return compute_residual(data, model, gains, a1, a2, t_map_arr,
                             f_map_arr, d_map_arr, corr_mode)
@@ -99,8 +100,8 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # Set up some values relating to problem dimensions.
         n_row, n_chan, n_ant, n_dir, n_corr = \
             [xds.dims[d] for d in ["row", "chan", "ant", "dir", "corr"]]
-        n_t_chunk, n_f_chunk = \
-            [len(c) for c in [xds.chunks["row"], xds.chunks["chan"]]]
+
+        n_t_chunk, n_f_chunk = [len(xds.chunks[d]) for d in ["row", "chan"]]
 
         # Create and populate xds for statisics at data resolution. Returns
         # some useful arrays required for future computations. TODO: I really
@@ -182,7 +183,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 
-        #######################################################################
+        # --------------------------------MADMAX-------------------------------
         # This is the madmax flagging step which is not always enabled. TODO:
         # This likely needs to be moved into the solver. Note that this use of
         # set bitflags is likely to break the distributed scheduler.
@@ -198,7 +199,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
             data_bitflags = set_bitflag(data_bitflags, "MAD", mad_flags)
 
-        #######################################################################
+        # ---------------------------------------------------------------------
 
         data_stats_xds = assign_post_solve_chisq(data_stats_xds,
                                                  residuals,

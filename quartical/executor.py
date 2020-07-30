@@ -45,7 +45,7 @@ def execute():
     # Reads the measurement set using the relavant configuration from opts.
     ms_xds_list, col_kwrds = read_xds_list(opts)
 
-    # ms_xds_list = ms_xds_list[:1]
+    # ms_xds_list = ms_xds_list[:2]
 
     # Preprocess the xds_list - initialise some values and fix bad data.
     preprocessed_xds_list = preprocess_xds_list(ms_xds_list, col_kwrds, opts)

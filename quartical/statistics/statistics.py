@@ -560,11 +560,14 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
 
     for gain_xds in gain_xds_list:
 
+        n_time, n_chan = [data_stats_xds.dims[d] for d in ["time", "chan"]]
         n_dir = gain_xds.dims["dir"]  # TODO: Add fixed direction logic.
         n_ant = gain_xds.dims["ant"]
 
-        t_int = getattr(opts, "{}_time_interval".format(gain_xds.NAME))
-        f_int = getattr(opts, "{}_freq_interval".format(gain_xds.NAME))
+        t_int = \
+            getattr(opts, "{}_time_interval".format(gain_xds.NAME)) or n_time
+        f_int = \
+            getattr(opts, "{}_freq_interval".format(gain_xds.NAME)) or n_chan
 
         ti_chunks = gain_xds.CHUNK_SPEC.tchunk
         fi_chunks = gain_xds.CHUNK_SPEC.fchunk

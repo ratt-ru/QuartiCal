@@ -101,6 +101,21 @@ def correlation_mode(request):
     return request.param
 
 
+@pytest.fixture(params=[0, 1, 10], scope="module")
+def time_int(request):
+    return request.param
+
+
+@pytest.fixture(params=[0, 1, 10], scope="module")
+def freq_int(request):
+    return request.param
+
+
+@pytest.fixture(params=[['G'], ['G', 'B']], scope="module")
+def gain_terms(request):
+    return request.param
+
+
 @pytest.fixture(params=["MODEL_DATA", str(lsm_path)],
                 scope="module")
 def model_recipe(request):
