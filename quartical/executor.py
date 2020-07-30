@@ -140,6 +140,14 @@ def execute():
     #                filename='graph.pdf',
     #                optimize_graph=True)
 
+    # dask.visualize([dask.delayed(tuple)(x[0]) for x in outputs],
+    #                color='order', cmap='autumn',
+    #                filename='graph_order.pdf', node_attr={'penwidth': '10'})
+
+    # dask.visualize([dask.delayed(tuple)(x[0]) for x in outputs],
+    #                filename='graph.pdf',
+    #                optimize_graph=True)
+
     # dask.visualize([dask.delayed(tuple)([x[:2]]) for x in outputs],
     #                color='order', cmap='autumn',
     #                filename='graph_order.pdf', node_attr={'penwidth': '10'})

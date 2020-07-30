@@ -317,6 +317,7 @@ def make_gain_xds_list(data_xds, opts):
         t_int = getattr(opts, "{}_time_interval".format(term))
         f_int = getattr(opts, "{}_freq_interval".format(term))
         dd_term = getattr(opts, "{}_direction_dependent".format(term))
+        term_type = getattr(opts, "{}_type".format(term))
 
         utime_chunks = data_xds.UTIME_CHUNKS
         freq_chunks = data_xds.chunks["chan"]
@@ -380,7 +381,10 @@ def make_gain_xds_list(data_xds, opts):
                                 np.arange(n_t_chunk, dtype=np.int32)),
                     "f_chunk": ("f_chunk",
                                 np.arange(n_f_chunk, dtype=np.int32))},
-            attrs={"NAME": term, "CHUNK_SPEC": chunk_spec, **id_fields})
+            attrs={"NAME": term,
+                   "CHUNK_SPEC": chunk_spec,
+                   "TYPE": term_type,
+                   **id_fields})
 
         gain_xds_list.append(gain_xds)
 
