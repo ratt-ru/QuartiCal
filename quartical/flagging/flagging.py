@@ -202,6 +202,12 @@ def update_kwrds(col_kwrds, opts):
 
     bitflag_kwrds["FLAGSETS"] = ",".join(flagsets)
 
+    # TODO: This is a bit of a hack to avoid dtype problems caused by keywords
+    # being read as a different type than they are saved on disk.
+    for k, v in bitflag_kwrds.items():
+        if k.startswith("FLAGSET_"):
+            bitflag_kwrds[k] = np.int32(v)
+
     return col_kwrds
 
 
