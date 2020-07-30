@@ -214,9 +214,10 @@ def update_kwrds(col_kwrds, opts):
 def finalise_flags(xds_list, col_kwrds, opts):
     """ Combines internal and input bitflags to produce writable flag data.
 
-    Given a list of xds and appropriately updated keywords, combines QuartiCal's
-    internal bitflags with the input bitflags and creates a new list of xds
-    on which the combined flagging data is assigned. Also handles legacy flags.
+    Given a list of xds and appropriately updated keywords, combines
+    QuartiCal's internal bitflags with the input bitflags and creates a new
+    list of xds on which the combined flagging data is assigned. Also handles
+    legacy flags.
 
     Args:
         xds_list: A list of xarray datasets.

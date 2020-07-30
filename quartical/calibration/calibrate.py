@@ -100,6 +100,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # Set up some values relating to problem dimensions.
         n_row, n_chan, n_ant, n_dir, n_corr = \
             [xds.dims[d] for d in ["row", "chan", "ant", "dir", "corr"]]
+
         n_t_chunk, n_f_chunk = [len(xds.chunks[d]) for d in ["row", "chan"]]
 
         # Create and populate xds for statisics at data resolution. Returns
