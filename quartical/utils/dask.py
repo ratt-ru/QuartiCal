@@ -8,6 +8,23 @@ from collections import namedtuple
 from itertools import product
 
 
+def as_dict(*keys):
+    """Decorator which turns function outputs into dictionary entries."""
+    def decorator_as_dict(func):
+        def wrapper_as_dict(*args, **kwargs):
+            values = func(*args, **kwargs)
+
+            if len(keys) == 1:
+                values = (values,)
+            elif len(keys) != len(values):
+                raise ValueError(f"{len(keys)} keys provided for "
+                                 f"{len(values)} output values.")
+
+            return dict(zip(keys, values))
+        return wrapper_as_dict
+    return decorator_as_dict
+
+
 class Blocker:
     """Constructor object for custom blockwise dask operations.
 
@@ -75,7 +92,7 @@ class Blocker:
 
         self.outputs.append(self._output(name, index_list, chunks, dtype))
 
-    def get_output_arrays(self):
+    def get_dask_outputs(self):
         """Given the current state of the blocker, create a graph.
 
         Returns:
@@ -169,7 +186,7 @@ class Blocker:
         elif isinstance(inp.value, list):
             return inp.value[idx]
         else:
-            raise ValueError("Cannot generate graph input for {}".format(inp))
+            raise ValueError(f"Cannot generate graph input for {inp}.")
 
     def _merge_dict(self, dict0, dict1):
         """Merge two dicts, raising an error when values do not agree."""
@@ -183,7 +200,7 @@ class Blocker:
 
 def blockwise_unique(arr, chunks=None, return_index=False,
                      return_inverse=False, return_counts=False, axis=None):
-    """Given an chunked dask.array, applies numpy.unique on a per chunk basis.
+    """Given a chunked dask.array, applies numpy.unique on a per chunk basis.
 
     Applies numpy.unique to a chunked input array to produce unique values
     (and optionally the indices, inverse and counts) per chunk. While this
@@ -214,154 +231,32 @@ def blockwise_unique(arr, chunks=None, return_index=False,
     if arr.ndim > 1:
         raise ValueError("Multi-dimensional arrays not yet supported.")
 
-    arg_list = [return_index, return_inverse, return_counts]
-
-    token = tokenize(arr, *arg_list)  # Append to names to make unique.
-
-    unique_name = "unique-" + token
-
-    # Create layer for the numpy.unique call.
-
-    unique_dsk = {(unique_name, i): (np.unique, input_key, *arg_list)
-                  for i, input_key in enumerate(arr.__dask_keys__())}
-
-    n_return = 1 + sum(arg_list)
-    consumed = 0
-
-    input_name = arr.name
-    input_graph = arr.__dask_graph__()
-    input_deps = input_graph.dependencies
-    out_chunks = chunks if chunks else ((np.nan,)*arr.npartitions,)
-
-    # Without kwargs, no additional work is necessary and we can simply add
-    # the layer to the graph and express the result as an array.
-
-    if n_return == 1:
-
-        graph = input_graph.from_collections(unique_name,
-                                             unique_dsk,
-                                             arr)
-
-        return da.Array(graph,
-                        name=unique_name,
-                        chunks=out_chunks,
-                        dtype=arr.dtype)
-
-    # With kwargs, we need to add layers to split the tuple output of the
-    # numpy.unique calls into separate layers. We ensure that these layers
-    # all share the numpy.unique call as a dependency to avoid recomputation.
-
-    outputs = ()
-    layers = {input_name: input_graph, unique_name: unique_dsk}
-    deps = {input_name: input_deps, unique_name: {input_name}}
-
-    def getitem_layer(name, dsk, i):
-        return {(name, j): (getitem, k, i) for j, k in enumerate(dsk.keys())}
-
-    # Construct the unique value layer.
-
-    uval_name = "unique-values-" + token
-
-    values_dsk = getitem_layer(uval_name, unique_dsk, consumed)
-
-    layers.update({uval_name: values_dsk})
-    deps.update({uval_name: {unique_name}})
-    consumed += 1
-
-    # Construct the indices layer.
+    output_names = ["values"]
 
     if return_index:
-
-        uind_name = "unique-index-" + token
-
-        index_dsk = getitem_layer(uind_name, unique_dsk, consumed)
-
-        layers.update({uind_name: index_dsk})
-        deps.update({uind_name: {unique_name}})
-        consumed += 1
-
-    # Construct the inverse layer.
-
+        output_names.append("indices")
     if return_inverse:
-
-        uinv_name = "unique-inverse-" + token
-
-        inverse_dsk = getitem_layer(uinv_name, unique_dsk, consumed)
-
-        layers.update({uinv_name: inverse_dsk})
-        deps.update({uinv_name: {unique_name}})
-        consumed += 1
-
-    # Construct the counts layer.
-
+        output_names.append("inverse")
     if return_counts:
+        output_names.append("counts")
 
-        ucnt_name = "unique-counts-" + token
+    B = Blocker(as_dict(*output_names)(np.unique), "r")
 
-        counts_dsk = getitem_layer(ucnt_name, unique_dsk, consumed)
+    B.add_input("ar", arr, "r")
+    B.add_input("return_index", return_index)
+    B.add_input("return_inverse", return_inverse)
+    B.add_input("return_counts", return_counts)
 
-        layers.update({ucnt_name: counts_dsk})
-        deps.update({ucnt_name: {unique_name}})
-        consumed += 1
+    chunks = chunks or ((np.nan,)*arr.npartitions,)
 
-    # Construct the HighLevelGraph containing the relevant layers.
-
-    graph = HighLevelGraph(layers, deps)
-
-    # Turn each getitem layer into a dask.array which will contain the result.
-
-    outputs += (da.Array(graph,
-                         name=uval_name,
-                         chunks=out_chunks,
-                         dtype=arr.dtype),)
-
+    B.add_output("values", "r", chunks, arr.dtype)
     if return_index:
-        outputs += (da.Array(graph,
-                             name=uind_name,
-                             chunks=out_chunks,
-                             dtype=np.int64),)
-
+        B.add_output("indices", "r", chunks, np.int64)
     if return_inverse:
-        outputs += (da.Array(graph,
-                             name=uinv_name,
-                             chunks=arr.chunks,  # This is always the case.
-                             dtype=np.int64),)
-
+        B.add_output("inverse", "r", arr.chunks, np.int64)
     if return_counts:
-        outputs += (da.Array(graph,
-                             name=ucnt_name,
-                             chunks=out_chunks,
-                             dtype=np.int64),)
+        B.add_output("counts", "r", chunks, np.int64)
 
-    return outputs
+    output_dict = B.get_dask_outputs()
 
-
-if __name__ == "__main__":
-
-    test_data = da.random.randint(0, 10, size=(20,), chunks=(10,))
-
-    # Add in an extra step to make sure dependecies are handled correctly.
-    test_data = \
-        test_data.map_blocks(lambda x: np.random.randint(0, 5, x.shape))
-
-    just_unq = blockwise_unique(test_data)
-
-    import time
-    t0 = time.time()
-    print(da.compute(just_unq, num_workers=12))
-    print(time.time() - t0)
-
-    unq, ind, inv, cnt = blockwise_unique(test_data,
-                                          return_index=True,
-                                          return_inverse=True,
-                                          return_counts=True)
-
-    import time
-    t0 = time.time()
-    print(da.compute(unq, ind, inv, cnt, num_workers=12))
-    print(time.time() - t0)
-
-    import dask
-    dask.visualize(unq, ind, inv, cnt,
-                   filename='custom.pdf',
-                   optimize_graph=False)
+    return tuple(output_dict.get(k) for k in output_names)

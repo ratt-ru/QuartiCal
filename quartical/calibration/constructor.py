@@ -67,28 +67,27 @@ def construct_solver(model_col,
     blocker.add_input("corr_mode", corr_mode)
     blocker.add_input("term_spec_list", spec_list, "rf")
 
-    # Add relevant outputs to constructor object.
+    # Add relevant outputs to blocker object.
     for gi, gn in enumerate(opts.solver_gain_terms):
 
         chunks = gain_xds_list[gi].CHUNK_SPEC
-        blocker.add_output("{}-gain".format(gn), "rfadc", chunks,
-                           np.complex128)
+        blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)
 
         chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
-        blocker.add_output("{}-conviter".format(gn), "rf", chunks, np.int64)
-        blocker.add_output("{}-convperc".format(gn), "rf", chunks, np.float64)
+        blocker.add_output(f"{gn}-conviter", "rf", chunks, np.int64)
+        blocker.add_output(f"{gn}-convperc", "rf", chunks, np.float64)
 
     # Apply function to inputs to produce dask array outputs (as dict).
-    output_array_dict = blocker.get_output_arrays()
+    output_array_dict = blocker.get_dask_outputs()
 
     # Assign results to the relevant gain xarray.Dataset object.
     solved_xds_list = []
 
     for gi, gain_xds in enumerate(gain_xds_list):
 
-        gain = output_array_dict[gain_xds.NAME + "-gain"]
-        convperc = output_array_dict[gain_xds.NAME + "-convperc"]
-        conviter = output_array_dict[gain_xds.NAME + "-conviter"]
+        gain = output_array_dict[f"{gain_xds.NAME}-gain"]
+        convperc = output_array_dict[f"{gain_xds.NAME}-convperc"]
+        conviter = output_array_dict[f"{gain_xds.NAME}-conviter"]
 
         solved_xds = gain_xds.assign(
             {"gains": (("time_int", "freq_int", "ant", "dir", "corr"), gain),

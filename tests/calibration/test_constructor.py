@@ -51,20 +51,25 @@ def data_xds(_read_xds_list, opts):
 @pytest.fixture(scope="module")
 def _construct_solver(data_xds, opts):
 
+    # Grab the relevant columns.
     model_col = data_xds.MODEL_DATA.data
     data_col = data_xds.DATA.data
     ant1_col = data_xds.ANTENNA1.data
     ant2_col = data_xds.ANTENNA2.data
     weight_col = data_xds.WEIGHT.data
 
+    # Make some fake mappings - this test doesn't need the values.
     n_row, n_chan, n_dir, _ = model_col.shape
     n_term = len(opts.solver_gain_terms)
     t_map_arr = da.empty((n_row, n_term), chunks=(data_col.chunks[0], n_term))
     f_map_arr = da.empty((n_chan, n_term), chunks=(data_col.chunks[1], n_term))
     d_map_arr = np.empty((n_dir, n_term))
 
+    # Make a gain xds list for this data xds. The results will be assigned to
+    # this xds.
     gain_xds_list = make_gain_xds_list(data_xds, opts)
 
+    # Call the construct solver function with the relevant inputs.
     gain_xds_list = construct_solver(model_col,
                                      data_col,
                                      ant1_col,
