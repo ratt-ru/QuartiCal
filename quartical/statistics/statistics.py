@@ -5,10 +5,7 @@ from quartical.utils.intervals import (rfdc_to_abs_tfadc,
                                        tfx_to_tifix,
                                        model_schema,
                                        data_schema)
-from dask.core import flatten
-from dask.base import tokenize
-from operator import getitem
-from dask.array.core import HighLevelGraph
+from quartical.utils.dask import as_dict, Blocker
 import dask.array as da
 import numpy as np
 import xarray
@@ -47,84 +44,26 @@ def assign_noise_estimates(stats_xds, data_col, data_bitflags, ant1_col,
         inv_var_per_chan: Graph which produces inverse variance per channel.
     """
 
-    data_col_keys = list(flatten(data_col.__dask_keys__()))
-    data_bitflags_keys = list(flatten(data_bitflags.__dask_keys__()))
-    ant1_col_keys = list(flatten(ant1_col.__dask_keys__()))
-    ant2_col_keys = list(flatten(ant2_col.__dask_keys__()))
+    B = Blocker(as_dict("noise", "ivpc")(estimate_noise_kernel), "rf")
 
-    dask_inputs = (data_col, data_bitflags, ant1_col, ant2_col)
+    B.add_input("data", data_col, "rfc")
+    B.add_input("flags", data_bitflags, "rfc")
+    B.add_input("a1", ant1_col, "r")
+    B.add_input("a2", ant2_col, "r")
+    B.add_input("n_ant", stats_xds.ant.size)
 
-    # Based on the inputs, generate a unique hash which can be used to uniquely
-    # identify nodes in the graph.
-    token = tokenize(*dask_inputs)
-
-    # These should be guarateed to have the correct dimension in each chunking
-    # axis. This is important for key matching.
     n_t_chunks, n_f_chunks, _ = data_col.numblocks
 
-    # Layers are the high level graph structure. Initialise with the dasky
-    # inputs. Similarly for the their dependencies.
-    layers = {inp.name: inp.__dask_graph__() for inp in dask_inputs}
-    deps = {inp.name: inp.__dask_graph__().dependencies for inp in dask_inputs}
+    chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
+    B.add_output("noise", "rf", chunks, np.float32)
+    chunks = ((1,)*n_t_chunks, data_col.chunks[1])
+    B.add_output("ivpc", "rf", chunks, np.float32)
 
-    datastats_name = "datastats-" + token
-
-    datastats_dsk = {}
-
-    # Set up the solver graph. Loop over the chunked axes.
-    for t in range(n_t_chunks):
-        for f in range(n_f_chunks):
-
-            # Convert time and freq chunk indices to a flattened index.
-            ind = t*n_f_chunks + f
-
-            # Set up the per-chunk stats. Note how keys are assosciated.
-            datastats_dsk[(datastats_name, t, f,)] = \
-                (estimate_noise_kernel,
-                 data_col_keys[ind],
-                 data_bitflags_keys[ind],
-                 ant1_col_keys[t],
-                 ant2_col_keys[t],
-                 stats_xds.ant.size)
-
-    # Add the solver layer and its dependencies.
-    layers.update({datastats_name: datastats_dsk})
-    deps.update({datastats_name: {inp.name for inp in dask_inputs}})
-
-    noise_est_key = "noiseest-{}".format(token)
-    inv_var_per_chan_key = "ivpc-{}".format(token)
-
-    get_noise_est = {(noise_est_key, k[1], k[2]): (getitem, k, 0)
-                     for i, k in enumerate(datastats_dsk.keys())}
-
-    layers.update({noise_est_key: get_noise_est})
-    deps.update({noise_est_key: {datastats_name}})
-
-    get_inv_var_per_chan = \
-        {(inv_var_per_chan_key, k[1], k[2]): (getitem, k, 1)
-         for i, k in enumerate(datastats_dsk.keys())}
-
-    layers.update({inv_var_per_chan_key: get_inv_var_per_chan})
-    deps.update({inv_var_per_chan_key: {datastats_name}})
-
-    # Turn the layers and dependencies into a high level graph.
-    graph = HighLevelGraph(layers, deps)
-
-    noise_est = da.Array(graph,
-                         name=noise_est_key,
-                         chunks=((1,)*n_t_chunks,
-                                 (1,)*n_f_chunks),
-                         dtype=np.float32)
-
-    inv_var_per_chan = da.Array(graph,
-                                name=inv_var_per_chan_key,
-                                chunks=((1,)*n_t_chunks,
-                                        data_col.chunks[1]),
-                                dtype=np.float32)
+    output_dict = B.get_dask_outputs()
 
     updated_stats_xds = stats_xds.assign(
-        {"inv_var_per_chan": (("t_chunk", "chan"), inv_var_per_chan),
-         "noise_est": (("t_chunk", "f_chunk"), noise_est)})
+        {"inv_var_per_chan": (("t_chunk", "chan"), output_dict["ivpc"]),
+         "noise_est": (("t_chunk", "f_chunk"), output_dict["noise"])})
 
     return updated_stats_xds
 

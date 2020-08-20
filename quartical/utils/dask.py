@@ -258,5 +258,9 @@ def blockwise_unique(arr, chunks=None, return_index=False,
         B.add_output("counts", "r", chunks, np.int64)
 
     output_dict = B.get_dask_outputs()
+    output_tuple = tuple(output_dict.get(k) for k in output_names)
 
-    return tuple(output_dict.get(k) for k in output_names)
+    if len(output_tuple) > 1:
+        return output_tuple
+    else:
+        return output_tuple[0]
