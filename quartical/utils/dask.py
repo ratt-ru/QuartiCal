@@ -110,7 +110,11 @@ class Blocker:
         deps = {inp.name: inp.__dask_graph__().dependencies
                 for inp in self.dask_inputs}
 
-        axes_lengths = list([self.input_axes[k] for k in self.func_axes])
+        try:
+            axes_lengths = list([self.input_axes[k] for k in self.func_axes])
+        except KeyError as e:
+            raise KeyError("Output key not present in input keys. "
+                           "This behaviour is not yet supported.") from e
 
         # Set up the solver graph. Loop over the chunked axes.
         for i, k in enumerate(product(*map(range, axes_lengths))):
@@ -195,7 +199,8 @@ class Blocker:
             if k not in dict0:
                 dict0.update({k: v})
             elif k in dict0 and dict0[k] != v:
-                raise ValueError("Block dimensions are not in agreement.")
+                raise ValueError("Block dimensions are not in agreement. "
+                                 "Check input array indices and chunking.")
 
 
 def blockwise_unique(arr, chunks=None, return_index=False,
