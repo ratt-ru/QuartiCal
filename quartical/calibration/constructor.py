@@ -2,7 +2,6 @@ import numpy as np
 from quartical.calibration.solver import solver_wrapper
 from quartical.utils.dask import Blocker
 from collections import namedtuple
-from itertools import product
 
 
 term_spec_tup = namedtuple("term_spec", "name type shape")
@@ -102,24 +101,40 @@ def construct_solver(model_col,
 def expand_specs(gain_xds_list):
     """Convert compact spec to a per-term list per-chunk."""
 
-    spec_lists = []
+    # TODO: This was rejiggered to work with the updated Blocker. Could stand
+    # to be made a little neater/smarter, but works for now. Assembles nested
+    # list where the outer list represnts time chunks, the middle list
+    # represents frequency chunks and the inner-most list contains the
+    # specs per term.
 
-    for gxds in gain_xds_list:
+    n_t_chunks = len(gain_xds_list[0].CHUNK_SPEC.tchunk)
+    n_f_chunks = len(gain_xds_list[0].CHUNK_SPEC.fchunk)
 
-        term_name = gxds.NAME
-        term_type = gxds.TYPE
-        chunk_spec = gxds.CHUNK_SPEC
+    tc_list = []
+    for tc_ind in range(n_t_chunks):
+        fc_list = []
+        for fc_ind in range(n_f_chunks):
+            term_list = []
+            for gxds in gain_xds_list:
 
-        ac = chunk_spec.achunk[0]  # No chunking along antenna axis.
-        dc = chunk_spec.dchunk[0]  # No chunking along direction axis.
-        cc = chunk_spec.cchunk[0]  # No chunking along correlation axis.
+                term_name = gxds.NAME
+                term_type = gxds.TYPE
+                chunk_spec = gxds.CHUNK_SPEC
 
-        shapes = [(tc, fc, ac, dc, cc)
-                  for tc, fc in product(chunk_spec.tchunk, chunk_spec.fchunk)]
+                tc = chunk_spec.tchunk[tc_ind]
+                fc = chunk_spec.fchunk[fc_ind]
 
-        term_spec_list = [term_spec_tup(term_name, term_type, shape)
-                          for shape in shapes]
+                ac = chunk_spec.achunk[0]  # No chunking along antenna axis.
+                dc = chunk_spec.dchunk[0]  # No chunking along direction axis.
+                cc = chunk_spec.cchunk[0]  # No chunking along corr axis.
 
-        spec_lists.append(term_spec_list)
+                term_shape = (tc, fc, ac, dc, cc)
 
-    return list(zip(*spec_lists))
+                term_list.append(term_spec_tup(term_name,
+                                               term_type,
+                                               term_shape))
+
+            fc_list.append(term_list)
+        tc_list.append(fc_list)
+
+    return tc_list

@@ -75,6 +75,10 @@ class Blocker:
             blockdims = {k: v for k, v in zip(index_list, value.numblocks)}
             self._merge_dict(self.input_axes, blockdims)
             self.dask_inputs.append(value)
+        elif isinstance(value, list) and index_list:
+            lengths = self._len_at_depth(value)
+            blockdims = {k: v for k, v in zip(index_list, lengths)}
+            self._merge_dict(self.input_axes, blockdims)
 
         self.inputs.append(self._input(name, value, index_list))
 
@@ -188,7 +192,9 @@ class Blocker:
                               inp.index_list))
             return (name, *block_idxs)
         elif isinstance(inp.value, list):
-            return inp.value[idx]
+            block_idxs = list(map(lambda ax: block_ids.get(ax, 0),
+                              inp.index_list))
+            return self._get_from_lol(inp.value, block_idxs)
         else:
             raise ValueError(f"Cannot generate graph input for {inp}.")
 
@@ -201,6 +207,37 @@ class Blocker:
             elif k in dict0 and dict0[k] != v:
                 raise ValueError("Block dimensions are not in agreement. "
                                  "Check input array indices and chunking.")
+
+    def _len_at_depth(self, lol):
+        """Determines length at depth of a list of lists."""
+
+        lengths = [len(lol)]
+
+        l_at_d = lol
+
+        while True:
+            l_item = getitem(l_at_d, 0)
+            is_list = isinstance(l_item, list)
+            if is_list:
+                l_at_d = l_item
+                lengths.append(len(l_at_d))
+            else:
+                break
+
+        return lengths
+
+    def _get_from_lol(self, lol, ind):
+        """Get an item from a list of lists based on ind."""
+
+        if isinstance(ind, int):
+            return lol[ind]
+
+        result = lol
+
+        for i in ind:
+            result = getitem(result, i)
+
+        return result
 
 
 def blockwise_unique(arr, chunks=None, return_index=False,

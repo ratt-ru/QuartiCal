@@ -210,15 +210,10 @@ def test_per_chunk_list_input(test_data):
     assert_array_equal(np_listadd, da_listadd.compute())
 
 
-@pytest.mark.xfail
 def test_along_axis_list_input(test_data):
     """Test list with an entry per chunk along an axis."""
 
-    # TODO: This fails because the chunked list interface is lacking. The
-    # interface should support nested lists where the level of nesting
-    # corresponds to input block dimensions.
-
-    B = Blocker(as_dict("add")(lambda a, b: np.atleast_2d(a + b)), "ij")
+    B = Blocker(as_dict("add")(lambda a, b: a[:, None] + b), "ij")
 
     test_list = list(range(6))
 
@@ -231,6 +226,30 @@ def test_along_axis_list_input(test_data):
 
     da_listadd = B.get_dask_outputs()["add"]
 
-    np_listadd = test_data.compute() + np.array(test_list)[None, :]
+    np_listadd = test_data.compute()[:, None] + np.array(test_list)[None, :]
+
+    assert_array_equal(np_listadd, da_listadd.compute())
+
+
+def test_multi_axis_list_input(test_data):
+    """Test list with an entry per chunk along multiple axes."""
+
+    B = Blocker(as_dict("add")(lambda a, b: a[:, None] + b), "ij")
+
+    inner_list_len = 6
+
+    test_list = [[j]*inner_list_len for j in range(test_data.npartitions)]
+
+    B.add_input("a", test_data, "i")
+    B.add_input("b", test_list, "ij")
+
+    chunks = (test_data.chunks[0], (1,)*inner_list_len)
+
+    B.add_output("add", "ij", chunks, np.float64)
+
+    da_listadd = B.get_dask_outputs()["add"]
+
+    np_listadd = \
+        test_data.compute()[:, None] + np.array(test_list).repeat(10, axis=0)
 
     assert_array_equal(np_listadd, da_listadd.compute())
