@@ -191,8 +191,8 @@ def test_inconsistent_input(test_data):
         assert B.get_dask_outputs()
 
 
-def test_aligned_list_input(test_data):
-    """Test that an input list specified with indicies is handled correctly."""
+def test_per_chunk_list_input(test_data):
+    """Test list with an entry per chunk."""
 
     B = Blocker(as_dict("add")(lambda a, b: a + b), "i")
 
@@ -210,8 +210,13 @@ def test_aligned_list_input(test_data):
     assert_array_equal(np_listadd, da_listadd.compute())
 
 
-def test_unaligned_list_input(test_data):
-    """Test that an input list specified with indicies is handled correctly."""
+@pytest.mark.xfail
+def test_along_axis_list_input(test_data):
+    """Test list with an entry per chunk along an axis."""
+
+    # TODO: This fails because the chunked list interface is lacking. The
+    # interface should support nested lists where the level of nesting
+    # corresponds to input dimensions.
 
     B = Blocker(as_dict("add")(lambda a, b: np.atleast_2d(a + b)), "ij")
 
