@@ -216,7 +216,7 @@ def test_along_axis_list_input(test_data):
 
     # TODO: This fails because the chunked list interface is lacking. The
     # interface should support nested lists where the level of nesting
-    # corresponds to input dimensions.
+    # corresponds to input block dimensions.
 
     B = Blocker(as_dict("add")(lambda a, b: np.atleast_2d(a + b)), "ij")
 
