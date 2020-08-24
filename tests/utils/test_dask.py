@@ -158,9 +158,12 @@ def test_missing_axis(test_data):
 
     B = Blocker(as_dict("square")(np.square), "j")
 
-    B.add_input("x", test_data, "i")
+    # This is necessary to bypass an error which may be raised earlier.
+    local_test_data = test_data.rechunk(test_data.shape)
 
-    B.add_output("square", "j", ((1,)*test_data.npartitions,), np.float64)
+    B.add_input("x", local_test_data, "i")
+
+    B.add_output("square", "j", ((1,),), np.float64)
 
     with pytest.raises(KeyError):
         assert B.get_dask_outputs()
@@ -253,3 +256,17 @@ def test_multi_axis_list_input(test_data):
         test_data.compute()[:, None] + np.array(test_list).repeat(10, axis=0)
 
     assert_array_equal(np_listadd, da_listadd.compute())
+
+
+@pytest.mark.filterwarnings("ignore: Increasing")
+def test_contraction(test_data):
+    """Check that we raise an error when a contraction would be required."""
+
+    B = Blocker(as_dict("sum")(lambda a: (np.atleast_1d(np.sum(a)))), "i")
+
+    local_test_data = da.outer(test_data, test_data.T)
+
+    with pytest.raises(ValueError):
+        B.add_input("a", local_test_data, "ij")
+
+# -----------------------------------------------------------------------------

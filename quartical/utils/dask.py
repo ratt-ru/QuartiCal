@@ -73,6 +73,7 @@ class Blocker:
 
         if isinstance(value, da.Array):
             blockdims = {k: v for k, v in zip(index_list, value.numblocks)}
+            self._check_axis(blockdims)
             self._merge_dict(self.input_axes, blockdims)
             self.dask_inputs.append(value)
         elif isinstance(value, list) and index_list:
@@ -197,6 +198,14 @@ class Blocker:
             return self._get_from_lol(inp.value, block_idxs)
         else:
             raise ValueError(f"Cannot generate graph input for {inp}.")
+
+    def _check_axis(self, blockdims):
+        """Check that contraction axes are unchunked."""
+
+        for k, v in blockdims.items():
+            if k not in self.func_axes and v != 1:
+                raise ValueError(f"Contraction axis {k} has multiple chunks. "
+                                 f"This is not yet supported by Blocker.")
 
     def _merge_dict(self, dict0, dict1):
         """Merge two dicts, raising an error when values do not agree."""
