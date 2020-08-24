@@ -138,7 +138,7 @@ def test_nchunk(_expand_specs, data_xds):
 
     expected_nchunk = data_xds.DATA.data.npartitions
 
-    assert len(spec_list) == expected_nchunk
+    assert len(spec_list) * len(spec_list[0]) == expected_nchunk
 
 
 def test_shapes(_expand_specs, _construct_solver):
@@ -147,7 +147,9 @@ def test_shapes(_expand_specs, _construct_solver):
     gain_xds_list = _construct_solver
     spec_list = _expand_specs
 
-    expanded_shapes = [spec.shape for chunk in spec_list for spec in chunk]
+    # Flattens out the nested spec list to make comparison easier.
+    expanded_shapes = \
+        [spec.shape for tc in spec_list for fc in tc for spec in fc]
 
     ref_shapes = []
 
