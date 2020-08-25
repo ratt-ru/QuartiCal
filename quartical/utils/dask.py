@@ -238,9 +238,6 @@ class Blocker:
     def _get_from_lol(self, lol, ind):
         """Get an item from a list of lists based on ind."""
 
-        if isinstance(ind, int):
-            return lol[ind]
-
         result = lol
 
         for i in ind:

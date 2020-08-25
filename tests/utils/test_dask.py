@@ -17,6 +17,7 @@ def test_data():
 
 @pytest.mark.parametrize("outputs", [["a"], ["a", "b"], ["a", "b", "c"]])
 def test_as_dict(outputs):
+    """Check that as_dict correctly wraps a number of outputs."""
 
     def f():
         return (1,)*len(outputs) if len(outputs) > 1 else 1
@@ -24,6 +25,16 @@ def test_as_dict(outputs):
     output_dict = as_dict(*outputs)(f)()
 
     assert all([output in output_dict for output in outputs])
+
+
+def test_insufficient_names():
+    """Check that we raise an error if we have insufficient names."""
+
+    def f(a, b, c):
+        return a, b, c
+
+    with pytest.raises(ValueError):
+        as_dict("a", "b")(f)(0, 0, 0)
 
 # -----------------------------blockwise_unique--------------------------------
 
