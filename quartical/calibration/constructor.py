@@ -2,7 +2,6 @@ import numpy as np
 from quartical.calibration.solver import solver_wrapper
 from quartical.utils.dask import Blocker
 from collections import namedtuple
-from itertools import product
 
 
 term_spec_tup = namedtuple("term_spec", "name type shape")
@@ -67,28 +66,27 @@ def construct_solver(model_col,
     blocker.add_input("corr_mode", corr_mode)
     blocker.add_input("term_spec_list", spec_list, "rf")
 
-    # Add relevant outputs to constructor object.
+    # Add relevant outputs to blocker object.
     for gi, gn in enumerate(opts.solver_gain_terms):
 
         chunks = gain_xds_list[gi].CHUNK_SPEC
-        blocker.add_output("{}-gain".format(gn), "rfadc", chunks,
-                           np.complex128)
+        blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)
 
         chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
-        blocker.add_output("{}-conviter".format(gn), "rf", chunks, np.int64)
-        blocker.add_output("{}-convperc".format(gn), "rf", chunks, np.float64)
+        blocker.add_output(f"{gn}-conviter", "rf", chunks, np.int64)
+        blocker.add_output(f"{gn}-convperc", "rf", chunks, np.float64)
 
     # Apply function to inputs to produce dask array outputs (as dict).
-    output_array_dict = blocker.get_output_arrays()
+    output_array_dict = blocker.get_dask_outputs()
 
     # Assign results to the relevant gain xarray.Dataset object.
     solved_xds_list = []
 
     for gi, gain_xds in enumerate(gain_xds_list):
 
-        gain = output_array_dict[gain_xds.NAME + "-gain"]
-        convperc = output_array_dict[gain_xds.NAME + "-convperc"]
-        conviter = output_array_dict[gain_xds.NAME + "-conviter"]
+        gain = output_array_dict[f"{gain_xds.NAME}-gain"]
+        convperc = output_array_dict[f"{gain_xds.NAME}-convperc"]
+        conviter = output_array_dict[f"{gain_xds.NAME}-conviter"]
 
         solved_xds = gain_xds.assign(
             {"gains": (("time_int", "freq_int", "ant", "dir", "corr"), gain),
@@ -103,24 +101,40 @@ def construct_solver(model_col,
 def expand_specs(gain_xds_list):
     """Convert compact spec to a per-term list per-chunk."""
 
-    spec_lists = []
+    # TODO: This was rejiggered to work with the updated Blocker. Could stand
+    # to be made a little neater/smarter, but works for now. Assembles nested
+    # list where the outer list represnts time chunks, the middle list
+    # represents frequency chunks and the inner-most list contains the
+    # specs per term.
 
-    for gxds in gain_xds_list:
+    n_t_chunks = len(gain_xds_list[0].CHUNK_SPEC.tchunk)
+    n_f_chunks = len(gain_xds_list[0].CHUNK_SPEC.fchunk)
 
-        term_name = gxds.NAME
-        term_type = gxds.TYPE
-        chunk_spec = gxds.CHUNK_SPEC
+    tc_list = []
+    for tc_ind in range(n_t_chunks):
+        fc_list = []
+        for fc_ind in range(n_f_chunks):
+            term_list = []
+            for gxds in gain_xds_list:
 
-        ac = chunk_spec.achunk[0]  # No chunking along antenna axis.
-        dc = chunk_spec.dchunk[0]  # No chunking along direction axis.
-        cc = chunk_spec.cchunk[0]  # No chunking along correlation axis.
+                term_name = gxds.NAME
+                term_type = gxds.TYPE
+                chunk_spec = gxds.CHUNK_SPEC
 
-        shapes = [(tc, fc, ac, dc, cc)
-                  for tc, fc in product(chunk_spec.tchunk, chunk_spec.fchunk)]
+                tc = chunk_spec.tchunk[tc_ind]
+                fc = chunk_spec.fchunk[fc_ind]
 
-        term_spec_list = [term_spec_tup(term_name, term_type, shape)
-                          for shape in shapes]
+                ac = chunk_spec.achunk[0]  # No chunking along antenna axis.
+                dc = chunk_spec.dchunk[0]  # No chunking along direction axis.
+                cc = chunk_spec.cchunk[0]  # No chunking along corr axis.
 
-        spec_lists.append(term_spec_list)
+                term_shape = (tc, fc, ac, dc, cc)
 
-    return list(zip(*spec_lists))
+                term_list.append(term_spec_tup(term_name,
+                                               term_type,
+                                               term_shape))
+
+            fc_list.append(term_list)
+        tc_list.append(fc_list)
+
+    return tc_list
