@@ -54,6 +54,7 @@ def execute():
     # assigned.
     model_xds_list = add_model_graph(preprocessed_xds_list, opts)
 
+    # Adds the dask graph describing the calibration of the data.
     gains_per_xds, post_gain_xds = \
         add_calibration_graph(model_xds_list, col_kwrds, opts)
 

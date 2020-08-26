@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from quartical.kernels.generics import (compute_residual)
+from quartical.kernels.generics import (compute_residual,
+                                        compute_corrected_residual)
 from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_post_solve_chisq,
                                              assign_presolve_data_stats,)
@@ -41,6 +42,14 @@ def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
 
     return compute_residual(data, model, gains, a1, a2, t_map_arr,
                             f_map_arr, d_map_arr, corr_mode)
+
+
+def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
+                            d_map_arr, corr_mode, *gains):
+    """Thin wrapper to handle an unknown number of input gains."""
+
+    return compute_corrected_residual(residual, gains, a1, a2, t_map_arr,
+                                      f_map_arr, d_map_arr, corr_mode)
 
 
 def add_calibration_graph(data_xds_list, col_kwrds, opts):
@@ -87,9 +96,9 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # Convert the time column data into indices. Chunks is expected to be a
         # tuple of tuples.
         utime_chunks = xds.UTIME_CHUNKS
-        utime_val, utime_ind = blockwise_unique(time_col,
-                                                (utime_chunks,),
-                                                return_inverse=True)
+        _, utime_ind = blockwise_unique(time_col,
+                                        (utime_chunks,),
+                                        return_inverse=True)
 
         # Daskify the chunks per array - these are already known from the
         # initial chunking step.
@@ -161,27 +170,14 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # in the direction dependent case, as it necessiates recomputing the
         # model visibilities (expensive).
 
-        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
+        visibility_outputs = make_visibiltiy_output(xds,
+                                                    gain_xds_list,
+                                                    t_map_arr,
+                                                    f_map_arr,
+                                                    d_map_arr,
+                                                    opts)
 
-        gain_list = [x for gxds in gain_xds_list
-                     for x in (gxds.gains.data, gain_schema)]
-
-        residuals = da.blockwise(
-            dask_residual, ("rowlike", "chan", "corr"),
-            data_col, ("rowlike", "chan", "corr"),
-            model_col, ("rowlike", "chan", "dir", "corr"),
-            ant1_col, ("rowlike",),
-            ant2_col, ("rowlike",),
-            t_map_arr, ("rowlike", "term"),
-            f_map_arr, ("chan", "term"),
-            d_map_arr, None,
-            corr_mode, None,
-            *gain_list,
-            dtype=data_col.dtype,
-            align_arrays=False,
-            concatenate=True,
-            adjust_chunks={"rowlike": data_col.chunks[0],
-                           "chan": data_col.chunks[1]})
+        residuals = visibility_outputs["residual"]
 
         # --------------------------------MADMAX-------------------------------
         # This is the madmax flagging step which is not always enabled. TODO:
@@ -389,3 +385,57 @@ def make_gain_xds_list(data_xds, opts):
         gain_xds_list.append(gain_xds)
 
     return gain_xds_list
+
+
+def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
+                           d_map_arr, opts):
+
+    data_col = data_xds.DATA.data
+    model_col = data_xds.MODEL_DATA.data
+    ant1_col = data_xds.ANTENNA1.data
+    ant2_col = data_xds.ANTENNA2.data
+
+    gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
+
+    gain_list = \
+        [x for gxds in gain_xds_list for x in (gxds.gains.data, gain_schema)]
+
+    corr_mode = opts.input_ms_correlation_mode
+
+    residual = da.blockwise(
+        dask_residual, ("rowlike", "chan", "corr"),
+        data_col, ("rowlike", "chan", "corr"),
+        model_col, ("rowlike", "chan", "dir", "corr"),
+        ant1_col, ("rowlike",),
+        ant2_col, ("rowlike",),
+        t_map_arr, ("rowlike", "term"),
+        f_map_arr, ("chan", "term"),
+        d_map_arr, None,
+        corr_mode, None,
+        *gain_list,
+        dtype=data_col.dtype,
+        align_arrays=False,
+        concatenate=True,
+        adjust_chunks={"rowlike": data_col.chunks[0],
+                       "chan": data_col.chunks[1]})
+
+    corrected_residual = da.blockwise(
+        dask_corrected_residual, ("rowlike", "chan", "corr"),
+        residual, ("rowlike", "chan", "corr"),
+        ant1_col, ("rowlike",),
+        ant2_col, ("rowlike",),
+        t_map_arr, ("rowlike", "term"),
+        f_map_arr, ("chan", "term"),
+        d_map_arr, None,
+        corr_mode, None,
+        *gain_list,
+        dtype=residual.dtype,
+        align_arrays=False,
+        concatenate=True,
+        adjust_chunks={"rowlike": data_col.chunks[0],
+                       "chan": data_col.chunks[1]})
+
+    visibility_outputs = {"residual": residual,
+                          "corrected_residual": corrected_residual}
+
+    return visibility_outputs

@@ -167,16 +167,16 @@ output:
     #     help: Solver operational mode. Determines whether gains are solved for
     #           or merely applied from stored solutions.
     #     default: solve
-    # data-product:
-    #     type: str
-    #     choices:
-    #         - solve_only
-    #         - corr_data
-    #         - corr_residual
-    #         - uncorr_residual
-    #     help: The desired output data product. Using solve_only will not
-    #           produce a data product.
-    #     default: solve_only
+    data-product:
+        type: str
+        choices:
+            - gains
+            - corrected_data
+            - corrected_residual
+            - residual
+        help: The desired output data product. All modes generate gains, gains
+              mode doesn't produce a visibility product.
+        default: gains
     # solver-flags:
     #     type: bool
     #     help: Apply solver flags when writing data to measurement set.

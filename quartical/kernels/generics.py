@@ -2,6 +2,7 @@
 import numpy as np
 from numba.extending import overload
 from numba import jit, prange, literally
+from numba.typed import List
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
@@ -197,6 +198,145 @@ def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                 residual[row, f, 3] -= r11
 
     return residual
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
+                               f_map_arr, d_map_arr, mode):
+
+    return _compute_corrected_residual(residual, gain_list, a1, a2,
+                                       t_map_arr, f_map_arr, d_map_arr,
+                                       literally(mode))
+
+
+def _compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
+                                f_map_arr, d_map_arr, mode):
+    pass
+
+
+@overload(_compute_corrected_residual, inline='always')
+def _compute_corrected_impl(residual, gain_list, a1, a2, t_map_arr,
+                            f_map_arr, d_map_arr, mode):
+
+    if mode.literal_value == "diag":
+        return corrected_residual_diag
+    else:
+        return corrected_residual_full
+
+
+def corrected_residual_diag(residual, gain_list, a1, a2, t_map_arr,
+                            f_map_arr, d_map_arr, mode):
+
+    corrected_residual = residual.copy()
+
+    inverse_gain_list = List()
+
+    for gain_term in gain_list:
+        inverse_gain_list.append(np.empty_like(gain_term))
+
+    invert_gains(gain_list, inverse_gain_list, literally(mode))
+
+    n_rows, n_chan, _ = corrected_residual.shape
+    n_gains = len(gain_list)
+
+    for row in range(n_rows):
+
+        a1_m, a2_m = a1[row], a2[row]
+
+        for f in range(n_chan):
+
+            r00 = corrected_residual[row, f, 0]
+            r11 = corrected_residual[row, f, 1]
+
+            for g in range(n_gains):
+
+                t_m = t_map_arr[row, g]
+                f_m = f_map_arr[f, g]
+
+                gain = inverse_gain_list[g]
+
+                g00 = gain[t_m, f_m, a1_m, 0, 0]
+                g11 = gain[t_m, f_m, a1_m, 0, 1]
+
+                gh00 = gain[t_m, f_m, a2_m, 0, 0].conjugate()
+                gh11 = gain[t_m, f_m, a2_m, 0, 1].conjugate()
+
+                cr00 = g00*r00*gh00
+                cr11 = g11*r11*gh11
+
+                r00 = cr00
+                r11 = cr11
+
+            corrected_residual[row, f, 0] = r00
+            corrected_residual[row, f, 1] = r11
+
+    return corrected_residual
+
+
+def corrected_residual_full(residual, gain_list, a1, a2, t_map_arr,
+                            f_map_arr, d_map_arr, mode):
+
+    corrected_residual = residual.copy()
+
+    inverse_gain_list = List()
+
+    for gain_term in gain_list:
+        inverse_gain_list.append(np.empty_like(gain_term))
+
+    invert_gains(gain_list, inverse_gain_list, literally(mode))
+
+    n_rows, n_chan, _ = corrected_residual.shape
+    n_gains = len(gain_list)
+
+    for row in prange(n_rows):
+
+        a1_m, a2_m = a1[row], a2[row]
+
+        for f in range(n_chan):
+
+            r00 = corrected_residual[row, f, 0]
+            r01 = corrected_residual[row, f, 1]
+            r10 = corrected_residual[row, f, 2]
+            r11 = corrected_residual[row, f, 3]
+
+            for g in range(n_gains):
+
+                t_m = t_map_arr[row, g]
+                f_m = f_map_arr[f, g]
+
+                gain = inverse_gain_list[g]
+
+                g00 = gain[t_m, f_m, a1_m, 0, 0]
+                g01 = gain[t_m, f_m, a1_m, 0, 1]
+                g10 = gain[t_m, f_m, a1_m, 0, 2]
+                g11 = gain[t_m, f_m, a1_m, 0, 3]
+
+                gh00 = gain[t_m, f_m, a2_m, 0, 0].conjugate()
+                gh01 = gain[t_m, f_m, a2_m, 0, 2].conjugate()
+                gh10 = gain[t_m, f_m, a2_m, 0, 1].conjugate()
+                gh11 = gain[t_m, f_m, a2_m, 0, 3].conjugate()
+
+                gr00 = (g00*r00 + g01*r10)
+                gr01 = (g00*r01 + g01*r11)
+                gr10 = (g10*r00 + g11*r10)
+                gr11 = (g10*r01 + g11*r11)
+
+                cr00 = (gr00*gh00 + gr01*gh10)
+                cr01 = (gr00*gh01 + gr01*gh11)
+                cr10 = (gr10*gh00 + gr11*gh10)
+                cr11 = (gr10*gh01 + gr11*gh11)
+
+                r00 = cr00
+                r01 = cr01
+                r10 = cr10
+                r11 = cr11
+
+            corrected_residual[row, f, 0] = r00
+            corrected_residual[row, f, 1] = r01
+            corrected_residual[row, f, 2] = r10
+            corrected_residual[row, f, 3] = r11
+
+    return corrected_residual
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
