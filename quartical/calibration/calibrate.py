@@ -209,17 +209,18 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         data_stats_xds_list.append(data_stats_xds)
 
         # Add quantities required elsewhere to the xds and mark certain columns
-        # for saving.
+        # for saving. TODO: Consider whether and where this could be moved.
 
         ms_outputs = {}
         write_cols = []
 
         if opts.output_visibility_product:
+            n_vis_prod = len(opts.output_visibility_product)
             itr = zip(opts.output_column, opts.output_visibility_product)
             ms_outputs.update({cn: (xds.DATA.dims, visibility_products[vn])
                               for cn, vn in itr})
 
-            write_cols.extend(opts.output_column)
+            write_cols.extend(opts.output_column[:n_vis_prod])
 
         ms_outputs["CUBI_BITFLAG"] = (xds.BITFLAG.dims, data_bitflags)
 
@@ -395,6 +396,24 @@ def make_gain_xds_list(data_xds, opts):
 
 def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
                            d_map_arr, opts):
+    """Creates dask arrays for possible visibility outputs.
+
+    Given and xds containing data and its assosciated gains, produces
+    dask.Array objects containing the possible visibility outputs.
+
+    Args:
+        data_xds: An xarray.Dataset object containing input data.
+        gain_xds_list: A list containing gain xarray.Dataset objects.
+        t_map_arr: A dask.Array object of time mappings.
+        f_map_arr: A dask.Array object of frequency mappings.
+        d_map_arr: A dask.Array object of direction mappings.
+        opts: A Namespace object containing all necessary configuration.
+
+    Returns:
+        A dictionary of lists containing graphs which prodcuce a gain array
+        per gain term per xarray dataset.
+
+    """
 
     data_col = data_xds.DATA.data
     model_col = data_xds.MODEL_DATA.data
@@ -403,6 +422,8 @@ def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
 
     gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
 
+    # TODO: For gains with n_dir > 1, we can select out the gains we actually
+    # want to correct for.
     gain_list = \
         [x for gxds in gain_xds_list for x in (gxds.gains.data, gain_schema)]
 
@@ -441,7 +462,26 @@ def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
         adjust_chunks={"rowlike": data_col.chunks[0],
                        "chan": data_col.chunks[1]})
 
+    # We can cheat and reuse the corrected residual code - the only difference
+    # is whether we supply the residuals or the data.
+    corrected_data = da.blockwise(
+        dask_corrected_residual, ("rowlike", "chan", "corr"),
+        data_col, ("rowlike", "chan", "corr"),
+        ant1_col, ("rowlike",),
+        ant2_col, ("rowlike",),
+        t_map_arr, ("rowlike", "term"),
+        f_map_arr, ("chan", "term"),
+        d_map_arr, None,
+        corr_mode, None,
+        *gain_list,
+        dtype=residual.dtype,
+        align_arrays=False,
+        concatenate=True,
+        adjust_chunks={"rowlike": data_col.chunks[0],
+                       "chan": data_col.chunks[1]})
+
     visibility_outputs = {"residual": residual,
-                          "corrected_residual": corrected_residual}
+                          "corrected_residual": corrected_residual,
+                          "corrected_data": corrected_data}
 
     return visibility_outputs
