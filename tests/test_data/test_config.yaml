@@ -30,7 +30,7 @@ output:
     overwrite: false
     backup: true
     solver-mode: solve
-    data-product: solve_only
+    visibility-product: residual
     solver-flags: false
     column: TEST_RESIDUALS
     model-column:

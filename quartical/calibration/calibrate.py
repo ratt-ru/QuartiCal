@@ -170,14 +170,14 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # in the direction dependent case, as it necessiates recomputing the
         # model visibilities (expensive).
 
-        visibility_outputs = make_visibiltiy_output(xds,
-                                                    gain_xds_list,
-                                                    t_map_arr,
-                                                    f_map_arr,
-                                                    d_map_arr,
-                                                    opts)
+        visibility_products = make_visibiltiy_output(xds,
+                                                     gain_xds_list,
+                                                     t_map_arr,
+                                                     f_map_arr,
+                                                     d_map_arr,
+                                                     opts)
 
-        residuals = visibility_outputs["residual"]
+        residuals = visibility_products["residual"]
 
         # --------------------------------MADMAX-------------------------------
         # This is the madmax flagging step which is not always enabled. TODO:
@@ -209,16 +209,22 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         data_stats_xds_list.append(data_stats_xds)
 
         # Add quantities required elsewhere to the xds and mark certain columns
-        # for saving. TODO: This is VERY rudimentary. Need to be done in
-        # accordance with opts.
+        # for saving.
 
-        updated_xds = \
-            xds.assign({opts.output_column: (xds.DATA.dims, residuals),
-                        "CUBI_BITFLAG": (xds.BITFLAG.dims, data_bitflags),
-                        "CUBI_MODEL": (xds.DATA.dims,
-                                       model_col.sum(axis=2,
-                                                     dtype=np.complex64))})
-        updated_xds.attrs["WRITE_COLS"] += [opts.output_column]
+        ms_outputs = {}
+        write_cols = []
+
+        if opts.output_visibility_product:
+            itr = zip(opts.output_column, opts.output_visibility_product)
+            ms_outputs.update({cn: (xds.DATA.dims, visibility_products[vn])
+                              for cn, vn in itr})
+
+            write_cols.extend(opts.output_column)
+
+        ms_outputs["CUBI_BITFLAG"] = (xds.BITFLAG.dims, data_bitflags)
+
+        updated_xds = xds.assign(ms_outputs)
+        updated_xds.WRITE_COLS.extend(write_cols)
 
         post_cal_data_xds_list.append(updated_xds)
 

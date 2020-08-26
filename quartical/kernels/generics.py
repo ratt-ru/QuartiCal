@@ -245,8 +245,8 @@ def corrected_residual_diag(residual, gain_list, a1, a2, t_map_arr,
 
         for f in range(n_chan):
 
-            r00 = corrected_residual[row, f, 0]
-            r11 = corrected_residual[row, f, 1]
+            cr00 = corrected_residual[row, f, 0]
+            cr11 = corrected_residual[row, f, 1]
 
             for g in range(n_gains):
 
@@ -261,14 +261,11 @@ def corrected_residual_diag(residual, gain_list, a1, a2, t_map_arr,
                 gh00 = gain[t_m, f_m, a2_m, 0, 0].conjugate()
                 gh11 = gain[t_m, f_m, a2_m, 0, 1].conjugate()
 
-                cr00 = g00*r00*gh00
-                cr11 = g11*r11*gh11
+                cr00 = g00*cr00*gh00
+                cr11 = g11*cr11*gh11
 
-                r00 = cr00
-                r11 = cr11
-
-            corrected_residual[row, f, 0] = r00
-            corrected_residual[row, f, 1] = r11
+            corrected_residual[row, f, 0] = cr00
+            corrected_residual[row, f, 1] = cr11
 
     return corrected_residual
 
@@ -294,10 +291,10 @@ def corrected_residual_full(residual, gain_list, a1, a2, t_map_arr,
 
         for f in range(n_chan):
 
-            r00 = corrected_residual[row, f, 0]
-            r01 = corrected_residual[row, f, 1]
-            r10 = corrected_residual[row, f, 2]
-            r11 = corrected_residual[row, f, 3]
+            cr00 = corrected_residual[row, f, 0]
+            cr01 = corrected_residual[row, f, 1]
+            cr10 = corrected_residual[row, f, 2]
+            cr11 = corrected_residual[row, f, 3]
 
             for g in range(n_gains):
 
@@ -316,25 +313,20 @@ def corrected_residual_full(residual, gain_list, a1, a2, t_map_arr,
                 gh10 = gain[t_m, f_m, a2_m, 0, 1].conjugate()
                 gh11 = gain[t_m, f_m, a2_m, 0, 3].conjugate()
 
-                gr00 = (g00*r00 + g01*r10)
-                gr01 = (g00*r01 + g01*r11)
-                gr10 = (g10*r00 + g11*r10)
-                gr11 = (g10*r01 + g11*r11)
+                gr00 = (g00*cr00 + g01*cr10)
+                gr01 = (g00*cr01 + g01*cr11)
+                gr10 = (g10*cr00 + g11*cr10)
+                gr11 = (g10*cr01 + g11*cr11)
 
                 cr00 = (gr00*gh00 + gr01*gh10)
                 cr01 = (gr00*gh01 + gr01*gh11)
                 cr10 = (gr10*gh00 + gr11*gh10)
                 cr11 = (gr10*gh01 + gr11*gh11)
 
-                r00 = cr00
-                r01 = cr01
-                r10 = cr10
-                r11 = cr11
-
-            corrected_residual[row, f, 0] = r00
-            corrected_residual[row, f, 1] = r01
-            corrected_residual[row, f, 2] = r10
-            corrected_residual[row, f, 3] = r11
+            corrected_residual[row, f, 0] = cr00
+            corrected_residual[row, f, 1] = cr01
+            corrected_residual[row, f, 2] = cr10
+            corrected_residual[row, f, 3] = cr11
 
     return corrected_residual
 
