@@ -28,6 +28,11 @@ input-ms:
                Specify as an integer number of channels, or a value with a unit
                (e.g. '128MHz'). 0 means use full frequency axis.
         default: 0
+    is-bda:
+        type: bool
+        help: If set True, the input measurement set is assumed to have been
+              averaged in a baseline dependent fashion. 
+        default: False
     # rebin-time:
     #     type: TIME
     #     help: Rebin data in time on the fly. Specify as a number of timeslots

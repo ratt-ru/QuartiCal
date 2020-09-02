@@ -9,6 +9,7 @@ from quartical.flagging.flagging import (is_set,
                                          initialise_bitflags)
 from uuid import uuid4
 from loguru import logger
+import xarray
 
 
 def read_xds_list(opts):
@@ -37,6 +38,24 @@ def read_xds_list(opts):
                                                 "FIELD_ID",
                                                 "DATA_DESC_ID"),
                                     chunks={"row": -1})
+
+    # if opts.input_ms_is_bda:
+    #     unique_scans = np.unique([xds.SCAN_NUMBER
+    #                               for xds in indexing_xds_list])
+
+    #     xds_merge_list = \
+    #         [[xds for xds in indexing_xds_list if xds.SCAN_NUMBER == sn]
+    #          for sn in unique_scans]
+
+    #     indexing_xds_list = [xarray.concat(xdss, dim="row")
+    #                          for xdss in xds_merge_list]
+
+    #     indexing_xds_list = [xds.chunk({"row": xds.dims["row"]})
+    #                          for xds in indexing_xds_list]
+
+    #     indexing_xds_list = [xds.sortby("ROWID") for xds in indexing_xds_list]
+
+    # TODO: BDA need to merge the indexing_xds_list over matching SCAN_NUMBER.
 
     # Read the antenna table and add the number of antennas to the options
     # namespace/dictionary. Leading underscore indiciates that this option is
@@ -126,14 +145,15 @@ def read_xds_list(opts):
     # Determine the channels in the measurement set. Or handles unchunked case.
     # TODO: Handle multiple SPWs and specification in bandwidth.
 
-    spw_xds = xds_from_table(
+    spw_xds_list = xds_from_table(
         opts.input_ms_name + "::SPECTRAL_WINDOW",
+        group_cols=["__row__"],
         columns="CHAN_FREQ",
-        chunks={"row": 1, "chan": opts.input_ms_freq_chunk or -1})[0]
+        chunks={"row": 1, "chan": opts.input_ms_freq_chunk or -1})
 
     # The spectral window xds should be currectly chunked in frequency.
 
-    chan_chunks = spw_xds.chunks["chan"]
+    chan_chunks = {i: xds.chunks["chan"] for i, xds in enumerate(spw_xds_list)}
 
     # row_chunks is a list of dictionaries containing row chunks per data set.
 
@@ -158,6 +178,9 @@ def read_xds_list(opts):
         # Need to take resulting chunks and reprocess them based on chunk-on
         # columns and jumps. This code can almost certainly be tidied up/
         # clarified.
+
+        # TODO: BDA will assume no chunking, and in general we can skip this
+        # bit if the row axis is unchunked.
 
         if isinstance(opts.input_ms_time_chunk, float):
 
@@ -188,7 +211,8 @@ def read_xds_list(opts):
         row_chunks = \
             np.add.reduceat(utime_counts, cum_utime_per_chunk).tolist()
 
-        chunks_per_xds.append({"row": row_chunks, "chan": chan_chunks})
+        chunks_per_xds.append({"row": row_chunks,
+                               "chan": chan_chunks[xds.DATA_DESC_ID]})
 
         logger.debug("Scan {}: row chunks: {}", xds.SCAN_NUMBER, row_chunks)
 
@@ -216,6 +240,9 @@ def read_xds_list(opts):
         column_keywords=True,
         table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')}}])
 
+    # TODO: BDA will need to reprocess data_xds_list in order to make it
+    # consistent with what we expect.
+
     # Add coordinates to the xarray datasets - this becomes immensely useful
     # down the line.
     data_xds_list = [xds.assign_coords({"corr": np.arange(xds.dims["corr"]),
@@ -225,11 +252,11 @@ def read_xds_list(opts):
 
     # Add the actual channel frequecies to the xds - this is in preparation
     # for solvers which require this information.
-    data_xds_list = [xds.assign({"CHAN_FREQ": (("chan",),
-                                               spw_xds.CHAN_FREQ.data[0]),
-                                 "ANT_NAME": (("ant",),
-                                              antenna_xds.NAME.data)})
-                     for xds in data_xds_list]
+    data_xds_list = [xds.assign(
+        {"CHAN_FREQ":
+            (("chan",), spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data[0]),
+         "ANT_NAME":
+            (("ant",), antenna_xds.NAME.data)}) for xds in data_xds_list]
 
     # Add an attribute to the xds on which we will store the names of fields
     # which must be written to the MS. Also add the attribute which stores
