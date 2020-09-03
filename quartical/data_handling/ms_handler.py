@@ -37,25 +37,8 @@ def read_xds_list(opts):
                                     group_cols=("SCAN_NUMBER",
                                                 "FIELD_ID",
                                                 "DATA_DESC_ID"),
+                                    taql_where="ANTENNA1 != ANTENNA2",
                                     chunks={"row": -1})
-
-    # if opts.input_ms_is_bda:
-    #     unique_scans = np.unique([xds.SCAN_NUMBER
-    #                               for xds in indexing_xds_list])
-
-    #     xds_merge_list = \
-    #         [[xds for xds in indexing_xds_list if xds.SCAN_NUMBER == sn]
-    #          for sn in unique_scans]
-
-    #     indexing_xds_list = [xarray.concat(xdss, dim="row")
-    #                          for xdss in xds_merge_list]
-
-    #     indexing_xds_list = [xds.chunk({"row": xds.dims["row"]})
-    #                          for xds in indexing_xds_list]
-
-    #     indexing_xds_list = [xds.sortby("ROWID") for xds in indexing_xds_list]
-
-    # TODO: BDA need to merge the indexing_xds_list over matching SCAN_NUMBER.
 
     # Read the antenna table and add the number of antennas to the options
     # namespace/dictionary. Leading underscore indiciates that this option is
@@ -236,12 +219,16 @@ def read_xds_list(opts):
         group_cols=("SCAN_NUMBER",
                     "FIELD_ID",
                     "DATA_DESC_ID"),
+        taql_where="ANTENNA1 != ANTENNA2",
         chunks=chunks_per_xds,
         column_keywords=True,
         table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')}}])
 
-    # TODO: BDA will need to reprocess data_xds_list in order to make it
-    # consistent with what we expect.
+    # BDA data needs to be processed into something more manageable.
+
+    if opts.input_ms_is_bda:
+
+        data_xds_list = process_bda_input(data_xds_list, spw_xds_list, opts)
 
     # Add coordinates to the xarray datasets - this becomes immensely useful
     # down the line.
@@ -374,7 +361,7 @@ def preprocess_xds_list(xds_list, col_kwrds, opts):
     Args:
         xds_list: A list of xarray.DataSet objects containing MS data.
         col_kwrds: Column keywords - necessary for figuring out bitflags.
-        opts: A Namepsace object of glabal options.
+        opts: A Namepsace object of global options.
 
     Returns:
         output_xds_list: A list of xarray.DataSet objects containing MS data
@@ -427,3 +414,72 @@ def preprocess_xds_list(xds_list, col_kwrds, opts):
         output_xds_list.append(output_xds)
 
     return output_xds_list
+
+
+def process_bda_input(data_xds_list, spw_xds_list, opts):
+    """Processes BDA xarray.Dataset objects into something more regular.
+
+    Given a list of xarray.Dataset objects, upsamples and merges those which
+    share a SCAN_NUMBER. Upsampling is to the highest frequency resolution
+    present in the data.
+
+    Args:
+        data_xds_list: List of xarray.Datasets containing input BDA data.
+        spw_xds_list: List of xarray.Datasets contataining SPW data.
+        opts: A Namespace of global options.
+
+    Returns:
+        bda_xds_list: List of xarray.Dataset objects which contains upsampled
+            and merged data.
+    """
+
+    # If WEIGHT_SPECTRUM is not in use, BDA data makes no sense.
+    if opts.input_ms_weight_column != "WEIGHT_SPECTRUM":
+        raise ValueError("--input-ms-weight column must be "
+                         "WEIGHT_SPECTRUM for BDA data.")
+
+    # Figure out the highest frequency resolution and its DDID.
+    spw_dims = {i: xds.dims["chan"] for i, xds in enumerate(spw_xds_list)}
+    max_nchan_ddid = max(spw_dims, key=spw_dims.get)
+    max_nchan = spw_dims[max_nchan_ddid]
+
+    bda_xds_list = []
+
+    for xds in data_xds_list:
+
+        upsample_factor = max_nchan//xds.dims["chan"]
+
+        weight_col = xds.WEIGHT_SPECTRUM.data
+
+        # Divide the weights by the upsampling factor - this should keep
+        # the values consistent.
+        bda_xds = xds.assign(
+            {"WEIGHT_SPECTRUM": (("row", "chan", "corr"),
+                                 weight_col/upsample_factor)})
+
+        # Create a selection which will upsample the frequency axis.
+        selection = np.repeat(np.arange(xds.dims["chan"]), upsample_factor)
+
+        bda_xds = bda_xds.sel({"chan": selection})
+
+        bda_xds = bda_xds.assign_attrs({"DATA_DESC_ID": max_nchan_ddid})
+
+        bda_xds_list.append(bda_xds)
+
+    unique_scans = np.unique([xds.SCAN_NUMBER for xds in bda_xds_list])
+
+    # Determine mergeable datasets - they will share scan_number.
+    xds_merge_list = \
+        [[xds for xds in bda_xds_list if xds.SCAN_NUMBER == sn]
+            for sn in unique_scans]
+
+    bda_xds_list = [xarray.concat(xdss, dim="row")
+                    for xdss in xds_merge_list]
+
+    bda_xds_list = [xds.chunk({"row": xds.dims["row"]})
+                    for xds in bda_xds_list]
+
+    # This should guarantee monotonicity in time (not baseline).
+    bda_xds_list = [xds.sortby("ROWID") for xds in bda_xds_list]
+
+    return bda_xds_list
