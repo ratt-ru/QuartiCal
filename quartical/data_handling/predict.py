@@ -348,8 +348,10 @@ def get_support_tables(opts):
                    "FEED": xds_from_table(n["FEED"])}
 
     compute_tables = {
-        # Fixed shape rows
-        "DATA_DESCRIPTION": xds_from_table(n["DATA_DESCRIPTION"]),
+        # NOTE: Even though this has a fixed shape, I have ammended it to
+        # also group by row. This just makes life fractionally easier.
+        "DATA_DESCRIPTION": xds_from_table(n["DATA_DESCRIPTION"],
+                                           group_cols="__row__"),
         # Variably shaped, need a dataset per row
         "FIELD":
             xds_from_table(n["FIELD"], group_cols="__row__"),
