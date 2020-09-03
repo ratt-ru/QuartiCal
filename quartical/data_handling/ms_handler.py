@@ -225,10 +225,9 @@ def read_xds_list(opts):
         table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')}}])
 
     # BDA data needs to be processed into something more manageable.
-
     if opts.input_ms_is_bda:
-
-        data_xds_list = process_bda_input(data_xds_list, spw_xds_list, opts)
+        data_xds_list, chunk_spec_per_xds = \
+            process_bda_input(data_xds_list, spw_xds_list, opts)
 
     # Add coordinates to the xarray datasets - this becomes immensely useful
     # down the line.
@@ -431,6 +430,7 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
     Returns:
         bda_xds_list: List of xarray.Dataset objects which contains upsampled
             and merged data.
+        utime_per_xds: List of number of unique times per xds.
     """
 
     # If WEIGHT_SPECTRUM is not in use, BDA data makes no sense.
@@ -471,7 +471,7 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
     # Determine mergeable datasets - they will share scan_number.
     xds_merge_list = \
         [[xds for xds in bda_xds_list if xds.SCAN_NUMBER == sn]
-            for sn in unique_scans]
+         for sn in unique_scans]
 
     bda_xds_list = [xarray.concat(xdss, dim="row")
                     for xdss in xds_merge_list]
@@ -482,4 +482,9 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
     # This should guarantee monotonicity in time (not baseline).
     bda_xds_list = [xds.sortby("ROWID") for xds in bda_xds_list]
 
-    return bda_xds_list
+    # This is a necessary evil - compute the utimes present on the merged xds.
+    utime_per_xds = [da.unique(xds.TIME.data) for xds in bda_xds_list]
+    utime_per_xds = da.compute(*utime_per_xds)
+    utime_per_xds = [ut.shape for ut in utime_per_xds]
+
+    return bda_xds_list, utime_per_xds
