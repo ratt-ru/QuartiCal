@@ -102,16 +102,12 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # up implicitly updating the xds.
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
-        time_col = xds.TIME.data
+        time_col = \
+            xds.UPSAMPLED_TIME.data if opts.input_ms_is_bda else xds.TIME.data
         bitflag_col = xds.BITFLAG.data
         weight_col = xds.WEIGHT.data
         data_bitflags = xds.DATA_BITFLAGS.data
         chan_freqs = xds.CHAN_FREQ.data
-
-        # TODO: This is now done during the read. Remains to be seen if this
-        # is sensible.
-        if opts.input_ms_is_bda:
-            time_col = xds.UPSAMPLED_TIME.data
 
         # Convert the time column data into indices. Chunks is expected to be a
         # tuple of tuples.
