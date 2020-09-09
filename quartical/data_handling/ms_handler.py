@@ -7,6 +7,9 @@ from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import (is_set,
                                          make_bitmask,
                                          initialise_bitflags)
+from quartical.utils.dask import blockwise_unique
+from quartical.utils.maths import arr_gcd
+from quartical.calibration.calibrate import time_resampler  # TODO MOVE!!!
 from uuid import uuid4
 from loguru import logger
 import xarray
@@ -209,8 +212,8 @@ def read_xds_list(opts):
     extra_columns += (opts.input_ms_weight_column,) if \
         not opts._unity_weights else ()
 
-    data_columns = ("TIME", "ANTENNA1", "ANTENNA2", "DATA", "FLAG", "FLAG_ROW",
-                    "UVW") + extra_columns
+    data_columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "DATA", "FLAG",
+                    "FLAG_ROW", "UVW") + extra_columns
 
     data_xds_list, col_kwrds = xds_from_ms(
         opts.input_ms_name,
@@ -335,6 +338,9 @@ def write_xds_list(xds_list, col_kwrds, opts):
 
     output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
     output_kwrds = {cn: col_kwrds.get(cn, {}) for cn in output_cols}
+
+    # output_cols = tuple(set())
+    # output_kwrds = dict()
 
     logger.info("Outputs will be written to {}.".format(
         ", ".join(output_cols)))
@@ -483,7 +489,56 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
     bda_xds_list = [xds.sortby("ROWID") for xds in bda_xds_list]
 
     # This is a necessary evil - compute the utimes present on the merged xds.
-    utime_per_xds = [da.unique(xds.TIME.data) for xds in bda_xds_list]
+    _bda_xds_list = []
+
+    for xds in bda_xds_list:
+
+        interval_col = xds.INTERVAL.data
+        time_col = xds.TIME.data
+
+        uintervals = blockwise_unique(interval_col)
+        gcd = uintervals.map_blocks(lambda x: np.array(arr_gcd(x)),
+                                    chunks=(1,))
+        upsample_size = int(da.round(da.sum(interval_col)/gcd).compute())
+
+        upsample_reps = da.map_blocks(
+                lambda _ivl, _gcd: np.rint(_ivl/_gcd).astype(np.int64),
+                interval_col,
+                gcd)
+
+        upsampled_time_col = da.map_blocks(time_resampler,
+                                           time_col,
+                                           interval_col,
+                                           upsample_reps,
+                                           gcd,
+                                           upsample_size,
+                                           dtype=np.float64,
+                                           chunks=(upsample_size,))
+
+        row_map = da.map_blocks(
+            lambda _col, _reps: np.repeat(np.arange(_col.size), _reps),
+            time_col,
+            upsample_reps,
+            chunks=(upsample_size,))
+
+        row_weights = da.map_blocks(
+            lambda _reps: 1./np.repeat(_reps, _reps),
+            upsample_reps,
+            chunks=(upsample_size,))
+
+        _bda_xds = xds.assign({"UPSAMPLED_TIME": (("urow",),
+                              upsampled_time_col),
+                               "ROW_MAP": (("urow",),
+                              row_map),
+                               "ROW_WEIGHTS": (("urow",),
+                              row_weights)})
+
+        _bda_xds_list.append(_bda_xds)
+
+    bda_xds_list = _bda_xds_list
+
+    utime_per_xds = [da.unique(xds.UPSAMPLED_TIME.data)
+                     for xds in bda_xds_list]
     utime_per_xds = da.compute(*utime_per_xds)
     utime_per_xds = [ut.shape for ut in utime_per_xds]
 
