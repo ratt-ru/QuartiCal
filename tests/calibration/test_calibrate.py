@@ -56,7 +56,7 @@ def _read_xds_list(xds_opts):
 @pytest.fixture(scope="module")
 def data_xds_list(_read_xds_list, xds_opts):
 
-    ms_xds_list, col_kwrds = _read_xds_list
+    ms_xds_list, _, col_kwrds = _read_xds_list
 
     preprocessed_xds_list = \
         preprocess_xds_list(ms_xds_list, col_kwrds, xds_opts)
@@ -69,7 +69,7 @@ def data_xds_list(_read_xds_list, xds_opts):
 @pytest.fixture(scope="module")
 def col_kwrds(_read_xds_list):
 
-    return _read_xds_list[1]
+    return _read_xds_list[2]
 
 
 @pytest.fixture(scope="module")
