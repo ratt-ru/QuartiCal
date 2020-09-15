@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba.extending import overload
+from numba.extending import overload, register_jitable
 from numba import jit, prange, literally
 from numba.typed import List
+from quartical.kernels.helpers import get_dims, get_row, mul_rweight
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
@@ -74,20 +75,21 @@ def _invert_impl(gain, inverse_gain, mode):
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def compute_residual(data, model, gain_list, a1, a2, t_map_arr,
-                     f_map_arr, d_map_arr, mode):
+                     f_map_arr, d_map_arr, row_map, row_weights, mode):
 
     return _compute_residual(data, model, gain_list, a1, a2, t_map_arr,
-                             f_map_arr, d_map_arr, literally(mode))
+                             f_map_arr, d_map_arr, row_map, row_weights,
+                             literally(mode))
 
 
 def _compute_residual(data, model, gain_list, a1, a2, t_map_arr,
-                      f_map_arr, d_map_arr, mode):
+                      f_map_arr, d_map_arr, row_map, row_weights, mode):
     pass
 
 
 @overload(_compute_residual, inline='always')
 def _compute_residual_impl(data, model, gain_list, a1, a2, t_map_arr,
-                           f_map_arr, d_map_arr, mode):
+                           f_map_arr, d_map_arr, row_map, row_weights, mode):
 
     if mode.literal_value == "diag":
         return residual_diag
@@ -95,16 +97,18 @@ def _compute_residual_impl(data, model, gain_list, a1, a2, t_map_arr,
         return residual_full
 
 
+@register_jitable
 def residual_diag(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
-                  d_map_arr, mode):
+                  d_map_arr, row_map, row_weights, mode):
 
     residual = data.copy()
 
-    n_rows, n_chan, n_dir, _ = model.shape
+    n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
     n_gains = len(gain_list)
 
-    for row in range(n_rows):
+    for row_ind in range(n_rows):
 
+        row = get_row(row_ind, row_map)
         a1_m, a2_m = a1[row], a2[row]
 
         for f in range(n_chan):
@@ -116,7 +120,7 @@ def residual_diag(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                 for g in range(n_gains-1, -1, -1):
 
                     d_m = d_map_arr[g, d]  # Broadcast dir.
-                    t_m = t_map_arr[row, g]
+                    t_m = t_map_arr[row_ind, g]
                     f_m = f_map_arr[f, g]
 
                     gain = gain_list[g]
@@ -133,22 +137,24 @@ def residual_diag(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                     m00 = r00
                     m11 = r11
 
-                residual[row, f, 0] -= r00
-                residual[row, f, 1] -= r11
+                residual[row, f, 0] -= mul_rweight(r00, row_weights, row_ind)
+                residual[row, f, 1] -= mul_rweight(r11, row_weights, row_ind)
 
     return residual
 
 
+@register_jitable
 def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
-                  d_map_arr, mode):
+                  d_map_arr, row_map, row_weights, mode):
 
     residual = data.copy()
 
-    n_rows, n_chan, n_dir, _ = model.shape
+    n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
     n_gains = len(gain_list)
 
-    for row in prange(n_rows):
+    for row_ind in prange(n_rows):
 
+        row = get_row(row_ind, row_map)
         a1_m, a2_m = a1[row], a2[row]
 
         for f in range(n_chan):
@@ -162,7 +168,7 @@ def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                 for g in range(n_gains-1, -1, -1):
 
                     d_m = d_map_arr[g, d]  # Broadcast dir.
-                    t_m = t_map_arr[row, g]
+                    t_m = t_map_arr[row_ind, g]
                     f_m = f_map_arr[f, g]
 
                     gain = gain_list[g]
@@ -192,31 +198,33 @@ def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                     m10 = r10
                     m11 = r11
 
-                residual[row, f, 0] -= r00
-                residual[row, f, 1] -= r01
-                residual[row, f, 2] -= r10
-                residual[row, f, 3] -= r11
+                residual[row, f, 0] -= mul_rweight(r00, row_weights, row_ind)
+                residual[row, f, 1] -= mul_rweight(r01, row_weights, row_ind)
+                residual[row, f, 2] -= mul_rweight(r10, row_weights, row_ind)
+                residual[row, f, 3] -= mul_rweight(r11, row_weights, row_ind)
 
     return residual
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
-                               f_map_arr, d_map_arr, mode):
+                               f_map_arr, d_map_arr, row_map, row_weights,
+                               mode):
 
     return _compute_corrected_residual(residual, gain_list, a1, a2,
                                        t_map_arr, f_map_arr, d_map_arr,
-                                       literally(mode))
+                                       row_map, row_weights, literally(mode))
 
 
 def _compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
-                                f_map_arr, d_map_arr, mode):
+                                f_map_arr, d_map_arr, row_map, row_weights,
+                                mode):
     pass
 
 
 @overload(_compute_corrected_residual, inline='always')
 def _compute_corrected_impl(residual, gain_list, a1, a2, t_map_arr,
-                            f_map_arr, d_map_arr, mode):
+                            f_map_arr, d_map_arr, row_map, row_weights, mode):
 
     if mode.literal_value == "diag":
         return corrected_residual_diag
@@ -224,10 +232,11 @@ def _compute_corrected_impl(residual, gain_list, a1, a2, t_map_arr,
         return corrected_residual_full
 
 
+@register_jitable
 def corrected_residual_diag(residual, gain_list, a1, a2, t_map_arr,
-                            f_map_arr, d_map_arr, mode):
+                            f_map_arr, d_map_arr, row_map, row_weights, mode):
 
-    corrected_residual = residual.copy()
+    corrected_residual = np.zeros_like(residual)
 
     inverse_gain_list = List()
 
@@ -236,21 +245,22 @@ def corrected_residual_diag(residual, gain_list, a1, a2, t_map_arr,
 
     invert_gains(gain_list, inverse_gain_list, literally(mode))
 
-    n_rows, n_chan, _ = corrected_residual.shape
+    n_rows, n_chan, _ = get_dims(residual, row_map)
     n_gains = len(gain_list)
 
-    for row in range(n_rows):
+    for row_ind in range(n_rows):
 
+        row = get_row(row_ind, row_map)
         a1_m, a2_m = a1[row], a2[row]
 
         for f in range(n_chan):
 
-            cr00 = corrected_residual[row, f, 0]
-            cr11 = corrected_residual[row, f, 1]
+            cr00 = residual[row, f, 0]
+            cr11 = residual[row, f, 1]
 
             for g in range(n_gains):
 
-                t_m = t_map_arr[row, g]
+                t_m = t_map_arr[row_ind, g]
                 f_m = f_map_arr[f, g]
 
                 gain = inverse_gain_list[g]
@@ -264,16 +274,19 @@ def corrected_residual_diag(residual, gain_list, a1, a2, t_map_arr,
                 cr00 = g00*cr00*gh00
                 cr11 = g11*cr11*gh11
 
-            corrected_residual[row, f, 0] = cr00
-            corrected_residual[row, f, 1] = cr11
+            corrected_residual[row, f, 0] += \
+                mul_rweight(cr00, row_weights, row_ind)
+            corrected_residual[row, f, 1] += \
+                mul_rweight(cr11, row_weights, row_ind)
 
     return corrected_residual
 
 
+@register_jitable
 def corrected_residual_full(residual, gain_list, a1, a2, t_map_arr,
-                            f_map_arr, d_map_arr, mode):
+                            f_map_arr, d_map_arr, row_map, row_weights, mode):
 
-    corrected_residual = residual.copy()
+    corrected_residual = np.zeros_like(residual)
 
     inverse_gain_list = List()
 
@@ -282,23 +295,24 @@ def corrected_residual_full(residual, gain_list, a1, a2, t_map_arr,
 
     invert_gains(gain_list, inverse_gain_list, literally(mode))
 
-    n_rows, n_chan, _ = corrected_residual.shape
+    n_rows, n_chan, _ = get_dims(residual, row_map)
     n_gains = len(gain_list)
 
-    for row in prange(n_rows):
+    for row_ind in range(n_rows):
 
+        row = get_row(row_ind, row_map)
         a1_m, a2_m = a1[row], a2[row]
 
         for f in range(n_chan):
 
-            cr00 = corrected_residual[row, f, 0]
-            cr01 = corrected_residual[row, f, 1]
-            cr10 = corrected_residual[row, f, 2]
-            cr11 = corrected_residual[row, f, 3]
+            cr00 = residual[row, f, 0]
+            cr01 = residual[row, f, 1]
+            cr10 = residual[row, f, 2]
+            cr11 = residual[row, f, 3]
 
             for g in range(n_gains):
 
-                t_m = t_map_arr[row, g]
+                t_m = t_map_arr[row_ind, g]
                 f_m = f_map_arr[f, g]
 
                 gain = inverse_gain_list[g]
@@ -323,10 +337,14 @@ def corrected_residual_full(residual, gain_list, a1, a2, t_map_arr,
                 cr10 = (gr10*gh00 + gr11*gh10)
                 cr11 = (gr10*gh01 + gr11*gh11)
 
-            corrected_residual[row, f, 0] = cr00
-            corrected_residual[row, f, 1] = cr01
-            corrected_residual[row, f, 2] = cr10
-            corrected_residual[row, f, 3] = cr11
+            corrected_residual[row, f, 0] += \
+                mul_rweight(cr00, row_weights, row_ind)
+            corrected_residual[row, f, 1] += \
+                mul_rweight(cr01, row_weights, row_ind)
+            corrected_residual[row, f, 2] += \
+                mul_rweight(cr10, row_weights, row_ind)
+            corrected_residual[row, f, 3] += \
+                mul_rweight(cr11, row_weights, row_ind)
 
     return corrected_residual
 

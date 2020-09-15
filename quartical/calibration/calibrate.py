@@ -36,19 +36,22 @@ dstat_dims_tup = namedtuple("dstat_dims",
 
 
 def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
-                  corr_mode, *gains):
+                  row_map, row_weights, corr_mode, *gains):
     """Thin wrapper to handle an unknown number of input gains."""
 
     return compute_residual(data, model, gains, a1, a2, t_map_arr,
-                            f_map_arr, d_map_arr, corr_mode)
+                            f_map_arr, d_map_arr, row_map, row_weights,
+                            corr_mode)
 
 
 def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
-                            d_map_arr, corr_mode, *gains):
+                            d_map_arr, row_map, row_weights, corr_mode,
+                            *gains):
     """Thin wrapper to handle an unknown number of input gains."""
 
     return compute_corrected_residual(residual, gains, a1, a2, t_map_arr,
-                                      f_map_arr, d_map_arr, corr_mode)
+                                      f_map_arr, d_map_arr, row_map,
+                                      row_weights, corr_mode)
 
 
 def time_resampler(tcol, icol, reps, gcd, resample_size):
@@ -432,6 +435,9 @@ def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
     ant1_col = data_xds.ANTENNA1.data
     ant2_col = data_xds.ANTENNA2.data
 
+    row_map = data_xds.ROW_MAP.data if opts.input_ms_is_bda else None
+    row_weights = data_xds.ROW_WEIGHTS.data if opts.input_ms_is_bda else None
+
     gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
 
     # TODO: For gains with n_dir > 1, we can select out the gains we actually
@@ -440,6 +446,7 @@ def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
         [x for gxds in gain_xds_list for x in (gxds.gains.data, gain_schema)]
 
     corr_mode = opts.input_ms_correlation_mode
+    is_bda = opts.input_ms_is_bda
 
     residual = da.blockwise(
         dask_residual, ("rowlike", "chan", "corr"),
@@ -450,6 +457,8 @@ def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
         t_map_arr, ("rowlike", "term"),
         f_map_arr, ("chan", "term"),
         d_map_arr, None,
+        *((row_map, ("rowlike",)) if is_bda else (None, None)),
+        *((row_weights, ("rowlike",)) if is_bda else (None, None)),
         corr_mode, None,
         *gain_list,
         dtype=data_col.dtype,
@@ -466,6 +475,8 @@ def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
         t_map_arr, ("rowlike", "term"),
         f_map_arr, ("chan", "term"),
         d_map_arr, None,
+        *((row_map, ("rowlike",)) if is_bda else (None, None)),
+        *((row_weights, ("rowlike",)) if is_bda else (None, None)),
         corr_mode, None,
         *gain_list,
         dtype=residual.dtype,
@@ -484,6 +495,8 @@ def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
         t_map_arr, ("rowlike", "term"),
         f_map_arr, ("chan", "term"),
         d_map_arr, None,
+        *((row_map, ("rowlike",)) if is_bda else (None, None)),
+        *((row_weights, ("rowlike",)) if is_bda else (None, None)),
         corr_mode, None,
         *gain_list,
         dtype=residual.dtype,

@@ -67,6 +67,9 @@ def construct_solver(data_xds,
     if opts.input_ms_is_bda:
         blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")
         blocker.add_input("row_weights", data_xds.ROW_WEIGHTS.data, "r")
+    else:
+        blocker.add_input("row_map", None)
+        blocker.add_input("row_weights", None)
 
     # Add relevant outputs to blocker object.
     for gi, gn in enumerate(opts.solver_gain_terms):

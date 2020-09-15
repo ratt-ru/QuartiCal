@@ -227,6 +227,10 @@ def read_xds_list(opts):
         column_keywords=True,
         table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')}}])
 
+    # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
+    # for undoing BDA.
+    ref_xds_list = data_xds_list
+
     # BDA data needs to be processed into something more manageable.
     if opts.input_ms_is_bda:
         data_xds_list, chunk_spec_per_xds = \
@@ -308,14 +312,15 @@ def read_xds_list(opts):
     else:
         raise TypeError("BITFLAG type {} not supported.".format(ebfdtype))
 
-    return data_xds_list, updated_kwrds
+    return data_xds_list, ref_xds_list, updated_kwrds
 
 
-def write_xds_list(xds_list, col_kwrds, opts):
+def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
     """Writes fields spicified in the WRITE_COLS attribute to the MS.
 
     Args:
         xds_list: A list of xarray datasets.
+        ref_xds_list: A list of reference xarray.Dataset objects.
         col_kwrds: A dictionary of column keywords.
         opts: A Namepsace of global options.
 
@@ -339,14 +344,16 @@ def write_xds_list(xds_list, col_kwrds, opts):
     output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
     output_kwrds = {cn: col_kwrds.get(cn, {}) for cn in output_cols}
 
-    # output_cols = tuple(set())
-    # output_kwrds = dict()
+    if opts.input_ms_is_bda:
+        xds_list = process_bda_output(xds_list, ref_xds_list, output_cols,
+                                      opts)
 
     logger.info("Outputs will be written to {}.".format(
         ", ".join(output_cols)))
 
     # TODO: Nasty hack due to bug in daskms. Remove ASAP.
-    xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ"]) for xds in xds_list]
+    xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ"], errors='ignore')
+                for xds in xds_list]
 
     write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
                                   columns=output_cols,
@@ -543,3 +550,66 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
     utime_per_xds = [ut.shape for ut in utime_per_xds]
 
     return bda_xds_list, utime_per_xds
+
+
+def process_bda_output(xds_list, ref_xds_list, output_cols, opts):
+    """Processes xarray.Dataset objects back into BDA format.
+
+    Given a list of xarray.Dataset objects, samples and splits into separate
+    spectral windows.
+
+    Args:
+        xds_list: List of xarray.Datasets containing post-solve data.
+        ref_xds_list: List of xarray.Datasets containing original data.
+        output_cols: List of column names we expect to write.
+        opts: A Namespace of global options.
+
+    Returns:
+        bda_xds_list: List of xarray.Dataset objects which contains BDA data.
+    """
+
+    bda_xds_list = []
+
+    xds_dict = {xds.SCAN_NUMBER: xds for xds in xds_list}
+
+    for ref_xds in ref_xds_list:
+
+        xds = xds_dict[ref_xds.SCAN_NUMBER]
+
+        xds = xds.assign_coords({"row": xds.ROWID.data})
+
+        xds = xds.sel(row=ref_xds.ROWID.data)
+
+        bda_xds = xarray.Dataset(coords=ref_xds.coords)
+
+        for col_name in output_cols:
+
+            col = xds[col_name]
+
+            if "chan" in col.dims:
+                data = col.data
+                dims = col.dims
+                shape = list(col.shape)
+
+                chan_ind = dims.index('chan')
+
+                nchan = xds.dims['chan']
+                ref_nchan = ref_xds.dims['chan']
+
+                shape[chan_ind: chan_ind + 1] = [ref_xds.dims['chan'], -1]
+
+                data = data.reshape(shape)
+
+                if np.iscomplexobj(data):
+                    data = data.sum(axis=chan_ind + 1)/(nchan//ref_nchan)
+                elif np.issubdtype(data.dtype.type, np.integer):
+                    data = data.any(axis=chan_ind + 1)
+
+                bda_xds = bda_xds.assign({col_name: (col.dims, data)})
+
+            else:
+                bda_xds = bda_xds.assign({col_name: (col.dims, col.data)})
+
+        bda_xds_list.append(bda_xds)
+
+    return bda_xds_list
