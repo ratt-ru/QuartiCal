@@ -88,7 +88,7 @@ def execute():
 
         ms_writes = writes[ind*stride: (ind + 1)*stride]
 
-        outputs.append(dask.delayed(tuple)([*ms_writes, *gain_writes]))
+        outputs.append(dask.delayed(tuple)([*ms_writes, *gain_writes[ind]]))
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
