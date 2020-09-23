@@ -48,21 +48,54 @@ def _get_dims(col, row_map):
             return impl
 
 
-@injit
 def get_row(row_ind, row_map):
-    """Gets the current row index. Row map is needed for the BDA case."""
+    """Gets the current row index. Row map is needed for the BDA case.
 
-    if row_map is None:
-        return row_ind
+    Args:
+        row_ind: Integer index of current row.
+        row_map: A nominal to effective row mapping.
+
+    Returns:
+        Integer index of effective row.
+    """
+    return
+
+
+@overload(get_row, inline="always")
+def _get_row(row_ind, row_map):
+
+    if isinstance(row_map, types.NoneType):
+        def impl(row_ind, row_map):
+            return row_ind
+        return impl
     else:
-        return row_map[row_ind]
+        def impl(row_ind, row_map):
+            return row_map[row_ind]
+        return impl
 
 
-@injit
 def mul_rweight(vis, weight, ind):
-    """Multiplies the row weight into a visiblity if weight is not None."""
+    """Multiplies the row weight into a visiblity if weight is not None.
 
-    if weight is None:
-        return vis
+    Args:
+        vis: An complex valued visibility.
+        weight: A float row weight.
+        ind: Integer row index for selecting weight.
+
+    Returns:
+        Product of visilbity and weight, if weight is not None.
+    """
+    return
+
+
+@overload(mul_rweight, inline="always")
+def _mul_rweight(vis, weight, ind):
+
+    if isinstance(weight, types.NoneType):
+        def impl(vis, weight, ind):
+            return vis
+        return impl
     else:
-        return vis*weight[ind]
+        def impl(vis, weight, ind):
+            return vis*weight[ind]
+        return impl

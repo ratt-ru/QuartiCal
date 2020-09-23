@@ -243,7 +243,7 @@ def corrected_residual_diag(residual, gain_list, a1, a2, t_map_arr,
     for gain_term in gain_list:
         inverse_gain_list.append(np.empty_like(gain_term))
 
-    invert_gains(gain_list, inverse_gain_list, literally(mode))
+    invert_gains(gain_list, inverse_gain_list, mode)
 
     n_rows, n_chan, _ = get_dims(residual, row_map)
     n_gains = len(gain_list)
@@ -293,7 +293,7 @@ def corrected_residual_full(residual, gain_list, a1, a2, t_map_arr,
     for gain_term in gain_list:
         inverse_gain_list.append(np.empty_like(gain_term))
 
-    invert_gains(gain_list, inverse_gain_list, literally(mode))
+    invert_gains(gain_list, inverse_gain_list, mode)
 
     n_rows, n_chan, _ = get_dims(residual, row_map)
     n_gains = len(gain_list)
