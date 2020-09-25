@@ -269,7 +269,13 @@ flags:
               is considered to deviate significantly from the median of the
               given data chunk. These values are flagged.
         default: 12
-
+    write-out:
+        type: bool
+        help: If true, updates the measurement set flag and flagset columns
+              with flags generated during solving / madmax flagging. Disabling is 
+              useful for trial calibration runs. The default behaviour 
+              is to write out flags.
+        default: True
 solver:
     _description: Arguments pertaining to solver behaviour.
     gain-terms:

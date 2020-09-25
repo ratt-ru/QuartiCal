@@ -237,6 +237,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
             write_cols.extend(opts.output_column[:n_vis_prod])
 
+        
         ms_outputs["CUBI_BITFLAG"] = (xds.BITFLAG.dims, data_bitflags)
 
         updated_xds = xds.assign(ms_outputs)

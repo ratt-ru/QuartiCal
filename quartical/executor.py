@@ -60,8 +60,11 @@ def execute():
     gains_per_xds, post_gain_xds = \
         add_calibration_graph(model_xds_list, col_kwrds, opts)
 
-    writable_xds = finalise_flags(post_gain_xds, col_kwrds, opts)
-
+    if opts.flags_write_out:
+        writable_xds = finalise_flags(post_gain_xds, col_kwrds, opts)
+    else:
+        logger.warning("Updated flags will not be written out per user request!")
+        writable_xds = post_gain_xds
     writes = write_xds_list(writable_xds, ref_xds_list, col_kwrds, opts)
 
     # This shouldn't be here. TODO: Move into the calibrate code. In fact, this
