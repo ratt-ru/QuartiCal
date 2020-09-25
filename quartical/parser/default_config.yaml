@@ -179,6 +179,7 @@ output:
             - corrected_data
             - corrected_residual
             - residual
+            - predicted_model
         help: The desired output data product. Multiple data products can
               be specified, separated by spaces. All modes generate gains, the
               default doesn't produce a visibility output.

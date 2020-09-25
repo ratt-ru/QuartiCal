@@ -504,9 +504,15 @@ def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
         concatenate=True,
         adjust_chunks={"rowlike": data_col.chunks[0],
                        "chan": data_col.chunks[1]})
+    
+    # create a full model from all contributing directions
+    # for possible output as a debugging / diagnostic
+    # product (nrow, nchan, ndir, ncorr) -> (nrow, nchan, ncorr)
+    predicted_model = da.sum(model_col, axis=2)
 
     visibility_outputs = {"residual": residual,
                           "corrected_residual": corrected_residual,
-                          "corrected_data": corrected_data}
+                          "corrected_data": corrected_data,
+                          "predicted_model": predicted_model}
 
     return visibility_outputs
