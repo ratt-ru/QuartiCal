@@ -107,7 +107,7 @@ def parse_sky_models(opts):
             # frequency set, we will instead default to that.
             ref_freq = getattr(spectrum, "freq0", fallback_freq0)
 
-            if ref_freq is None:
+            if ref_freq is None and hasattr(spectrum, "spi"):
                 raise ValueError("Reference frequency not found for source {} "
                                  "in {}. Please set reference frequency for "
                                  "either this source or the entire file."
@@ -115,8 +115,12 @@ def parse_sky_models(opts):
             else:
                 fallback_freq0 = fallback_freq0 or ref_freq
 
-            # Extract SPI for I, defaulting to 0 - flat spectrum.
-            spi = [[getattr(spectrum, "spi", 0)]*4]
+            if ref_freq is not None:
+                # Extract SPI for I, defaulting to 0 - flat spectrum.
+                spi = [[getattr(spectrum, "spi", 0)]*4]
+            else: # no reference frequency set and no spi set (error above)
+                spi = [[0]*4] # flat spectrum source assumed
+                ref_freq = 0.0
 
             if typecode == "gau":
                 emaj = source.shape.ex
