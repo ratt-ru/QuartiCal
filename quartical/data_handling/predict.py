@@ -120,7 +120,7 @@ def parse_sky_models(opts):
                 spi = [[getattr(spectrum, "spi", 0)]*4]
             else: # no reference frequency set and no spi set (error above)
                 spi = [[0]*4] # flat spectrum source assumed
-                ref_freq = 0.0
+                ref_freq = 1.0e-10
 
             if typecode == "gau":
                 emaj = source.shape.ex
