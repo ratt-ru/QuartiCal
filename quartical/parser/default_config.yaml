@@ -122,6 +122,21 @@ input-model:
             - "~M"
         help: Determines the orientation of the beam l-axis.
         default: "Y"
+    apply-p-jones:
+        type: bool
+        help: Determines whether P-Jones is incorporated in the predict. This
+              should usually be left enabled.
+        default: True
+    predict-mode:
+        type: str
+        help: Forward computation mode. Use fft for facet based degridding and fft.
+              Use dft for dft based prediction
+        default: fft
+        choices:
+            - fft
+            - dft
+
+dft-predict:
     invert-uvw:
         type: bool
         help: The UVW coordinates will be negated if this option is specified.
@@ -131,12 +146,52 @@ input-model:
         help: The number of sources to predict simultaneously. Has a large 
               impact on memory footprint.
         default: 10
-    apply-p-jones:
-        type: bool
-        help: Determines whether P-Jones is incorporated in the predict. This
-              should usually be left enabled.
-        default: True
 
+fft-predict:
+    maximum-facet-size:
+        type: float
+        help: Maximum facet size in degrees. Tagged regions will be split into facets
+              not exceeding this size. Should be small enough to limit w errors per
+              facet. Use ||max(max-baseline-length) . [sqrt(1 - sin(extent)**2) - 1]|| << 1 
+              as guideline.
+        default: 0.1
+    minimum-facet-size-px:
+        type: int
+        help: Minumum facet size in number of pixels. Facet may be padded more than specified
+              by padding factor to minimize aliasing (advanced option)
+        default: 256
+    facet-padding-factor:
+        type: float
+        help: Padding factor to apply to model before FFT (advanced option)
+        default: 1.3
+    model-resolution:
+        type: float
+        help: Model pixel size in arcseconds. Should be inferred from uv sampling coverage
+        default: 1.0
+    model-npix:
+        type: int
+        help: Number of pixels in the model. Use -1 to determine automatically
+        default: -1
+    no-degrid-band:
+        type: int
+        help: Number of degridding bands to split measurement bandwidth into
+        default: 16
+    gridding-kernel:
+        type: str
+        help: Type of anti-aliasing window to use (advanced option)
+        default: keiser-bessel
+        choices:
+            - keiser-bessel
+            - hanning
+            - hamming
+    kernel-oversampling:
+        type: int
+        help: uv oversampling factor to use in pretabulated kernel (advanced option)
+        default: 21
+    kernel-support:
+        type: int
+        help: support (excluding padding) in uv of pretabulated kernel
+        default: 5
 output:
     _description: Arguments pertaining to output products.
     # directory:

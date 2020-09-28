@@ -55,6 +55,7 @@ else:
                     "loguru",
                     "numba",
                     "distributed",
+                    "astropy",
                     "zarr"]
 
 setup(name='quartical',

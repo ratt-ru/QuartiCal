@@ -25,7 +25,9 @@ from africanus.util.beams import beam_filenames, beam_grids
 from collections import namedtuple, defaultdict
 from functools import lru_cache
 from astropy.io import fits
-
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+from astropy.wcs import WCS
 
 _einsum_corr_indices = 'ijkl'
 
@@ -179,7 +181,8 @@ def daskify_sky_model_dict(sky_model_dict, opts):
     # This single line can have a large impact on memory/performance. Sets
     # the source chunking strategy for the predict.
 
-    chunks = opts.input_model_source_chunks
+    chunks = opts.dft_predict_source_chunks \
+        if opts.input_model_predict_mode == "dft" else -1
 
     Point = namedtuple("Point", ["radec", "stokes", "spi", "ref_freq"])
     Gauss = namedtuple("Gauss", ["radec", "stokes", "spi", "ref_freq",
@@ -589,8 +592,145 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
     # Multiply the beam by the feed rotation to form the DDE term
     return da.einsum("stafij,tajk->stafik", beam_dde, p_jones)
 
+def render_gaussians(stokes, gaussian_extent, gaussian_shape, sradec,
+                    frequency, phase_centre, cellsize, npix):
+    """Renders sources onto a cube to create a model for degridding purposes
+    Args:
+        stokes: da array of stokes parameters per band  (nsrc x nband)
+        gaussian_shape: da array of (emaj, emin, pos) tripples (nsrc x 3),
+                        emaj and emin given at fwhm, pos in radians
+        gaussian_extent: da array of gaussian support size in number of pixels
+        sradec: da array of source ra, dec radians (nsrc x 2)
+        frequency: da array of frequencies of band centres (nband)
+        cellsize: model resolution in radians
+        npix: size of the (square) grid to render model to
+        phase_centre: phase centre of model in radians
+    Returns:
+        da array of shape (nband x npix x npix) containing rendered model
+    """
+    def __render(stokes, gaussian_extent, gaussian_shape,
+                 sradec, frequency, phase_centre, cellsize, npix):
+        ndegridband = frequency.size
+        fwhm_inv = 1.0 / (2*np.sqrt(2*np.log(2)))
+        if stokes.shape[1] != ndegridband:
+            raise ValueError("Source stokes vector must have channel "
+                             "dimension equal to #degridbands")
+        model = np.zeros((1, ndegridband, npix, npix), dtype=np.float32)
+        for si, (s, sup, g, (ra, dec)) in enumerate(zip(stokes,
+                                                        gaussian_extent,
+                                                        gaussian_shape,
+                                                        sradec)):
+            emaj, emin, pa = g
+            xx = (np.arange(sup) - sup//2)
+            x, y = np.meshgrid(xx, xx)
+            xr = np.cos(pa) * x + np.sin(pa) * y
+            yr = -np.sin(pa) * x + np.cos(pa) * y
+            # unnormalized gaussian rendered at FWHM
+            g = np.exp(-0.5 * ((xr/(emaj/cellsize*fwhm_inv))**2 + 
+                               (yr/(emin/cellsize*fwhm_inv))**2))
+            # render overlapping portion of g onto model
+            hdr = {"NAXIS": 2, 
+                   "NAXIS1":npix, 
+                   "NAXIS2":npix, 
+                   "CDELT1":-np.rad2deg(cellsize), # RA 
+                   "CDELT2":np.rad2deg(cellsize),  # DEC
+                   "CRPIX1":npix*0.5 + 1, # for FORTRAN indexing
+                   "CRPIX2":npix*0.5 + 1, # for FORTRAN indexing
+                   "CRVAL1": np.rad2deg(phase_centre[0]), 
+                   "CRVAL2": np.rad2deg(phase_centre[1]), 
+                   "CTYPE1": "deg", 
+                   "CTYPE2": "deg"}
+            w = WCS(hdr)
+            sx, sy = w.all_world2pix([[np.rad2deg(ra), 
+                                       np.rad2deg(dec)]], 
+                                     1)[0] - 1 # FORTRAN ordering, starting at 1
+            sx = int(np.round(sx))
+            sy = int(np.round(sy))
+            grb = max(0, sup - max(0, sx + sup // 2 + 1 - npix))
+            glb = min(sup, max(0, 0 - (sx - sup // 2)))
+            gub = max(0,sup - max(0, sx + sup // 2 + 1 - npix))
+            gbb = min(sup, max(0, 0 - (sx - sup // 2)))
+            gsel = g[gbb:gub,glb:grb]
+            mlb = max(sx - sup // 2, 0)
+            mrb = max(min(sx + sup // 2 + 1, npix), 0)
+            mbb = max(sy - sup // 2, 0)
+            mub = max(min(sy + sup // 2 + 1, npix), 0)
+            modsel = model[0, :, mbb:mub,mlb:mrb].view()
+            if np.prod(modsel.shape[1:3]) != 0:
+                assert modsel.shape[1:3] == gsel.shape
+                modsel += gsel[None, :, :] * s[:, None, None]
+        return model
+    assert len(stokes.chunks) == len(stokes.shape)
+    assert len(gaussian_extent.chunks) == len(gaussian_extent.shape)
+    assert len(gaussian_shape.chunks) == len(gaussian_shape.shape)
+    assert len(sradec.chunks) == len(sradec.shape)
+    assert len(frequency.chunks) == len(frequency.shape)
+    assert stokes.shape[0] == gaussian_extent.shape[0]
+    assert stokes.shape[0] == gaussian_shape.shape[0]
+    assert stokes.shape[0] == sradec.shape[0]
+    assert stokes.shape[1] == frequency.shape[0]
+    assert stokes.chunks[0] == gaussian_extent.chunks[0]
+    assert stokes.chunks[0] == gaussian_shape.chunks[0]
+    assert stokes.chunks[0] == sradec.chunks[0]
+    assert stokes.chunks[1] == frequency.chunks[0]
+    assert gaussian_extent.ndim == 1
+    assert gaussian_shape.ndim == 2
+    assert gaussian_shape.shape[1] == 3
+    assert sradec.shape[1] == 2
+    assert stokes.ndim == 3
+    # render chunks of rows in parallel, reduce over first dimension
+    # for now only support stokes I
+    return da.blockwise(__render, ("nsrc", "nband", "y", "x"),
+                        stokes[:, :, 0], ("nsrc", "nband"),
+                        gaussian_extent, ("nsrc",),
+                        gaussian_shape, ("nsrc", "gaussshape"),
+                        sradec, ("nsrc", "radec"),
+                        frequency, ("nband",),
+                        phase_centre=phase_centre, 
+                        cellsize=cellsize, 
+                        npix=npix,
+                        dtype=np.float32,
+                        meta=np.empty((0,0,0,0), dtype=np.float32),
+                        concatenate=True,
+                        new_axes={"x": npix,
+                                  "y": npix},
+                        # one model cube per source row chunk
+                        adjust_chunks={"nsrc": 1}
+                       ).sum(axis=0)
 
-def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
+def gaussian_extents(gaussian_shape, cellsize, 
+                     truncate_sigma=10.0):
+    """Calculates source extents in number of pixels
+    Args:
+        gaussian_shape: da array of (emaj, emin, pos) tripples (nsrc x 3),
+                        emaj and emin given at fwhm, pos in radians
+        cellsize: model resolution in radians
+        truncate_sigma: truncate rendered gaussians at specified sigma
+    Returns:
+        ndarray of source extents in number of pixels
+    """
+    def __extents(gaussian_shape, cellsize, 
+                  truncate_sigma=10.0):
+        fwhm_inv = 1.0 / (2*np.sqrt(2*np.log(2)))
+        sext = np.zeros(gaussian_shape.shape[0], dtype=np.int64)
+        for si, g in enumerate(gaussian_shape):
+            emaj, emin, pa = g
+            sigpx = emaj / cellsize * fwhm_inv
+            nx = max(int(np.ceil(sigpx * truncate_sigma)), 1)
+            nx = nx + 1 if nx % 2 == 0 else nx
+            sext[si] = nx
+        return sext
+    return da.blockwise(__extents, ("nsrc",),
+                        gaussian_shape, ("nsrc", "gaussshape"),
+                        cellsize=cellsize,
+                        truncate_sigma=truncate_sigma,
+                        dtype=np.int64,
+                        meta=np.empty((0,), dtype=np.int64),
+                        concatenate=True
+                       )
+
+def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed, 
+                forward_transform="fft"):
     """Generates a graph describing the predict for an xds, model and type.
 
     Adapted from https://github.com/ska-sa/codex-africanus.
@@ -605,7 +745,8 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
         spw: An xarray.dataset corresponding to the SPECTRAL_WINDOW subtable.
         pol: An xarray.dataset corresponding the POLARIZATION subtable.
         feed: An xarray.dataset corresponding the FEED subtable.
-
+        forward_transform: Type of forward transform to apply, default
+                          
     Returns:
         The result of predict_vis - a graph describing the predict.
     """
@@ -615,50 +756,92 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
 
     # Select single dataset rows
     corrs = pol.NUM_CORR.data[0]
-    # Necessary to chunk the predict in frequency. TODO: Make this less hacky
-    # when this is improved in dask-ms.
-    frequency = da.from_array(spw.CHAN_FREQ.data[0], chunks=ms.chunks['chan'])
+
     phase_dir = field.PHASE_DIR.data[0][0]  # row, poly
+    
+    if forward_transform == "dft":
+        # Necessary to chunk the predict in frequency. TODO: Make this less hacky
+        # when this is improved in dask-ms.
+        frequency = da.from_array(spw.CHAN_FREQ.data[0], chunks=ms.chunks['chan'])
+        lm = radec_to_lm(sources.radec, phase_dir)
+        # This likely shouldn't be exposed. TODO: Disable this switch?
+        uvw = -ms.UVW.data if opts.dft_predict_invert_uvw else ms.UVW.data
 
-    lm = radec_to_lm(sources.radec, phase_dir)
-    # This likely shouldn't be exposed. TODO: Disable this switch?
-    uvw = -ms.UVW.data if opts.input_model_invert_uvw else ms.UVW.data
+        # Apply spectral model to stokes parameters (source, frequency, corr).
+        stokes = spectral_model(sources.stokes,
+                                sources.spi,
+                                sources.ref_freq,
+                                frequency,
+                                base=0)
 
-    # Generate per-source K-Jones (source, row, frequency).
-    phase = compute_phase_delay(lm, uvw, frequency)
+        # Convery from stokes parameters to brightness matrix.
+        brightness = convert(stokes, ["I", "Q", "U", "V"], corr_schema(pol))
 
-    # Apply spectral model to stokes parameters (source, frequency, corr).
-    stokes = spectral_model(sources.stokes,
-                            sources.spi,
-                            sources.ref_freq,
-                            frequency,
-                            base=0)
+        utime_val, utime_ind = blockwise_unique(ms.TIME.data,
+                                                chunks=(ms.UTIME_CHUNKS,),
+                                                return_inverse=True)
+        # Generate per-source K-Jones (source, row, frequency).
+        phase = compute_phase_delay(lm, uvw, frequency)
 
-    # Convery from stokes parameters to brightness matrix.
-    brightness = convert(stokes, ["I", "Q", "U", "V"], corr_schema(pol))
+        bl_jones_args = ["phase_delay", phase]
 
-    utime_val, utime_ind = blockwise_unique(ms.TIME.data,
-                                            chunks=(ms.UTIME_CHUNKS,),
-                                            return_inverse=True)
+        # Add any visibility amplitude terms
+        if source_type == "gauss":
+            bl_jones_args.append("gauss_shape")
+            bl_jones_args.append(gaussian_shape(uvw, frequency, sources.shape))
 
-    bl_jones_args = ["phase_delay", phase]
+        bl_jones_args.extend(["brightness", brightness])
 
-    # Add any visibility amplitude terms
-    if source_type == "gauss":
-        bl_jones_args.append("gauss_shape")
-        bl_jones_args.append(gaussian_shape(uvw, frequency, sources.shape))
+        jones = baseline_jones_multiply(corrs, *bl_jones_args)
+    elif forward_transform == "fft":
+        ndegridband = opts.fft_predict_no_degrid_band
 
-    bl_jones_args.extend(["brightness", brightness])
-
-    jones = baseline_jones_multiply(corrs, *bl_jones_args)
+        bandfreq = da.from_array(np.linspace(spw.CHAN_FREQ.data[0][0],
+                                             spw.CHAN_FREQ.data[0][-1],
+                                             ndegridband), chunks=ndegridband)
+        nsrc = sources.stokes.shape[0]
+        nsrc_chunks = sources.stokes.chunks[0]
+        if da.max(sources.stokes[:,1:-1]).compute() > 1e-15:
+            logger.warning("Model is polarized. FFT-based prediction currently does not "
+                           "support polarized models. Stokes U, Q and V will be ignored!")
+        stokes = spectral_model(sources.stokes,
+                                sources.spi,
+                                sources.ref_freq,
+                                bandfreq,
+                                base=0)
+        cellsize = np.deg2rad(opts.fft_predict_model_resolution / 3600.0)
+        sext = gaussian_extents(getattr(sources, "shape", da.zeros((nsrc, 2), 
+                                                                   dtype=np.float32,
+                                                                   chunks=(nsrc_chunks, 2))), 
+                                cellsize)
+        lm = radec_to_lm(sources.radec, phase_dir)
+        if opts.fft_predict_model_npix == -1:
+            npix = int(2 * np.ceil(da.max(np.pi*0.5*da.sqrt(da.sum(lm**2, axis=1))).compute() / cellsize))
+        else:
+            npix = opts.fft_predict_model_npix
+        npix = npix + 1 if npix % 2 == 1 else npix
+        model = render_gaussians(stokes,
+                                 sext,
+                                 sources.shape,
+                                 sources.radec,
+                                 bandfreq,
+                                 phase_dir,
+                                 cellsize,
+                                 npix)
+        lm = radec_to_lm(sources.radec, phase_dir)
+        npixalt = da.max(da.sqrt(da.sum((sources.radec - phase_dir)**2, axis=1))).compute() / cellsize
+    else:
+        raise ValueError("Unknown mode {} for forward transform".format(forward_transform))
+    STOP     
     # DI will include P-jones when there is no other DE term. Otherwise P must
     # be applied before other DD terms.
     die = die_factory(utime_val, frequency, ant, feed, phase_dir, opts)
     dde = dde_factory(ms, utime_val, frequency, ant, feed, field, pol, lm,
                       opts)
 
-    return predict_vis(utime_ind, ms.ANTENNA1.data, ms.ANTENNA2.data,
-                       dde, jones, dde, die, None, die)
+    dft = predict_vis(utime_ind, ms.ANTENNA1.data, ms.ANTENNA2.data,
+                      dde, jones, dde, die, None, die)
+    return dft
 
 
 def predict(data_xds_list, opts):
