@@ -130,7 +130,7 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
 
     n_gains = len(gains)
 
-    n_tint = jhr.shape[0]
+    n_tint = jhr.shape[0]  # Check this!
 
     inactive_terms = list(range(n_gains))
     inactive_terms.pop(active_term)

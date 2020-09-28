@@ -55,7 +55,8 @@ else:
                     "loguru",
                     "numba",
                     "distributed",
-                    "zarr"]
+                    "zarr"
+                    "requests"]
 
 setup(name='quartical',
       version=quartical.__version__,

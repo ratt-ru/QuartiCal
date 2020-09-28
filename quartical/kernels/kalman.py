@@ -19,7 +19,7 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                   d_map_arr, corr_mode, active_term, inverse_gain_list,
-                  gains, flags):
+                  gains, flags, row_map, row_weights):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
@@ -66,6 +66,8 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                                  np.zeros_like(t_map_arr[sel]),
                                  f_map_arr,
                                  d_map_arr,
+                                 row_map,
+                                 row_weights,
                                  literally(corr_mode))
 
             # Compute the entries of JHWr and the diagonal entries of JHWJ.
@@ -81,6 +83,8 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             np.zeros_like(t_map_arr[sel]),
                             f_map_arr,
                             d_map_arr,
+                            row_map,
+                            row_weights,
                             active_term,
                             literally(corr_mode))
 
