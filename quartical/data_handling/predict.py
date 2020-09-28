@@ -611,6 +611,7 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
 
     # Select single dataset rows
     corrs = pol.NUM_CORR.data[0]
+
     # Necessary to chunk the predict in frequency. TODO: Make this less hacky
     # when this is improved in dask-ms.
     frequency = da.from_array(spw.CHAN_FREQ.data[0], chunks=ms.chunks['chan'])
@@ -704,8 +705,6 @@ def predict(data_xds_list, opts):
         spw_xds = spw_xds_list[ddid_xds.SPECTRAL_WINDOW_ID.data[0]]
         pol_xds = pol_xds_list[ddid_xds.POLARIZATION_ID.data[0]]
 
-        corrs = opts._ms_ncorr
-
         model_vis = defaultdict(list)
 
         # Generate visibility expressions per model, per direction for each
@@ -723,7 +722,7 @@ def predict(data_xds_list, opts):
                 vis = sum(source_vis)
 
                 # Reshape (2, 2) correlation to shape (4,)
-                if corrs == 4:
+                if vis.ndim == 4:
                     vis = vis.reshape(vis.shape[:-2] + (4,))
 
                 # Append group_vis to the appropriate list.

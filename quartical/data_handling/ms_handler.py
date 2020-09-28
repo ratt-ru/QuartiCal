@@ -275,6 +275,10 @@ def read_xds_list(opts):
 
     if opts.input_ms_correlation_mode == "diag" and opts._ms_ncorr == 4:
         data_xds_list = [xds.sel(corr=[0, 3]) for xds in data_xds_list]
+    elif opts.input_ms_correlation_mode == "full" and opts._ms_ncorr != 4:
+        raise ValueError(f"--input-ms-correlation-mode was set to full, "
+                         f"but the measurement set only contains "
+                         f"{opts._ms_ncorr} correlations")
 
     # The use of name below guaratees that dask produces unique arrays and
     # avoids accidental aliasing.
