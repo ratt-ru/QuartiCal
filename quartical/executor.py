@@ -27,6 +27,10 @@ def execute():
     # of operation. The idea is that all our configuration state lives in this
     # options dictionary. Down with OOP!
 
+    if opts.input_ms_is_bda:
+        logger.warning("BDA data is only partially supported. Please report "
+                       "problems via the issue tracker.")
+
     # TODO: There needs to be a validation step which checks that the config is
     # possible.
 

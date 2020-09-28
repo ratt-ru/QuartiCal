@@ -54,6 +54,7 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         for i in range(n_tint):
 
             # TODO: This is a dirty hack - implement special jhj and jhr code.
+            # This DOES NOT WORK for BDA data, and will need to be fixed.
             sel = np.where(t_map_arr[:, active_term] == i)[0]
 
             # Compute the (unweighted) residual values at the current time.
