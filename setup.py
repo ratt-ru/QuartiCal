@@ -55,7 +55,7 @@ else:
                     "loguru",
                     "numba",
                     "distributed",
-                    "zarr"
+                    "zarr",
                     "requests"]
 
 setup(name='quartical',
