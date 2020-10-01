@@ -33,4 +33,4 @@ jobs:
 
       # Run the test cases
       - name: Testing Step
-        run: py.test -v --flake8 tests/
+        run: py.test -v tests/
