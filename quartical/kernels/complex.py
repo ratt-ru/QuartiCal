@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import jit, prange, literally
-from numba.extending import overload
+from numba.extending import overload, register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
+from quartical.kernels.helpers import get_row, mul_rweight
 from collections import namedtuple
 
 
@@ -19,7 +20,7 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                    d_map_arr, corr_mode, active_term, inverse_gain_list,
-                   gains, flags):
+                   gains, flags, row_map, row_weights):
 
     n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
@@ -40,6 +41,7 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         if dd_term:
             residual = compute_residual(data, model, gains, a1, a2,
                                         t_map_arr, f_map_arr, d_map_arr,
+                                        row_map, row_weights,
                                         literally(corr_mode))
         else:
             residual = data
@@ -56,6 +58,8 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                         t_map_arr,
                         f_map_arr,
                         d_map_arr,
+                        row_map,
+                        row_weights,
                         active_term,
                         literally(corr_mode))
 
@@ -87,23 +91,25 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
                     a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
-                    active_term, corr_mode):
+                    row_map, row_weights, active_term, corr_mode):
 
     return _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list,
                             residual, a1, a2, weights, t_map_arr, f_map_arr,
-                            d_map_arr, active_term, literally(corr_mode))
+                            d_map_arr, row_map, row_weights, active_term,
+                            literally(corr_mode))
 
 
 def _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
                      a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
-                     active_term, corr_mode):
+                     row_map, row_weights, active_term, corr_mode):
     pass
 
 
 @overload(_compute_jhj_jhr, inline="always")
 def _compute_jhj_jhr_impl(jhj, jhr, model, gains, inverse_gain_list,
                           residual, a1, a2, weights, t_map_arr, f_map_arr,
-                          d_map_arr, active_term, corr_mode):
+                          d_map_arr, row_map, row_weights, active_term,
+                          corr_mode):
 
     if corr_mode.literal_value == "diag":
         return jhj_jhr_diag
@@ -111,11 +117,12 @@ def _compute_jhj_jhr_impl(jhj, jhr, model, gains, inverse_gain_list,
         return jhj_jhr_full
 
 
+@register_jitable
 def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
-                 a2, weights, t_map_arr, f_map_arr, d_map_arr, active_term,
-                 corr_mode):
+                 a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
+                 row_weights, active_term, corr_mode):
 
-    n_rows, n_chan, n_dir, n_corr = model.shape
+    _, n_chan, n_dir, n_corr = model.shape
     n_out_dir = gains[active_term].shape[3]
 
     jhj[:] = 0
@@ -123,19 +130,20 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
 
     n_gains = len(gains)
 
-    n_tint = jhr.shape[0]
+    n_tint = jhr.shape[0]  # Check this!
 
     inactive_terms = list(range(n_gains))
     inactive_terms.pop(active_term)
 
-    for ti in range(n_tint):
+    for ti in prange(n_tint):
         row_sel = np.where(t_map_arr[:, active_term] == ti)[0]
 
         tmp_jh_p = np.zeros((n_out_dir, n_corr), dtype=jhj.dtype)
         tmp_jh_q = np.zeros((n_out_dir, n_corr), dtype=jhj.dtype)
 
-        for row in row_sel:
+        for row_ind in row_sel:
 
+            row = get_row(row_ind, row_map)
             a1_m, a2_m = a1[row], a2[row]
 
             for f in range(n_chan):
@@ -153,24 +161,24 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
 
                     out_d = d_map_arr[active_term, d]
 
-                    r00 = w00*r[0]
-                    r11 = w11*r[1]
+                    r00 = w00*mul_rweight(r[0], row_weights, row_ind)
+                    r11 = w11*mul_rweight(r[1], row_weights, row_ind)
 
                     rh00 = r00.conjugate()
                     rh11 = r11.conjugate()
 
                     m = model[row, f, d]
 
-                    m00 = m[0]
-                    m11 = m[1]
+                    m00 = mul_rweight(m[0], row_weights, row_ind)
+                    m11 = mul_rweight(m[1], row_weights, row_ind)
 
-                    mh00 = m[0].conjugate()
-                    mh11 = m[1].conjugate()
+                    mh00 = m00.conjugate()
+                    mh11 = m11.conjugate()
 
                     for g in range(n_gains - 1, -1, -1):
 
                         d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row, g]
+                        t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
@@ -186,7 +194,7 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     for g in inactive_terms:
 
                         d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row, g]
+                        t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
@@ -199,7 +207,7 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                         mh00 = jh00
                         mh11 = jh11
 
-                    t_m = t_map_arr[row, active_term]
+                    t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
 
                     jhr[t_m, f_m, a1_m, out_d, 0] += (r00*jh00)
@@ -211,7 +219,7 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     for g in range(n_gains-1, -1, -1):
 
                         d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row, g]
+                        t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
@@ -227,7 +235,7 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     for g in inactive_terms:
 
                         d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row, g]
+                        t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
@@ -240,7 +248,7 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                         m00 = jh00
                         m11 = jh11
 
-                    t_m = t_map_arr[row, active_term]
+                    t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
 
                     jhr[t_m, f_m, a2_m, out_d, 0] += (rh00*jh00)
@@ -272,11 +280,12 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
     return
 
 
+@register_jitable
 def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
-                 a2, weights, t_map_arr, f_map_arr, d_map_arr, active_term,
-                 corr_mode):
+                 a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
+                 row_weights, active_term, corr_mode):
 
-    n_rows, n_chan, n_dir, n_corr = model.shape
+    _, n_chan, n_dir, n_corr = model.shape
     n_out_dir = gains[active_term].shape[3]
 
     jhj[:] = 0
@@ -292,8 +301,9 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
         tmp_jh_p = np.zeros((n_out_dir, n_corr), dtype=jhj.dtype)
         tmp_jh_q = np.zeros((n_out_dir, n_corr), dtype=jhj.dtype)
 
-        for row in row_sel:
+        for row_ind in row_sel:
 
+            row = get_row(row_ind, row_map)
             a1_m, a2_m = a1[row], a2[row]
 
             for f in range(n_chan):
@@ -313,10 +323,10 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
 
                     out_d = d_map_arr[active_term, d]
 
-                    r00 = w0*r[0]
-                    r01 = w0*r[1]
-                    r10 = w3*r[2]
-                    r11 = w3*r[3]
+                    r00 = w0*mul_rweight(r[0], row_weights, row_ind)
+                    r01 = w0*mul_rweight(r[1], row_weights, row_ind)
+                    r10 = w3*mul_rweight(r[2], row_weights, row_ind)
+                    r11 = w3*mul_rweight(r[3], row_weights, row_ind)
 
                     rh00 = r00.conjugate()
                     rh01 = r10.conjugate()
@@ -325,20 +335,20 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
 
                     m = model[row, f, d]
 
-                    m00 = m[0]
-                    m01 = m[1]
-                    m10 = m[2]
-                    m11 = m[3]
+                    m00 = mul_rweight(m[0], row_weights, row_ind)
+                    m01 = mul_rweight(m[1], row_weights, row_ind)
+                    m10 = mul_rweight(m[2], row_weights, row_ind)
+                    m11 = mul_rweight(m[3], row_weights, row_ind)
 
-                    mh00 = m[0].conjugate()
-                    mh01 = m[2].conjugate()
-                    mh10 = m[1].conjugate()
-                    mh11 = m[3].conjugate()
+                    mh00 = m00.conjugate()
+                    mh01 = m10.conjugate()
+                    mh10 = m01.conjugate()
+                    mh11 = m11.conjugate()
 
                     for g in range(n_gains - 1, -1, -1):
 
                         d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row, g]
+                        t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
@@ -360,7 +370,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     for g in range(n_gains - 1, active_term, -1):
 
                         d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row, g]
+                        t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
@@ -382,7 +392,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     for g in range(active_term):
 
                         d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row, g]
+                        t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
                         gai = inverse_gain_list[g][t_m, f_m, a1_m, d_m]
 
@@ -401,7 +411,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                         r10 = jhr10
                         r11 = jhr11
 
-                    t_m = t_map_arr[row, active_term]
+                    t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
 
                     jhr[t_m, f_m, a1_m, out_d, 0] += (r00*jh00 + r01*jh10)
@@ -417,7 +427,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     for g in range(n_gains-1, -1, -1):
 
                         d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row, g]
+                        t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
@@ -439,7 +449,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     for g in range(n_gains - 1, active_term, -1):
 
                         d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row, g]
+                        t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
@@ -461,7 +471,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     for g in range(active_term):
 
                         d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row, g]
+                        t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
                         gbi = inverse_gain_list[g][t_m, f_m, a2_m, d_m]
 
@@ -480,7 +490,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                         rh10 = jhr10
                         rh11 = jhr11
 
-                    t_m = t_map_arr[row, active_term]
+                    t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
 
                     jhr[t_m, f_m, a2_m, out_d, 0] += (rh00*jh00 + rh01*jh10)

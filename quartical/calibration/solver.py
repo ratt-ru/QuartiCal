@@ -16,7 +16,7 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     additional_args = []
     results_dict = {}
 
-    for term_spec in term_spec_list:
+    for term_ind, term_spec in enumerate(term_spec_list):
         gain = np.zeros(term_spec.shape, dtype=np.complex128)
         gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
         gain_list.append(gain)
@@ -28,12 +28,17 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         # each solver should implement and return a dictionary of additional
         # arguments.
 
+        additional_args.append(dict())
+
+        if "row_map" in kwargs:
+            additional_args[term_ind]["row_map"] = kwargs["row_map"]
+
+        if "row_weights" in kwargs:
+            additional_args[term_ind]["row_weights"] = kwargs["row_weights"]
+
         if term_spec.type == "phase":
-            additional_args.append(
-                {"params": np.zeros_like(gain[..., None, :, :],
-                                         dtype=gain.real.dtype)})
-        else:
-            additional_args.append({})
+            additional_args[term_ind]["params"] = \
+                np.zeros_like(gain[..., None, :, :], dtype=gain.real.dtype)
 
         results_dict[term_spec.name + "-gain"] = gain
         results_dict[term_spec.name + "-conviter"] = 0

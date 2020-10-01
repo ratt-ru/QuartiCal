@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from quartical.kernels.generics import (compute_residual)
+from quartical.kernels.generics import (compute_residual,
+                                        compute_corrected_residual)
 from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_post_solve_chisq,
                                              assign_presolve_data_stats,)
 from quartical.flagging.flagging import (set_bitflag,
                                          compute_mad_flags)
 from quartical.calibration.constructor import construct_solver
-
 from quartical.utils.dask import blockwise_unique
 from uuid import uuid4
 from loguru import logger  # noqa
@@ -36,11 +36,41 @@ dstat_dims_tup = namedtuple("dstat_dims",
 
 
 def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
-                  corr_mode, *gains):
+                  row_map, row_weights, corr_mode, *gains):
     """Thin wrapper to handle an unknown number of input gains."""
 
     return compute_residual(data, model, gains, a1, a2, t_map_arr,
-                            f_map_arr, d_map_arr, corr_mode)
+                            f_map_arr, d_map_arr, row_map, row_weights,
+                            corr_mode)
+
+
+def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
+                            d_map_arr, row_map, row_weights, corr_mode,
+                            *gains):
+    """Thin wrapper to handle an unknown number of input gains."""
+
+    return compute_corrected_residual(residual, gains, a1, a2, t_map_arr,
+                                      f_map_arr, d_map_arr, row_map,
+                                      row_weights, corr_mode)
+
+
+def time_resampler(tcol, icol, reps, gcd, resample_size):
+
+    resampled_time = np.empty(resample_size, dtype=np.float64)
+
+    offset = 0
+
+    for time, ivl, rep in zip(tcol, icol, reps):
+
+        start = time - 0.5*ivl
+
+        for n in range(1, rep + 1):
+
+            resampled_time[offset] = start + 0.5 * n * gcd
+
+            offset += 1
+
+    return np.sort(resampled_time)
 
 
 def add_calibration_graph(data_xds_list, col_kwrds, opts):
@@ -73,23 +103,21 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # Unpack the data on the xds into variables with understandable names.
         # We create copies of arrays we intend to mutate as otherwise we end
         # up implicitly updating the xds.
-        data_col = xds.DATA.data
-        model_col = xds.MODEL_DATA.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
-        time_col = xds.TIME.data
+        time_col = \
+            xds.UPSAMPLED_TIME.data if opts.input_ms_is_bda else xds.TIME.data
         bitflag_col = xds.BITFLAG.data
         weight_col = xds.WEIGHT.data
         data_bitflags = xds.DATA_BITFLAGS.data
-
         chan_freqs = xds.CHAN_FREQ.data
 
         # Convert the time column data into indices. Chunks is expected to be a
         # tuple of tuples.
         utime_chunks = xds.UTIME_CHUNKS
-        utime_val, utime_ind = blockwise_unique(time_col,
-                                                (utime_chunks,),
-                                                return_inverse=True)
+        _, utime_ind = blockwise_unique(time_col,
+                                        (utime_chunks,),
+                                        return_inverse=True)
 
         # Daskify the chunks per array - these are already known from the
         # initial chunking step.
@@ -136,13 +164,9 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # preserves gain chunking. It also somewhat simplifies future work
         # as we now have a blueprint for pulling values out of the solver
         # layer. Note that we reuse the variable name gain_xds_list to keep
-        # things succinct.
+        # things succinct. TODO: Just pass in xds and unpack internally?
 
-        gain_xds_list = construct_solver(model_col,
-                                         data_col,
-                                         ant1_col,
-                                         ant2_col,
-                                         weight_col,
+        gain_xds_list = construct_solver(xds,
                                          t_map_arr,
                                          f_map_arr,
                                          d_map_arr,
@@ -161,27 +185,14 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # in the direction dependent case, as it necessiates recomputing the
         # model visibilities (expensive).
 
-        gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
+        visibility_products = make_visibiltiy_output(xds,
+                                                     gain_xds_list,
+                                                     t_map_arr,
+                                                     f_map_arr,
+                                                     d_map_arr,
+                                                     opts)
 
-        gain_list = [x for gxds in gain_xds_list
-                     for x in (gxds.gains.data, gain_schema)]
-
-        residuals = da.blockwise(
-            dask_residual, ("rowlike", "chan", "corr"),
-            data_col, ("rowlike", "chan", "corr"),
-            model_col, ("rowlike", "chan", "dir", "corr"),
-            ant1_col, ("rowlike",),
-            ant2_col, ("rowlike",),
-            t_map_arr, ("rowlike", "term"),
-            f_map_arr, ("chan", "term"),
-            d_map_arr, None,
-            corr_mode, None,
-            *gain_list,
-            dtype=data_col.dtype,
-            align_arrays=False,
-            concatenate=True,
-            adjust_chunks={"rowlike": data_col.chunks[0],
-                           "chan": data_col.chunks[1]})
+        residuals = visibility_products["residual"]
 
         # --------------------------------MADMAX-------------------------------
         # This is the madmax flagging step which is not always enabled. TODO:
@@ -213,16 +224,23 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         data_stats_xds_list.append(data_stats_xds)
 
         # Add quantities required elsewhere to the xds and mark certain columns
-        # for saving. TODO: This is VERY rudimentary. Need to be done in
-        # accordance with opts.
+        # for saving. TODO: Consider whether and where this could be moved.
 
-        updated_xds = \
-            xds.assign({opts.output_column: (xds.DATA.dims, residuals),
-                        "CUBI_BITFLAG": (xds.BITFLAG.dims, data_bitflags),
-                        "CUBI_MODEL": (xds.DATA.dims,
-                                       model_col.sum(axis=2,
-                                                     dtype=np.complex64))})
-        updated_xds.attrs["WRITE_COLS"] += [opts.output_column]
+        ms_outputs = {}
+        write_cols = []
+
+        if opts.output_visibility_product:
+            n_vis_prod = len(opts.output_visibility_product)
+            itr = zip(opts.output_column, opts.output_visibility_product)
+            ms_outputs.update({cn: (xds.DATA.dims, visibility_products[vn])
+                              for cn, vn in itr})
+
+            write_cols.extend(opts.output_column[:n_vis_prod])
+
+        ms_outputs["CUBI_BITFLAG"] = (xds.BITFLAG.dims, data_bitflags)
+
+        updated_xds = xds.assign(ms_outputs)
+        updated_xds.WRITE_COLS.extend(write_cols)
 
         post_cal_data_xds_list.append(updated_xds)
 
@@ -237,7 +255,7 @@ def make_t_mappings(utime_ind, opts):
     n_term = len(terms)
     n_row = utime_ind.size
 
-    # Get frequency intervals for all terms. Or handles the zero case.
+    # Get time intervals for all terms. Or handles the zero case.
     t_ints = \
         [getattr(opts, term + "_time_interval") or n_row for term in terms]
 
@@ -389,3 +407,106 @@ def make_gain_xds_list(data_xds, opts):
         gain_xds_list.append(gain_xds)
 
     return gain_xds_list
+
+
+def make_visibiltiy_output(data_xds, gain_xds_list, t_map_arr, f_map_arr,
+                           d_map_arr, opts):
+    """Creates dask arrays for possible visibility outputs.
+
+    Given and xds containing data and its assosciated gains, produces
+    dask.Array objects containing the possible visibility outputs.
+
+    Args:
+        data_xds: An xarray.Dataset object containing input data.
+        gain_xds_list: A list containing gain xarray.Dataset objects.
+        t_map_arr: A dask.Array object of time mappings.
+        f_map_arr: A dask.Array object of frequency mappings.
+        d_map_arr: A dask.Array object of direction mappings.
+        opts: A Namespace object containing all necessary configuration.
+
+    Returns:
+        A dictionary of lists containing graphs which prodcuce a gain array
+        per gain term per xarray dataset.
+
+    """
+
+    data_col = data_xds.DATA.data
+    model_col = data_xds.MODEL_DATA.data
+    ant1_col = data_xds.ANTENNA1.data
+    ant2_col = data_xds.ANTENNA2.data
+
+    row_map = data_xds.ROW_MAP.data if opts.input_ms_is_bda else None
+    row_weights = data_xds.ROW_WEIGHTS.data if opts.input_ms_is_bda else None
+
+    gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
+
+    # TODO: For gains with n_dir > 1, we can select out the gains we actually
+    # want to correct for.
+    gain_list = \
+        [x for gxds in gain_xds_list for x in (gxds.gains.data, gain_schema)]
+
+    corr_mode = opts.input_ms_correlation_mode
+    is_bda = opts.input_ms_is_bda
+
+    residual = da.blockwise(
+        dask_residual, ("rowlike", "chan", "corr"),
+        data_col, ("rowlike", "chan", "corr"),
+        model_col, ("rowlike", "chan", "dir", "corr"),
+        ant1_col, ("rowlike",),
+        ant2_col, ("rowlike",),
+        t_map_arr, ("rowlike", "term"),
+        f_map_arr, ("chan", "term"),
+        d_map_arr, None,
+        *((row_map, ("rowlike",)) if is_bda else (None, None)),
+        *((row_weights, ("rowlike",)) if is_bda else (None, None)),
+        corr_mode, None,
+        *gain_list,
+        dtype=data_col.dtype,
+        align_arrays=False,
+        concatenate=True,
+        adjust_chunks={"rowlike": data_col.chunks[0],
+                       "chan": data_col.chunks[1]})
+
+    corrected_residual = da.blockwise(
+        dask_corrected_residual, ("rowlike", "chan", "corr"),
+        residual, ("rowlike", "chan", "corr"),
+        ant1_col, ("rowlike",),
+        ant2_col, ("rowlike",),
+        t_map_arr, ("rowlike", "term"),
+        f_map_arr, ("chan", "term"),
+        d_map_arr, None,
+        *((row_map, ("rowlike",)) if is_bda else (None, None)),
+        *((row_weights, ("rowlike",)) if is_bda else (None, None)),
+        corr_mode, None,
+        *gain_list,
+        dtype=residual.dtype,
+        align_arrays=False,
+        concatenate=True,
+        adjust_chunks={"rowlike": data_col.chunks[0],
+                       "chan": data_col.chunks[1]})
+
+    # We can cheat and reuse the corrected residual code - the only difference
+    # is whether we supply the residuals or the data.
+    corrected_data = da.blockwise(
+        dask_corrected_residual, ("rowlike", "chan", "corr"),
+        data_col, ("rowlike", "chan", "corr"),
+        ant1_col, ("rowlike",),
+        ant2_col, ("rowlike",),
+        t_map_arr, ("rowlike", "term"),
+        f_map_arr, ("chan", "term"),
+        d_map_arr, None,
+        *((row_map, ("rowlike",)) if is_bda else (None, None)),
+        *((row_weights, ("rowlike",)) if is_bda else (None, None)),
+        corr_mode, None,
+        *gain_list,
+        dtype=residual.dtype,
+        align_arrays=False,
+        concatenate=True,
+        adjust_chunks={"rowlike": data_col.chunks[0],
+                       "chan": data_col.chunks[1]})
+
+    visibility_outputs = {"residual": residual,
+                          "corrected_residual": corrected_residual,
+                          "corrected_data": corrected_data}
+
+    return visibility_outputs

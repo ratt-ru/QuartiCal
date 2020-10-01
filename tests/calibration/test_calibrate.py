@@ -56,7 +56,7 @@ def _read_xds_list(xds_opts):
 @pytest.fixture(scope="module")
 def data_xds_list(_read_xds_list, xds_opts):
 
-    ms_xds_list, col_kwrds = _read_xds_list
+    ms_xds_list, _, col_kwrds = _read_xds_list
 
     preprocessed_xds_list = \
         preprocess_xds_list(ms_xds_list, col_kwrds, xds_opts)
@@ -69,7 +69,7 @@ def data_xds_list(_read_xds_list, xds_opts):
 @pytest.fixture(scope="module")
 def col_kwrds(_read_xds_list):
 
-    return _read_xds_list[1]
+    return _read_xds_list[2]
 
 
 @pytest.fixture(scope="module")
@@ -319,7 +319,8 @@ def test_has_gain_field(post_cal_gain_xds_dict):
 def test_has_output_field(post_cal_data_xds_list, xds_opts):
     """Check that calibration assigns the output to the data xds."""
 
-    assert all([hasattr(xds, xds_opts.output_column)
+    assert all([hasattr(xds, col)
+                for col in xds_opts.output_column
                 for xds in post_cal_data_xds_list])
 
 
@@ -333,7 +334,8 @@ def test_has_bitflag_field(post_cal_data_xds_list):
 def test_write_columns(post_cal_data_xds_list, xds_opts):
     """Check that the output column name is added to WRTIE_COLS."""
 
-    assert all([xds_opts.output_column in xds.attrs["WRITE_COLS"]
+    assert all([col in xds.attrs["WRITE_COLS"]
+                for col in xds_opts.output_column
                 for xds in post_cal_data_xds_list])
 
 # -----------------------------------------------------------------------------

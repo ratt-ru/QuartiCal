@@ -7,11 +7,7 @@ from collections import namedtuple
 term_spec_tup = namedtuple("term_spec", "name type shape")
 
 
-def construct_solver(model_col,
-                     data_col,
-                     ant1_col,
-                     ant2_col,
-                     weight_col,
+def construct_solver(data_xds,
                      t_map_arr,
                      f_map_arr,
                      d_map_arr,
@@ -25,11 +21,7 @@ def construct_solver(model_col,
     should not be tampered with without a certain level of expertise with dask.
 
     Args:
-        model_col: dask.Array containing the model column.
-        data_col: dask.Array containing the data column.
-        ant1_col: dask.Array containing the first antenna column.
-        ant2_col: dask.Array containing the second antenna column.
-        wegith_col: dask.Array containing the weight column.
+        data_xds: xarray.Dataset object containing MS data.
         t_map_arr: dask.Array containing time mappings.
         f_map_arr: dask.Array containing frequency mappings.
         d_map_arr: dask.Array containing direction mappings.
@@ -44,6 +36,12 @@ def construct_solver(model_col,
         conv_iter_list: A list of dask.Arrays containing the iterations taken
             to reach convergence.
     """
+
+    model_col = data_xds.MODEL_DATA.data
+    data_col = data_xds.DATA.data
+    ant1_col = data_xds.ANTENNA1.data
+    ant2_col = data_xds.ANTENNA2.data
+    weight_col = data_xds.WEIGHT.data
 
     # Grab the number of input chunks - doing this on the data should be safe.
     n_t_chunks, n_f_chunks, _ = data_col.numblocks
@@ -65,6 +63,13 @@ def construct_solver(model_col,
     blocker.add_input("d_map_arr", d_map_arr)
     blocker.add_input("corr_mode", corr_mode)
     blocker.add_input("term_spec_list", spec_list, "rf")
+
+    if opts.input_ms_is_bda:
+        blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")
+        blocker.add_input("row_weights", data_xds.ROW_WEIGHTS.data, "r")
+    else:
+        blocker.add_input("row_map", None)
+        blocker.add_input("row_weights", None)
 
     # Add relevant outputs to blocker object.
     for gi, gn in enumerate(opts.solver_gain_terms):
