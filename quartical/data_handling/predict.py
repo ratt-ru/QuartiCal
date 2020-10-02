@@ -679,7 +679,7 @@ def degridder(uvw,
              convolution_policy=None,
              vis_dtype=np.complex128,
              rowparallel=False):
-        image_centres = image_centres[0][0]
+        image_centres = image_centres[0]
         if image_centres.ndim != 2:
             raise ValueError(
                 "Image centres for DASK wrapper expects list of image centres, "
@@ -690,7 +690,7 @@ def degridder(uvw,
         uvw = uvw[0]
         if uvw.ndim != 2 or uvw.shape[1] != 3:
             raise ValueError("UVW array must be nrow x 3")
-        gridstack = gridstack[0][0][0][0]
+        gridstack = gridstack[0][0][0]
         if gridstack.ndim != 4:
             raise ValueError("Gridstack must be nfacet x nband x ny x nx")
         lambdas = lambdas
@@ -965,6 +965,7 @@ def extract_facet_models(model, facet_bbs):
         return facet_models
 
     return da.blockwise(__extract, ("nfacet", "nband", "y", "x"),
+                        model, ("nband", "my", "mx"),
                         da.from_array(facet_bbs, chunks=(len(facet_bbs))), ("nfacet",),
                         ndegridband=ndegridband,
                         nfpix=nfpix,
