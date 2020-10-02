@@ -1096,6 +1096,9 @@ def dask_fft_cached_wisdom(opts, model, wisdom_file):
                                     ),
                            axes=(2, 3))
 
+_cache_degrid_models = {"degridbands": None,
+                        "fft_facet_mods": {}}
+
 def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed,
                 model_name, group_name):
     """Generates a graph describing the predict for an xds, model and type.
@@ -1167,16 +1170,27 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed,
             direction_phase_dir = phase_dir
         else:
             direction_phase_dir = da.mean(sources.radec, axis=0).compute() # barycentre of source cluster
-        ndegridband = opts.fft_predict_no_degrid_band
-        frequency = da.from_array(spw.CHAN_FREQ.data[0], chunks=ms.chunks['chan'])
-        bandfreq = da.from_array(np.linspace(spw.CHAN_FREQ.data[0][0],
-                                             spw.CHAN_FREQ.data[0][-1],
-                                             ndegridband + 2)[1:-1], chunks=ndegridband)
-        bandmap = bandmapping(frequency, bandfreq)
-        logger.info("Degridding band frequencies: {}".format(
-            ", ".join(map(lambda nu: "{0:.2f} MHz".format(nu), bandfreq.compute()*1e-6))))
-        logger.info("Degridding band mapping: {}".format(
-            ", ".join(map(str, bandmap.compute()))))
+        if _cache_degrid_models["degridbands"] is None:
+            ndegridband = opts.fft_predict_no_degrid_band
+            frequency = da.from_array(spw.CHAN_FREQ.data[0], chunks=ms.chunks['chan'])
+            bandfreq = da.from_array(np.linspace(spw.CHAN_FREQ.data[0][0],
+                                                spw.CHAN_FREQ.data[0][-1],
+                                                ndegridband + 2)[1:-1], chunks=ndegridband)
+            bandmap = bandmapping(frequency, bandfreq)
+            logger.info("Degridding band frequencies: {}".format(
+                ", ".join(map(lambda nu: "{0:.2f} MHz".format(nu), bandfreq.compute()*1e-6))))
+            logger.info("Degridding band mapping: {}".format(
+                ", ".join(map(str, bandmap.compute()))))
+            _cache_degrid_models["degridbands"] = {"ndegridband": ndegridband,
+                                                   "frequency": frequency,
+                                                   "bandfreq": bandfreq,
+                                                   "bandmap": bandmap}
+        else:
+            ndegridband = _cache_degrid_models["degridbands"]["ndegridband"]
+            frequency = _cache_degrid_models["degridbands"]["frequency"]
+            bandfreq = _cache_degrid_models["degridbands"]["bandfreq"]
+            bandmap = _cache_degrid_models["degridbands"]["bandmap"]
+        
         nsrc = sources.stokes.shape[0]
         nsrc_chunks = sources.stokes.chunks[0]
         if da.max(sources.stokes[:,1:-1]).compute() > 1e-15:
@@ -1199,84 +1213,115 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed,
                    opts.fft_predict_model_npix_max,
                    int(2 * np.ceil(da.max(np.pi*0.5*da.sqrt(da.sum(lm**2, axis=1))).compute() / cellsize)))
         npix = npix + 1 if npix % 2 == 1 else npix
-        model = render_gaussians(stokes,
-                                 sext,
-                                 sources.shape,
-                                 sources.radec,
-                                 bandfreq,
-                                 direction_phase_dir,
-                                 cellsize,
-                                 npix)
-        nfacetxx = max(1, 
-                       int(np.ceil(npix * np.rad2deg(cellsize) / 
-                           opts.fft_predict_maximum_facet_size)))
-        facetnpixpad = int(np.ceil(max(opts.fft_predict_maximum_facet_size / np.rad2deg(cellsize) * 
-                                       opts.fft_predict_facet_padding_factor,
-                                       opts.fft_predict_minimum_facet_size_px)))
-        facetnpixpad = facetnpixpad + 1 if facetnpixpad % 2 == 1 else facetnpixpad
-        logger.info("Building facet tesselation scheme for '{}' direction '{}'. "
-                    "This may take some time.".format(model_name.name, group_name))
-        model_bb = BoundingBoxFactory.AxisAlignedBoundingBox(BoundingBox(0, npix-1, 0, npix-1, 
-                                                                         name="{}.{}".format(model_name[0], 
-                                                                                             group_name)), 
-                                                             square=True, enforce_odd=False)
-        facet_bbs = list(map(lambda fb: BoundingBoxFactory.AxisAlignedBoundingBox(fb, 
-                                                                                  square=True, 
-                                                                                  enforce_odd=False),
-                             map(lambda fb: BoundingBoxFactory.PadBox(fb, facetnpixpad, facetnpixpad),
-                                 BoundingBoxFactory.SplitBox(model_bb, nsubboxes=nfacetxx))))
-        
-        # facet centres off the phase centre of the telescope:
-        # facets are constructed relative to the bary centre of the direction
-        # so we have to compute their offsets from the phase centre
-        # for use in phase shifting visibilities to newly computed centres
-        facet_centres = ((da.from_array(np.array(list(map(lambda f: f.centre, facet_bbs))), 
-                                       chunks=(len(facet_bbs), 2)) -
-                          da.from_array(np.array([[npix//2, npix//2]]),
-                                        chunks=(1,2))
-                         ) * da.from_array(np.array([[-cellsize, cellsize]]),
-                                           chunks=(1,2)) +
-                         (da.from_array(direction_phase_dir.reshape((1, 2)), chunks=(1,2)) - 
-                          da.from_array(phase_dir.reshape((1, 2)), chunks=(1,2))) +
-                         da.from_array(phase_dir.reshape((1, 2)), chunks=(1,2))
-                        ) # in radians
 
-        # facet centre lm cosines for use in E-Jones application
-        # w.r.t to the pointing centre of the telescope
-        # TODO: this should read from the pointing centre of the telescope
-        # not the phase centre!
-        lm = radec_to_lm(facet_centres, phase_dir)
-        facet_models = extract_facet_models(model, facet_bbs)
-        logger.info("Model '{0:s}' direction '{1:s}' rendered to {2:d} band {3:d} {4:d}x{4:d} px facetted "
-                    "map at resolution of {5:0.1f}\"".format(model_name[0],
-                                                             group_name,
-                                                             ndegridband,
-                                                             len(facet_bbs),
-                                                             facetnpixpad,
-                                                             np.rad2deg(cellsize)*3600.0))
-        import os
-        wisdom_file = os.path.join(opts.fft_predict_fftw_wisdom_cache_dir, 
-                                   "{0:s}.{1:s}.wisdom".format(
-            "tesselation",
-            "pyfftw{}".format(pyfftw.__version__)))
+        model_cache_key = (model_name, group_name)
+        if model_cache_key not in _cache_degrid_models["fft_facet_mods"]:
+            _cache_degrid_models["fft_facet_mods"][model_cache_key] = {}
+            model = render_gaussians(stokes,
+                                    sext,
+                                    sources.shape,
+                                    sources.radec,
+                                    bandfreq,
+                                    direction_phase_dir,
+                                    cellsize,
+                                    npix)
+            nfacetxx = max(1, 
+                        int(np.ceil(npix * np.rad2deg(cellsize) / 
+                            opts.fft_predict_maximum_facet_size)))
+            facetnpixpad = int(np.ceil(max(opts.fft_predict_maximum_facet_size / np.rad2deg(cellsize) * 
+                                        opts.fft_predict_facet_padding_factor,
+                                        opts.fft_predict_minimum_facet_size_px)))
+            facetnpixpad = facetnpixpad + 1 if facetnpixpad % 2 == 1 else facetnpixpad
+            logger.info("Building facet tesselation scheme for '{}' direction '{}'. "
+                        "This may take some time.".format(model_name.name, group_name))
+            model_bb = BoundingBoxFactory.AxisAlignedBoundingBox(BoundingBox(0, npix-1, 0, npix-1, 
+                                                                            name="{}.{}".format(model_name[0], 
+                                                                                                group_name)), 
+                                                                square=True, enforce_odd=False)
+            facet_bbs = list(map(lambda fb: BoundingBoxFactory.AxisAlignedBoundingBox(fb, 
+                                                                                    square=True, 
+                                                                                    enforce_odd=False),
+                                map(lambda fb: BoundingBoxFactory.PadBox(fb, facetnpixpad, facetnpixpad),
+                                    BoundingBoxFactory.SplitBox(model_bb, nsubboxes=nfacetxx))))
+            
+            # facet centres off the phase centre of the telescope:
+            # facets are constructed relative to the bary centre of the direction
+            # so we have to compute their offsets from the phase centre
+            # for use in phase shifting visibilities to newly computed centres
+            facet_centres = ((da.from_array(np.array(list(map(lambda f: f.centre, facet_bbs))), 
+                                        chunks=(len(facet_bbs), 2)) -
+                            da.from_array(np.array([[npix//2, npix//2]]),
+                                            chunks=(1,2))
+                            ) * da.from_array(np.array([[-cellsize, cellsize]]),
+                                            chunks=(1,2)) +
+                            (da.from_array(direction_phase_dir.reshape((1, 2)), chunks=(1,2)) - 
+                            da.from_array(phase_dir.reshape((1, 2)), chunks=(1,2))) +
+                            da.from_array(phase_dir.reshape((1, 2)), chunks=(1,2))
+                            ) # in radians
 
-        ft_models = dask_fft_cached_wisdom(opts, facet_models, wisdom_file)
+            # facet centre lm cosines for use in E-Jones application
+            # w.r.t to the pointing centre of the telescope
+            # TODO: this should read from the pointing centre of the telescope
+            # not the phase centre!
+            lm = radec_to_lm(facet_centres, phase_dir)
+            facet_models = extract_facet_models(model, facet_bbs)
+            s = SkyCoord(direction_phase_dir[0] * u.rad, 
+                         direction_phase_dir[1] * u.rad, 
+                         frame="fk5")
+            logger.info("Model '{0:s}' direction '{1:s}' rendered to {2:d} band {3:d} {4:d}x{4:d} px facetted "
+                        "map at resolution of {5:0.1f}\" around {6:.0f}h{7:02.0f}'{8:02.0f}s\" "
+                        "{9:.0f}d{10:02.0f}'{11:02.0f}s\" ".format(model_name[0],
+                                                                   group_name,
+                                                                   ndegridband,
+                                                                   len(facet_bbs),
+                                                                   facetnpixpad,
+                                                                   np.rad2deg(cellsize)*3600.0,
+                                                                   s.ra.hms.h,
+                                                                   s.ra.hms.m,
+                                                                   s.ra.hms.s,
+                                                                   s.dec.dms.d,
+                                                                   np.abs(s.dec.dms.m),
+                                                                   np.abs(s.dec.dms.s)))
+            import os
+            wisdom_file = os.path.join(opts.fft_predict_fftw_wisdom_cache_dir, 
+                                    "{0:s}.{1:s}.wisdom".format(
+                "tesselation",
+                "pyfftw{}".format(pyfftw.__version__)))
 
-        sup = opts.fft_predict_kernel_support
-        OS = opts.fft_predict_kernel_oversampling
-        aafilter = kernels.pack_kernel(kernels.kbsinc(sup, oversample=OS), 
-                                       sup, oversample=OS)
-        detaper = kernels.compute_detaper_dft_seperable(facet_bbs[0].box_npx[0], 
-                                                        kernels.unpack_kernel(aafilter,
-                                                                              sup,
-                                                                              oversample=OS),
-                                                        sup,
-                                                        oversample=OS)
-        aafilter = da.from_array(aafilter, chunks=(aafilter.size,))
-        detaper = da.from_array(detaper, chunks=(facet_bbs[0].box_npx[0], 
-                                                 facet_bbs[0].box_npx[0],))
-        # detaper model stack (equal sized images)
-        ft_models /= detaper[None, None, :, :]
+            ft_models = dask_fft_cached_wisdom(opts, facet_models, wisdom_file)
+
+            sup = opts.fft_predict_kernel_support
+            OS = opts.fft_predict_kernel_oversampling
+            aafilter = kernels.pack_kernel(kernels.kbsinc(sup, oversample=OS), 
+                                        sup, oversample=OS)
+            detaper = kernels.compute_detaper_dft_seperable(facet_bbs[0].box_npx[0], 
+                                                            kernels.unpack_kernel(aafilter,
+                                                                                sup,
+                                                                                oversample=OS),
+                                                            sup,
+                                                            oversample=OS)
+            aafilter = da.from_array(aafilter, chunks=(aafilter.size,))
+            detaper = da.from_array(detaper, chunks=(facet_bbs[0].box_npx[0], 
+                                                    facet_bbs[0].box_npx[0],))
+
+            # detaper model stack (equal sized images)
+            ft_models /= detaper[None, None, :, :]
+
+            _cache_degrid_models["fft_facet_mods"][model_cache_key]["detaper"] = detaper
+            _cache_degrid_models["fft_facet_mods"][model_cache_key]["aafiler"] = aafilter
+            _cache_degrid_models["fft_facet_mods"][model_cache_key]["sup"] = sup
+            _cache_degrid_models["fft_facet_mods"][model_cache_key]["OS"] = OS
+            _cache_degrid_models["fft_facet_mods"][model_cache_key]["ft_models"] = ft_models
+            _cache_degrid_models["fft_facet_mods"][model_cache_key]["lm"] = lm
+            _cache_degrid_models["fft_facet_mods"][model_cache_key]["facet_centres"] = facet_centres
+        else:
+            detaper = _cache_degrid_models["fft_facet_mods"][model_cache_key]["detaper"]
+            aafilter = _cache_degrid_models["fft_facet_mods"][model_cache_key]["aafiler"]
+            sup = _cache_degrid_models["fft_facet_mods"][model_cache_key]["sup"]
+            OS = _cache_degrid_models["fft_facet_mods"][model_cache_key]["OS"]
+            ft_models = _cache_degrid_models["fft_facet_mods"][model_cache_key]["ft_models"]
+            lm = _cache_degrid_models["fft_facet_mods"][model_cache_key]["lm"]
+            facet_centres = _cache_degrid_models["fft_facet_mods"][model_cache_key]["facet_centres"]
 
         # generate 2x2 coherencies per row x channel for each of the facets
         # in this direction. The DDE matricies will then be computed towards
@@ -1293,6 +1338,7 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed,
         else:
             raise RuntimeError("Degridding only supports [RR, RL, LR, LL] or [XX, XY, YX, YY] or "
                                "[RR, LL] or [XX, YY] correlation datasets at present.")
+
         jones = degridder(uvw=ms.UVW.data,
                           gridstack=ft_models,
                           lambdas=frequency,
