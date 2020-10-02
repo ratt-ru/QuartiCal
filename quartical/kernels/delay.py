@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import jit, prange, literally
-from numba.extending import overload
+from numba import jit, prange, literally, types
+from numba.extending import overload, register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
@@ -56,6 +56,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                         model,
                         gains,
                         inverse_gain_list,
+                        chan_freqs,
                         residual,
                         a1,
                         a2,
@@ -66,7 +67,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                         row_map,
                         row_weights,
                         active_term,
-                        literally(corr_mode))
+                        corr_mode)
 
         compute_update(update,
                        jhj,
@@ -95,38 +96,42 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
-                    a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
-                    row_map, row_weights, active_term, corr_mode):
+def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
+                    residual, a1, a2, weights, t_map_arr, f_map_arr,
+                    d_map_arr, row_map, row_weights, active_term, corr_mode):
 
     return _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list,
-                            residual, a1, a2, weights, t_map_arr, f_map_arr,
-                            d_map_arr, row_map, row_weights, active_term,
-                            literally(corr_mode))
+                            chan_freqs, residual, a1, a2, weights, t_map_arr,
+                            f_map_arr, d_map_arr, row_map, row_weights,
+                            active_term, corr_mode)
 
 
-def _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
-                     a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
-                     row_map, row_weights, active_term, corr_mode):
+def _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
+                     residual, a1, a2, weights, t_map_arr, f_map_arr,
+                     d_map_arr, row_map, row_weights, active_term, corr_mode):
     pass
 
 
 @overload(_compute_jhj_jhr, inline="always")
 def _compute_jhj_jhr_impl(jhj, jhr, model, gains, inverse_gain_list,
-                          residual, a1, a2, weights, t_map_arr, f_map_arr,
-                          d_map_arr, row_map, row_weights, active_term,
-                          corr_mode):
+                          chan_freqs, residual, a1, a2, weights, t_map_arr,
+                          f_map_arr, d_map_arr, row_map, row_weights,
+                          active_term, corr_mode):
+
+    if not isinstance(corr_mode, types.Literal):
+        return lambda mode: literally(mode)
 
     if corr_mode.literal_value == "diag":
         return jhj_jhr_diag
     else:
-        raise NotImplementedError("Phase-only gain not yet supported in "
+        raise NotImplementedError("Delay not yet supported in "
                                   "non-diagonal modes.")
 
 
-def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
-                 a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
-                 row_weights, active_term, corr_mode):
+@register_jitable
+def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
+                 residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
+                 row_map, row_weights, active_term, corr_mode):
 
     _, n_chan, n_dir, n_corr = model.shape
     n_out_dir = gains[active_term].shape[3]
@@ -146,6 +151,7 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
     for ti in prange(n_tint):
         row_sel = np.where(t_map_arr[:, active_term] == ti)[0]
 
+        # Two here is the number of parameters. TODO: Flexible?
         tmp_jh_p = np.zeros((n_out_dir, n_corr), dtype=cmplx_dtype)
         tmp_jh_q = np.zeros((n_out_dir, n_corr), dtype=cmplx_dtype)
 
@@ -164,6 +170,8 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
 
                 tmp_jh_p[:, :] = 0
                 tmp_jh_q[:, :] = 0
+
+                nu = chan_freqs[f]
 
                 for d in range(n_dir):
 
@@ -223,8 +231,14 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     ga00 = -1j*ga[0].conjugate()
                     ga11 = -1j*ga[1].conjugate()
 
-                    jhr[t_m, f_m, a1_m, out_d, 0, 0] += (ga00*r00*jh00).real
-                    jhr[t_m, f_m, a1_m, out_d, 0, 1] += (ga11*r11*jh11).real
+                    upd00 = (ga00*r00*jh00).real
+                    upd11 = (ga11*r11*jh11).real
+
+                    jhr[t_m, f_m, a1_m, out_d, 0, 0] += upd00
+                    jhr[t_m, f_m, a1_m, out_d, 0, 1] += upd11
+
+                    jhr[t_m, f_m, a1_m, out_d, 1, 0] += nu*upd00
+                    jhr[t_m, f_m, a1_m, out_d, 1, 1] += nu*upd11
 
                     tmp_jh_p[out_d, 0] += jh00
                     tmp_jh_p[out_d, 1] += jh11
@@ -269,8 +283,14 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     gb00 = -1j*gb[0].conjugate()
                     gb11 = -1j*gb[1].conjugate()
 
-                    jhr[t_m, f_m, a2_m, out_d, 0, 0] += (gb00*rh00*jh00).real
-                    jhr[t_m, f_m, a2_m, out_d, 0, 1] += (gb11*rh11*jh11).real
+                    upd00 = (gb00*rh00*jh00).real
+                    upd11 = (gb11*rh11*jh11).real
+
+                    jhr[t_m, f_m, a2_m, out_d, 0, 0] += upd00
+                    jhr[t_m, f_m, a2_m, out_d, 0, 1] += upd11
+
+                    jhr[t_m, f_m, a2_m, out_d, 1, 0] += nu*upd00
+                    jhr[t_m, f_m, a2_m, out_d, 1, 1] += nu*upd11
 
                     tmp_jh_q[out_d, 0] += jh00
                     tmp_jh_q[out_d, 1] += jh11
