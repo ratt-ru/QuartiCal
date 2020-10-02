@@ -34,7 +34,7 @@ def initialize_weights(xds, data_col, opts):
 
     if weight_col.ndim == 2:
         weight_col = da.broadcast_to(weight_col[:, None, :],
-                                     chunks=data_col.chunks,
-                                     shape=data_col.shape)
+                                     data_col.shape,
+                                     chunks=data_col.chunks)
 
     return weight_col

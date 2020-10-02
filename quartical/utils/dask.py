@@ -6,11 +6,13 @@ from operator import getitem
 from dask.utils import apply, funcname
 from collections import namedtuple
 from itertools import product
+from functools import wraps
 
 
 def as_dict(*keys):
     """Decorator which turns function outputs into dictionary entries."""
     def decorator_as_dict(func):
+        @wraps(func)
         def wrapper_as_dict(*args, **kwargs):
             values = func(*args, **kwargs)
 
@@ -106,14 +108,16 @@ class Blocker:
 
         token = tokenize(*[inp.value for inp in self.inputs])
 
-        layer_name = "-".join([funcname(self.func), token])
+        layer_name = "-".join([funcname(self.func) + "~blocker", token])
 
         graph = {}
 
-        layers = {inp.name: inp.__dask_graph__() for inp in self.dask_inputs}
+        layers = dict()
+        deps = dict()
 
-        deps = {inp.name: inp.__dask_graph__().dependencies
-                for inp in self.dask_inputs}
+        for inp in self.dask_inputs:
+            layers.update(inp.__dask_graph__().layers)
+            deps.update(inp.__dask_graph__().dependencies)
 
         try:
             axes_lengths = list([self.input_axes[k] for k in self.func_axes])
@@ -137,7 +141,7 @@ class Blocker:
             graph[(layer_name, *k)] = (apply, self.func, [], (dict, kwargs))
 
         layers.update({layer_name: graph})
-        deps.update({layer_name: {k for k in deps.keys()}})
+        deps.update({layer_name: {k.name for k in self.dask_inputs}})
 
         # At this point we have a dictionary which describes the chunkwise
         # application of func.

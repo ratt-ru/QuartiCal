@@ -57,7 +57,9 @@ else:
                     "distributed",
                     "astropy",
                     "zarr",
-                    "pyfftw"]
+                    "pyfftw",
+                    "requests",
+                    "pytest"]
 
 setup(name='quartical',
       version=quartical.__version__,
