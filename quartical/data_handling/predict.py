@@ -1128,8 +1128,8 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed,
     phase_dir = field.PHASE_DIR.data[0][0]  # row, poly
 
     utime_val, utime_ind = blockwise_unique(ms.TIME.data,
-                                                chunks=(ms.UTIME_CHUNKS,),
-                                                return_inverse=True)
+                                            chunks=(ms.UTIME_CHUNKS,),
+                                            return_inverse=True)
     if forward_transform == "dft":
         # Necessary to chunk the predict in frequency. TODO: Make this less hacky
         # when this is improved in dask-ms.
