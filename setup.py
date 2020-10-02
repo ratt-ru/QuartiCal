@@ -48,7 +48,7 @@ else:
                     "dask-ms[xarray]"
                     "@git+https://github.com/ska-sa/dask-ms.git"
                     "@master",
-                    "codex-africanus[complete]"
+                    "codex-africanus[dask, scipy, astropy, python-casacore]"
                     "@git+https://github.com/ska-sa/codex-africanus.git"
                     "@master",
                     "astro-tigger-lsm",
@@ -56,7 +56,8 @@ else:
                     "numba",
                     "distributed",
                     "zarr",
-                    "requests"]
+                    "requests",
+                    "pytest"]
 
 setup(name='quartical',
       version=quartical.__version__,
