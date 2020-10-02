@@ -1191,8 +1191,8 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed,
                                                                    dtype=np.float32,
                                                                    chunks=(nsrc_chunks, 2))), 
                                 cellsize)
-        # TODO: deal with direction dependent case
-        # phase dir must be set towardss group centre
+        # work out how big the encompassing sky should be if automatic. It will be at least one facet
+        # around the direction centre
         lm = radec_to_lm(sources.radec, direction_phase_dir)
         npix = min(opts.fft_predict_minimum_facet_size_px if opts.fft_predict_model_npix_max == -1 else 
                    opts.fft_predict_model_npix_max,
