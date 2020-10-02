@@ -359,8 +359,8 @@ parallel:
             - complex
             - phase
             - robust
-            - parametric
             - kalman
+            - delay
         default: complex
     # parametrisation:
     #     type: str
