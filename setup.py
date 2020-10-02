@@ -56,7 +56,8 @@ else:
                     "numba",
                     "distributed",
                     "astropy",
-                    "zarr"]
+                    "zarr",
+                    "pyfftw"]
 
 setup(name='quartical',
       version=quartical.__version__,

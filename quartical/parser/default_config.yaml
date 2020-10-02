@@ -131,7 +131,7 @@ input-model:
         type: str
         help: Forward computation mode. Use fft for facet based degridding and fft.
               Use dft for dft based prediction
-        default: fft
+        default: dft
         choices:
             - fft
             - dft
@@ -168,9 +168,9 @@ fft-predict:
         type: float
         help: Model pixel size in arcseconds. Should be inferred from uv sampling coverage
         default: 1.0
-    model-npix:
+    model-npix-max:
         type: int
-        help: Number of pixels in the model. Use -1 to determine automatically
+        help: Maximum number of pixels in the model. Use -1 to be unbounded
         default: -1
     no-degrid-band:
         type: int
@@ -192,6 +192,21 @@ fft-predict:
         type: int
         help: support (excluding padding) in uv of pretabulated kernel
         default: 5
+    fft-nthreads:
+        type: int
+        help: number of threads to use for FFTW. Use -1 to use threads equal to
+              number of logical threads
+        default: 1
+    fftw-wisdom-cache-dir:
+        type: str
+        help: Cache file directory for FFTW wisdom
+        default: "."
+    degrid-rowparallel:
+        type: bool
+        help: Use numba threads for degridding. Requires TBB to be installed from your 
+              distribution package management system. See numba documentation 
+              http://numba.pydata.org/numba-doc/0.46.0/user/threading-layer.html
+        default: False
 output:
     _description: Arguments pertaining to output products.
     # directory:
