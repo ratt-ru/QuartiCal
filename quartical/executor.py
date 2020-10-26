@@ -113,3 +113,13 @@ def execute():
     # dask.visualize(outputs,
     #                filename='model.pdf',
     #                optimize_graph=True)
+
+    # dask.visualize(*gains_per_xds["G"],
+    #                filename='gain_graph',
+    #                format="pdf",
+    #                optimize_graph=True,
+    #                collapse_outputs=True,
+    #                node_attr={'penwidth': '4',
+    #                           'fontsize': '18',
+    #                           'fontname': 'helvetica'},
+    #                edge_attr={'penwidth': '2', })
