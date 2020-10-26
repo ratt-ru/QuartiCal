@@ -604,9 +604,19 @@ def process_bda_output(xds_list, ref_xds_list, output_cols, opts):
 
                 data = data.reshape(shape)
 
-                if np.iscomplexobj(data):
+                scdtype = np.obj2sctype(data)
+
+                if np.issubdtype(scdtype, np.complexfloating):
+                    # Corresponds to a visibility column. Simple average.
                     data = data.sum(axis=chan_ind + 1)/(nchan//ref_nchan)
-                elif np.issubdtype(data.dtype.type, np.integer):
+                elif np.issubdtype(scdtype, np.floating):
+                    # This probably isn't used at present and my be wrong.
+                    data = data.sum(axis=chan_ind + 1)/(nchan//ref_nchan)
+                elif np.issubdtype(scdtype, np.integer):
+                    # Corresponds to BITFLAG style column. Bitwise or.
+                    data = np.bitwise_or.reduce(data, axis=chan_ind + 1)
+                elif np.issubdtype(scdtype, np.bool):
+                    # Corresponds to FLAG style column.
                     data = data.any(axis=chan_ind + 1)
 
                 bda_xds = bda_xds.assign({col_name: (col.dims, data)})
