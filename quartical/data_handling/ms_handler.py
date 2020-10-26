@@ -614,7 +614,10 @@ def process_bda_output(xds_list, ref_xds_list, output_cols, opts):
                     data = data.sum(axis=chan_ind + 1)/(nchan//ref_nchan)
                 elif np.issubdtype(scdtype, np.integer):
                     # Corresponds to BITFLAG style column. Bitwise or.
-                    data = np.bitwise_or.reduce(data, axis=chan_ind + 1)
+                    data = data.map_blocks(
+                        lambda d, a: np.bitwise_or.reduce(d, axis=a),
+                        chan_ind + 1,
+                        drop_axis=chan_ind + 1)
                 elif np.issubdtype(scdtype, np.bool):
                     # Corresponds to FLAG style column.
                     data = data.any(axis=chan_ind + 1)
