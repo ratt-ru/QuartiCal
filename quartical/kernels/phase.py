@@ -143,8 +143,15 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
     inactive_terms = list(range(n_gains))
     inactive_terms.pop(active_term)
 
-    for ti in prange(n_tint):
+    n_int = n_tint*n_fint
+
+    for i in prange(n_int):
+
+        ti = i//n_fint
+        fi = i - ti*n_fint
+
         row_sel = np.where(t_map_arr[:, active_term] == ti)[0]
+        chan_sel = np.where(f_map_arr[:, active_term] == fi)[0]
 
         tmp_jh_p = np.zeros((n_out_dir, n_corr), dtype=cmplx_dtype)
         tmp_jh_q = np.zeros((n_out_dir, n_corr), dtype=cmplx_dtype)
@@ -154,7 +161,7 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
             row = get_row(row_ind, row_map)
             a1_m, a2_m = a1[row], a2[row]
 
-            for f in range(n_chan):
+            for f in chan_sel:
 
                 r = residual[row, f]
                 w = weights[row, f]  # Consider a map?
