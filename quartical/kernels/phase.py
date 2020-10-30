@@ -94,7 +94,7 @@ def phase_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     return term_conv_info(i, cnv_perc)
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@jit(nopython=True, fastmath=True, parallel=True, cache=False, nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
                     a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
                     row_map, row_weights, active_term, corr_mode):
@@ -143,6 +143,22 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
     inactive_terms = list(range(n_gains))
     inactive_terms.pop(active_term)
 
+    chan_starts = np.empty(n_fint, dtype=np.int32)
+    chan_starts[0] = 0
+    chan_starts[1:] = 1 + \
+        np.where(f_map_arr[1:, active_term] - f_map_arr[:-1, active_term])[0]
+    chan_stops = np.empty(n_fint, dtype=np.int32)
+    chan_stops[-1] = n_chan
+    chan_stops[:-1] = chan_starts[1:]
+
+    row_starts = np.empty(n_tint, dtype=np.int32)
+    row_starts[0] = 0
+    row_starts[1:] = 1 + \
+        np.where(t_map_arr[1:, active_term] - t_map_arr[:-1, active_term])[0]
+    row_stops = np.empty(n_tint, dtype=np.int32)
+    row_stops[-1] = t_map_arr[1:, active_term].size
+    row_stops[:-1] = row_starts[1:]
+
     n_int = n_tint*n_fint
 
     for i in prange(n_int):
@@ -150,18 +166,20 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
         ti = i//n_fint
         fi = i - ti*n_fint
 
-        row_sel = np.where(t_map_arr[:, active_term] == ti)[0]
-        chan_sel = np.where(f_map_arr[:, active_term] == fi)[0]
+        rs = row_starts[ti]
+        re = row_stops[ti]
+        fs = chan_starts[fi]
+        fe = chan_stops[fi]
 
         tmp_jh_p = np.zeros((n_out_dir, n_corr), dtype=cmplx_dtype)
         tmp_jh_q = np.zeros((n_out_dir, n_corr), dtype=cmplx_dtype)
 
-        for row_ind in row_sel:
+        for row_ind in range(rs, re):
 
             row = get_row(row_ind, row_map)
             a1_m, a2_m = a1[row], a2[row]
 
-            for f in chan_sel:
+            for f in range(fs, fe):
 
                 r = residual[row, f]
                 w = weights[row, f]  # Consider a map?
@@ -206,21 +224,21 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                         mh00 = jh00
                         mh11 = jh11
 
-                    for g in inactive_terms:
+                    # for g in inactive_terms:
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        ga = gains[g][t_m, f_m, a1_m, d_m]
+                    #     d_m = d_map_arr[g, d]  # Broadcast dir.
+                    #     t_m = t_map_arr[row_ind, g]
+                    #     f_m = f_map_arr[f, g]
+                    #     ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        gh00 = ga[0].conjugate()
-                        gh11 = ga[1].conjugate()
+                    #     gh00 = ga[0].conjugate()
+                    #     gh11 = ga[1].conjugate()
 
-                        jh00 = (mh00*gh00)
-                        jh11 = (mh11*gh11)
+                    #     jh00 = (mh00*gh00)
+                    #     jh11 = (mh11*gh11)
 
-                        mh00 = jh00
-                        mh11 = jh11
+                    #     mh00 = jh00
+                    #     mh11 = jh11
 
                     t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
@@ -252,21 +270,21 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                         m00 = jh00
                         m11 = jh11
 
-                    for g in inactive_terms:
+                    # for g in inactive_terms:
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        gb = gains[g][t_m, f_m, a2_m, d_m]
+                    #     d_m = d_map_arr[g, d]  # Broadcast dir.
+                    #     t_m = t_map_arr[row_ind, g]
+                    #     f_m = f_map_arr[f, g]
+                    #     gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        gh00 = gb[0].conjugate()
-                        gh11 = gb[1].conjugate()
+                    #     gh00 = gb[0].conjugate()
+                    #     gh11 = gb[1].conjugate()
 
-                        jh00 = (m00*gh00)
-                        jh11 = (m11*gh11)
+                    #     jh00 = (m00*gh00)
+                    #     jh11 = (m11*gh11)
 
-                        m00 = jh00
-                        m11 = jh11
+                    #     m00 = jh00
+                    #     m11 = jh11
 
                     t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
