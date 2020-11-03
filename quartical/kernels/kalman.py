@@ -18,12 +18,12 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                  d_map_arr, corr_mode, active_term, inverse_gain_list,
+                  d_map_arr, corr_mode, active_term, inverse_gains,
                   gains, flags, row_map, row_weights):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
-    invert_gains(gains, inverse_gain_list, literally(corr_mode))
+    invert_gains(gains, inverse_gains, literally(corr_mode))
 
     complex_dtype = gains[active_term].dtype
     real_dtype = gains[active_term].real.dtype
@@ -76,7 +76,7 @@ def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             jhr,
                             model[sel, :, :, :],
                             [gains[active_term][i:i+1, :, :, :, :]],
-                            inverse_gain_list,
+                            inverse_gains,
                             residual,
                             a1[sel],
                             a2[sel],
