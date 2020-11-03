@@ -7,13 +7,13 @@ from quartical.kernels.helpers import get_dims, get_row, mul_rweight
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def invert_gains(gain_list, inverse_gain_list, mode):
+def invert_gains(gain_list, inverse_gains, mode):
 
     for gain_ind, gain in enumerate(gain_list):
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-        inverse_gain = inverse_gain_list[gain_ind]
+        inverse_gain = inverse_gains[gain_ind]
 
         for t in range(n_tint):
             for f in range(n_fint):

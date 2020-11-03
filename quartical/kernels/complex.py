@@ -22,12 +22,12 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, active_term, inverse_gain_list,
+                   d_map_arr, corr_mode, active_term, inverse_gains,
                    gains, flags, row_map, row_weights):
 
     n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
-    invert_gains(gains, inverse_gain_list, literally(corr_mode))
+    invert_gains(gains, inverse_gains, literally(corr_mode))
 
     dd_term = n_dir > 1
 
@@ -53,7 +53,7 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                         jhr,
                         model,
                         gains,
-                        inverse_gain_list,
+                        inverse_gains,
                         residual,
                         a1,
                         a2,
@@ -92,24 +92,24 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
+def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual,
                     a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
                     row_map, row_weights, active_term, corr_mode):
 
-    return _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list,
+    return _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains,
                             residual, a1, a2, weights, t_map_arr, f_map_arr,
                             d_map_arr, row_map, row_weights, active_term,
                             literally(corr_mode))
 
 
-def _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
+def _compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual,
                      a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
                      row_map, row_weights, active_term, corr_mode):
     pass
 
 
 @overload(_compute_jhj_jhr, inline="always")
-def _compute_jhj_jhr_impl(jhj, jhr, model, gains, inverse_gain_list,
+def _compute_jhj_jhr_impl(jhj, jhr, model, gains, inverse_gains,
                           residual, a1, a2, weights, t_map_arr, f_map_arr,
                           d_map_arr, row_map, row_weights, active_term,
                           corr_mode):
@@ -121,7 +121,7 @@ def _compute_jhj_jhr_impl(jhj, jhr, model, gains, inverse_gain_list,
 
 
 @register_jitable
-def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
+def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gains, residual, a1,
                  a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
                  row_weights, active_term, corr_mode):
 
@@ -305,7 +305,7 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
 
 
 @register_jitable
-def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
+def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                  a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
                  row_weights, active_term, corr_mode):
 
@@ -437,7 +437,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                         d_m = d_map_arr[g, d]  # Broadcast dir.
                         t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
-                        gai = inverse_gain_list[g][t_m, f_m, a1_m, d_m]
+                        gai = inverse_gains[g][t_m, f_m, a1_m, d_m]
 
                         ginv00 = gai[0]
                         ginv01 = gai[1]
@@ -516,7 +516,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                         d_m = d_map_arr[g, d]  # Broadcast dir.
                         t_m = t_map_arr[row_ind, g]
                         f_m = f_map_arr[f, g]
-                        gbi = inverse_gain_list[g][t_m, f_m, a2_m, d_m]
+                        gbi = inverse_gains[g][t_m, f_m, a2_m, d_m]
 
                         ginv00 = gbi[0]
                         ginv01 = gbi[1]

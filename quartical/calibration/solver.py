@@ -12,14 +12,14 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     # on the term type. We also probably need to consider how to parse
     # **kwargs into the solver for terms requiring ancilliary info.
 
-    gain_list = []
+    gain_tup = ()
     additional_args = []
     results_dict = {}
 
     for term_ind, term_spec in enumerate(term_spec_list):
         gain = np.zeros(term_spec.shape, dtype=np.complex128)
         gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
-        gain_list.append(gain)
+        gain_tup += (gain,)
 
         # This is a nasty interim hack. TODO: I need to settle on an interface
         # for customising each gain term. This is particularly important for
@@ -44,8 +44,8 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         results_dict[term_spec.name + "-conviter"] = 0
         results_dict[term_spec.name + "-convperc"] = 0
 
-    flag_list = [np.zeros_like(g, dtype=np.uint8) for g in gain_list]
-    inverse_gain_list = [np.empty_like(g) for g in gain_list]
+    flag_tup = tuple([np.zeros_like(g, dtype=np.uint8) for g in gain_tup])
+    inverse_gain_tup = tuple([np.empty_like(g) for g in gain_tup])
 
     for gain_ind, term_spec in enumerate(term_spec_list):
 
@@ -53,8 +53,8 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
         info_tup = \
             solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, gain_ind, inverse_gain_list,
-                   gain_list, flag_list, **additional_args[gain_ind])
+                   d_map_arr, corr_mode, gain_ind, inverse_gain_tup,
+                   gain_tup, flag_tup, **additional_args[gain_ind])
 
         results_dict[term_spec.name + "-conviter"] += \
             np.atleast_2d(info_tup.conv_iters)
