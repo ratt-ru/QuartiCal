@@ -97,7 +97,7 @@ def phase_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     return term_conv_info(i, cnv_perc)
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
                     a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
                     row_map, row_weights, active_term, corr_mode):

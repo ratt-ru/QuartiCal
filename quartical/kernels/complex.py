@@ -5,7 +5,10 @@ from numba.extending import overload, register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
-from quartical.kernels.helpers import get_row, mul_rweight
+from quartical.kernels.helpers import (get_row,
+                                       mul_rweight,
+                                       get_chan_extents,
+                                       get_row_extents)
 from collections import namedtuple
 
 
@@ -123,30 +126,51 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                  row_weights, active_term, corr_mode):
 
     _, n_chan, n_dir, n_corr = model.shape
-    n_out_dir = gains[active_term].shape[3]
 
     jhj[:] = 0
     jhr[:] = 0
 
+    n_tint, n_fint, n_ant, n_gdir, _ = gains[active_term].shape
+    n_int = n_tint*n_fint
+
     n_gains = len(gains)
 
-    n_tint = jhr.shape[0]  # Check this!
-
+    # This works but is suboptimal, particularly when it results in an empty
+    # array. Can be circumvented with overloads, but that is future work.
     inactive_terms = list(range(n_gains))
     inactive_terms.pop(active_term)
+    inactive_terms = np.array(inactive_terms)
 
-    for ti in prange(n_tint):
-        row_sel = np.where(t_map_arr[:, active_term] == ti)[0]
+    # Determine the starts and stops of the rows and channels associated with
+    # each solution interval. This could even be moved out for speed.
+    row_starts, row_stops = get_row_extents(t_map_arr,
+                                            active_term,
+                                            n_tint)
 
-        tmp_jh_p = np.zeros((n_out_dir, n_corr), dtype=jhj.dtype)
-        tmp_jh_q = np.zeros((n_out_dir, n_corr), dtype=jhj.dtype)
+    chan_starts, chan_stops = get_chan_extents(f_map_arr,
+                                               active_term,
+                                               n_fint,
+                                               n_chan)
 
-        for row_ind in row_sel:
+    for i in prange(n_int):
+
+        ti = i//n_fint
+        fi = i - ti*n_fint
+
+        rs = row_starts[ti]
+        re = row_stops[ti]
+        fs = chan_starts[fi]
+        fe = chan_stops[fi]
+
+        tmp_jh_p = np.zeros((n_gdir, n_corr), dtype=jhj.dtype)
+        tmp_jh_q = np.zeros((n_gdir, n_corr), dtype=jhj.dtype)
+
+        for row_ind in range(rs, re):
 
             row = get_row(row_ind, row_map)
             a1_m, a2_m = a1[row], a2[row]
 
-            for f in range(n_chan):
+            for f in range(fs, fe):
 
                 r = residual[row, f]
                 w = weights[row, f]  # Consider a map?
@@ -257,7 +281,7 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     tmp_jh_q[out_d, 0] += jh00
                     tmp_jh_q[out_d, 1] += jh11
 
-                for d in range(n_out_dir):
+                for d in range(n_gdir):
 
                     jh00 = tmp_jh_p[d, 0]
                     jh11 = tmp_jh_p[d, 1]
@@ -286,27 +310,46 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                  row_weights, active_term, corr_mode):
 
     _, n_chan, n_dir, n_corr = model.shape
-    n_out_dir = gains[active_term].shape[3]
 
     jhj[:] = 0
     jhr[:] = 0
 
+    n_tint, n_fint, n_ant, n_gdir, _ = gains[active_term].shape
+    n_int = n_tint*n_fint
+
     n_gains = len(gains)
 
-    n_tint = jhr.shape[0]
+    # Determine the starts and stops of the rows and channels associated with
+    # each solution interval. This could even be moved out for speed.
+    row_starts, row_stops = get_row_extents(t_map_arr,
+                                            active_term,
+                                            n_tint)
 
-    for ti in prange(n_tint):
-        row_sel = np.where(t_map_arr[:, active_term] == ti)[0]
+    chan_starts, chan_stops = get_chan_extents(f_map_arr,
+                                               active_term,
+                                               n_fint,
+                                               n_chan)
 
-        tmp_jh_p = np.zeros((n_out_dir, n_corr), dtype=jhj.dtype)
-        tmp_jh_q = np.zeros((n_out_dir, n_corr), dtype=jhj.dtype)
+    # Parallel over all solution intervals.
+    for i in prange(n_int):
 
-        for row_ind in row_sel:
+        ti = i//n_fint
+        fi = i - ti*n_fint
+
+        rs = row_starts[ti]
+        re = row_stops[ti]
+        fs = chan_starts[fi]
+        fe = chan_stops[fi]
+
+        tmp_jh_p = np.zeros((n_gdir, n_corr), dtype=jhj.dtype)
+        tmp_jh_q = np.zeros((n_gdir, n_corr), dtype=jhj.dtype)
+
+        for row_ind in range(rs, re):
 
             row = get_row(row_ind, row_map)
             a1_m, a2_m = a1[row], a2[row]
 
-            for f in range(n_chan):
+            for f in range(fs, fe):
 
                 r = residual[row, f]
                 w = weights[row, f]  # Consider a map?
@@ -503,7 +546,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                     tmp_jh_q[out_d, 2] += jh10
                     tmp_jh_q[out_d, 3] += jh11
 
-                for d in range(n_out_dir):
+                for d in range(n_gdir):
 
                     jh00 = tmp_jh_p[d, 0]
                     jh01 = tmp_jh_p[d, 1]
