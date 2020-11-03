@@ -5,7 +5,10 @@ from numba.extending import overload
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
-from quartical.kernels.helpers import get_row, mul_rweight
+from quartical.kernels.helpers import (get_row,
+                                       mul_rweight,
+                                       get_chan_extents,
+                                       get_row_extents)
 from collections import namedtuple
 
 
@@ -94,7 +97,7 @@ def phase_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     return term_conv_info(i, cnv_perc)
 
 
-@jit(nopython=True, fastmath=True, parallel=True, cache=False, nogil=True)
+@jit(nopython=True, fastmath=True, parallel=False, cache=False, nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, residual,
                     a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
                     row_map, row_weights, active_term, corr_mode):
@@ -135,32 +138,30 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
     jhr[:] = 0
 
     n_tint, n_fint, n_ant, n_gdir, _ = gains[active_term].shape
+    n_int = n_tint*n_fint
 
     cmplx_dtype = gains[active_term].dtype
 
     n_gains = len(gains)
 
+    # This works but is suboptimal, particularly when it results in an empty
+    # array. Can be circumvented with overloads, but that is future work.
     inactive_terms = list(range(n_gains))
     inactive_terms.pop(active_term)
+    inactive_terms = np.array(inactive_terms)
 
-    chan_starts = np.empty(n_fint, dtype=np.int32)
-    chan_starts[0] = 0
-    chan_starts[1:] = 1 + \
-        np.where(f_map_arr[1:, active_term] - f_map_arr[:-1, active_term])[0]
-    chan_stops = np.empty(n_fint, dtype=np.int32)
-    chan_stops[-1] = n_chan
-    chan_stops[:-1] = chan_starts[1:]
+    # Determine the starts and stops of the rows and channels associated with
+    # each solution interval. This could even be moved out for speed.
+    row_starts, row_stops = get_row_extents(t_map_arr,
+                                            active_term,
+                                            n_tint)
 
-    row_starts = np.empty(n_tint, dtype=np.int32)
-    row_starts[0] = 0
-    row_starts[1:] = 1 + \
-        np.where(t_map_arr[1:, active_term] - t_map_arr[:-1, active_term])[0]
-    row_stops = np.empty(n_tint, dtype=np.int32)
-    row_stops[-1] = t_map_arr[1:, active_term].size
-    row_stops[:-1] = row_starts[1:]
+    chan_starts, chan_stops = get_chan_extents(f_map_arr,
+                                               active_term,
+                                               n_fint,
+                                               n_chan)
 
-    n_int = n_tint*n_fint
-
+    # Parallel over all solution intervals.
     for i in prange(n_int):
 
         ti = i//n_fint
@@ -224,21 +225,21 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                         mh00 = jh00
                         mh11 = jh11
 
-                    # for g in inactive_terms:
+                    for g in inactive_terms:
 
-                    #     d_m = d_map_arr[g, d]  # Broadcast dir.
-                    #     t_m = t_map_arr[row_ind, g]
-                    #     f_m = f_map_arr[f, g]
-                    #     ga = gains[g][t_m, f_m, a1_m, d_m]
+                        d_m = d_map_arr[g, d]  # Broadcast dir.
+                        t_m = t_map_arr[row_ind, g]
+                        f_m = f_map_arr[f, g]
+                        ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                    #     gh00 = ga[0].conjugate()
-                    #     gh11 = ga[1].conjugate()
+                        gh00 = ga[0].conjugate()
+                        gh11 = ga[1].conjugate()
 
-                    #     jh00 = (mh00*gh00)
-                    #     jh11 = (mh11*gh11)
+                        jh00 = (mh00*gh00)
+                        jh11 = (mh11*gh11)
 
-                    #     mh00 = jh00
-                    #     mh11 = jh11
+                        mh00 = jh00
+                        mh11 = jh11
 
                     t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
@@ -270,21 +271,21 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, residual, a1,
                         m00 = jh00
                         m11 = jh11
 
-                    # for g in inactive_terms:
+                    for g in inactive_terms:
 
-                    #     d_m = d_map_arr[g, d]  # Broadcast dir.
-                    #     t_m = t_map_arr[row_ind, g]
-                    #     f_m = f_map_arr[f, g]
-                    #     gb = gains[g][t_m, f_m, a2_m, d_m]
+                        d_m = d_map_arr[g, d]  # Broadcast dir.
+                        t_m = t_map_arr[row_ind, g]
+                        f_m = f_map_arr[f, g]
+                        gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                    #     gh00 = gb[0].conjugate()
-                    #     gh11 = gb[1].conjugate()
+                        gh00 = gb[0].conjugate()
+                        gh11 = gb[1].conjugate()
 
-                    #     jh00 = (m00*gh00)
-                    #     jh11 = (m11*gh11)
+                        jh00 = (m00*gh00)
+                        jh11 = (m11*gh11)
 
-                    #     m00 = jh00
-                    #     m11 = jh11
+                        m00 = jh00
+                        m11 = jh11
 
                     t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]

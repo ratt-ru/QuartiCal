@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from numba.extending import overload
 from numba import jit, types
+import numpy as np
 
 
 # Handy alias for functions that need to be jitted in this way.
@@ -99,3 +100,41 @@ def _mul_rweight(vis, weight, ind):
         def impl(vis, weight, ind):
             return vis*weight[ind]
         return impl
+
+
+@injit
+def get_chan_extents(f_map_arr, active_term, n_fint, n_chan):
+    """Given the frequency mappings, determines the start/stop indices."""
+
+    chan_starts = np.empty(n_fint, dtype=np.int32)
+    chan_starts[0] = 0
+
+    chan_stops = np.empty(n_fint, dtype=np.int32)
+    chan_stops[-1] = n_chan
+
+    # NOTE: This might not be correct for decreasing channel freqs.
+    if n_fint > 1:
+        chan_starts[1:] = 1 + np.where(
+            f_map_arr[1:, active_term] - f_map_arr[:-1, active_term])[0]
+        chan_stops[:-1] = chan_starts[1:]
+
+    return chan_starts, chan_stops
+
+
+@injit
+def get_row_extents(t_map_arr, active_term, n_tint):
+    """Given the time mappings, determines the row start/stop indices."""
+
+    row_starts = np.empty(n_tint, dtype=np.int32)
+    row_starts[0] = 0
+
+    row_stops = np.empty(n_tint, dtype=np.int32)
+    row_stops[-1] = t_map_arr[1:, active_term].size
+
+    # NOTE: This assumes time ordered data (row runs).
+    if n_tint > 1:
+        row_starts[1:] = 1 + np.where(
+            t_map_arr[1:, active_term] - t_map_arr[:-1, active_term])[0]
+        row_stops[:-1] = row_starts[1:]
+
+    return row_starts, row_stops
