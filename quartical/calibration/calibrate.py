@@ -105,8 +105,14 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # up implicitly updating the xds.
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
-        time_col = \
-            xds.UPSAMPLED_TIME.data if opts.input_ms_is_bda else xds.TIME.data
+
+        if opts.input_ms_is_bda:
+            time_col = xds.UPSAMPLED_TIME.data
+            interval_col = xds.UPSAMPLED_INTERVAL.data
+        else:
+            time_col = xds.TIME.data
+            interval_col = xds.INTERVAL.data
+
         bitflag_col = xds.BITFLAG.data
         weight_col = xds.WEIGHT.data
         data_bitflags = xds.DATA_BITFLAGS.data
@@ -115,9 +121,20 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # Convert the time column data into indices. Chunks is expected to be a
         # tuple of tuples.
         utime_chunks = xds.UTIME_CHUNKS
-        _, utime_ind = blockwise_unique(time_col,
-                                        (utime_chunks,),
-                                        return_inverse=True)
+        _, utime_loc, utime_ind = blockwise_unique(time_col,
+                                                   (utime_chunks,),
+                                                   return_index=True,
+                                                   return_inverse=True)
+
+        # Assosciate each unique time with an interval. This assumes that all
+        # rows at a given time have the same interval as the alternative is
+        # madness.
+        utime_intervals = da.map_blocks(
+            lambda arr, inds: arr[inds],
+            interval_col,
+            utime_loc,
+            chunks=utime_loc.chunks,
+            dtype=np.float64)
 
         # Daskify the chunks per array - these are already known from the
         # initial chunking step.
@@ -140,7 +157,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
         # Construct arrays containing mappings between data resolution and
         # solution intervals per term.
-        t_map_arr = make_t_mappings(utime_ind, opts)
+        t_map_arr = make_t_mappings(utime_ind, utime_intervals, opts)
         f_map_arr = make_f_mappings(chan_freqs, opts)
         d_map_arr = make_d_mappings(n_dir, opts)
 
@@ -248,7 +265,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
     return gain_xds_dict, post_cal_data_xds_list
 
 
-def make_t_mappings(utime_ind, opts):
+def make_t_mappings(utime_ind, utime_intervals, opts):
     """Generate time to solution interval mapping."""
 
     terms = opts.solver_gain_terms
@@ -262,8 +279,10 @@ def make_t_mappings(utime_ind, opts):
     # Generate a mapping between time at data resolution and time
     # intervals. The or handles the 0 (full axis) case.
 
-    t_map_arr = utime_ind.map_blocks(
-        lambda t, t_i: np.floor_divide(t[:, None], t_i, dtype=np.int32),
+    t_map_arr = da.map_blocks(
+        _make_t_mappings,
+        utime_ind,
+        utime_intervals,
         t_ints,
         chunks=(utime_ind.chunks[0], (n_term,)),
         new_axis=1,
@@ -271,6 +290,29 @@ def make_t_mappings(utime_ind, opts):
         name="tmaps-" + uuid4().hex)
 
     return t_map_arr
+
+
+def _make_t_mappings(utime_ind, utime_intervals, t_ints):
+
+    tmap = np.empty((utime_ind.size, len(t_ints)), dtype=np.int32)
+
+    for tn, t_int in enumerate(t_ints):
+        if isinstance(t_int, float):
+            bins = np.empty_like(utime_intervals, dtype=np.int32)
+            net_ivl = 0
+            bin_num = 0
+            for i, ivl in enumerate(utime_intervals):
+                bins[i] = bin_num
+                net_ivl += ivl
+                if net_ivl >= t_int:
+                    net_ivl = 0
+                    bin_num += 1
+            tmap[:, tn] = bins[utime_ind]
+
+        else:
+            tmap[:, tn] = np.floor_divide(utime_ind, t_int, dtype=np.int32)
+
+    return tmap
 
 
 def make_f_mappings(chan_freqs, opts):

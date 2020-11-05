@@ -526,6 +526,11 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
                                            dtype=np.float64,
                                            chunks=(upsample_size,))
 
+        # TODO: This assumes a consistent interval everywhere, as we are still
+        # using the GCD logic. This will need to change when we have access to
+        # a BDA table which allows us to better restore the time axis.
+        upsampled_ivl_col = gcd*da.ones_like(upsampled_time_col)
+
         row_map = da.map_blocks(
             lambda _col, _reps: np.repeat(np.arange(_col.size), _reps),
             time_col,
@@ -539,6 +544,8 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
 
         _bda_xds = xds.assign({"UPSAMPLED_TIME": (("urow",),
                               upsampled_time_col),
+                               "UPSAMPLED_INTERVAL": (("urow",),
+                              upsampled_ivl_col),
                                "ROW_MAP": (("urow",),
                               row_map),
                                "ROW_WEIGHTS": (("urow",),
