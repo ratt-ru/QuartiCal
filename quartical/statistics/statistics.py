@@ -235,19 +235,22 @@ def silent_divide(in1, in2, undefined=0):
 
 
 def per_chan_to_per_int(sigma_sqrd_per_chan, avg_abs_sqrd_model_int, n_time,
-                        t_int, f_int):
+                        t_map, f_map):
     """Converts per channel sigma squared into per interval sigma squared."""
-
-    n_chan = sigma_sqrd_per_chan.shape[1]
 
     sigma_sqrd_per_int = np.zeros_like(avg_abs_sqrd_model_int,
                                        dtype=sigma_sqrd_per_chan.dtype)
 
+    # This is a workaround for breakage introduced by allowing solution
+    # interval in seconds. Not thoroughly tested.
+    _, t_ind = np.unique(t_map, return_index=True)
+    _, f_ind = np.unique(f_map, return_index=True)
+
     chan_per_int = np.add.reduceat(sigma_sqrd_per_chan,
-                                   np.arange(0, n_chan, f_int),
+                                   f_ind,
                                    axis=1)
     time_per_int = np.add.reduceat(np.ones(n_time),
-                                   np.arange(0, n_time, t_int))
+                                   t_ind)
 
     sigma_sqrd_per_int[:] = \
         (time_per_int[:, None]*chan_per_int)[..., None, None, None]
@@ -475,7 +478,8 @@ def assign_presolve_data_stats(data_xds, utime_ind, utime_per_chunk):
 
 
 def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
-                          avg_abs_sqrd_model, utime_per_chunk, opts):
+                          avg_abs_sqrd_model, utime_per_chunk, t_bin_arr,
+                          f_map_arr, opts):
     """Assign interval based statistics to gain xarray.Datasets.
 
     Computes and assigns the prior gain error, missing fraction, and
@@ -488,6 +492,8 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
         unflagged_tfac: dask.Array of unflagged values per (t, f, a, c).
         avg_abs_sqrd_model: dask.Array containing average abs squared model.
         utime_per_chunk: dask.Array of number of unique times per chunk.
+        t_bin_arr: dask.Array with binnings from utime to sol int.
+        f_map_arr: dask.Array with mapping from freq to sol int.
         opts: A Namespce object containing global options.
 
     Returns:
@@ -497,16 +503,11 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
 
     updated_gain_xds_list = []
 
-    for gain_xds in gain_xds_list:
+    for gain_idx, gain_xds in enumerate(gain_xds_list):
 
         n_time, n_chan = [data_stats_xds.dims[d] for d in ["time", "chan"]]
         n_dir = gain_xds.dims["dir"]  # TODO: Add fixed direction logic.
         n_ant = gain_xds.dims["ant"]
-
-        t_int = \
-            getattr(opts, "{}_time_interval".format(gain_xds.NAME)) or n_time
-        f_int = \
-            getattr(opts, "{}_freq_interval".format(gain_xds.NAME)) or n_chan
 
         ti_chunks = gain_xds.CHUNK_SPEC.tchunk
         fi_chunks = gain_xds.CHUNK_SPEC.fchunk
@@ -520,8 +521,8 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
 
         unflagged_tifiac = da.blockwise(tfx_to_tifix, data_schema,
                                         unflagged_tfac, data_schema,
-                                        t_int, None,
-                                        f_int, None,
+                                        t_bin_arr[:, gain_idx], ("rowlike",),
+                                        f_map_arr[:, gain_idx], ("chan",),
                                         dtype=np.int32,
                                         concatenate=True,
                                         align_arrays=False,
@@ -561,8 +562,8 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
         avg_abs_sqrd_model_int = \
             da.blockwise(tfx_to_tifix, model_schema,
                          local_avg_abs_sqrd_model, model_schema,
-                         t_int, None,
-                         f_int, None,
+                         t_bin_arr[:, gain_idx], ("rowlike",),
+                         f_map_arr[:, gain_idx], ("chan",),
                          dtype=np.float32,
                          concatenate=True,
                          align_arrays=False,
@@ -584,8 +585,8 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
                          sigma_sqrd_per_chan, ("rowlike", "chan"),
                          avg_abs_sqrd_model_int, model_schema,
                          utime_per_chunk, ("rowlike",),
-                         t_int, None,
-                         f_int, None,
+                         t_bin_arr[:, gain_idx], ("rowlike",),
+                         f_map_arr[:, gain_idx], ("chan",),
                          dtype=np.float32,
                          concatenate=True,
                          align_arrays=False)
@@ -623,8 +624,8 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
         eqs_per_interval = \
             da.blockwise(tfx_to_tifix, ("rowlike", "chan"),
                          data_stats_xds.eqs_per_tf.data, ("rowlike", "chan"),
-                         t_int, None,
-                         f_int, None,
+                         t_bin_arr[:, gain_idx], ("rowlike",),
+                         f_map_arr[:, gain_idx], ("chan",),
                          dtype=np.int32,
                          concatenate=True,
                          align_arrays=False,
