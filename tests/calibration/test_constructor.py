@@ -1,3 +1,6 @@
+from argparse import Namespace
+import pickle
+
 import pytest
 from quartical.parser import preprocess
 from quartical.data_handling.ms_handler import (read_xds_list,
@@ -6,7 +9,6 @@ from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import make_gain_xds_list
 from quartical.calibration.constructor import (construct_solver,
                                                expand_specs)
-from argparse import Namespace
 import dask.array as da
 import numpy as np
 
@@ -84,6 +86,13 @@ def _expand_specs(_construct_solver):
     gain_xds_list = _construct_solver
 
     return expand_specs(gain_xds_list)
+
+
+# -----------------------------pickling--------------------------------
+def test_pickling(_construct_solver, opts):
+    data = _construct_solver
+    assert pickle.loads(pickle.dumps(data)) == data
+
 
 # -----------------------------construct_solver--------------------------------
 
