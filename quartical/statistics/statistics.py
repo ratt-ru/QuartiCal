@@ -69,10 +69,12 @@ def assign_noise_estimates(stats_xds, data_col, data_bitflags, ant1_col,
 
 
 def _eqns_per_antenna(a, **kw):
+    # Factor of 2 accounts for conjugate points
     return 2*np.sum(a, **kw)[..., 0]
 
 def _eqns_per_tf_slot(a, **kw):
-        return 2*np.sum(a, **kw)[..., 0, 0],
+    # Factor of 2 accounts for conjugate points
+    return 2*np.sum(a, **kw)[..., 0, 0],
 
 def _total_eqs(a, **kws):
     return np.sum(a, **kw)
@@ -103,8 +105,8 @@ def assign_tf_stats(stats_xds, unflagged_tfac):
         [stats_xds.dims[d] for d in ["t_chunk", "f_chunk", "ant"]]
 
     # Determine the number of equations per antenna by summing the appropriate
-    # values from the per-row unflagged values. The factor of 2 accounts for
-    # the conjugate points. Slicing sqeezes out dimensions.
+    # values from the per-row unflagged values.
+    # Slicing sqeezes out dimensions.
 
     eqs_per_ant = da.map_blocks(
         _eqns_per_antenna,
@@ -112,17 +114,19 @@ def assign_tf_stats(stats_xds, unflagged_tfac):
         axis=(0, 1, 3),
         keepdims=True,
         drop_axis=3,
+        dtype=np.int64,
         chunks=((1,)*n_t_chunk,
                 (1,)*n_f_chunk,
                 (n_ant,)))
 
-    # Determine the number of equations per time-frequency slot. The factor of
-    # 2 accounts for the conjugate points. Slicing squeezes out dimensions.
+    # Determine the number of equations per time-frequency slot.
+    # Slicing squeezes out dimensions.
     eqs_per_tf = da.map_blocks(
         _eqns_per_tf_slot,
         unflagged_tfac,
         axis=(2, 3),
         keepdims=True,
+        meta=np.empty((0,0), dtype=np.int64),
         drop_axis=(2, 3))
 
     # Determine the normalisation factor as the reciprocal of the equations
@@ -434,7 +438,6 @@ def assign_presolve_data_stats(data_xds, utime_ind, utime_per_chunk):
                      adjust_chunks={"rowlike": utime_chunks})
 
     # Create an xarray.Dataset object to store the statistics.
-
     stats_xds = create_data_stats_xds(n_utime,
                                       n_chan,
                                       n_ant,
@@ -628,7 +631,6 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
 
         # Determine the number of equations per interval by collapsing the
         # equations per time-frequency array.
-
         eqs_per_interval = \
             da.blockwise(tfx_to_tifix, ("rowlike", "chan"),
                          data_stats_xds.eqs_per_tf.data, ("rowlike", "chan"),
