@@ -1,3 +1,5 @@
+import pickle
+
 import pytest
 from quartical.utils.dask import Blocker, blockwise_unique, as_dict
 import dask.array as da
@@ -22,7 +24,7 @@ def test_as_dict(outputs):
     def f():
         return (1,)*len(outputs) if len(outputs) > 1 else 1
 
-    output_dict = as_dict(*outputs)(f)()
+    output_dict = as_dict(f, *outputs)()
 
     assert all([output in output_dict for output in outputs])
 
@@ -34,7 +36,7 @@ def test_insufficient_names():
         return a, b, c
 
     with pytest.raises(ValueError):
-        as_dict("a", "b")(f)(0, 0, 0)
+        as_dict(f, "a", "b")(0, 0, 0)
 
 # -----------------------------blockwise_unique--------------------------------
 
@@ -47,6 +49,11 @@ def test_values(test_data):
         [np.unique(b.compute()) for b in test_data.blocks])
 
     assert_array_equal(np_unique, da_unique.compute())
+
+
+def test_blockwise_unique_pickling(test_data):
+    da_unique = blockwise_unique(test_data)
+    assert_array_equal(pickle.loads(pickle.dumps(da_unique)), da_unique)
 
 
 def test_indices(test_data):
@@ -105,7 +112,7 @@ def test_axis():
 def test_1dsum(test_data):
     """Test that the blocker works for a simple 1D blockwise sum."""
 
-    B = Blocker(as_dict("sum")(np.sum), "i")
+    B = Blocker(as_dict(np.sum, "sum"), "i")
 
     B.add_input("a", test_data, "i")
     B.add_input("keepdims", True)
@@ -124,7 +131,7 @@ def test_1dsum(test_data):
 def test_ndsum(test_data):
     """Test that the blocker works for an ND blockwise sum."""
 
-    B = Blocker(as_dict("sum")(lambda a: (np.atleast_2d(np.sum(a)))), "ij")
+    B = Blocker(as_dict(lambda a: (np.atleast_2d(np.sum(a))), "sum"), "ij")
 
     local_test_data = da.outer(test_data, test_data.T)
 
@@ -146,7 +153,7 @@ def test_ndsum(test_data):
 def test_mixed_axes(test_data):
     """Test that the blocker works for a simple 1D blockwise sum."""
 
-    B = Blocker(as_dict("add")(lambda a, b: a[:, None] + b[None, :]), "ij")
+    B = Blocker(as_dict(lambda a, b: a[:, None] + b[None, :], "add"), "ij")
 
     B.add_input("a", test_data, "i")
     B.add_input("b", test_data, "j")
@@ -167,7 +174,7 @@ def test_mixed_axes(test_data):
 def test_missing_axis(test_data):
     """Test that having an output index not present on the input fails."""
 
-    B = Blocker(as_dict("square")(np.square), "j")
+    B = Blocker(as_dict(np.square, "square"), "j")
 
     # This is necessary to bypass an error which may be raised earlier.
     local_test_data = test_data.rechunk(test_data.shape)
@@ -183,7 +190,7 @@ def test_missing_axis(test_data):
 def test_mismatched_axis(test_data):
     """Test that having unequal chunks along an axis fails."""
 
-    B = Blocker(as_dict("add")(lambda a, b: a + b), "i")
+    B = Blocker(as_dict(lambda a, b: a + b, "add"), "i")
 
     B.add_input("a", test_data, "i")
 
@@ -194,7 +201,7 @@ def test_mismatched_axis(test_data):
 def test_inconsistent_input(test_data):
     """Test that having indices on a scalar fails."""
 
-    B = Blocker(as_dict("add")(lambda a: a), "i")
+    B = Blocker(as_dict(lambda a: a, "add"), "i")
 
     B.add_input("a", test_data, "i")
     B.add_input("b", True, "i")
@@ -208,7 +215,7 @@ def test_inconsistent_input(test_data):
 def test_per_chunk_list_input(test_data):
     """Test list with an entry per chunk."""
 
-    B = Blocker(as_dict("add")(lambda a, b: a + b), "i")
+    B = Blocker(as_dict(lambda a, b: a + b, "add"), "i")
 
     B.add_input("a", test_data, "i")
     B.add_input("b", list(range(10)), "i")
@@ -227,7 +234,7 @@ def test_per_chunk_list_input(test_data):
 def test_along_axis_list_input(test_data):
     """Test list with an entry per chunk along an axis."""
 
-    B = Blocker(as_dict("add")(lambda a, b: a[:, None] + b), "ij")
+    B = Blocker(as_dict(lambda a, b: a[:, None] + b, "add"), "ij")
 
     test_list = list(range(6))
 
@@ -248,7 +255,7 @@ def test_along_axis_list_input(test_data):
 def test_multi_axis_list_input(test_data):
     """Test list with an entry per chunk along multiple axes."""
 
-    B = Blocker(as_dict("add")(lambda a, b: a[:, None] + b), "ij")
+    B = Blocker(as_dict(lambda a, b: a[:, None] + b, "add"), "ij")
 
     inner_list_len = 6
 
@@ -273,7 +280,7 @@ def test_multi_axis_list_input(test_data):
 def test_contraction(test_data):
     """Check that we raise an error when a contraction would be required."""
 
-    B = Blocker(as_dict("sum")(lambda a: (np.atleast_1d(np.sum(a)))), "i")
+    B = Blocker(as_dict(lambda a: (np.atleast_1d(np.sum(a))), "sum"), "i")
 
     local_test_data = da.outer(test_data, test_data.T)
 

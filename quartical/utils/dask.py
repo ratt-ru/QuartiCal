@@ -9,22 +9,23 @@ from itertools import product
 from functools import wraps
 
 
-def as_dict(*keys):
+class as_dict:
     """Decorator which turns function outputs into dictionary entries."""
-    def decorator_as_dict(func):
-        @wraps(func)
-        def wrapper_as_dict(*args, **kwargs):
-            values = func(*args, **kwargs)
+    def __init__(self, func, *keys):
+        self.func = func
+        self.keys = keys
 
-            if len(keys) == 1:
-                values = (values,)
-            elif len(keys) != len(values):
-                raise ValueError(f"{len(keys)} keys provided for "
-                                 f"{len(values)} output values.")
+    def __call__(self, *args, **kwargs):
+        values = self.func(*args, **kwargs)
+        keys = self.keys
 
-            return dict(zip(keys, values))
-        return wrapper_as_dict
-    return decorator_as_dict
+        if len(keys) == 1:
+            values = (values,)
+        elif len(keys) != len(values):
+            raise ValueError(f"{len(keys)} keys provided for "
+                                f"{len(values)} output values.")
+
+        return dict(zip(keys, values))
 
 
 class Blocker:
@@ -292,7 +293,7 @@ def blockwise_unique(arr, chunks=None, return_index=False,
     if return_counts:
         output_names.append("counts")
 
-    B = Blocker(as_dict(*output_names)(np.unique), "r")
+    B = Blocker(as_dict(np.unique, *output_names), "r")
 
     B.add_input("ar", arr, "r")
     B.add_input("return_index", return_index)
