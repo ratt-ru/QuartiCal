@@ -166,7 +166,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # Generate an xds per gain term - these conveniently store dimension
         # info. We can assign results to them later.
 
-        gain_xds_list = make_gain_xds_list(xds, t_map_arr, opts)
+        gain_xds_list = make_gain_xds_list(xds, t_map_arr, f_map_arr, opts)
 
         # Update the gain xds with relevant interval statistics. Used to be
         # very expensive - has been improved.
@@ -409,7 +409,7 @@ def make_d_mappings(n_dir, opts):
     return d_map_arr
 
 
-def make_gain_xds_list(data_xds, t_map_arr, opts):
+def make_gain_xds_list(data_xds, t_map_arr, f_map_arr, opts):
     """Returns a list of xarray.Dataset objects describing the gain terms.
 
     For a given input xds containing data, creates an xarray.Dataset object
@@ -460,8 +460,12 @@ def make_gain_xds_list(data_xds, t_map_arr, opts):
         # Number of frequency intervals per data chunk. If this is zero,
         # solution interval is the entire axis per chunk.
         if f_int:
-            n_f_int_per_chunk = tuple(int(np.ceil(nc/f_int))
-                                      for nc in freq_chunks)
+            # TODO: This is also pretty high on the shitty to do pile. This
+            # works but I think that I actually need to move all of this to
+            # a preprocessing step.
+            n_f_int_per_chunk = tuple([int(nfipc) for nfipc in da.map_blocks(
+                lambda arr: np.atleast_1d(np.max(arr) + 1).astype(int),
+                f_map_arr[:, term_ind]).compute()])
         else:
             n_f_int_per_chunk = tuple(1 for _ in range(len(freq_chunks)))
 
