@@ -117,6 +117,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         weight_col = xds.WEIGHT.data
         data_bitflags = xds.DATA_BITFLAGS.data
         chan_freqs = xds.CHAN_FREQ.data
+        chan_widths = xds.CHAN_WIDTH.data
 
         # Convert the time column data into indices. Chunks is expected to be a
         # tuple of tuples.
@@ -159,7 +160,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # solution intervals per term.
         t_bin_arr = make_t_binnings(utime_per_chunk, utime_intervals, opts)
         t_map_arr = make_t_mappings(utime_ind, t_bin_arr)
-        f_map_arr = make_f_mappings(chan_freqs, opts)
+        f_map_arr = make_f_mappings(chan_freqs, chan_widths, opts)
         d_map_arr = make_d_mappings(n_dir, opts)
 
         # Generate an xds per gain term - these conveniently store dimension
@@ -342,7 +343,7 @@ def make_t_mappings(utime_ind, t_bin_arr):
     return t_map_arr
 
 
-def make_f_mappings(chan_freqs, opts):
+def make_f_mappings(chan_freqs, chan_widths, opts):
     """Generate channel to solution interval mapping."""
 
     terms = opts.solver_gain_terms
@@ -356,13 +357,39 @@ def make_f_mappings(chan_freqs, opts):
     # Generate a mapping between frequency at data resolution and
     # frequency intervals.
 
-    f_map_arr = chan_freqs.map_blocks(
-        lambda f, f_i: np.arange(f.size, dtype=np.int32)[:, None]//f_i,
+    f_map_arr = da.map_blocks(
+        _make_f_mappings,
+        chan_freqs,
+        chan_widths,
         f_ints,
         chunks=(chan_freqs.chunks[0], (n_term,)),
         new_axis=1,
         dtype=np.int32,
         name="fmaps-" + uuid4().hex)
+
+    return f_map_arr
+
+
+def _make_f_mappings(chan_freqs, chan_widths, f_ints):
+    """Internals of the frequency interval mapper."""
+
+    n_chan = chan_freqs.size
+    n_term = len(f_ints)
+
+    f_map_arr = np.empty((n_chan, n_term), dtype=np.int32)
+
+    for fn, f_int in enumerate(f_ints):
+        if isinstance(f_int, float):
+            net_ivl = 0
+            bin_num = 0
+            for i, ivl in enumerate(chan_widths):
+                f_map_arr[i, fn] = bin_num
+                net_ivl += ivl
+                if net_ivl >= f_int:
+                    net_ivl = 0
+                    bin_num += 1
+        else:
+            f_map_arr[:, fn] = np.arange(n_chan)//f_int
 
     return f_map_arr
 

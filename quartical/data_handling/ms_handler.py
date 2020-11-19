@@ -134,7 +134,7 @@ def read_xds_list(opts):
     spw_xds_list = xds_from_table(
         opts.input_ms_name + "::SPECTRAL_WINDOW",
         group_cols=["__row__"],
-        columns="CHAN_FREQ",
+        columns=["CHAN_FREQ", "CHAN_WIDTH"],
         chunks={"row": 1, "chan": opts.input_ms_freq_chunk or -1})
 
     # The spectral window xds should be currectly chunked in frequency.
@@ -248,6 +248,8 @@ def read_xds_list(opts):
     data_xds_list = [xds.assign(
         {"CHAN_FREQ":
             (("chan",), spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data[0]),
+         "CHAN_WIDTH":
+            (("chan",), spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data[0]),
          "ANT_NAME":
             (("ant",), antenna_xds.NAME.data)}) for xds in data_xds_list]
 
