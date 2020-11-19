@@ -116,6 +116,17 @@ def t_map_arr(data_xds, xds_opts):
 
 
 @pytest.fixture(scope="module")
+def f_map_arr(data_xds, xds_opts):
+
+    chan_freqs = data_xds.CHAN_FREQ.data
+    chan_widths = data_xds.CHAN_WIDTH.data
+
+    f_map_arr = make_f_mappings(chan_freqs, chan_widths, xds_opts)
+
+    return f_map_arr
+
+
+@pytest.fixture(scope="module")
 def expected_t_ints(data_xds, xds_opts):
 
     n_row = data_xds.dims["row"]
@@ -155,9 +166,50 @@ def expected_t_ints(data_xds, xds_opts):
 
 
 @pytest.fixture(scope="module")
+def expected_f_ints(data_xds, xds_opts):
+
+    n_chan = data_xds.dims["chan"]
+    f_ints = [getattr(xds_opts, term + "_freq_interval") or n_chan
+              for term in xds_opts.solver_gain_terms]
+
+    expected_f_ints = []
+
+    da_chan_freq_col = data_xds.CHAN_FREQ.data
+    da_chan_width_col = data_xds.CHAN_WIDTH.data
+
+    for f_int in f_ints:
+        if isinstance(f_int, float):
+            term_expected_f_ints = []
+            for ind in range(da_chan_freq_col.npartitions):
+                chan_width_col = da_chan_width_col.blocks[ind].compute()
+                num_int = 0
+                sol_width = 0
+                for cw in chan_width_col:
+                    sol_width += cw
+                    if sol_width >= f_int:
+                        num_int += 1
+                        sol_width = 0
+                if sol_width:
+                    num_int += 1
+                    sol_width = 0
+                term_expected_f_ints.append(num_int)
+            expected_f_ints.append(term_expected_f_ints)
+        else:
+            expected_f_ints.append([np.ceil(fc/f_int)
+                                    for fc in da_chan_freq_col.chunks[0]])
+
+    return expected_f_ints
+
+
+@pytest.fixture(scope="module")
 def _add_calibration_graph(data_xds_list, col_kwrds, xds_opts):
 
     return add_calibration_graph(data_xds_list, col_kwrds, xds_opts)
+
+
+@pytest.fixture(scope="module")
+def gain_xds_list(data_xds, t_map_arr, f_map_arr, xds_opts):
+    return make_gain_xds_list(data_xds, t_map_arr, f_map_arr, xds_opts)
 
 
 @pytest.fixture(scope="module")
@@ -281,26 +333,33 @@ def test_f_mappings(freq_int, freq_chunk, mapping_opts):
     """Test construction of freq mappings for different chunks/intervals."""
 
     opts = mapping_opts
-    opts.G_time_interval = freq_int  # Setting time interval on first gain.
-    opts.B_time_interval = freq_int*2  # Setting time interval on second gain.
+    opts.G_freq_interval = freq_int  # Setting freq interval on first gain.
+    opts.B_freq_interval = freq_int*2  # Setting freq interval on second gain.
 
     n_freq = 64  # Total number of channels to consider.
 
     chan_freqs = da.arange(n_freq, chunks=freq_chunk)
+    chan_widths = da.ones(n_freq, chunks=freq_chunk)*7
 
-    da_f_maps = make_f_mappings(chan_freqs, opts)
+    da_f_maps = make_f_mappings(chan_freqs, chan_widths, opts)
 
     # Set up and compute numpy values to test against.
 
     f_ints = [getattr(opts, t + "_freq_interval") or n_freq
               for t in opts.solver_gain_terms]
 
-    np_f_maps = [np.array(list(map(lambda fi: np.arange(nf)//fi, f_ints))).T
-                 for nf in chan_freqs.chunks[0]]
-    np_f_maps = np.concatenate(np_f_maps, axis=0)
-
-    assert_array_equal(da_f_maps, np_f_maps)
-
+    for block_ind in range(da_f_maps.npartitions):
+        f_map = da_f_maps.blocks[block_ind].compute()
+        chan_width = chan_widths.blocks[block_ind].compute()
+        for g_ind, f_int in enumerate(f_ints):
+            if isinstance(f_int, float):
+                sol_widths = np.zeros(np.max(f_map[:, g_ind] + 1))
+                for ivl_ind, target in enumerate(f_map[:, g_ind]):
+                    sol_widths[target] += chan_width[ivl_ind]
+                assert all(sol_widths[:-1] >= f_int)
+            else:
+                assert all(np.unique(f_map[:, g_ind],
+                                     return_counts=True)[1] <= f_int)
 
 # ------------------------------make_d_mappings--------------------------------
 
@@ -328,18 +387,14 @@ def test_d_mappings(n_dir, has_dd_term, mapping_opts):
 # ----------------------------make_gain_xds_list-------------------------------
 
 
-def test_nterm(data_xds, t_map_arr, xds_opts):
+def test_nterm(gain_xds_list, xds_opts):
     """Each gain term should produce a gain xds."""
-
-    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, xds_opts)
 
     assert len(xds_opts.solver_gain_terms) == len(gain_xds_list)
 
 
-def test_data_coords(data_xds, t_map_arr, xds_opts):
+def test_data_coords(data_xds, gain_xds_list):
     """Check that dimensions shared between the gains and data are the same."""
-
-    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, xds_opts)
 
     data_coords = ["ant", "dir", "corr"]
 
@@ -348,53 +403,36 @@ def test_data_coords(data_xds, t_map_arr, xds_opts):
                for d in data_coords)
 
 
-def test_t_chunking(data_xds, t_map_arr, xds_opts):
+def test_t_chunking(data_xds, gain_xds_list):
     """Check that time chunking of the gain xds list is correct."""
-
-    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, xds_opts)
 
     assert all(len(data_xds.UTIME_CHUNKS) == gxds.dims["t_chunk"]
                for gxds in gain_xds_list)
 
 
-def test_f_chunking(data_xds, t_map_arr, xds_opts):
+def test_f_chunking(data_xds, gain_xds_list, xds_opts):
     """Check that frequency chunking of the gain xds list is correct."""
-
-    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, xds_opts)
 
     assert all(len(data_xds.chunks["chan"]) == gxds.dims["f_chunk"]
                for gxds in gain_xds_list)
 
 
-def test_t_ints(data_xds, t_map_arr, expected_t_ints, xds_opts):
+def test_t_ints(data_xds, gain_xds_list, expected_t_ints):
     """Check that the time intervals are correct."""
-
-    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, xds_opts)
 
     assert all(int(sum(eti)) == gxds.dims["time_int"]
                for eti, gxds in zip(expected_t_ints, gain_xds_list))
 
 
-def test_f_ints(data_xds, t_map_arr, xds_opts):
+def test_f_ints(data_xds, gain_xds_list, expected_f_ints):
     """Check that the frequency intervals are correct."""
 
-    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, xds_opts)
-
-    n_chan = data_xds.dims["chan"]
-    f_ints = [getattr(xds_opts, term + "_freq_interval") or n_chan
-              for term in xds_opts.solver_gain_terms]
-
-    expected_f_ints = [sum([np.ceil(fc/fi) for fc in data_xds.chunks["chan"]])
-                       for fi in f_ints]
-
-    assert all(int(efi) == gxds.dims["freq_int"]
+    assert all(int(sum(efi)) == gxds.dims["freq_int"]
                for efi, gxds in zip(expected_f_ints, gain_xds_list))
 
 
-def test_attribues(data_xds, t_map_arr, xds_opts):
+def test_attributes(data_xds, gain_xds_list):
     """Check that the attributes of the gains are the same as the data."""
-
-    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, xds_opts)
 
     data_attributes = ["FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"]
 
@@ -403,20 +441,12 @@ def test_attribues(data_xds, t_map_arr, xds_opts):
                for a in data_attributes)
 
 
-def test_chunk_spec(data_xds, t_map_arr, expected_t_ints, xds_opts):
+def test_chunk_spec(data_xds, gain_xds_list, expected_t_ints, expected_f_ints,
+                    xds_opts):
     """Check that the chunking specs are correct."""
-
-    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, xds_opts)
 
     n_row, n_chan, n_ant, n_dir, n_corr = \
         [data_xds.dims[d] for d in ["row", "chan", "ant", "dir", "corr"]]
-
-    f_ints = [getattr(xds_opts, term + "_freq_interval") or n_chan
-              for term in xds_opts.solver_gain_terms]
-
-    expected_f_ints = [[np.int(np.ceil(fc/fi))
-                        for fc in data_xds.chunks["chan"]]
-                       for fi in f_ints]
 
     specs = [tuple([tuple(tic), tuple(fic), (n_ant,), (n_dir,), (n_corr,)])
              for tic, fic in zip(expected_t_ints, expected_f_ints)]
