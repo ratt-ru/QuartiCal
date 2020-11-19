@@ -396,7 +396,7 @@ parallel:
         help: Number of timeslots to include in a single solution.
         default: 1
     freq-interval:
-        type: int
+        type: FREQ
         help: Number of channels to include in a single solution.
         default: 1
     # delta-threshold:
