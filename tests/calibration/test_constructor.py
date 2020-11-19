@@ -6,9 +6,6 @@ from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import make_gain_xds_list
 from quartical.calibration.constructor import (construct_solver,
                                                expand_specs)
-from quartical.calibration.calibrate import (make_t_binnings,
-                                             make_t_mappings)
-from quartical.utils.dask import blockwise_unique
 from argparse import Namespace
 import dask.array as da
 import numpy as np
@@ -52,42 +49,7 @@ def data_xds(_read_xds_list, opts):
 
 
 @pytest.fixture(scope="module")
-def t_map_arr(data_xds, opts):
-
-    time_col = data_xds.TIME.data
-    interval_col = data_xds.INTERVAL.data
-
-    # Convert the time column data into indices. Chunks is expected to be a
-    # tuple of tuples.
-    utime_chunks = data_xds.UTIME_CHUNKS
-    _, utime_loc, utime_ind = blockwise_unique(time_col,
-                                               (utime_chunks,),
-                                               return_index=True,
-                                               return_inverse=True)
-
-    # Assosciate each unique time with an interval. This assumes that all
-    # rows at a given time have the same interval as the alternative is
-    # madness.
-    utime_intervals = da.map_blocks(
-        lambda arr, inds: arr[inds],
-        interval_col,
-        utime_loc,
-        chunks=utime_loc.chunks,
-        dtype=np.float64)
-
-    # Daskify the chunks per array - these are already known from the
-    # initial chunking step.
-    utime_per_chunk = da.from_array(utime_chunks,
-                                    chunks=(1,))
-
-    t_bin_arr = make_t_binnings(utime_per_chunk, utime_intervals, opts)
-    t_map_arr = make_t_mappings(utime_ind, t_bin_arr)
-
-    return t_map_arr
-
-
-@pytest.fixture(scope="module")
-def _construct_solver(data_xds, t_map_arr, opts):
+def _construct_solver(data_xds, opts):
 
     # Grab the relevant columns.
     model_col = data_xds.MODEL_DATA.data
@@ -102,7 +64,7 @@ def _construct_solver(data_xds, t_map_arr, opts):
 
     # Make a gain xds list for this data xds. The results will be assigned to
     # this xds.
-    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, opts)
+    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, f_map_arr, opts)
 
     # Call the construct solver function with the relevant inputs.
     gain_xds_list = construct_solver(data_xds,
