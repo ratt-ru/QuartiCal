@@ -134,7 +134,7 @@ def read_xds_list(opts):
     spw_xds_list = xds_from_table(
         opts.input_ms_name + "::SPECTRAL_WINDOW",
         group_cols=["__row__"],
-        columns="CHAN_FREQ",
+        columns=["CHAN_FREQ", "CHAN_WIDTH"],
         chunks={"row": 1, "chan": opts.input_ms_freq_chunk or -1})
 
     # The spectral window xds should be currectly chunked in frequency.
@@ -248,6 +248,8 @@ def read_xds_list(opts):
     data_xds_list = [xds.assign(
         {"CHAN_FREQ":
             (("chan",), spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data[0]),
+         "CHAN_WIDTH":
+            (("chan",), spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data[0]),
          "ANT_NAME":
             (("ant",), antenna_xds.NAME.data)}) for xds in data_xds_list]
 
@@ -526,6 +528,11 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
                                            dtype=np.float64,
                                            chunks=(upsample_size,))
 
+        # TODO: This assumes a consistent interval everywhere, as we are still
+        # using the GCD logic. This will need to change when we have access to
+        # a BDA table which allows us to better restore the time axis.
+        upsampled_ivl_col = gcd*da.ones_like(upsampled_time_col)
+
         row_map = da.map_blocks(
             lambda _col, _reps: np.repeat(np.arange(_col.size), _reps),
             time_col,
@@ -539,6 +546,8 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
 
         _bda_xds = xds.assign({"UPSAMPLED_TIME": (("urow",),
                               upsampled_time_col),
+                               "UPSAMPLED_INTERVAL": (("urow",),
+                              upsampled_ivl_col),
                                "ROW_MAP": (("urow",),
                               row_map),
                                "ROW_WEIGHTS": (("urow",),

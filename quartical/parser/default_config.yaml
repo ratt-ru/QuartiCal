@@ -392,11 +392,11 @@ parallel:
     #           (specified by index) non-solvable. -1 disables.
     #     default: -1
     time-interval:
-        type: int
+        type: TIME
         help: Number of timeslots to include in a single solution.
         default: 1
     freq-interval:
-        type: int
+        type: FREQ
         help: Number of channels to include in a single solution.
         default: 1
     # delta-threshold:
