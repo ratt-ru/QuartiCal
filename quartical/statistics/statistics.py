@@ -74,9 +74,9 @@ def _eqns_per_antenna(a, **kw):
 
 def _eqns_per_tf_slot(a, **kw):
     # Factor of 2 accounts for conjugate points
-    return 2*np.sum(a, **kw)[..., 0, 0],
+    return 2*np.sum(a, **kw)[..., 0, 0]
 
-def _total_eqs(a, **kws):
+def _total_eqs(a, **kw):
     return np.sum(a, **kw)
 
 
@@ -126,7 +126,6 @@ def assign_tf_stats(stats_xds, unflagged_tfac):
         unflagged_tfac,
         axis=(2, 3),
         keepdims=True,
-        meta=np.empty((0,0), dtype=np.int64),
         drop_axis=(2, 3))
 
     # Determine the normalisation factor as the reciprocal of the equations

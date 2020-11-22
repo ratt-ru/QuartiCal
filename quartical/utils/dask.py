@@ -23,7 +23,7 @@ class as_dict:
             values = (values,)
         elif len(keys) != len(values):
             raise ValueError(f"{len(keys)} keys provided for "
-                                f"{len(values)} output values.")
+                             f"{len(values)} output values.")
 
         return dict(zip(keys, values))
 
