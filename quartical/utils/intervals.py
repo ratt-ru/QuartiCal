@@ -191,7 +191,7 @@ def rfdc_to_abs_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
 
 
 @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
-def tfx_to_tifix(in_arr, t_int, f_int):
+def tfx_to_tifix(in_arr, t_map, f_map):
     """Sum a (t, f, ...) array into a (ti, fi, ...) array."""
 
     in_arr_shape = in_arr.shape
@@ -199,8 +199,8 @@ def tfx_to_tifix(in_arr, t_int, f_int):
     n_time = in_arr_shape[0]
     n_chan = in_arr_shape[1]
 
-    n_tint = np.int64(np.ceil(n_time/t_int))
-    n_fint = np.int64(np.ceil(n_chan/f_int))
+    n_tint = np.max(t_map) + 1
+    n_fint = np.max(f_map) + 1
 
     out_dtype = get_output_dtype(in_arr)
 
@@ -210,11 +210,11 @@ def tfx_to_tifix(in_arr, t_int, f_int):
 
     for t in range(n_time):
 
-        t_m = t//t_int
+        t_m = t_map[t]
 
         for f in range(n_chan):
 
-            f_m = f//f_int
+            f_m = f_map[f]
 
             tifix_inner_loop(out_arr, in_arr, t, f, t_m, f_m, trailing_dims)
 

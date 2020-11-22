@@ -66,7 +66,7 @@ def _construct_solver(data_xds, opts):
 
     # Make a gain xds list for this data xds. The results will be assigned to
     # this xds.
-    gain_xds_list = make_gain_xds_list(data_xds, opts)
+    gain_xds_list = make_gain_xds_list(data_xds, t_map_arr, f_map_arr, opts)
 
     # Call the construct solver function with the relevant inputs.
     gain_xds_list = construct_solver(data_xds,
