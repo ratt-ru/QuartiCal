@@ -38,11 +38,7 @@ def execute():
 
     if opts.parallel_scheduler == "distributed":
         logger.info("Initializing distributed client.")
-        cluster = LocalCluster(processes=opts.parallel_nworker > 1,
-                               n_workers=opts.parallel_nworker,
-                               threads_per_worker=opts.parallel_nthread,
-                               memory_limit=0)
-        client = Client(cluster) # noqa
+        client = Client(opts.parallel_address)
         logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
