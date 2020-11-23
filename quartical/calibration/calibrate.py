@@ -27,11 +27,11 @@ warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
 warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
 
 
-gain_shape_tup = namedtuple("gain_shape",
+gain_shape_tup = namedtuple("gain_shape_tup",
                             "n_t_int n_f_int n_ant n_dir n_corr")
-chunk_spec_tup = namedtuple("chunk_spec",
+chunk_spec_tup = namedtuple("chunk_spec_tup",
                             "tchunk fchunk achunk dchunk cchunk")
-dstat_dims_tup = namedtuple("dstat_dims",
+dstat_dims_tup = namedtuple("dstat_dims_tup",
                             "n_utime n_chan n_ant n_t_chunk n_f_chunk")
 
 
