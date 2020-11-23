@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 # Sets up logger - hereafter import logger from Loguru.
+
+from contextlib import ExitStack
+
 import quartical.logging.init_logger  # noqa
 from loguru import logger
 from quartical.parser import parser, preprocess
@@ -18,6 +21,13 @@ import zarr
 
 @logger.catch
 def execute():
+    stack = ExitStack()
+
+    with stack:
+        _execute(stack)
+
+
+def _execute(exitstack):
     """Runs the application."""
 
     opts = parser.parse_inputs()
@@ -36,9 +46,19 @@ def execute():
 
     preprocess.interpret_model(opts)
 
-    if opts.parallel_scheduler == "distributed":
+    if opts.parallel_scheduler == "localcluster":
+        logger.info("Initializing distributed client.")
+        cluster = LocalCluster(processes=opts.parallel_nworker > 1,
+                               n_workers=opts.parallel_nworker,
+                               threads_per_worker=opts.parallel_nthread,
+                               memory_limit=0)
+        cluster = exitstack.enter_context(cluster)
+        exitstack.enter_context(Client(cluster))
+        logger.info("Distributed client sucessfully initialized.")
+    elif opts.parallel_scheduler == "distributed":
         logger.info("Initializing distributed client.")
         client = Client(opts.parallel_address)
+        exitstack.enter_context(client)
         logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
