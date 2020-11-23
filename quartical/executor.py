@@ -21,9 +21,7 @@ import zarr
 
 @logger.catch
 def execute():
-    stack = ExitStack()
-
-    with stack:
+    with ExitStack() as stack:
         _execute(stack)
 
 
