@@ -27,11 +27,11 @@ warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
 warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
 
 
-gain_shape_tup = namedtuple("gain_shape",
+gain_shape_tup = namedtuple("gain_shape_tup",
                             "n_t_int n_f_int n_ant n_dir n_corr")
-chunk_spec_tup = namedtuple("chunk_spec",
+chunk_spec_tup = namedtuple("chunk_spec_tup",
                             "tchunk fchunk achunk dchunk cchunk")
-dstat_dims_tup = namedtuple("dstat_dims",
+dstat_dims_tup = namedtuple("dstat_dims_tup",
                             "n_utime n_chan n_ant n_t_chunk n_f_chunk")
 
 
@@ -105,19 +105,37 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # up implicitly updating the xds.
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
-        time_col = \
-            xds.UPSAMPLED_TIME.data if opts.input_ms_is_bda else xds.TIME.data
+
+        if opts.input_ms_is_bda:
+            time_col = xds.UPSAMPLED_TIME.data
+            interval_col = xds.UPSAMPLED_INTERVAL.data
+        else:
+            time_col = xds.TIME.data
+            interval_col = xds.INTERVAL.data
+
         bitflag_col = xds.BITFLAG.data
         weight_col = xds.WEIGHT.data
         data_bitflags = xds.DATA_BITFLAGS.data
         chan_freqs = xds.CHAN_FREQ.data
+        chan_widths = xds.CHAN_WIDTH.data
 
         # Convert the time column data into indices. Chunks is expected to be a
         # tuple of tuples.
         utime_chunks = xds.UTIME_CHUNKS
-        _, utime_ind = blockwise_unique(time_col,
-                                        (utime_chunks,),
-                                        return_inverse=True)
+        _, utime_loc, utime_ind = blockwise_unique(time_col,
+                                                   (utime_chunks,),
+                                                   return_index=True,
+                                                   return_inverse=True)
+
+        # Assosciate each unique time with an interval. This assumes that all
+        # rows at a given time have the same interval as the alternative is
+        # madness.
+        utime_intervals = da.map_blocks(
+            lambda arr, inds: arr[inds],
+            interval_col,
+            utime_loc,
+            chunks=utime_loc.chunks,
+            dtype=np.float64)
 
         # Daskify the chunks per array - these are already known from the
         # initial chunking step.
@@ -140,14 +158,15 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
         # Construct arrays containing mappings between data resolution and
         # solution intervals per term.
-        t_map_arr = make_t_mappings(utime_ind, opts)
-        f_map_arr = make_f_mappings(chan_freqs, opts)
+        t_bin_arr = make_t_binnings(utime_per_chunk, utime_intervals, opts)
+        t_map_arr = make_t_mappings(utime_ind, t_bin_arr)
+        f_map_arr = make_f_mappings(chan_freqs, chan_widths, opts)
         d_map_arr = make_d_mappings(n_dir, opts)
 
         # Generate an xds per gain term - these conveniently store dimension
         # info. We can assign results to them later.
 
-        gain_xds_list = make_gain_xds_list(xds, opts)
+        gain_xds_list = make_gain_xds_list(xds, t_map_arr, f_map_arr, opts)
 
         # Update the gain xds with relevant interval statistics. Used to be
         # very expensive - has been improved.
@@ -158,6 +177,8 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                                   unflagged_tfac,
                                   avg_abs_sqrd_model,
                                   utime_per_chunk,
+                                  t_bin_arr,
+                                  f_map_arr,
                                   opts)
 
         # This has been fixed - this now constructs a custom graph which
@@ -248,32 +269,81 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
     return gain_xds_dict, post_cal_data_xds_list
 
 
-def make_t_mappings(utime_ind, opts):
-    """Generate time to solution interval mapping."""
+def make_t_binnings(utime_per_chunk, utime_intervals, opts):
+    """Figure out how timeslots map to solution interval bins.
+
+    Args:
+        utime_per_chunk: dask.Array for number of utimes per chunk.
+        utime_intervals: dask.Array of intervals assoscaited with each utime.
+        opts: Namespace object of global options.
+    Returns:
+        t_bin_arr: A dask.Array of binnings per gain term.
+    """
 
     terms = opts.solver_gain_terms
     n_term = len(terms)
-    n_row = utime_ind.size
 
     # Get time intervals for all terms. Or handles the zero case.
     t_ints = \
-        [getattr(opts, term + "_time_interval") or n_row for term in terms]
+        [getattr(opts, term + "_time_interval") or np.inf for term in terms]
 
-    # Generate a mapping between time at data resolution and time
-    # intervals. The or handles the 0 (full axis) case.
-
-    t_map_arr = utime_ind.map_blocks(
-        lambda t, t_i: np.floor_divide(t[:, None], t_i, dtype=np.int32),
+    t_bin_arr = da.map_blocks(
+        _make_t_binnings,
+        utime_per_chunk,
+        utime_intervals,
         t_ints,
-        chunks=(utime_ind.chunks[0], (n_term,)),
+        chunks=(utime_intervals.chunks[0], (n_term,)),
         new_axis=1,
         dtype=np.int32,
+        name="tbins-" + uuid4().hex)
+
+    return t_bin_arr
+
+
+def _make_t_binnings(n_utime, utime_intervals, t_ints):
+    """Internals of the time binner."""
+
+    tbins = np.empty((utime_intervals.size, len(t_ints)), dtype=np.int32)
+
+    for tn, t_int in enumerate(t_ints):
+        if isinstance(t_int, float):
+            bins = np.empty_like(utime_intervals, dtype=np.int32)
+            net_ivl = 0
+            bin_num = 0
+            for i, ivl in enumerate(utime_intervals):
+                bins[i] = bin_num
+                net_ivl += ivl
+                if net_ivl >= t_int:
+                    net_ivl = 0
+                    bin_num += 1
+            tbins[:, tn] = bins
+
+        else:
+            tbins[:, tn] = np.floor_divide(np.arange(n_utime),
+                                           t_int,
+                                           dtype=np.int32)
+
+    return tbins
+
+
+def make_t_mappings(utime_ind, t_bin_arr):
+    """Convert unique time indices into solution interval mapping."""
+
+    _, n_term = t_bin_arr.shape
+
+    t_map_arr = da.blockwise(
+        lambda arr, inds: arr[inds], ("rowlike", "term"),
+        t_bin_arr, ("rowlike", "term"),
+        utime_ind, ("rowlike",),
+        adjust_chunks=(utime_ind.chunks[0], (n_term,)),
+        dtype=np.int32,
+        align_arrays=False,
         name="tmaps-" + uuid4().hex)
 
     return t_map_arr
 
 
-def make_f_mappings(chan_freqs, opts):
+def make_f_mappings(chan_freqs, chan_widths, opts):
     """Generate channel to solution interval mapping."""
 
     terms = opts.solver_gain_terms
@@ -287,13 +357,39 @@ def make_f_mappings(chan_freqs, opts):
     # Generate a mapping between frequency at data resolution and
     # frequency intervals.
 
-    f_map_arr = chan_freqs.map_blocks(
-        lambda f, f_i: np.arange(f.size, dtype=np.int32)[:, None]//f_i,
+    f_map_arr = da.map_blocks(
+        _make_f_mappings,
+        chan_freqs,
+        chan_widths,
         f_ints,
         chunks=(chan_freqs.chunks[0], (n_term,)),
         new_axis=1,
         dtype=np.int32,
         name="fmaps-" + uuid4().hex)
+
+    return f_map_arr
+
+
+def _make_f_mappings(chan_freqs, chan_widths, f_ints):
+    """Internals of the frequency interval mapper."""
+
+    n_chan = chan_freqs.size
+    n_term = len(f_ints)
+
+    f_map_arr = np.empty((n_chan, n_term), dtype=np.int32)
+
+    for fn, f_int in enumerate(f_ints):
+        if isinstance(f_int, float):
+            net_ivl = 0
+            bin_num = 0
+            for i, ivl in enumerate(chan_widths):
+                f_map_arr[i, fn] = bin_num
+                net_ivl += ivl
+                if net_ivl >= f_int:
+                    net_ivl = 0
+                    bin_num += 1
+        else:
+            f_map_arr[:, fn] = np.arange(n_chan)//f_int
 
     return f_map_arr
 
@@ -313,7 +409,7 @@ def make_d_mappings(n_dir, opts):
     return d_map_arr
 
 
-def make_gain_xds_list(data_xds, opts):
+def make_gain_xds_list(data_xds, t_map_arr, f_map_arr, opts):
     """Returns a list of xarray.Dataset objects describing the gain terms.
 
     For a given input xds containing data, creates an xarray.Dataset object
@@ -330,7 +426,7 @@ def make_gain_xds_list(data_xds, opts):
 
     gain_xds_list = []
 
-    for term in opts.solver_gain_terms:
+    for term_ind, term in enumerate(opts.solver_gain_terms):
 
         t_int = getattr(opts, "{}_time_interval".format(term))
         f_int = getattr(opts, "{}_freq_interval".format(term))
@@ -349,8 +445,13 @@ def make_gain_xds_list(data_xds, opts):
         # Number of time intervals per data chunk. If this is zero,
         # solution interval is the entire axis per chunk.
         if t_int:
-            n_t_int_per_chunk = tuple(int(np.ceil(nt/t_int))
-                                      for nt in utime_chunks)
+            # TODO: This is kind of shitty. It is necessary to cope with the
+            # specification of intervals in seconds - there is no way to
+            # figure out the number of solution intervals without looking at
+            # the data. That said, I can likely make this less horrible.
+            n_t_int_per_chunk = tuple([int(ntipc) for ntipc in da.map_blocks(
+                lambda arr: np.atleast_1d(np.max(arr) + 1).astype(int),
+                t_map_arr[:, term_ind]).compute()])
         else:
             n_t_int_per_chunk = tuple(1 for nt in utime_chunks)
 
@@ -359,8 +460,12 @@ def make_gain_xds_list(data_xds, opts):
         # Number of frequency intervals per data chunk. If this is zero,
         # solution interval is the entire axis per chunk.
         if f_int:
-            n_f_int_per_chunk = tuple(int(np.ceil(nc/f_int))
-                                      for nc in freq_chunks)
+            # TODO: This is also pretty high on the shitty to do pile. This
+            # works but I think that I actually need to move all of this to
+            # a preprocessing step.
+            n_f_int_per_chunk = tuple([int(nfipc) for nfipc in da.map_blocks(
+                lambda arr: np.atleast_1d(np.max(arr) + 1).astype(int),
+                f_map_arr[:, term_ind]).compute()])
         else:
             n_f_int_per_chunk = tuple(1 for _ in range(len(freq_chunks)))
 

@@ -4,7 +4,7 @@ from quartical.utils.dask import Blocker
 from collections import namedtuple
 
 
-term_spec_tup = namedtuple("term_spec", "name type shape")
+term_spec_tup = namedtuple("term_spec_tup", "name type shape")
 
 
 def construct_solver(data_xds,

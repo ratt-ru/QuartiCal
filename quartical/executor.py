@@ -88,10 +88,11 @@ def _execute(exitstack):
 
     for g_name, g_list in gains_per_xds.items():
         for g_ind, g in enumerate(g_list):
-            g_list[g_ind] = g.to_zarr(store,
-                                      mode="w",
-                                      group="{}{}".format(g_name, g_ind),
-                                      compute=False)
+            g_list[g_ind] = g.chunk({"time_int": -1}).to_zarr(
+                store,
+                mode="w",
+                group="{}{}".format(g_name, g_ind),
+                compute=False)
 
     writes = [writes] if not isinstance(writes, list) else writes
 

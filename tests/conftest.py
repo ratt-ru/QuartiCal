@@ -101,12 +101,12 @@ def correlation_mode(request):
     return request.param
 
 
-@pytest.fixture(params=[0, 1, 10], scope="module")
+@pytest.fixture(params=[0, 1, 20.0], scope="module")
 def time_int(request):
     return request.param
 
 
-@pytest.fixture(params=[0, 1, 10], scope="module")
+@pytest.fixture(params=[0, 1, 20.0], scope="module")
 def freq_int(request):
     return request.param
 
