@@ -31,7 +31,7 @@ input-ms:
     is-bda:
         type: bool
         help: If set True, the input measurement set is assumed to have been
-              averaged in a baseline dependent fashion. 
+              averaged in a baseline dependent fashion.
         default: False
     # rebin-time:
     #     type: TIME
@@ -81,7 +81,7 @@ input-ms:
         choices:
             - diag
             - full
-        help: Determines whether we perform calibration using all the 
+        help: Determines whether we perform calibration using all the
               correlations or only the diagonal terms.
         default: diag
 
@@ -98,7 +98,7 @@ input-model:
         default: None
     beam-l-axis:
         type: str
-        choices: 
+        choices:
             - "X"
             - "Y"
             - "~Y"
@@ -111,7 +111,7 @@ input-model:
         default: "X"
     beam-m-axis:
         type: str
-        choices: 
+        choices:
             - "X"
             - "Y"
             - "~Y"
@@ -128,7 +128,7 @@ input-model:
         default: True
     source-chunks:
         type: int
-        help: The number of sources to predict simultaneously. Has a large 
+        help: The number of sources to predict simultaneously. Has a large
               impact on memory footprint.
         default: 10
     apply-p-jones:
@@ -190,7 +190,7 @@ output:
     column:
         nargs: +
         type: str
-        help: Output MS column names for visibility outputs (if applicable). 
+        help: Output MS column names for visibility outputs (if applicable).
               Column names will be used in order, matching the order of
               --output-data-product.
         default: CORRECTED_DATA
@@ -338,6 +338,10 @@ parallel:
         help: Number of workers to use in the dask distributed scheduler.
               Advanced users only.
         default: 1
+    address:
+        type: str
+        help: distributed scheduler address
+        default: None
     scheduler:
         type: str
         help: Which dask scheduler to use. The default, multithreaded, is the
@@ -345,6 +349,7 @@ parallel:
         choices:
             - threads
             - distributed
+            - localcluster
             - single-threaded
         default: threads
 
