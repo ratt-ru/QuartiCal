@@ -358,7 +358,8 @@ def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
         ", ".join(output_cols)))
 
     # TODO: Nasty hack due to bug in daskms. Remove ASAP.
-    xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ"], errors='ignore')
+    xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ", "CHAN_WIDTH"],
+                              errors='ignore')
                 for xds in xds_list]
 
     write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
