@@ -304,6 +304,19 @@ def read_xds_list(opts):
         if xds_updates:
             data_xds_list[xds_ind] = xds.assign(xds_updates)
 
+        for column, data_var in xds.data_vars.items():
+            array = data_var.data
+
+            if not isinstance(array, da.Array):
+                continue
+
+            hlg = array.__dask_graph__()
+            hlg.layers[array.name].annotations = {"__dask_array__": {
+                "dims": data_var.dims,
+                "chunks": array.chunks,
+                "dtype": array.dtype
+            }}
+
     # Add the external bitflag dtype to the opts Namespace. This is necessary
     # as internal bitflags may have a different dtype and we need to reconcile
     # the two. Note that we elect to interpret the input as an unsigned int

@@ -48,13 +48,23 @@ else:
                     "dask-ms[xarray]"
                     "@git+https://github.com/ska-sa/dask-ms.git"
                     "@master",
+
                     "codex-africanus[dask, scipy, astropy, python-casacore]"
                     "@git+https://github.com/ska-sa/codex-africanus.git"
                     "@master",
+
+                    "dask[array]"
+                    "@git+https://github.com/dask/dask.git"
+                    "@master",
+
                     "astro-tigger-lsm",
                     "loguru",
                     "numba",
-                    "distributed",
+
+                    "distributed"
+                    "@git+https://github.com/dask/distributed.git"
+                    "@master",
+
                     "zarr",
                     "requests",
                     "pytest"]
