@@ -64,7 +64,7 @@ def _execute(exitstack):
     # Reads the measurement set using the relavant configuration from opts.
     ms_xds_list, ref_xds_list, col_kwrds = read_xds_list(opts)
 
-    # ms_xds_list = ms_xds_list[:4]
+    # ms_xds_list = ms_xds_list[:2]
     # ref_xds_list = ref_xds_list[:16]
 
     # Preprocess the xds_list - initialise some values and fix bad data.
@@ -123,10 +123,10 @@ def _execute(exitstack):
 
     # dask.visualize(outputs,
     #                color='order', cmap='autumn',
-    #                filename='model_order.pdf', node_attr={'penwidth': '10'})
+    #                filename='order.pdf', node_attr={'penwidth': '10'})
 
     # dask.visualize(outputs,
-    #                filename='model.pdf',
+    #                filename='graph.pdf',
     #                optimize_graph=True)
 
     # dask.visualize(*gains_per_xds["G"],
