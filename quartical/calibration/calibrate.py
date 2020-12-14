@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
+from daskms.optimisation import inlined_array
 from quartical.kernels.generics import (compute_residual,
                                         compute_corrected_residual)
 from quartical.statistics.statistics import (assign_interval_stats,
@@ -366,6 +367,8 @@ def make_f_mappings(chan_freqs, chan_widths, opts):
         new_axis=1,
         dtype=np.int32,
         name="fmaps-" + uuid4().hex)
+
+    f_map_arr = inlined_array(f_map_arr)
 
     return f_map_arr
 
