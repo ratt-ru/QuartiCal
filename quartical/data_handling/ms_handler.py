@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import dask
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
@@ -148,39 +149,40 @@ def read_xds_list(opts):
 
     for xds in indexing_xds_list:
 
-        # Compute unique times, indices of their first ocurrence and number of
-        # appearances.
-
-        da_utimes, da_utime_inds, da_utime_counts = \
-            da.unique(xds.TIME.data, return_counts=True, return_index=True)
-
-        utimes, utime_inds, utime_counts = da.compute(da_utimes,
-                                                      da_utime_inds,
-                                                      da_utime_counts)
-
         # If the chunking interval is a float after preprocessing, we are
         # dealing with a duration rather than a number of intervals. TODO:
         # Need to take resulting chunks and reprocess them based on chunk-on
-        # columns and jumps. This code can almost certainly be tidied up/
-        # clarified.
+        # columns and jumps.
 
         # TODO: BDA will assume no chunking, and in general we can skip this
         # bit if the row axis is unchunked.
 
         if isinstance(opts.input_ms_time_chunk, float):
 
-            interval_col = xds.INTERVAL.data
+            def interval_chunking(time_col, interval_col, time_chunk):
 
-            da_cumint = da.cumsum(interval_col[utime_inds])
-            da_cumint = da_cumint - da_cumint[0]
-            da_cumint_ind = \
-                (da_cumint//opts.input_ms_time_chunk).astype(np.int32)
-            _, da_utime_per_chunk = \
-                da.unique(da_cumint_ind, return_counts=True)
-            utime_per_chunk = da_utime_per_chunk.compute()
+                utimes, uinds, ucounts = \
+                    np.unique(time_col, return_counts=True, return_index=True)
+                cumulative_interval = np.cumsum(interval_col[uinds])
+                cumulative_interval -= cumulative_interval[0]
+                chunk_map = \
+                    (cumulative_interval // time_chunk).astype(np.int32)
 
-            cum_utime_per_chunk = np.cumsum(utime_per_chunk)
-            cum_utime_per_chunk = [0] + cum_utime_per_chunk[:-1].tolist()
+                _, utime_chunks = np.unique(chunk_map, return_counts=True)
+
+                chunk_starts = np.zeros(utime_chunks.size, dtype=np.int32)
+                chunk_starts[1:] = np.cumsum(utime_chunks)[:-1]
+
+                row_chunks = np.add.reduceat(ucounts, chunk_starts)
+
+                return np.vstack((utime_chunks, row_chunks))
+
+            chunking = da.map_blocks(interval_chunking,
+                                     xds.TIME.data,
+                                     xds.INTERVAL.data,
+                                     opts.input_ms_time_chunk,
+                                     chunks=((2,), (np.nan,)),
+                                     dtype=np.int32)
 
         else:
 
@@ -205,20 +207,18 @@ def read_xds_list(opts):
             chunking = da.map_blocks(integer_chunking,
                                      xds.TIME.data,
                                      opts.input_ms_time_chunk,
-                                     chunks=((2,), (np.nan,))).compute()
+                                     chunks=((2,), (np.nan,)))
 
-            utime_per_chunk = chunking[0, :].tolist()
-            row_chunks = chunking[1, :].tolist()
+        utime_per_chunk = dask.delayed(tuple)(chunking[0, :])
+        row_chunks = dask.delayed(tuple)(chunking[1, :])
 
-        chunk_spec_per_xds.append(tuple(utime_per_chunk))
-
-        # row_chunks = \
-        #     np.add.reduceat(utime_counts, cum_utime_per_chunk).tolist()
+        chunk_spec_per_xds.append(utime_per_chunk)
 
         chunks_per_xds.append({"row": row_chunks,
                                "chan": chan_chunks[xds.DATA_DESC_ID]})
 
-        logger.debug("Scan {}: row chunks: {}", xds.SCAN_NUMBER, row_chunks)
+    chunk_spec_per_xds, chunks_per_xds = da.compute(chunk_spec_per_xds,
+                                                    chunks_per_xds)
 
     # Once we have determined the row chunks from the indexing columns, we set
     # up an xarray data set for the data. Note that we will reload certain

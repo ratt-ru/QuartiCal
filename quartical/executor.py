@@ -35,7 +35,12 @@ def _execute(exitstack):
     preprocess.check_opts(opts)
     preprocess.interpret_model(opts)
 
-    if opts.parallel_scheduler == "localcluster":
+    if opts.parallel_scheduler == "distributed" and opts.parallel_address:
+        logger.info("Initializing distributed client.")
+        client = Client(opts.parallel_address)
+        exitstack.enter_context(client)
+        logger.info("Distributed client sucessfully initialized.")
+    elif opts.parallel_scheduler == "distributed":
         logger.info("Initializing distributed client using LocalCluster.")
         cluster = LocalCluster(processes=opts.parallel_nworker > 1,
                                n_workers=opts.parallel_nworker,
@@ -43,11 +48,6 @@ def _execute(exitstack):
                                memory_limit=0)
         cluster = exitstack.enter_context(cluster)
         exitstack.enter_context(Client(cluster))
-        logger.info("Distributed client sucessfully initialized.")
-    elif opts.parallel_scheduler == "distributed":
-        logger.info("Initializing distributed client.")
-        client = Client(opts.parallel_address)
-        exitstack.enter_context(client)
         logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
