@@ -184,17 +184,36 @@ def read_xds_list(opts):
 
         else:
 
-            n_utimes = len(utimes)
-            tc = opts.input_ms_time_chunk or n_utimes
-            n_full = n_utimes//tc
-            remainder = [(n_utimes - n_full*tc)] if n_utimes % tc else []
-            utime_per_chunk = [tc]*n_full + remainder
-            cum_utime_per_chunk = list(range(0, n_utimes, tc))
+            def integer_chunking(time_col, time_chunk):
+
+                utimes, ucounts = np.unique(time_col, return_counts=True)
+                n_utime = utimes.size
+                time_chunk = time_chunk or n_utime  # Catch time_chunk == 0.
+
+                utime_chunks = [time_chunk] * (n_utime // time_chunk)
+                last_chunk = n_utime % time_chunk
+
+                utime_chunks += [last_chunk] if last_chunk else []
+                utime_chunks = np.array(utime_chunks)
+
+                chunk_starts = np.arange(0, n_utime, time_chunk)
+
+                row_chunks = np.add.reduceat(ucounts, chunk_starts)
+
+                return np.vstack((utime_chunks, row_chunks))
+
+            chunking = da.map_blocks(integer_chunking,
+                                     xds.TIME.data,
+                                     opts.input_ms_time_chunk,
+                                     chunks=((2,), (np.nan,))).compute()
+
+            utime_per_chunk = chunking[0, :].tolist()
+            row_chunks = chunking[1, :].tolist()
 
         chunk_spec_per_xds.append(tuple(utime_per_chunk))
 
-        row_chunks = \
-            np.add.reduceat(utime_counts, cum_utime_per_chunk).tolist()
+        # row_chunks = \
+        #     np.add.reduceat(utime_counts, cum_utime_per_chunk).tolist()
 
         chunks_per_xds.append({"row": row_chunks,
                                "chan": chan_chunks[xds.DATA_DESC_ID]})
