@@ -30,18 +30,9 @@ def _execute(exitstack):
 
     opts = parser.parse_inputs()
 
-    # Add this functionality - should check opts for problems in addition
-    # to interpreting weird options. Can also raise flags for different modes
-    # of operation. The idea is that all our configuration state lives in this
-    # options dictionary. Down with OOP!
+    # TODO: This check needs to be fleshed out substantially.
 
-    if opts.input_ms_is_bda:
-        logger.warning("BDA data is only partially supported. Please report "
-                       "problems via the issue tracker.")
-
-    # TODO: There needs to be a validation step which checks that the config is
-    # possible.
-
+    preprocess.check_opts(opts)
     preprocess.interpret_model(opts)
 
     if opts.parallel_scheduler == "localcluster":
