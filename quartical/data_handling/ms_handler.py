@@ -98,19 +98,19 @@ def read_xds_list(opts):
     # or ignore it. TODO: Figure out how to prevent this thowing a message
     # wall.
 
-    try:
-        xds_from_ms(opts.input_ms_name, columns=("BITFLAG",))
+    col_names = list(xds_from_ms(opts.input_ms_name)[0].keys())
+
+    if "BITFLAG" in col_names:
         opts._bitflag_exists = True
         logger.info("BITFLAG column is present.")
-    except RuntimeError:
+    else:
         opts._bitflag_exists = False
         logger.info("BITFLAG column is missing. It will be added.")
 
-    try:
-        xds_from_ms(opts.input_ms_name, columns=("BITFLAG_ROW",))
+    if "BITFLAG_ROW" in col_names:
         opts._bitflagrow_exists = True
         logger.info("BITFLAG_ROW column is present.")
-    except RuntimeError:
+    else:
         opts._bitflagrow_exists = False
         logger.info("BITFLAG_ROW column is missing. It will be added.")
 
@@ -120,11 +120,10 @@ def read_xds_list(opts):
     opts._unity_weights = opts.input_ms_weight_column.lower() == "unity"
 
     if not opts._unity_weights:
-        try:
-            xds_from_ms(opts.input_ms_name,
-                        columns=(opts.input_ms_weight_column))
-        except RuntimeError:
-            logger.warning("Specified weight column was not found/understood. "
+        if opts.input_ms_weight_column in col_names:
+            logger.info(f"Using {opts.input_ms_weight_column} for weights.")
+        else:
+            logger.warning("Specified weight column was not present. "
                            "Falling back to unity weights.")
             opts._unity_weights = True
 
@@ -137,7 +136,7 @@ def read_xds_list(opts):
         columns=["CHAN_FREQ", "CHAN_WIDTH"],
         chunks={"row": 1, "chan": opts.input_ms_freq_chunk or -1})
 
-    # The spectral window xds should be currectly chunked in frequency.
+    # The spectral window xds should be correctly chunked in frequency.
 
     chan_chunks = {i: xds.chunks["chan"] for i, xds in enumerate(spw_xds_list)}
 

@@ -36,7 +36,7 @@ def _execute(exitstack):
     preprocess.interpret_model(opts)
 
     if opts.parallel_scheduler == "localcluster":
-        logger.info("Initializing distributed client.")
+        logger.info("Initializing distributed client using LocalCluster.")
         cluster = LocalCluster(processes=opts.parallel_nworker > 1,
                                n_workers=opts.parallel_nworker,
                                threads_per_worker=opts.parallel_nthread,
