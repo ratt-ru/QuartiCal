@@ -55,25 +55,6 @@ def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
                                       row_weights, corr_mode)
 
 
-def time_resampler(tcol, icol, reps, gcd, resample_size):
-
-    resampled_time = np.empty(resample_size, dtype=np.float64)
-
-    offset = 0
-
-    for time, ivl, rep in zip(tcol, icol, reps):
-
-        start = time - 0.5*ivl
-
-        for n in range(1, rep + 1):
-
-            resampled_time[offset] = start + 0.5 * n * gcd
-
-            offset += 1
-
-    return np.sort(resampled_time)
-
-
 def add_calibration_graph(data_xds_list, col_kwrds, opts):
     """Given data graph and options, adds the steps necessary for calibration.
 

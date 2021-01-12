@@ -8,12 +8,9 @@ from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import (is_set,
                                          make_bitmask,
                                          initialise_bitflags)
-from quartical.utils.dask import blockwise_unique
-from quartical.utils.maths import arr_gcd
-from quartical.calibration.calibrate import time_resampler  # TODO MOVE!!!
+from quartical.data_handling.bda import process_bda_input, process_bda_output
 from uuid import uuid4
 from loguru import logger
-import xarray
 
 
 def read_xds_list(opts):
@@ -139,86 +136,8 @@ def read_xds_list(opts):
 
     # The spectral window xds should be correctly chunked in frequency.
 
-    chan_chunks = {i: xds.chunks["chan"] for i, xds in enumerate(spw_xds_list)}
-
-    # row_chunks is a list of dictionaries containing row chunks per data set.
-
-    chunks_per_xds = []
-
-    chunk_spec_per_xds = []
-
-    for xds in indexing_xds_list:
-
-        # If the chunking interval is a float after preprocessing, we are
-        # dealing with a duration rather than a number of intervals. TODO:
-        # Need to take resulting chunks and reprocess them based on chunk-on
-        # columns and jumps.
-
-        # TODO: BDA will assume no chunking, and in general we can skip this
-        # bit if the row axis is unchunked.
-
-        if isinstance(opts.input_ms_time_chunk, float):
-
-            def interval_chunking(time_col, interval_col, time_chunk):
-
-                utimes, uinds, ucounts = \
-                    np.unique(time_col, return_counts=True, return_index=True)
-                cumulative_interval = np.cumsum(interval_col[uinds])
-                cumulative_interval -= cumulative_interval[0]
-                chunk_map = \
-                    (cumulative_interval // time_chunk).astype(np.int32)
-
-                _, utime_chunks = np.unique(chunk_map, return_counts=True)
-
-                chunk_starts = np.zeros(utime_chunks.size, dtype=np.int32)
-                chunk_starts[1:] = np.cumsum(utime_chunks)[:-1]
-
-                row_chunks = np.add.reduceat(ucounts, chunk_starts)
-
-                return np.vstack((utime_chunks, row_chunks))
-
-            chunking = da.map_blocks(interval_chunking,
-                                     xds.TIME.data,
-                                     xds.INTERVAL.data,
-                                     opts.input_ms_time_chunk,
-                                     chunks=((2,), (np.nan,)),
-                                     dtype=np.int32)
-
-        else:
-
-            def integer_chunking(time_col, time_chunk):
-
-                utimes, ucounts = np.unique(time_col, return_counts=True)
-                n_utime = utimes.size
-                time_chunk = time_chunk or n_utime  # Catch time_chunk == 0.
-
-                utime_chunks = [time_chunk] * (n_utime // time_chunk)
-                last_chunk = n_utime % time_chunk
-
-                utime_chunks += [last_chunk] if last_chunk else []
-                utime_chunks = np.array(utime_chunks)
-
-                chunk_starts = np.arange(0, n_utime, time_chunk)
-
-                row_chunks = np.add.reduceat(ucounts, chunk_starts)
-
-                return np.vstack((utime_chunks, row_chunks))
-
-            chunking = da.map_blocks(integer_chunking,
-                                     xds.TIME.data,
-                                     opts.input_ms_time_chunk,
-                                     chunks=((2,), (np.nan,)))
-
-        utime_per_chunk = dask.delayed(tuple)(chunking[0, :])
-        row_chunks = dask.delayed(tuple)(chunking[1, :])
-
-        chunk_spec_per_xds.append(utime_per_chunk)
-
-        chunks_per_xds.append({"row": row_chunks,
-                               "chan": chan_chunks[xds.DATA_DESC_ID]})
-
-    chunk_spec_per_xds, chunks_per_xds = da.compute(chunk_spec_per_xds,
-                                                    chunks_per_xds)
+    utime_chunking_per_xds, chunking_per_xds = \
+        compute_chunks(indexing_xds_list, spw_xds_list, opts)
 
     # Once we have determined the row chunks from the indexing columns, we set
     # up an xarray data set for the data. Note that we will reload certain
@@ -241,7 +160,7 @@ def read_xds_list(opts):
                     "FIELD_ID",
                     "DATA_DESC_ID"),
         taql_where="ANTENNA1 != ANTENNA2",
-        chunks=chunks_per_xds,
+        chunks=chunking_per_xds,
         column_keywords=True,
         table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')}}])
 
@@ -251,7 +170,7 @@ def read_xds_list(opts):
 
     # BDA data needs to be processed into something more manageable.
     if opts.input_ms_is_bda:
-        data_xds_list, chunk_spec_per_xds = \
+        data_xds_list, utime_chunking_per_xds = \
             process_bda_input(data_xds_list, spw_xds_list, opts)
 
     # Add coordinates to the xarray datasets - this becomes immensely useful
@@ -262,7 +181,8 @@ def read_xds_list(opts):
                      for xds in data_xds_list]
 
     # Add the actual channel frequecies to the xds - this is in preparation
-    # for solvers which require this information.
+    # for solvers which require this information. Also adds the antenna names
+    # which will be useful when reference antennas are required.
     data_xds_list = [xds.assign(
         {"CHAN_FREQ":
             (("chan",), spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data[0]),
@@ -277,7 +197,7 @@ def read_xds_list(opts):
 
     data_xds_list = \
         [xds.assign_attrs({"WRITE_COLS": [],
-                           "UTIME_CHUNKS": chunk_spec_per_xds[xds_ind]})
+                           "UTIME_CHUNKS": utime_chunking_per_xds[xds_ind]})
          for xds_ind, xds in enumerate(data_xds_list)]
 
     # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
@@ -393,7 +313,7 @@ def preprocess_xds_list(xds_list, col_kwrds, opts):
 
     Given a list of xarray.DataSet objects, initializes the bitflag data,
     the weight data and fixes bad data points (NaN, inf, etc). TODO: This
-    function cal likely be improved/extended.
+    function can likely be improved/extended.
 
     Args:
         xds_list: A list of xarray.DataSet objects containing MS data.
@@ -453,208 +373,105 @@ def preprocess_xds_list(xds_list, col_kwrds, opts):
     return output_xds_list
 
 
-def process_bda_input(data_xds_list, spw_xds_list, opts):
-    """Processes BDA xarray.Dataset objects into something more regular.
+def compute_chunks(indexing_xds_list, spw_xds_list, opts, compute=True):
+    """Compute time and frequency chunks for the input data.
 
-    Given a list of xarray.Dataset objects, upsamples and merges those which
-    share a SCAN_NUMBER. Upsampling is to the highest frequency resolution
-    present in the data.
-
-    Args:
-        data_xds_list: List of xarray.Datasets containing input BDA data.
-        spw_xds_list: List of xarray.Datasets contataining SPW data.
-        opts: A Namespace of global options.
-
-    Returns:
-        bda_xds_list: List of xarray.Dataset objects which contains upsampled
-            and merged data.
-        utime_per_xds: List of number of unique times per xds.
-    """
-
-    # If WEIGHT_SPECTRUM is not in use, BDA data makes no sense.
-    if opts.input_ms_weight_column != "WEIGHT_SPECTRUM":
-        raise ValueError("--input-ms-weight column must be "
-                         "WEIGHT_SPECTRUM for BDA data.")
-
-    # Figure out the highest frequency resolution and its DDID.
-    spw_dims = {i: xds.dims["chan"] for i, xds in enumerate(spw_xds_list)}
-    max_nchan_ddid = max(spw_dims, key=spw_dims.get)
-    max_nchan = spw_dims[max_nchan_ddid]
-
-    bda_xds_list = []
-
-    for xds in data_xds_list:
-
-        upsample_factor = max_nchan//xds.dims["chan"]
-
-        weight_col = xds.WEIGHT_SPECTRUM.data
-
-        # Divide the weights by the upsampling factor - this should keep
-        # the values consistent.
-        bda_xds = xds.assign(
-            {"WEIGHT_SPECTRUM": (("row", "chan", "corr"),
-                                 weight_col/upsample_factor)})
-
-        # Create a selection which will upsample the frequency axis.
-        selection = np.repeat(np.arange(xds.dims["chan"]), upsample_factor)
-
-        bda_xds = bda_xds.sel({"chan": selection})
-
-        bda_xds = bda_xds.assign_attrs({"DATA_DESC_ID": max_nchan_ddid})
-
-        bda_xds_list.append(bda_xds)
-
-    unique_scans = np.unique([xds.SCAN_NUMBER for xds in bda_xds_list])
-
-    # Determine mergeable datasets - they will share scan_number.
-    xds_merge_list = \
-        [[xds for xds in bda_xds_list if xds.SCAN_NUMBER == sn]
-         for sn in unique_scans]
-
-    bda_xds_list = [xarray.concat(xdss, dim="row")
-                    for xdss in xds_merge_list]
-
-    bda_xds_list = [xds.chunk({"row": xds.dims["row"]})
-                    for xds in bda_xds_list]
-
-    # This should guarantee monotonicity in time (not baseline).
-    bda_xds_list = [xds.sortby("ROWID") for xds in bda_xds_list]
-
-    # This is a necessary evil - compute the utimes present on the merged xds.
-    _bda_xds_list = []
-
-    for xds in bda_xds_list:
-
-        interval_col = xds.INTERVAL.data
-        time_col = xds.TIME.data
-
-        uintervals = blockwise_unique(interval_col)
-        gcd = uintervals.map_blocks(lambda x: np.array(arr_gcd(x)),
-                                    chunks=(1,))
-        upsample_size = int(da.round(da.sum(interval_col)/gcd).compute())
-
-        upsample_reps = da.map_blocks(
-                lambda _ivl, _gcd: np.rint(_ivl/_gcd).astype(np.int64),
-                interval_col,
-                gcd)
-
-        upsampled_time_col = da.map_blocks(time_resampler,
-                                           time_col,
-                                           interval_col,
-                                           upsample_reps,
-                                           gcd,
-                                           upsample_size,
-                                           dtype=np.float64,
-                                           chunks=(upsample_size,))
-
-        # TODO: This assumes a consistent interval everywhere, as we are still
-        # using the GCD logic. This will need to change when we have access to
-        # a BDA table which allows us to better restore the time axis.
-        upsampled_ivl_col = gcd*da.ones_like(upsampled_time_col)
-
-        row_map = da.map_blocks(
-            lambda _col, _reps: np.repeat(np.arange(_col.size), _reps),
-            time_col,
-            upsample_reps,
-            chunks=(upsample_size,))
-
-        row_weights = da.map_blocks(
-            lambda _reps: 1./np.repeat(_reps, _reps),
-            upsample_reps,
-            chunks=(upsample_size,))
-
-        _bda_xds = xds.assign({"UPSAMPLED_TIME": (("urow",),
-                              upsampled_time_col),
-                               "UPSAMPLED_INTERVAL": (("urow",),
-                              upsampled_ivl_col),
-                               "ROW_MAP": (("urow",),
-                              row_map),
-                               "ROW_WEIGHTS": (("urow",),
-                              row_weights)})
-
-        _bda_xds_list.append(_bda_xds)
-
-    bda_xds_list = _bda_xds_list
-
-    utime_per_xds = [da.unique(xds.UPSAMPLED_TIME.data)
-                     for xds in bda_xds_list]
-    utime_per_xds = da.compute(*utime_per_xds)
-    utime_per_xds = [ut.shape for ut in utime_per_xds]
-
-    return bda_xds_list, utime_per_xds
-
-
-def process_bda_output(xds_list, ref_xds_list, output_cols, opts):
-    """Processes xarray.Dataset objects back into BDA format.
-
-    Given a list of xarray.Dataset objects, samples and splits into separate
-    spectral windows.
+    Given a list of indexing xds's, and a list of spw xds's, determines how to
+    chunk the data given the chunking parameters.
 
     Args:
-        xds_list: List of xarray.Datasets containing post-solve data.
-        ref_xds_list: List of xarray.Datasets containing original data.
-        output_cols: List of column names we expect to write.
-        opts: A Namespace of global options.
+        indexing_xds_list: List of xarray.dataset objects contatining indexing
+            information.
+        spw_xds_list: List of xarray.dataset objects containing spectral window
+            information.
+        opts: A Namespace object containing options.
+        compute: Boolean indicating whether or not to compute the result.
 
     Returns:
-        bda_xds_list: List of xarray.Dataset objects which contains BDA data.
+        A tuple of utime_chunking_per_xds and chunking_per_xds which describe
+        the chunking of the data.
     """
 
-    bda_xds_list = []
+    chan_chunks = {i: xds.chunks["chan"] for i, xds in enumerate(spw_xds_list)}
 
-    xds_dict = {xds.SCAN_NUMBER: xds for xds in xds_list}
+    # row_chunks is a list of dictionaries containing row chunks per data set.
 
-    for ref_xds in ref_xds_list:
+    chunking_per_xds = []
 
-        xds = xds_dict[ref_xds.SCAN_NUMBER]
+    utime_chunking_per_xds = []
 
-        xds = xds.assign_coords({"row": xds.ROWID.data})
+    for xds in indexing_xds_list:
 
-        xds = xds.sel(row=ref_xds.ROWID.data)
+        # If the chunking interval is a float after preprocessing, we are
+        # dealing with a duration rather than a number of intervals. TODO:
+        # Need to take resulting chunks and reprocess them based on chunk-on
+        # columns and jumps.
 
-        bda_xds = xarray.Dataset(coords=ref_xds.coords)
+        # TODO: BDA will assume no chunking, and in general we can skip this
+        # bit if the row axis is unchunked.
 
-        for col_name in output_cols:
+        if isinstance(opts.input_ms_time_chunk, float):
 
-            col = xds[col_name]
+            def interval_chunking(time_col, interval_col, time_chunk):
 
-            if "chan" in col.dims:
-                data = col.data
-                dims = col.dims
-                shape = list(col.shape)
+                utimes, uinds, ucounts = \
+                    np.unique(time_col, return_counts=True, return_index=True)
+                cumulative_interval = np.cumsum(interval_col[uinds])
+                cumulative_interval -= cumulative_interval[0]
+                chunk_map = \
+                    (cumulative_interval // time_chunk).astype(np.int32)
 
-                chan_ind = dims.index('chan')
+                _, utime_chunks = np.unique(chunk_map, return_counts=True)
 
-                nchan = xds.dims['chan']
-                ref_nchan = ref_xds.dims['chan']
+                chunk_starts = np.zeros(utime_chunks.size, dtype=np.int32)
+                chunk_starts[1:] = np.cumsum(utime_chunks)[:-1]
 
-                shape[chan_ind: chan_ind + 1] = [ref_xds.dims['chan'], -1]
+                row_chunks = np.add.reduceat(ucounts, chunk_starts)
 
-                data = data.reshape(shape)
+                return np.vstack((utime_chunks, row_chunks))
 
-                scdtype = np.obj2sctype(data)
+            chunking = da.map_blocks(interval_chunking,
+                                     xds.TIME.data,
+                                     xds.INTERVAL.data,
+                                     opts.input_ms_time_chunk,
+                                     chunks=((2,), (np.nan,)),
+                                     dtype=np.int32)
 
-                if np.issubdtype(scdtype, np.complexfloating):
-                    # Corresponds to a visibility column. Simple average.
-                    data = data.sum(axis=chan_ind + 1)/(nchan//ref_nchan)
-                elif np.issubdtype(scdtype, np.floating):
-                    # This probably isn't used at present and my be wrong.
-                    data = data.sum(axis=chan_ind + 1)/(nchan//ref_nchan)
-                elif np.issubdtype(scdtype, np.integer):
-                    # Corresponds to BITFLAG style column. Bitwise or.
-                    data = data.map_blocks(
-                        lambda d, a: np.bitwise_or.reduce(d, axis=a),
-                        chan_ind + 1,
-                        drop_axis=chan_ind + 1)
-                elif np.issubdtype(scdtype, np.bool):
-                    # Corresponds to FLAG style column.
-                    data = data.any(axis=chan_ind + 1)
+        else:
 
-                bda_xds = bda_xds.assign({col_name: (col.dims, data)})
+            def integer_chunking(time_col, time_chunk):
 
-            else:
-                bda_xds = bda_xds.assign({col_name: (col.dims, col.data)})
+                utimes, ucounts = np.unique(time_col, return_counts=True)
+                n_utime = utimes.size
+                time_chunk = time_chunk or n_utime  # Catch time_chunk == 0.
 
-        bda_xds_list.append(bda_xds)
+                utime_chunks = [time_chunk] * (n_utime // time_chunk)
+                last_chunk = n_utime % time_chunk
 
-    return bda_xds_list
+                utime_chunks += [last_chunk] if last_chunk else []
+                utime_chunks = np.array(utime_chunks)
+
+                chunk_starts = np.arange(0, n_utime, time_chunk)
+
+                row_chunks = np.add.reduceat(ucounts, chunk_starts)
+
+                return np.vstack((utime_chunks, row_chunks))
+
+            chunking = da.map_blocks(integer_chunking,
+                                     xds.TIME.data,
+                                     opts.input_ms_time_chunk,
+                                     chunks=((2,), (np.nan,)),
+                                     dtype=np.int32)
+
+        utime_per_chunk = dask.delayed(tuple)(chunking[0, :])
+        row_chunks = dask.delayed(tuple)(chunking[1, :])
+
+        utime_chunking_per_xds.append(utime_per_chunk)
+
+        chunking_per_xds.append({"row": row_chunks,
+                                 "chan": chan_chunks[xds.DATA_DESC_ID]})
+
+    if compute:
+        return da.compute(utime_chunking_per_xds, chunking_per_xds)
+    else:
+        return utime_chunking_per_xds, chunking_per_xds
