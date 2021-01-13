@@ -408,10 +408,20 @@ def make_gain_xds_list(data_xds, t_map_arr, f_map_arr, opts):
 
     gain_xds_list = []
 
+    tipc_per_term = da.map_blocks(lambda arr: arr[-1:, :] + 1,
+                                  t_map_arr,
+                                  chunks=((1,)*t_map_arr.numblocks[0],
+                                          t_map_arr.chunks[1]))
+
+    fipc_per_term = da.map_blocks(lambda arr: arr[-1:, :] + 1,
+                                  f_map_arr,
+                                  chunks=((1,)*f_map_arr.numblocks[0],
+                                          f_map_arr.chunks[1]))
+
+    tipc_per_term, fipc_per_term = da.compute(tipc_per_term, fipc_per_term)
+
     for term_ind, term in enumerate(opts.solver_gain_terms):
 
-        t_int = getattr(opts, "{}_time_interval".format(term))
-        f_int = getattr(opts, "{}_freq_interval".format(term))
         dd_term = getattr(opts, "{}_direction_dependent".format(term))
         term_type = getattr(opts, "{}_type".format(term))
 
@@ -424,32 +434,11 @@ def make_gain_xds_list(data_xds, t_map_arr, f_map_arr, opts):
         n_chan, n_ant, n_dir, n_corr = \
             [data_xds.dims[d] for d in ["chan", "ant", "dir", "corr"]]
 
-        # Number of time intervals per data chunk. If this is zero,
-        # solution interval is the entire axis per chunk.
-        if t_int:
-            # TODO: This is kind of shitty. It is necessary to cope with the
-            # specification of intervals in seconds - there is no way to
-            # figure out the number of solution intervals without looking at
-            # the data. That said, I can likely make this less horrible.
-            n_t_int_per_chunk = tuple([int(ntipc) for ntipc in da.map_blocks(
-                lambda arr: np.atleast_1d(np.max(arr) + 1).astype(int),
-                t_map_arr[:, term_ind]).compute()])
-        else:
-            n_t_int_per_chunk = tuple(1 for nt in utime_chunks)
+        n_t_int_per_chunk = tuple(map(int, tipc_per_term[:, term_ind]))
 
         n_t_int = np.sum(n_t_int_per_chunk)
 
-        # Number of frequency intervals per data chunk. If this is zero,
-        # solution interval is the entire axis per chunk.
-        if f_int:
-            # TODO: This is also pretty high on the shitty to do pile. This
-            # works but I think that I actually need to move all of this to
-            # a preprocessing step.
-            n_f_int_per_chunk = tuple([int(nfipc) for nfipc in da.map_blocks(
-                lambda arr: np.atleast_1d(np.max(arr) + 1).astype(int),
-                f_map_arr[:, term_ind]).compute()])
-        else:
-            n_f_int_per_chunk = tuple(1 for _ in range(len(freq_chunks)))
+        n_f_int_per_chunk = tuple(map(int, fipc_per_term[:, term_ind]))
 
         n_f_int = np.sum(n_f_int_per_chunk)
 
