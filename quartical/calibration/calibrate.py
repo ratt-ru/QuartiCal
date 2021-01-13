@@ -83,8 +83,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
     for xds_ind, xds in enumerate(data_xds_list):
 
         # Unpack the data on the xds into variables with understandable names.
-        # We create copies of arrays we intend to mutate as otherwise we end
-        # up implicitly updating the xds.
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
 
@@ -105,7 +103,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # tuple of tuples.
         utime_chunks = xds.UTIME_CHUNKS
         _, utime_loc, utime_ind = blockwise_unique(time_col,
-                                                   (utime_chunks,),
+                                                   chunks=(utime_chunks,),
                                                    return_index=True,
                                                    return_inverse=True)
 

@@ -200,15 +200,6 @@ def read_xds_list(opts):
                            "UTIME_CHUNKS": utime_chunking_per_xds[xds_ind]})
          for xds_ind, xds in enumerate(data_xds_list)]
 
-    # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
-    # appropriately sized dask arrays to the data sets. These can be written
-    # to the MS at the end. Note that if we are adding the bitflag column,
-    # we initiliase it using the internal dtype. This reduces the memory
-    # footprint a little, although it will still ultimately be saved as an
-    # int32. TODO: Check whether we can write it as int16 to save space.
-
-    updated_kwrds = update_kwrds(col_kwrds, opts)
-
     # We may only want to use some of the input correlation values. xarray
     # has a neat syntax for this. #TODO: This needs to depend on the number of
     # correlations actually present in the MS/on the xds.
@@ -219,6 +210,15 @@ def read_xds_list(opts):
         raise ValueError(f"--input-ms-correlation-mode was set to full, "
                          f"but the measurement set only contains "
                          f"{opts._ms_ncorr} correlations")
+
+    # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
+    # appropriately sized dask arrays to the data sets. These can be written
+    # to the MS at the end. Note that if we are adding the bitflag column,
+    # we initiliase it using the internal dtype. This reduces the memory
+    # footprint a little, although it will still ultimately be saved as an
+    # int32. TODO: Check whether we can write it as int16 to save space.
+
+    updated_kwrds = update_kwrds(col_kwrds, opts)
 
     # The use of name below guaratees that dask produces unique arrays and
     # avoids accidental aliasing.
