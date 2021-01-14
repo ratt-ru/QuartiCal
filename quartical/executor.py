@@ -73,21 +73,26 @@ def _execute(exitstack):
 
     writes = write_xds_list(writable_xds, ref_xds_list, col_kwrds, opts)
 
-    # This shouldn't be here. TODO: Move into the calibrate code. In fact, this
+    # This shouldn't be here. TODO: Move to separate function. In fact, this
     # entire write construction needs some tidying.
-    store = zarr.DirectoryStore("cc_gains")
+    store = zarr.DirectoryStore("qcal_gains")
 
-    for g_name, g_list in gains_per_xds.items():
-        for g_ind, g in enumerate(g_list):
-            g_list[g_ind] = g.chunk({"time_int": -1}).to_zarr(
+    gain_writes = []
+
+    for xds_ind, gain_terms in enumerate(gains_per_xds):
+        term_writes = []
+        for term_ind, term in enumerate(gain_terms):
+            term_write = term.chunk({"time_int": -1}).to_zarr(
                 store,
                 mode="w",
-                group="{}{}".format(g_name, g_ind),
+                group=f"{term.NAME}{xds_ind}",
                 compute=False)
+            term_writes.append(term_write)
+        gain_writes.append(term_writes)
 
     writes = [writes] if not isinstance(writes, list) else writes
 
-    gain_writes = list(zip(*[gain for gain in gains_per_xds.values()]))
+    # import pdb; pdb.set_trace()
 
     stride = len(writes)//len(gain_writes)
 
