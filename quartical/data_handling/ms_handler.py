@@ -137,7 +137,7 @@ def read_xds_list(opts):
     # The spectral window xds should be correctly chunked in frequency.
 
     utime_chunking_per_xds, chunking_per_xds = \
-        compute_chunks(indexing_xds_list, spw_xds_list, opts)
+        compute_chunking(indexing_xds_list, spw_xds_list, opts)
 
     # Once we have determined the row chunks from the indexing columns, we set
     # up an xarray data set for the data. Note that we will reload certain
@@ -297,6 +297,8 @@ def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
                         "corrected_data": "_CORRECTED_DATA"}
         n_vis_prod = len(opts.output_visibility_product)
 
+        # Rename QuartiCal's underscore prefixed results so that they will be
+        # written to the appropriate column.
         xds_list = \
             [xds.rename({vis_prod_map[prod]: opts.output_column[ind]
              for ind, prod in enumerate(opts.output_visibility_product)})
@@ -391,7 +393,7 @@ def preprocess_xds_list(xds_list, col_kwrds, opts):
     return output_xds_list
 
 
-def compute_chunks(indexing_xds_list, spw_xds_list, opts, compute=True):
+def compute_chunking(indexing_xds_list, spw_xds_list, opts, compute=True):
     """Compute time and frequency chunks for the input data.
 
     Given a list of indexing xds's, and a list of spw xds's, determines how to

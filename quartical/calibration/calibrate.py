@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from daskms.optimisation import inlined_array
 from quartical.kernels.generics import (compute_residual,
                                         compute_corrected_residual)
 from quartical.statistics.statistics import (assign_interval_stats,
@@ -10,8 +9,7 @@ from quartical.statistics.statistics import (assign_interval_stats,
 from quartical.flagging.flagging import (set_bitflag,
                                          compute_mad_flags)
 from quartical.calibration.constructor import construct_solver
-from quartical.utils.dask import blockwise_unique
-from uuid import uuid4
+from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
 from loguru import logger  # noqa
 from collections import namedtuple
 import xarray
@@ -74,17 +72,22 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
     # Calibrate per xds. This list will likely consist of an xds per SPW, per
     # scan. This behaviour can be changed.
 
-    data_stats_xds_list = []
-    post_cal_data_xds_list = []
+    # data_stats_xds_list = []
+    # post_cal_data_xds_list = []
 
+    # Figure out all mappings between data and solution intervals.
     t_bin_list, t_map_list = make_t_maps(data_xds_list, opts)
     f_map_list = make_f_maps(data_xds_list, opts)
     d_map_list = make_d_maps(data_xds_list, opts)
+
+    # Create a list of lists of xarray.Dataset objects which will describe the
+    # gains per data xarray.Dataset. This triggers some early compute.
     gain_xds_list = make_gain_xds_list(data_xds_list,
                                        t_map_list,
                                        f_map_list,
                                        opts)
 
+    # Poplulate the gain xarray.Datasets with solutions and convergence info.
     solved_gain_xds_list = construct_solver(data_xds_list,
                                             gain_xds_list,
                                             t_map_list,
@@ -92,6 +95,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                                             d_map_list,
                                             opts)
 
+    # Update the data xrray.Datasets with visiblity outputs.
     post_solve_data_xds_list = \
         make_visibility_output(data_xds_list,
                                solved_gain_xds_list,
@@ -102,7 +106,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
     # for xds_ind, xds in enumerate(data_xds_list):
 
-        # data_bitflags = xds.DATA_BITFLAGS.data
+
 
         # Create and populate xds for statisics at data resolution. Returns
         # some useful arrays required for future computations. TODO: I really
@@ -139,6 +143,10 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         # set bitflags is likely to break the distributed scheduler.
 
         # if opts.flags_mad_enable:
+
+        #     data_bitflags = xds.DATA_BITFLAGS.data
+
+        #     TODO: This can take the post solve data xds list as input.
         #     mad_flags = compute_mad_flags(residuals,
         #                                   bitflag_col,
         #                                   ant1_col,
@@ -166,222 +174,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
     return solved_gain_xds_list, post_solve_data_xds_list
 
 
-def make_f_maps(data_xds_list, opts):
-
-    f_map_list = []
-
-    for xds in data_xds_list:
-
-        chan_freqs = xds.CHAN_FREQ.data
-        chan_widths = xds.CHAN_WIDTH.data
-        f_map_arr = make_f_mappings(chan_freqs, chan_widths, opts)
-        f_map_list.append(f_map_arr)
-
-    return f_map_list
-
-
-def make_t_maps(data_xds_list, opts):
-
-    t_bin_list = []
-    t_map_list = []
-
-    for xds in data_xds_list:
-
-        if opts.input_ms_is_bda:
-            time_col = xds.UPSAMPLED_TIME.data
-            interval_col = xds.UPSAMPLED_INTERVAL.data
-        else:
-            time_col = xds.TIME.data
-            interval_col = xds.INTERVAL.data
-
-        # Convert the time column data into indices. Chunks is expected to
-        # be a tuple of tuples.
-        utime_chunks = xds.UTIME_CHUNKS
-        _, utime_loc, utime_ind = blockwise_unique(time_col,
-                                                   chunks=(utime_chunks,),
-                                                   return_index=True,
-                                                   return_inverse=True)
-
-        # Assosciate each unique time with an interval. This assumes that
-        # all rows at a given time have the same interval as the
-        # alternative is madness.
-        utime_intervals = da.map_blocks(
-            lambda arr, inds: arr[inds],
-            interval_col,
-            utime_loc,
-            chunks=utime_loc.chunks,
-            dtype=np.float64)
-
-        # Daskify the chunks per array - these are already known from the
-        # initial chunking step.
-        utime_per_chunk = da.from_array(utime_chunks,
-                                        chunks=(1,),
-                                        name="utpc-" + uuid4().hex)
-
-        t_bin_arr = make_t_binnings(utime_per_chunk, utime_intervals, opts)
-        t_map_arr = make_t_mappings(utime_ind, t_bin_arr)
-        t_bin_list.append(t_bin_arr)
-        t_map_list.append(t_map_arr)
-
-    return t_bin_list, t_map_list
-
-
-def make_d_maps(data_xds_list, opts):
-
-    d_map_list = []
-
-    for xds in data_xds_list:
-
-        n_dir = xds.dims["dir"]
-        d_map_arr = make_d_mappings(n_dir, opts)
-
-        d_map_list.append(d_map_arr)
-
-    return d_map_list
-
-
-def make_t_binnings(utime_per_chunk, utime_intervals, opts):
-    """Figure out how timeslots map to solution interval bins.
-
-    Args:
-        utime_per_chunk: dask.Array for number of utimes per chunk.
-        utime_intervals: dask.Array of intervals assoscaited with each utime.
-        opts: Namespace object of global options.
-    Returns:
-        t_bin_arr: A dask.Array of binnings per gain term.
-    """
-
-    terms = opts.solver_gain_terms
-    n_term = len(terms)
-
-    # Get time intervals for all terms. Or handles the zero case.
-    t_ints = \
-        [getattr(opts, term + "_time_interval") or np.inf for term in terms]
-
-    t_bin_arr = da.map_blocks(
-        _make_t_binnings,
-        utime_per_chunk,
-        utime_intervals,
-        t_ints,
-        chunks=(utime_intervals.chunks[0], (n_term,)),
-        new_axis=1,
-        dtype=np.int32,
-        name="tbins-" + uuid4().hex)
-
-    return t_bin_arr
-
-
-def _make_t_binnings(n_utime, utime_intervals, t_ints):
-    """Internals of the time binner."""
-
-    tbins = np.empty((utime_intervals.size, len(t_ints)), dtype=np.int32)
-
-    for tn, t_int in enumerate(t_ints):
-        if isinstance(t_int, float):
-            bins = np.empty_like(utime_intervals, dtype=np.int32)
-            net_ivl = 0
-            bin_num = 0
-            for i, ivl in enumerate(utime_intervals):
-                bins[i] = bin_num
-                net_ivl += ivl
-                if net_ivl >= t_int:
-                    net_ivl = 0
-                    bin_num += 1
-            tbins[:, tn] = bins
-
-        else:
-            tbins[:, tn] = np.floor_divide(np.arange(n_utime),
-                                           t_int,
-                                           dtype=np.int32)
-
-    return tbins
-
-
-def make_t_mappings(utime_ind, t_bin_arr):
-    """Convert unique time indices into solution interval mapping."""
-
-    _, n_term = t_bin_arr.shape
-
-    t_map_arr = da.blockwise(
-        lambda arr, inds: arr[inds], ("rowlike", "term"),
-        t_bin_arr, ("rowlike", "term"),
-        utime_ind, ("rowlike",),
-        adjust_chunks=(utime_ind.chunks[0], (n_term,)),
-        dtype=np.int32,
-        align_arrays=False,
-        name="tmaps-" + uuid4().hex)
-
-    return t_map_arr
-
-
-def make_f_mappings(chan_freqs, chan_widths, opts):
-    """Generate channel to solution interval mapping."""
-
-    terms = opts.solver_gain_terms
-    n_term = len(terms)
-    n_chan = chan_freqs.size
-
-    # Get frequency intervals for all terms. Or handles the zero case.
-    f_ints = \
-        [getattr(opts, term + "_freq_interval") or n_chan for term in terms]
-
-    # Generate a mapping between frequency at data resolution and
-    # frequency intervals.
-
-    f_map_arr = da.map_blocks(
-        _make_f_mappings,
-        chan_freqs,
-        chan_widths,
-        f_ints,
-        chunks=(chan_freqs.chunks[0], (n_term,)),
-        new_axis=1,
-        dtype=np.int32,
-        name="fmaps-" + uuid4().hex)
-
-    f_map_arr = inlined_array(f_map_arr)
-
-    return f_map_arr
-
-
-def _make_f_mappings(chan_freqs, chan_widths, f_ints):
-    """Internals of the frequency interval mapper."""
-
-    n_chan = chan_freqs.size
-    n_term = len(f_ints)
-
-    f_map_arr = np.empty((n_chan, n_term), dtype=np.int32)
-
-    for fn, f_int in enumerate(f_ints):
-        if isinstance(f_int, float):
-            net_ivl = 0
-            bin_num = 0
-            for i, ivl in enumerate(chan_widths):
-                f_map_arr[i, fn] = bin_num
-                net_ivl += ivl
-                if net_ivl >= f_int:
-                    net_ivl = 0
-                    bin_num += 1
-        else:
-            f_map_arr[:, fn] = np.arange(n_chan)//f_int
-
-    return f_map_arr
-
-
-def make_d_mappings(n_dir, opts):
-    """Generate direction to solution interval mapping."""
-
-    terms = opts.solver_gain_terms
-
-    # Get direction dependence for all terms. Or handles the zero case.
-    dd_terms = [getattr(opts, term + "_direction_dependent") for term in terms]
-
-    # Generate a mapping between model directions gain directions.
-
-    d_map_arr = (np.arange(n_dir, dtype=np.int32)[:, None] * dd_terms).T
-
-    return d_map_arr
-
-
 def make_gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
     """Returns a list of xarray.Dataset objects describing the gain terms.
 
@@ -389,12 +181,14 @@ def make_gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
     per term which describes the term's dimensions.
 
     Args:
-        data_xds: xarray.Dataset object containing input data.
-        opts: Namepsace object containing global config.
+        data_xds_list: A list of xarray.Dataset objects containing MS data.
+        t_map_list: List of dask.Array objects containing time mappings.
+        f_map_list: List of dask.Array objects containing frequency mappings.
+        opts: A Namespace object containing global options.
 
     Returns:
-        gain_xds_list: A list of xarray.Dataset objects describing the gain
-            terms assosciated with the data_xds.
+        gain_xds_list: A list of lists of xarray.Dataset objects describing the
+            gain terms assosciated with each data xarray.Dataset.
     """
 
     tipc_list = []
@@ -504,11 +298,12 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
     dask.Array objects containing the possible visibility outputs.
 
     Args:
-        data_xds: An xarray.Dataset object containing input data.
-        gain_xds_list: A list containing gain xarray.Dataset objects.
-        t_map_arr: A dask.Array object of time mappings.
-        f_map_arr: A dask.Array object of frequency mappings.
-        d_map_arr: A dask.Array object of direction mappings.
+        data_xds_list: A list of xarray.Dataset objects containing MS data.
+        solved_gain_xds_list: A list of lists containing xarray.Dataset objects
+            describing the gain terms.
+        t_map_list: List of dask.Array objects containing time mappings.
+        f_map_list: List of dask.Array objects containing frequency mappings.
+        d_map_list: List of dask.Array objects containing direction mappings.
         opts: A Namespace object containing all necessary configuration.
 
     Returns:
@@ -598,6 +393,9 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 
+        # QuartiCal will assign these to the xarray.Datasets as the following
+        # underscore prefixed data vars. This is done to avoid overwriting
+        # input data prematurely.
         visibility_outputs = {"_RESIDUAL": residual,
                               "_CORRECTED_RESIDUAL": corrected_residual,
                               "_CORRECTED_DATA": corrected_data}

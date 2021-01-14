@@ -20,19 +20,16 @@ def construct_solver(data_xds_list,
     should not be tampered with without a certain level of expertise with dask.
 
     Args:
-        data_xds: xarray.Dataset object containing MS data.
-        gain_xds_list: A list of xarray.Dataset objects describing gain terms.
-        t_map_arr: dask.Array containing time mappings.
-        f_map_arr: dask.Array containing frequency mappings.
-        d_map_arr: dask.Array containing direction mappings.
+        data_xds_list: A list of xarray.Dataset objects containing MS data.
+        gain_xds_list: A list of lists containing xarray.Dataset objects
+            describing the gain terms.
+        t_map_list: List of dask.Array objects containing time mappings.
+        f_map_list: List of dask.Array objects containing frequency mappings.
+        d_map_list: List of dask.Array objects containing direction mappings.
         opts: A Namespace object containing global options.
 
     Returns:
-        gain_list: A list of dask.Arrays containing the gains.
-        conv_perc_list: A list of dask.Arrays containing the converged
-            percentages.
-        conv_iter_list: A list of dask.Arrays containing the iterations taken
-            to reach convergence.
+        A list of lists containing xarray.Datasets describing the solved gains.
     """
 
     solved_gain_xds_list = []
