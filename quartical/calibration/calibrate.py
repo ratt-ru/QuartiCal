@@ -603,6 +603,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
                               "_CORRECTED_DATA": corrected_data}
 
         dims = data_xds.DATA.dims  # All visiblity coloumns share these dims.
+        # TODO: This addition of CUBI_BITFLAG should be done elsewhere.
         data_vars = {"CUBI_BITFLAG": (dims, data_xds.DATA_BITFLAGS.data)}
         data_vars.update({k: (dims, v) for k, v in visibility_outputs.items()})
 

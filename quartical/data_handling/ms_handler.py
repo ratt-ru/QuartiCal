@@ -286,6 +286,24 @@ def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
              for xds in xds_list]
 
     output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
+
+    if opts.output_visibility_product:
+        # Drop variables from columns we intend to overwrite.
+        xds_list = [xds.drop_vars(opts.output_column, errors="ignore")
+                    for xds in xds_list]
+
+        vis_prod_map = {"residual": "_RESIDUAL",
+                        "corrected_residual": "_CORRECTED_RESIDUAL",
+                        "corrected_data": "_CORRECTED_DATA"}
+        n_vis_prod = len(opts.output_visibility_product)
+
+        xds_list = \
+            [xds.rename({vis_prod_map[prod]: opts.output_column[ind]
+             for ind, prod in enumerate(opts.output_visibility_product)})
+             for xds in xds_list]
+
+        output_cols += tuple(opts.output_column[:n_vis_prod])
+
     output_kwrds = {cn: col_kwrds.get(cn, {}) for cn in output_cols}
 
     if opts.input_ms_is_bda:
