@@ -3,12 +3,15 @@ from quartical.parser import preprocess
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
-from quartical.calibration.calibrate import (make_t_binnings,
-                                             make_t_mappings,
-                                             make_f_mappings,
-                                             make_d_mappings,
-                                             make_gain_xds_list,
+from quartical.calibration.calibrate import (make_gain_xds_list,
                                              add_calibration_graph)
+from quartical.calibration.mapping import (make_t_binnings,
+                                           make_t_mappings,
+                                           make_f_mappings,
+                                           make_d_mappings,
+                                           make_t_maps,
+                                           make_f_maps,
+                                           make_d_maps)
 from quartical.utils.dask import blockwise_unique
 from argparse import Namespace
 import dask.array as da
@@ -208,12 +211,37 @@ def _add_calibration_graph(data_xds_list, col_kwrds, xds_opts):
 
 
 @pytest.fixture(scope="module")
-def gain_xds_list(data_xds, t_map_arr, f_map_arr, xds_opts):
-    return make_gain_xds_list(data_xds, t_map_arr, f_map_arr, xds_opts)
+def t_bin_list(data_xds_list, xds_opts):
+    return make_t_maps(data_xds_list, xds_opts)[0]
 
 
 @pytest.fixture(scope="module")
-def post_cal_gain_xds_dict(_add_calibration_graph):
+def t_map_list(data_xds_list, xds_opts):
+    return make_t_maps(data_xds_list, xds_opts)[1]
+
+
+@pytest.fixture(scope="module")
+def f_map_list(data_xds_list, xds_opts):
+    return make_f_maps(data_xds_list, xds_opts)
+
+
+@pytest.fixture(scope="module")
+def d_map_list(data_xds_list, xds_opts):
+    return make_d_maps(data_xds_list, xds_opts)
+
+
+@pytest.fixture(scope="module")
+def gain_xds_list(data_xds_list, t_map_list, f_map_list, xds_opts):
+    return make_gain_xds_list(data_xds_list, t_map_list, f_map_list, xds_opts)
+
+
+@pytest.fixture(scope="module")
+def term_xds_list(gain_xds_list):
+    return gain_xds_list[0]
+
+
+@pytest.fixture(scope="module")
+def solved_gain_xds_list(_add_calibration_graph):
 
     return _add_calibration_graph[0]
 
@@ -393,55 +421,55 @@ def test_nterm(gain_xds_list, xds_opts):
     assert len(xds_opts.solver_gain_terms) == len(gain_xds_list)
 
 
-def test_data_coords(data_xds, gain_xds_list):
+def test_data_coords(data_xds, term_xds_list):
     """Check that dimensions shared between the gains and data are the same."""
 
     data_coords = ["ant", "dir", "corr"]
 
     assert all(data_xds.dims[d] == gxds.dims[d]
-               for gxds in gain_xds_list
+               for gxds in term_xds_list
                for d in data_coords)
 
 
-def test_t_chunking(data_xds, gain_xds_list):
+def test_t_chunking(data_xds, term_xds_list):
     """Check that time chunking of the gain xds list is correct."""
 
     assert all(len(data_xds.UTIME_CHUNKS) == gxds.dims["t_chunk"]
-               for gxds in gain_xds_list)
+               for gxds in term_xds_list)
 
 
-def test_f_chunking(data_xds, gain_xds_list, xds_opts):
+def test_f_chunking(data_xds, term_xds_list, xds_opts):
     """Check that frequency chunking of the gain xds list is correct."""
 
     assert all(len(data_xds.chunks["chan"]) == gxds.dims["f_chunk"]
-               for gxds in gain_xds_list)
+               for gxds in term_xds_list)
 
 
-def test_t_ints(data_xds, gain_xds_list, expected_t_ints):
+def test_t_ints(data_xds, term_xds_list, expected_t_ints):
     """Check that the time intervals are correct."""
 
     assert all(int(sum(eti)) == gxds.dims["time_int"]
-               for eti, gxds in zip(expected_t_ints, gain_xds_list))
+               for eti, gxds in zip(expected_t_ints, term_xds_list))
 
 
-def test_f_ints(data_xds, gain_xds_list, expected_f_ints):
+def test_f_ints(data_xds, term_xds_list, expected_f_ints):
     """Check that the frequency intervals are correct."""
 
     assert all(int(sum(efi)) == gxds.dims["freq_int"]
-               for efi, gxds in zip(expected_f_ints, gain_xds_list))
+               for efi, gxds in zip(expected_f_ints, term_xds_list))
 
 
-def test_attributes(data_xds, gain_xds_list):
+def test_attributes(data_xds, term_xds_list):
     """Check that the attributes of the gains are the same as the data."""
 
     data_attributes = ["FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"]
 
     assert all(data_xds.attrs[a] == gxds.attrs[a]
-               for gxds in gain_xds_list
+               for gxds in term_xds_list
                for a in data_attributes)
 
 
-def test_chunk_spec(data_xds, gain_xds_list, expected_t_ints, expected_f_ints,
+def test_chunk_spec(data_xds, term_xds_list, expected_t_ints, expected_f_ints,
                     xds_opts):
     """Check that the chunking specs are correct."""
 
@@ -452,45 +480,47 @@ def test_chunk_spec(data_xds, gain_xds_list, expected_t_ints, expected_f_ints,
              for tic, fic in zip(expected_t_ints, expected_f_ints)]
 
     assert all(spec == gxds.attrs["CHUNK_SPEC"]
-               for spec, gxds in zip(specs, gain_xds_list))
+               for spec, gxds in zip(specs, term_xds_list))
 
 # ---------------------------add_calibration_graph-----------------------------
 
 
-def test_ngains(post_cal_gain_xds_dict, xds_opts):
+def test_ngains(solved_gain_xds_list, xds_opts):
     """Check that calibration produces one xds per gain per input xds."""
 
-    assert len(post_cal_gain_xds_dict) == len(xds_opts.solver_gain_terms)
+    assert all([len(term_xds_list) == len(xds_opts.solver_gain_terms)
+                for term_xds_list in solved_gain_xds_list])
 
 
-def test_has_gain_field(post_cal_gain_xds_dict):
+def test_has_gain_field(solved_gain_xds_list):
     """Check that calibration assigns the gains to the relevant xds."""
 
-    assert all([hasattr(gxds, "gains")
-                for gxds_list in post_cal_gain_xds_dict.values()
-                for gxds in gxds_list])
+    assert all([hasattr(term_xds, "gains")
+                for term_xds_list in solved_gain_xds_list
+                for term_xds in term_xds_list])
+
+# TODO: These tests are temporarily defunct as this is no longer done inside
+# the calibration code. Should be moved to the write data tests.
+# def test_has_output_field(post_cal_data_xds_list, xds_opts):
+#     """Check that calibration assigns the output to the data xds."""
+
+#     assert all([hasattr(xds, col)
+#                 for col in xds_opts.output_column
+#                 for xds in post_cal_data_xds_list])
 
 
-def test_has_output_field(post_cal_data_xds_list, xds_opts):
-    """Check that calibration assigns the output to the data xds."""
+# def test_has_bitflag_field(post_cal_data_xds_list):
+#     """Check that calibration assigns the bitflags to the data xds."""
 
-    assert all([hasattr(xds, col)
-                for col in xds_opts.output_column
-                for xds in post_cal_data_xds_list])
-
-
-def test_has_bitflag_field(post_cal_data_xds_list):
-    """Check that calibration assigns the bitflags to the data xds."""
-
-    assert all([hasattr(xds, "CUBI_BITFLAG")
-                for xds in post_cal_data_xds_list])
+#     assert all([hasattr(xds, "CUBI_BITFLAG")
+#                 for xds in post_cal_data_xds_list])
 
 
-def test_write_columns(post_cal_data_xds_list, xds_opts):
-    """Check that the output column name is added to WRTIE_COLS."""
+# def test_write_columns(post_cal_data_xds_list, xds_opts):
+#     """Check that the output column name is added to WRTIE_COLS."""
 
-    assert all([col in xds.attrs["WRITE_COLS"]
-                for col in xds_opts.output_column
-                for xds in post_cal_data_xds_list])
+#     assert all([col in xds.attrs["WRITE_COLS"]
+#                 for col in xds_opts.output_column
+#                 for xds in post_cal_data_xds_list])
 
 # -----------------------------------------------------------------------------

@@ -5,6 +5,10 @@ from daskms.optimisation import inlined_array
 from quartical.utils.dask import blockwise_unique
 
 
+def get_array_items(arr, inds):
+    return arr[inds]
+
+
 def make_t_maps(data_xds_list, opts):
     """Figure out how timeslots map to solution interval bins.
 
@@ -41,7 +45,7 @@ def make_t_maps(data_xds_list, opts):
         # all rows at a given time have the same interval as the
         # alternative is madness.
         utime_intervals = da.map_blocks(
-            lambda arr, inds: arr[inds],
+            get_array_items,
             interval_col,
             utime_loc,
             chunks=utime_loc.chunks,
@@ -124,7 +128,7 @@ def make_t_mappings(utime_ind, t_bin_arr):
     _, n_term = t_bin_arr.shape
 
     t_map_arr = da.blockwise(
-        lambda arr, inds: arr[inds], ("rowlike", "term"),
+        get_array_items, ("rowlike", "term"),
         t_bin_arr, ("rowlike", "term"),
         utime_ind, ("rowlike",),
         adjust_chunks=(utime_ind.chunks[0], (n_term,)),
