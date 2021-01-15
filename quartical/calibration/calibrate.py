@@ -6,8 +6,6 @@ from quartical.kernels.generics import (compute_residual,
 from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_post_solve_chisq,
                                              assign_presolve_data_stats,)
-from quartical.flagging.flagging import (set_bitflag,
-                                         compute_mad_flags)
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
 from loguru import logger  # noqa
@@ -106,8 +104,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
     # for xds_ind, xds in enumerate(data_xds_list):
 
-
-
         # Create and populate xds for statisics at data resolution. Returns
         # some useful arrays required for future computations. TODO: I really
         # dislike this layer. Consider revising.
@@ -128,34 +124,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         #                           t_bin_arr,
         #                           f_map_arr,
         #                           opts)
-
-        # This has been fixed - this now constructs a custom graph which
-        # preserves gain chunking. It also somewhat simplifies future work
-        # as we now have a blueprint for pulling values out of the solver
-        # layer. Note that we reuse the variable name gain_xds_list to keep
-        # things succinct.
-
-        # residuals = visibility_products["residual"]
-
-        # --------------------------------MADMAX-------------------------------
-        # This is the madmax flagging step which is not always enabled. TODO:
-        # This likely needs to be moved into the solver. Note that this use of
-        # set bitflags is likely to break the distributed scheduler.
-
-        # if opts.flags_mad_enable:
-
-        #     data_bitflags = xds.DATA_BITFLAGS.data
-
-        #     TODO: This can take the post solve data xds list as input.
-        #     mad_flags = compute_mad_flags(residuals,
-        #                                   bitflag_col,
-        #                                   ant1_col,
-        #                                   ant2_col,
-        #                                   n_ant,
-        #                                   n_t_chunk,
-        #                                   opts)
-
-        #     data_bitflags = set_bitflag(data_bitflags, "MAD", mad_flags)
 
         # ---------------------------------------------------------------------
 

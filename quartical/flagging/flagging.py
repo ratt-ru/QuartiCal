@@ -465,42 +465,64 @@ def _initialise_gainflags(gain, empty_intervals):
     return gainflags
 
 
-def compute_mad_flags(residuals, bitflag_col, ant1_col, ant2_col, n_ant,
-                      n_chunks, opts):
+def valid_median(arr):
+    return np.median(arr[np.isfinite(arr) & (arr > 0)], keepdims=True)
+
+
+def add_mad_graph(data_xds_list, opts):
 
     bl_thresh = opts.flags_bl_mad_threshold
     gbl_thresh = opts.flags_global_mad_threshold
 
-    mad_estimate = da.blockwise(madmax, ("rowlike", "ant1", "ant2"),
-                                residuals, ("rowlike", "chan", "corr"),
-                                bitflag_col, ("rowlike", "chan", "corr"),
-                                ant1_col, ("rowlike",),
-                                ant2_col, ("rowlike",),
-                                n_ant, None,
-                                dtype=residuals.real.dtype,
-                                align_arrays=False,
-                                concatenate=True,
-                                adjust_chunks={"rowlike": (1,)*n_chunks},
-                                new_axes={"ant1": n_ant,
-                                          "ant2": n_ant})
+    flagged_data_xds_list = []
 
-    med_mad_estimate = \
-        da.map_blocks(lambda x: np.median(x[np.isfinite(x) & (x > 0)],
-                                          keepdims=True),
-                      mad_estimate, drop_axis=(1, 2), dtype=np.float64)
+    for xds in data_xds_list:
+        residuals = xds._RESIDUAL.data
+        bitflag_col = xds.DATA_BITFLAGS.data
+        ant1_col = xds.ANTENNA1.data
+        ant2_col = xds.ANTENNA2.data
+        n_ant = xds.dims["ant"]
+        n_t_chunk = residuals.numblocks[0]
 
-    mad_flags = da.blockwise(threshold, ("rowlike", "chan", "corr"),
-                             residuals, ("rowlike", "chan", "corr"),
-                             bl_thresh*mad_estimate,
-                             ("rowlike", "ant1", "ant2"),
-                             gbl_thresh*med_mad_estimate,
-                             ("rowlike",),
-                             bitflag_col, ("rowlike", "chan", "corr"),
-                             ant1_col, ("rowlike",),
-                             ant2_col, ("rowlike",),
-                             dtype=np.bool_,
-                             align_arrays=False,
-                             concatenate=True,
-                             adjust_chunks={"rowlike": residuals.chunks[0]},)
+        mad_estimate = da.blockwise(madmax, ("rowlike", "ant1", "ant2"),
+                                    residuals, ("rowlike", "chan", "corr"),
+                                    bitflag_col, ("rowlike", "chan", "corr"),
+                                    ant1_col, ("rowlike",),
+                                    ant2_col, ("rowlike",),
+                                    n_ant, None,
+                                    dtype=residuals.real.dtype,
+                                    align_arrays=False,
+                                    concatenate=True,
+                                    adjust_chunks={"rowlike": (1,)*n_t_chunk},
+                                    new_axes={"ant1": n_ant,
+                                              "ant2": n_ant})
 
-    return mad_flags
+        med_mad_estimate = da.map_blocks(valid_median,
+                                         mad_estimate,
+                                         drop_axis=(1, 2),
+                                         dtype=np.float64)
+
+        row_chunks = residuals.chunks[0]
+
+        mad_flags = da.blockwise(threshold, ("rowlike", "chan", "corr"),
+                                 residuals, ("rowlike", "chan", "corr"),
+                                 bl_thresh*mad_estimate,
+                                 ("rowlike", "ant1", "ant2"),
+                                 gbl_thresh*med_mad_estimate,
+                                 ("rowlike",),
+                                 bitflag_col, ("rowlike", "chan", "corr"),
+                                 ant1_col, ("rowlike",),
+                                 ant2_col, ("rowlike",),
+                                 dtype=np.bool_,
+                                 align_arrays=False,
+                                 concatenate=True,
+                                 adjust_chunks={"rowlike": row_chunks},)
+
+        bitflag_col = set_bitflag(bitflag_col, "MAD", mad_flags)
+
+        flagged_data_xds = xds.assign(
+            {"CUBI_BITFLAG": (("rowlike", "chan", "corr"), bitflag_col)})
+
+        flagged_data_xds_list.append(flagged_data_xds)
+
+    return flagged_data_xds_list

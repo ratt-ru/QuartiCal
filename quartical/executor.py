@@ -11,7 +11,7 @@ from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
-from quartical.flagging.flagging import finalise_flags
+from quartical.flagging.flagging import finalise_flags, add_mad_graph
 import time
 from dask.diagnostics import ProgressBar
 import dask
@@ -53,23 +53,26 @@ def _execute(exitstack):
     t0 = time.time()
 
     # Reads the measurement set using the relavant configuration from opts.
-    ms_xds_list, ref_xds_list, col_kwrds = read_xds_list(opts)
+    data_xds_list, ref_xds_list, col_kwrds = read_xds_list(opts)
 
-    # ms_xds_list = ms_xds_list[:2]
+    # data_xds_list = data_xds_list[:2]
     # ref_xds_list = ref_xds_list[:16]
 
     # Preprocess the xds_list - initialise some values and fix bad data.
-    preprocessed_xds_list = preprocess_xds_list(ms_xds_list, col_kwrds, opts)
+    data_xds_list = preprocess_xds_list(data_xds_list, col_kwrds, opts)
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
-    model_xds_list = add_model_graph(preprocessed_xds_list, opts)
+    data_xds_list = add_model_graph(data_xds_list, opts)
 
     # Adds the dask graph describing the calibration of the data.
-    gains_per_xds, post_gain_xds = \
-        add_calibration_graph(model_xds_list, col_kwrds, opts)
+    gains_per_xds, data_xds_list = \
+        add_calibration_graph(data_xds_list, col_kwrds, opts)
 
-    writable_xds = finalise_flags(post_gain_xds, col_kwrds, opts)
+    if opts.flags_mad_enable:
+        data_xds_list = add_mad_graph(data_xds_list, opts)
+
+    writable_xds = finalise_flags(data_xds_list, col_kwrds, opts)
 
     writes = write_xds_list(writable_xds, ref_xds_list, col_kwrds, opts)
 
