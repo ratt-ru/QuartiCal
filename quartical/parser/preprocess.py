@@ -10,11 +10,11 @@ sm_tup = namedtuple("sky_model", ("name", "tags"))
 
 
 def interpret_model(opts):
-    """Preprocesses the namespace/dictionary given by opts.
+    """Interpret the model recipe string.
 
-    Given a namespace/dictionary of options, this should verify that that
-    the options can be understood. Some options specified as strings need
-    further processing which may include the raising of certain flags.
+    Given a namespace/dictionary of options, read and interpret the model
+    recipe. Results are added to the options namepsace with leading
+    leading underscores to indicate that they are set internally.
 
     Args:
         opts: A namepsace/dictionary of options.
@@ -91,3 +91,25 @@ def interpret_model(opts):
 
     if opts._predict:
         logger.info("Recipe contains sky models - enabling prediction step.")
+
+
+def check_opts(opts):
+    """Check that there is nothing untoward in the options namespace.
+
+    Given a namespace/dictionary of options, check options which may trip
+    users up or cause failures. Log warnings about experimental modes.
+
+    Args:
+        opts: A namepsace/dictionary of options.
+    """
+
+    # TODO: Add this functionality - should check opts for problems in addition
+    # to interpreting weird options. Can also raise flags for different modes
+    # of operation. The idea is that all our configuration state lives in this
+    # options dictionary. Down with OOP!
+
+    if opts.input_ms_is_bda:
+        logger.warning("BDA data is only partially supported. Please report "
+                       "problems via the issue tracker.")
+
+    return

@@ -88,6 +88,11 @@ def _write_xds_list(_read_xds_list, opts):
 
     ms_xds_list, ref_xds_list, col_kwrds = _read_xds_list
 
+    ms_xds_list = [xds.assign({"_RESIDUAL": xds.DATA,
+                               "_CORRECTED_DATA": xds.DATA,
+                               "_CORRECTED_RESIDUAL": xds.DATA})
+                   for xds in ms_xds_list]
+
     ms_xds_list = [xds.assign_attrs({"WRITE_COLS": ["DATA"]})
                    for xds in ms_xds_list]
 
