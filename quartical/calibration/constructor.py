@@ -78,7 +78,7 @@ def construct_solver(data_xds_list,
         # Add relevant outputs to blocker object.
         for gi, gn in enumerate(opts.solver_gain_terms):
 
-            chunks = gain_terms[gi].CHUNK_SPEC
+            chunks = gain_terms[gi].GAIN_SPEC
             blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)
 
             chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
@@ -119,8 +119,8 @@ def expand_specs(gain_terms):
     # represents frequency chunks and the inner-most list contains the
     # specs per term.
 
-    n_t_chunks = len(gain_terms[0].CHUNK_SPEC.tchunk)
-    n_f_chunks = len(gain_terms[0].CHUNK_SPEC.fchunk)
+    n_t_chunks = len(gain_terms[0].GAIN_SPEC.tchunk)
+    n_f_chunks = len(gain_terms[0].GAIN_SPEC.fchunk)
 
     tc_list = []
     for tc_ind in range(n_t_chunks):
@@ -131,7 +131,7 @@ def expand_specs(gain_terms):
 
                 term_name = gxds.NAME
                 term_type = gxds.TYPE
-                chunk_spec = gxds.CHUNK_SPEC
+                chunk_spec = gxds.GAIN_SPEC
 
                 tc = chunk_spec.tchunk[tc_ind]
                 fc = chunk_spec.fchunk[fc_ind]

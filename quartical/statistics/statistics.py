@@ -520,8 +520,8 @@ def assign_interval_stats(gain_xds_list, data_stats_xds, unflagged_tfac,
         n_dir = gain_xds.dims["dir"]  # TODO: Add fixed direction logic.
         n_ant = gain_xds.dims["ant"]
 
-        ti_chunks = gain_xds.CHUNK_SPEC.tchunk
-        fi_chunks = gain_xds.CHUNK_SPEC.fchunk
+        ti_chunks = gain_xds.GAIN_SPEC.tchunk
+        fi_chunks = gain_xds.GAIN_SPEC.fchunk
 
         n_t_chunk = gain_xds.dims["t_chunk"]
         n_f_chunk = gain_xds.dims["f_chunk"]

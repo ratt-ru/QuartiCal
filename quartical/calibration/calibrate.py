@@ -6,6 +6,7 @@ from quartical.kernels.generics import (compute_residual,
 from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_post_solve_chisq,
                                              assign_presolve_data_stats,)
+from quartical.calibration.gain_types import make_chunk_specs
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
 from loguru import logger  # noqa
@@ -24,10 +25,6 @@ warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
 warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
 
 
-gain_shape_tup = namedtuple("gain_shape_tup",
-                            "n_t_int n_f_int n_ant n_dir n_corr")
-chunk_spec_tup = namedtuple("chunk_spec_tup",
-                            "tchunk fchunk achunk dchunk cchunk")
 dstat_dims_tup = namedtuple("dstat_dims_tup",
                             "n_utime n_chan n_ant n_t_chunk n_f_chunk")
 
@@ -215,14 +212,17 @@ def make_gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
 
             # Determine the per-chunk gain shapes from the time and frequency
             # intervals per chunk. Note that this uses the number of
-            # correlations in the measurement set. TODO: This should depend
-            # on the solver mode.
+            # correlations in the measurement set.
 
-            chunk_spec = chunk_spec_tup(n_t_int_per_chunk,
-                                        n_f_int_per_chunk,
-                                        (n_ant,),
-                                        (n_dir if dd_term else 1,),
-                                        (n_corr,))
+            gain_chunk_spec, param_chunk_spec = \
+                make_chunk_specs(term_type,
+                                 tpc=utime_chunks,
+                                 fpc=freq_chunks,
+                                 tipc=n_t_int_per_chunk,
+                                 fipc=n_f_int_per_chunk,
+                                 ant=n_ant,
+                                 dir=n_dir if dd_term else 1,
+                                 corr=n_corr)
 
             # Stored fields which identify the data with which this gain is
             # assosciated.
@@ -247,7 +247,8 @@ def make_gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
                         "f_chunk": ("f_chunk",
                                     np.arange(n_f_chunk, dtype=np.int32))},
                 attrs={"NAME": term,
-                       "CHUNK_SPEC": chunk_spec,
+                       "GAIN_SPEC": gain_chunk_spec,
+                       "PARAM_SPEC": param_chunk_spec,
                        "TYPE": term_type,
                        **id_fields})
 
