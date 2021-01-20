@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
-import numpy as np
 import dask.array as da
 from quartical.kernels.generics import (compute_residual,
                                         compute_corrected_residual)
 from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_post_solve_chisq,
                                              assign_presolve_data_stats,)
-from quartical.calibration.gain_types import make_chunk_specs
+from quartical.calibration.gain_types import term_types
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
 from loguru import logger  # noqa
 from collections import namedtuple
-import xarray
 
 
 # The following supresses the egregious numba pending deprecation warnings.
@@ -186,73 +184,17 @@ def make_gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
 
         term_xds_list = []
 
-        for term_ind, term in enumerate(opts.solver_gain_terms):
+        for term_ind, term_name in enumerate(opts.solver_gain_terms):
 
-            dd_term = getattr(opts, "{}_direction_dependent".format(term))
-            term_type = getattr(opts, "{}_type".format(term))
+            term_type = getattr(opts, "{}_type".format(term_name))
 
-            utime_chunks = data_xds.UTIME_CHUNKS
-            freq_chunks = data_xds.chunks["chan"]
+            term_obj = term_types[term_type](term_name,
+                                             data_xds,
+                                             tipc_list[xds_ind],
+                                             fipc_list[xds_ind],
+                                             opts)
 
-            n_t_chunk = len(utime_chunks)
-            n_f_chunk = len(freq_chunks)
-
-            n_chan, n_ant, n_dir, n_corr = \
-                [data_xds.dims[d] for d in ["chan", "ant", "dir", "corr"]]
-
-            n_t_int_per_chunk = \
-                tuple(map(int, tipc_list[xds_ind][:, term_ind]))
-
-            n_t_int = np.sum(n_t_int_per_chunk)
-
-            n_f_int_per_chunk = \
-                tuple(map(int, fipc_list[xds_ind][:, term_ind]))
-
-            n_f_int = np.sum(n_f_int_per_chunk)
-
-            # Determine the per-chunk gain shapes from the time and frequency
-            # intervals per chunk. Note that this uses the number of
-            # correlations in the measurement set.
-
-            gain_chunk_spec, param_chunk_spec = \
-                make_chunk_specs(term_type,
-                                 tpc=utime_chunks,
-                                 fpc=freq_chunks,
-                                 tipc=n_t_int_per_chunk,
-                                 fipc=n_f_int_per_chunk,
-                                 ant=n_ant,
-                                 dir=n_dir if dd_term else 1,
-                                 corr=n_corr)
-
-            # Stored fields which identify the data with which this gain is
-            # assosciated.
-            id_fields = {f: data_xds.attrs[f]
-                         for f in ["FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"]}
-
-            # Set up an xarray.Dataset describing the gain term.
-            term_xds = xarray.Dataset(
-                coords={"time_int": ("time_int",
-                                     np.arange(n_t_int, dtype=np.int32)),
-                        "freq_int": ("freq_int",
-                                     np.arange(n_f_int, dtype=np.int32)),
-                        "ant": ("ant",
-                                np.arange(n_ant, dtype=np.int32)),
-                        "dir": ("dir",
-                                np.arange(n_dir if dd_term else 1,
-                                          dtype=np.int32)),
-                        "corr": ("corr",
-                                 np.arange(n_corr, dtype=np.int32)),
-                        "t_chunk": ("t_chunk",
-                                    np.arange(n_t_chunk, dtype=np.int32)),
-                        "f_chunk": ("f_chunk",
-                                    np.arange(n_f_chunk, dtype=np.int32))},
-                attrs={"NAME": term,
-                       "GAIN_SPEC": gain_chunk_spec,
-                       "PARAM_SPEC": param_chunk_spec,
-                       "TYPE": term_type,
-                       **id_fields})
-
-            term_xds_list.append(term_xds)
+            term_xds_list.append(term_obj.make_xds())
 
         gain_xds_list.append(term_xds_list)
 
