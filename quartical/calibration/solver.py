@@ -40,6 +40,8 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             additional_args[term_ind]["params"] = \
                 np.zeros_like(gain[..., None, :], dtype=gain.real.dtype)
 
+        # TODO: This (and the above) are nasty. Need to properly pass in the
+        # parameter spec.
         if term_spec.type == "delay":
             param_shape = list(gain.shape)
             param_shape[4:4] = [2]

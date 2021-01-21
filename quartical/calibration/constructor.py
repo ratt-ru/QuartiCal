@@ -121,8 +121,8 @@ def expand_specs(gain_terms):
     # represents frequency chunks and the inner-most list contains the
     # specs per term.
 
-    n_t_chunks = len(gain_terms[0].GAIN_SPEC.tchunk)
-    n_f_chunks = len(gain_terms[0].GAIN_SPEC.fchunk)
+    n_t_chunks = gain_terms[0].dims["t_chunk"]
+    n_f_chunks = gain_terms[0].dims["f_chunk"]
 
     tc_list = []
     for tc_ind in range(n_t_chunks):
