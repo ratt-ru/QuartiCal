@@ -4,7 +4,7 @@ from quartical.utils.dask import Blocker
 from collections import namedtuple
 
 
-term_spec_tup = namedtuple("term_spec_tup", "name type shape")
+term_spec_tup = namedtuple("term_spec_tup", "name type shape pshape")
 
 
 def construct_solver(data_xds_list,
@@ -80,6 +80,7 @@ def construct_solver(data_xds_list,
         # Add relevant outputs to blocker object.
         for gi, gn in enumerate(opts.solver_gain_terms):
 
+            # TODO: Need a way to pull out parameter info too.
             chunks = gain_terms[gi].GAIN_SPEC
             blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)
 
@@ -99,9 +100,15 @@ def construct_solver(data_xds_list,
             convperc = output_array_dict[f"{gain_xds.NAME}-convperc"]
             conviter = output_array_dict[f"{gain_xds.NAME}-conviter"]
 
+            # TODO: Slightly dodgy workaround. If the dimensions of the gain
+            # do not match the interval dimensions, assume gain is
+            # parameterised and has full resolution.
+            gain_axes = ("time_int", "freq_int", "ant", "dir", "corr")
+            if gain.shape != tuple(gain_xds.dims[d] for d in gain_axes):
+                gain_axes = ("time", "chan", "ant", "dir", "corr")
+
             solved_xds = gain_xds.assign(
-                {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
-                           gain),
+                {"gains": (gain_axes, gain),
                  "conv_perc": (("t_chunk", "f_chunk"), convperc),
                  "conv_iter": (("t_chunk", "f_chunk"), conviter)})
 
@@ -133,20 +140,32 @@ def expand_specs(gain_terms):
 
                 term_name = gxds.NAME
                 term_type = gxds.TYPE
-                chunk_spec = gxds.GAIN_SPEC
+                gain_chunk_spec = gxds.GAIN_SPEC
 
-                tc = chunk_spec.tchunk[tc_ind]
-                fc = chunk_spec.fchunk[fc_ind]
+                tc = gain_chunk_spec.tchunk[tc_ind]
+                fc = gain_chunk_spec.fchunk[fc_ind]
 
-                ac = chunk_spec.achunk[0]  # No chunking along antenna axis.
-                dc = chunk_spec.dchunk[0]  # No chunking along direction axis.
-                cc = chunk_spec.cchunk[0]  # No chunking along corr axis.
+                ac = gain_chunk_spec.achunk[0]  # No chunking.
+                dc = gain_chunk_spec.dchunk[0]  # No chunking.
+                cc = gain_chunk_spec.cchunk[0]  # No chunking.
 
                 term_shape = (tc, fc, ac, dc, cc)
 
+                # Check if we have a spec for the parameters.
+                parm_chunk_spec = getattr(gxds, "PARAM_SPEC", ())
+                if parm_chunk_spec:
+                    tc_p = parm_chunk_spec.tchunk[tc_ind]
+                    fc_p = parm_chunk_spec.fchunk[fc_ind]
+                    pc = parm_chunk_spec.pchunk[0]
+
+                    parm_shape = (tc_p, fc_p, ac, dc, pc, cc)
+                else:
+                    parm_shape = ()
+
                 term_list.append(term_spec_tup(term_name,
                                                term_type,
-                                               term_shape))
+                                               term_shape,
+                                               parm_shape))
 
             fc_list.append(term_list)
         tc_list.append(fc_list)

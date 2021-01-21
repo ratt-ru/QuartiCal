@@ -15,7 +15,7 @@ term_solvers = {"complex": complex_solver,
 gain_spec_tup = namedtuple("gain_spec_tup",
                            "tchunk fchunk achunk dchunk cchunk")
 param_spec_tup = namedtuple("param_spec_tup",
-                            "tchunk fchunk achunk pchunk dchunk cchunk")
+                            "tchunk fchunk achunk dchunk pchunk cchunk")
 
 
 class Gain:
@@ -32,8 +32,8 @@ class Gain:
         self.n_corr = data_xds.dims["corr"]
         self.id_fields = {f: data_xds.attrs[f]
                           for f in ["FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"]}
-        self.utime_chunks = data_xds.UTIME_CHUNKS
-        self.freq_chunks = data_xds.chunks["chan"]
+        self.utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
+        self.freq_chunks = list(map(int, data_xds.chunks["chan"]))
         self.n_t_chunk = len(self.utime_chunks)
         self.n_f_chunk = len(self.freq_chunks)
 
@@ -103,8 +103,8 @@ class Phase(Gain):
         self.param_chunk_spec = param_spec_tup(self.n_tipc,
                                                self.n_fipc,
                                                (self.n_ant,),
-                                               (self.n_ppa,),
                                                (self.n_dir,),
+                                               (self.n_ppa,),
                                                (self.n_corr,))
 
     def make_xds(self):
@@ -133,15 +133,17 @@ class Delay(Gain):
         self.param_chunk_spec = param_spec_tup(self.n_tipc,
                                                self.n_fipc,
                                                (self.n_ant,),
-                                               (self.n_ppa,),
                                                (self.n_dir,),
+                                               (self.n_ppa,),
                                                (self.n_corr,))
 
     def make_xds(self):
 
         xds = Gain.make_xds(self)
 
-        xds = xds.assign_coords({"param": np.arange(self.n_ppa)})
+        xds = xds.assign_coords({"param": np.arange(self.n_ppa),
+                                 "time": np.arange(sum(self.utime_chunks)),
+                                 "freq": np.arange(sum(self.freq_chunks))})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
                                 "PARAM_SPEC": self.param_chunk_spec})
 
