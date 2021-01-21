@@ -41,6 +41,7 @@ def construct_solver(data_xds_list,
         ant1_col = data_xds.ANTENNA1.data
         ant2_col = data_xds.ANTENNA2.data
         weight_col = data_xds.WEIGHT.data
+        chan_freqs = data_xds.CHAN_FREQ.data
         t_map_arr = t_map_list[xds_ind]
         f_map_arr = f_map_list[xds_ind]
         d_map_arr = d_map_list[xds_ind]
@@ -67,6 +68,7 @@ def construct_solver(data_xds_list,
         blocker.add_input("d_map_arr", d_map_arr)
         blocker.add_input("corr_mode", opts.input_ms_correlation_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
+        blocker.add_input("chan_freqs", chan_freqs, "f")
 
         if opts.input_ms_is_bda:
             blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")

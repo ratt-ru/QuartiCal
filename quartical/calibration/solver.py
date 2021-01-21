@@ -38,7 +38,16 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
         if term_spec.type == "phase":
             additional_args[term_ind]["params"] = \
-                np.zeros_like(gain[..., None, :, :], dtype=gain.real.dtype)
+                np.zeros_like(gain[..., None, :], dtype=gain.real.dtype)
+
+        if term_spec.type == "delay":
+            param_shape = list(gain.shape)
+            param_shape[4:4] = [2]
+
+            additional_args[term_ind]["params"] = \
+                np.zeros(param_shape, dtype=gain.real.dtype)
+
+            additional_args[term_ind]["chan_freqs"] = kwargs["chan_freqs"]
 
         results_dict[term_spec.name + "-gain"] = gain
         results_dict[term_spec.name + "-conviter"] = 0
