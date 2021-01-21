@@ -22,8 +22,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                  d_map_arr, corr_mode, active_term, inverse_gain_list,
                  gains, flags, params, chan_freqs, row_map, row_weights):
 
-    n_tint, n_fint, n_ant, n_dir, n_corr = gains[active_term].shape
-    n_param = params.shape[-2]
+    n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
 
     invert_gains(gains, inverse_gain_list, literally(corr_mode))
 

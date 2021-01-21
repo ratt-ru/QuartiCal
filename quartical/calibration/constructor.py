@@ -102,7 +102,8 @@ def construct_solver(data_xds_list,
 
             # TODO: Slightly dodgy workaround. If the dimensions of the gain
             # do not match the interval dimensions, assume gain is
-            # parameterised and has full resolution.
+            # parameterised and has full resolution. This should be comtrolled
+            # in a smarter way.
             gain_axes = ("time_int", "freq_int", "ant", "dir", "corr")
             if gain.shape != tuple(gain_xds.dims[d] for d in gain_axes):
                 gain_axes = ("time", "chan", "ant", "dir", "corr")
