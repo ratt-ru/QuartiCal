@@ -104,12 +104,9 @@ def construct_solver(data_xds_list,
             # do not match the interval dimensions, assume gain is
             # parameterised and has full resolution. This should be comtrolled
             # in a smarter way.
-            gain_axes = ("time_int", "freq_int", "ant", "dir", "corr")
-            if gain.shape != tuple(gain_xds.dims[d] for d in gain_axes):
-                gain_axes = ("time", "chan", "ant", "dir", "corr")
 
             solved_xds = gain_xds.assign(
-                {"gains": (gain_axes, gain),
+                {"gains": (gain_xds.GAIN_AXES, gain),
                  "conv_perc": (("t_chunk", "f_chunk"), convperc),
                  "conv_iter": (("t_chunk", "f_chunk"), conviter)})
 

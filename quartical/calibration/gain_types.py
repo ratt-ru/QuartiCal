@@ -78,12 +78,14 @@ class Complex(Gain):
                                              (self.n_ant,),
                                              (self.n_dir,),
                                              (self.n_corr,))
+        self.gain_axes = ("time_int", "freq_int", "ant", "dir", "corr")
 
     def make_xds(self):
 
         xds = Gain.make_xds(self)
 
-        xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec})
+        xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
+                                "GAIN_AXES": self.gain_axes})
 
         return xds
 
@@ -106,6 +108,9 @@ class Phase(Gain):
                                                (self.n_dir,),
                                                (self.n_ppa,),
                                                (self.n_corr,))
+        self.gain_axes = ("time_int", "freq_int", "ant", "dir", "corr")
+        self.param_axes = \
+            ("time_int", "freq_int", "ant", "dir", "param", "corr")
 
     def make_xds(self):
 
@@ -113,7 +118,9 @@ class Phase(Gain):
 
         xds = xds.assign_coords({"param": np.arange(self.n_ppa)})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
-                                "PARAM_SPEC": self.param_chunk_spec})
+                                "PARAM_SPEC": self.param_chunk_spec,
+                                "GAIN_AXES": self.gain_axes,
+                                "PARAM_AXES": self.param_axes})
 
         return xds
 
@@ -136,6 +143,9 @@ class Delay(Gain):
                                                (self.n_dir,),
                                                (self.n_ppa,),
                                                (self.n_corr,))
+        self.gain_axes = ("time", "freq", "ant", "dir", "corr")
+        self.param_axes = \
+            ("time_int", "freq_int", "ant", "dir", "param", "corr")
 
     def make_xds(self):
 
@@ -145,7 +155,9 @@ class Delay(Gain):
                                  "time": np.arange(sum(self.utime_chunks)),
                                  "freq": np.arange(sum(self.freq_chunks))})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
-                                "PARAM_SPEC": self.param_chunk_spec})
+                                "PARAM_SPEC": self.param_chunk_spec,
+                                "GAIN_AXES": self.gain_axes,
+                                "PARAM_AXES": self.param_axes})
 
         return xds
 
