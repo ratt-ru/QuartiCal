@@ -40,6 +40,9 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             additional_args[term_ind]["params"] = \
                 np.zeros(term_spec.pshape, dtype=gain.real.dtype)
 
+            results_dict[term_spec.name + "-param"] = \
+                additional_args[term_ind]["params"]
+
         # TODO: This is now better but not perfect. Need some way to do this
         # consistently across many terms.
         if term_spec.type == "delay":
