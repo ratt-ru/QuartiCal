@@ -116,7 +116,7 @@ class Phase(Gain):
 
         xds = Gain.make_xds(self)
 
-        xds = xds.assign_coords({"param": np.arange(self.n_ppa)})
+        xds = xds.assign_coords({"param": np.array(["phase"])})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
                                 "PARAM_SPEC": self.param_chunk_spec,
                                 "GAIN_AXES": self.gain_axes,
@@ -151,7 +151,7 @@ class Delay(Gain):
 
         xds = Gain.make_xds(self)
 
-        xds = xds.assign_coords({"param": np.arange(self.n_ppa),
+        xds = xds.assign_coords({"param": np.array(["delay", "phase_offset"]),
                                  "time": np.arange(sum(self.utime_chunks)),
                                  "freq": np.arange(sum(self.freq_chunks))})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,

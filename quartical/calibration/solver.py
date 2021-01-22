@@ -44,7 +44,7 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                 additional_args[term_ind]["params"]
 
         # TODO: This is now better but not perfect. Need some way to do this
-        # consistently across many terms.
+        # consistently across many term types.
         if term_spec.type == "delay":
             additional_args[term_ind]["chan_freqs"] = kwargs["chan_freqs"]
 

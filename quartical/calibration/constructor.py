@@ -80,10 +80,10 @@ def construct_solver(data_xds_list,
         # Add relevant outputs to blocker object.
         for gi, gn in enumerate(opts.solver_gain_terms):
 
-            # TODO: Need a way to pull out parameter info too.
             chunks = gain_terms[gi].GAIN_SPEC
             blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)
 
+            # If there is a PARAM_SPEC on the gain xds, it is also an output.
             if hasattr(gain_terms[gi], "PARAM_SPEC"):
                 chunks = gain_terms[gi].PARAM_SPEC
                 blocker.add_output(f"{gn}-param", "rfadpc", chunks,
@@ -94,26 +94,29 @@ def construct_solver(data_xds_list,
             blocker.add_output(f"{gn}-convperc", "rf", chunks, np.float64)
 
         # Apply function to inputs to produce dask array outputs (as dict).
-        output_array_dict = blocker.get_dask_outputs()
+        output_dict = blocker.get_dask_outputs()
 
         # Assign results to the relevant gain xarray.Dataset object.
         solved_gain_terms = []
 
         for gi, gain_xds in enumerate(gain_terms):
 
-            gain = output_array_dict[f"{gain_xds.NAME}-gain"]
-            convperc = output_array_dict[f"{gain_xds.NAME}-convperc"]
-            conviter = output_array_dict[f"{gain_xds.NAME}-conviter"]
+            result_vars = {}
 
-            # TODO: Slightly dodgy workaround. If the dimensions of the gain
-            # do not match the interval dimensions, assume gain is
-            # parameterised and has full resolution. This should be comtrolled
-            # in a smarter way.
+            gain = output_dict[f"{gain_xds.NAME}-gain"]
+            result_vars["gains"] = (gain_xds.GAIN_AXES, gain)
 
-            solved_xds = gain_xds.assign(
-                {"gains": (gain_xds.GAIN_AXES, gain),
-                 "conv_perc": (("t_chunk", "f_chunk"), convperc),
-                 "conv_iter": (("t_chunk", "f_chunk"), conviter)})
+            convperc = output_dict[f"{gain_xds.NAME}-convperc"]
+            result_vars["conv_perc"] = (("t_chunk", "f_chunk"), convperc)
+
+            conviter = output_dict[f"{gain_xds.NAME}-conviter"]
+            result_vars["conv_iter"] = (("t_chunk", "f_chunk"), conviter)
+
+            if hasattr(gain_xds, "PARAM_SPEC"):
+                params = output_dict[f"{gain_xds.NAME}-param"]
+                result_vars["params"] = (gain_xds.PARAM_AXES, params)
+
+            solved_xds = gain_xds.assign(result_vars)
 
             solved_gain_terms.append(solved_xds)
 
