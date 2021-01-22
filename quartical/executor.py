@@ -11,7 +11,7 @@ from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
-from quartical.flagging.flagging import finalise_flags
+from quartical.flagging.flagging import finalise_flags, add_mad_graph
 import time
 from dask.diagnostics import ProgressBar
 import dask
@@ -30,22 +30,18 @@ def _execute(exitstack):
 
     opts = parser.parse_inputs()
 
-    # Add this functionality - should check opts for problems in addition
-    # to interpreting weird options. Can also raise flags for different modes
-    # of operation. The idea is that all our configuration state lives in this
-    # options dictionary. Down with OOP!
+    # TODO: This check needs to be fleshed out substantially.
 
-    if opts.input_ms_is_bda:
-        logger.warning("BDA data is only partially supported. Please report "
-                       "problems via the issue tracker.")
-
-    # TODO: There needs to be a validation step which checks that the config is
-    # possible.
-
+    preprocess.check_opts(opts)
     preprocess.interpret_model(opts)
 
-    if opts.parallel_scheduler == "localcluster":
+    if opts.parallel_scheduler == "distributed" and opts.parallel_address:
         logger.info("Initializing distributed client.")
+        client = Client(opts.parallel_address)
+        exitstack.enter_context(client)
+        logger.info("Distributed client sucessfully initialized.")
+    elif opts.parallel_scheduler == "distributed":
+        logger.info("Initializing distributed client using LocalCluster.")
         cluster = LocalCluster(processes=opts.parallel_nworker > 1,
                                n_workers=opts.parallel_nworker,
                                threads_per_worker=opts.parallel_nthread,
@@ -53,50 +49,53 @@ def _execute(exitstack):
         cluster = exitstack.enter_context(cluster)
         exitstack.enter_context(Client(cluster))
         logger.info("Distributed client sucessfully initialized.")
-    elif opts.parallel_scheduler == "distributed":
-        logger.info("Initializing distributed client.")
-        client = Client(opts.parallel_address)
-        exitstack.enter_context(client)
-        logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
 
     # Reads the measurement set using the relavant configuration from opts.
-    ms_xds_list, ref_xds_list, col_kwrds = read_xds_list(opts)
+    data_xds_list, ref_xds_list, col_kwrds = read_xds_list(opts)
 
-    # ms_xds_list = ms_xds_list[:4]
+    # data_xds_list = data_xds_list[:2]
     # ref_xds_list = ref_xds_list[:16]
 
     # Preprocess the xds_list - initialise some values and fix bad data.
-    preprocessed_xds_list = preprocess_xds_list(ms_xds_list, col_kwrds, opts)
+    data_xds_list = preprocess_xds_list(data_xds_list, col_kwrds, opts)
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
-    model_xds_list = add_model_graph(preprocessed_xds_list, opts)
+    data_xds_list = add_model_graph(data_xds_list, opts)
 
     # Adds the dask graph describing the calibration of the data.
-    gains_per_xds, post_gain_xds = \
-        add_calibration_graph(model_xds_list, col_kwrds, opts)
+    gains_per_xds, data_xds_list = \
+        add_calibration_graph(data_xds_list, col_kwrds, opts)
 
-    writable_xds = finalise_flags(post_gain_xds, col_kwrds, opts)
+    if opts.flags_mad_enable:
+        data_xds_list = add_mad_graph(data_xds_list, opts)
+
+    writable_xds = finalise_flags(data_xds_list, col_kwrds, opts)
 
     writes = write_xds_list(writable_xds, ref_xds_list, col_kwrds, opts)
 
-    # This shouldn't be here. TODO: Move into the calibrate code. In fact, this
+    # This shouldn't be here. TODO: Move to separate function. In fact, this
     # entire write construction needs some tidying.
-    store = zarr.DirectoryStore("cc_gains")
+    store = zarr.DirectoryStore("qcal_gains")
 
-    for g_name, g_list in gains_per_xds.items():
-        for g_ind, g in enumerate(g_list):
-            g_list[g_ind] = g.chunk({"time_int": -1}).to_zarr(
+    gain_writes = []
+
+    for xds_ind, gain_terms in enumerate(gains_per_xds):
+        term_writes = []
+        for term_ind, term in enumerate(gain_terms):
+            term_write = term.chunk({"time_int": -1}).to_zarr(
                 store,
                 mode="w",
-                group="{}{}".format(g_name, g_ind),
+                group=f"{term.NAME}{xds_ind}",
                 compute=False)
+            term_writes.append(term_write)
+        gain_writes.append(term_writes)
 
     writes = [writes] if not isinstance(writes, list) else writes
 
-    gain_writes = list(zip(*[gain for gain in gains_per_xds.values()]))
+    # import pdb; pdb.set_trace()
 
     stride = len(writes)//len(gain_writes)
 
@@ -123,10 +122,10 @@ def _execute(exitstack):
 
     # dask.visualize(outputs,
     #                color='order', cmap='autumn',
-    #                filename='model_order.pdf', node_attr={'penwidth': '10'})
+    #                filename='order.pdf', node_attr={'penwidth': '10'})
 
     # dask.visualize(outputs,
-    #                filename='model.pdf',
+    #                filename='graph.pdf',
     #                optimize_graph=True)
 
     # dask.visualize(*gains_per_xds["G"],

@@ -349,7 +349,6 @@ parallel:
         choices:
             - threads
             - distributed
-            - localcluster
             - single-threaded
         default: threads
 
