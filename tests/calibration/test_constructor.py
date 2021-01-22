@@ -145,7 +145,7 @@ def test_f_chunks(_construct_solver, data_xds_list):
 
 
 def test_nchunk(_expand_specs, data_xds_list):
-    """Test that the expanded CHUNK_SPEC has the correct number of chunks."""
+    """Test that the expanded GAIN_SPEC has the correct number of chunks."""
 
     spec_list = _expand_specs
 
@@ -155,7 +155,7 @@ def test_nchunk(_expand_specs, data_xds_list):
 
 
 def test_shapes(_expand_specs, _construct_solver):
-    """Test that the expanded CHUNK_SPEC has the correct shapes."""
+    """Test that the expanded GAIN_SPEC has the correct shapes."""
 
     term_xds_list = _construct_solver[0]
     spec_list = _expand_specs
@@ -168,7 +168,7 @@ def test_shapes(_expand_specs, _construct_solver):
 
     for gxds in term_xds_list:
 
-        chunk_spec = gxds.CHUNK_SPEC
+        chunk_spec = gxds.GAIN_SPEC
         ac = chunk_spec.achunk[0]
         dc = chunk_spec.dchunk[0]
         cc = chunk_spec.cchunk[0]

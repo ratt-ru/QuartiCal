@@ -36,9 +36,17 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         if "row_weights" in kwargs:
             additional_args[term_ind]["row_weights"] = kwargs["row_weights"]
 
-        if term_spec.type == "phase":
+        if term_spec.pshape:
             additional_args[term_ind]["params"] = \
-                np.zeros_like(gain[..., None, :, :], dtype=gain.real.dtype)
+                np.zeros(term_spec.pshape, dtype=gain.real.dtype)
+
+            results_dict[term_spec.name + "-param"] = \
+                additional_args[term_ind]["params"]
+
+        # TODO: This is now better but not perfect. Need some way to do this
+        # consistently across many term types.
+        if term_spec.type == "delay":
+            additional_args[term_ind]["chan_freqs"] = kwargs["chan_freqs"]
 
         results_dict[term_spec.name + "-gain"] = gain
         results_dict[term_spec.name + "-conviter"] = 0
