@@ -21,21 +21,17 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
         gain_tup += (gain,)
 
-        # This is a nasty interim hack. TODO: I need to settle on an interface
-        # for customising each gain term. This is particularly important for
-        # terms which which have differing parameterisations/resolutions or
-        # require extra info. This should likely be set up in gain types -
-        # each solver should implement and return a dictionary of additional
-        # arguments.
-
         additional_args.append(dict())
 
+        # These are cludges for the BDA case. Might be possible to make this
+        # a litte more elegant.
         if "row_map" in kwargs:
             additional_args[term_ind]["row_map"] = kwargs["row_map"]
 
         if "row_weights" in kwargs:
             additional_args[term_ind]["row_weights"] = kwargs["row_weights"]
 
+        # If the pshape (parameter shape) is defined, we want to initialise it.
         if term_spec.pshape:
             additional_args[term_ind]["params"] = \
                 np.zeros(term_spec.pshape, dtype=gain.real.dtype)
@@ -43,10 +39,10 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             results_dict[term_spec.name + "-param"] = \
                 additional_args[term_ind]["params"]
 
-        # TODO: This is now better but not perfect. Need some way to do this
-        # consistently across many term types.
-        if term_spec.type == "delay":
-            additional_args[term_ind]["chan_freqs"] = kwargs["chan_freqs"]
+        # Each solver may have additional args living in the kwargs dict. This
+        # will associate them with the relevant term.
+        for arg in term_spec.args:
+            additional_args[term_ind][arg] = kwargs[arg]
 
         results_dict[term_spec.name + "-gain"] = gain
         results_dict[term_spec.name + "-conviter"] = 0

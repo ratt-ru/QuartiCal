@@ -391,4 +391,5 @@ def finalize_diag(update, params, gain, i_num, dd_term, corr_mode):
 
     params[:] = params[:] + update/2
 
-    gain[:] = np.exp(1j*params[:, :, :, :, 0, :])  # This may be a bit slow.
+    # Commented out to prevent crash. TODO: Use mappings to return to gains.
+    # gain[:] = np.exp(1j*params[:, :, :, :, 0, :])  # This may be a bit slow.
