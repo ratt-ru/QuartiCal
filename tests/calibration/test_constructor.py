@@ -77,12 +77,13 @@ def gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
 
 
 @pytest.fixture(scope="module")
-def _construct_solver(data_xds_list, gain_xds_list, t_map_list, f_map_list,
-                      d_map_list, opts):
+def _construct_solver(data_xds_list, gain_xds_list, t_bin_list, t_map_list,
+                      f_map_list, d_map_list, opts):
 
     # Call the construct solver function with the relevant inputs.
     solved_gain_xds_list = construct_solver(data_xds_list,
                                             gain_xds_list,
+                                            t_bin_list,
                                             t_map_list,
                                             f_map_list,
                                             d_map_list,

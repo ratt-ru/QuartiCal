@@ -91,7 +91,7 @@ def construct_solver(data_xds_list,
             if hasattr(gain_terms[gi], "PARAM_SPEC"):
                 chunks = gain_terms[gi].PARAM_SPEC
                 blocker.add_output(f"{gn}-param", "rfadpc", chunks,
-                                   np.complex128)
+                                   np.float64)
 
             chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
             blocker.add_output(f"{gn}-conviter", "rf", chunks, np.int64)
