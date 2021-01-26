@@ -4,11 +4,12 @@ from quartical.utils.dask import Blocker
 from collections import namedtuple
 
 
-term_spec_tup = namedtuple("term_spec_tup", "name type shape pshape")
+term_spec_tup = namedtuple("term_spec_tup", "name type args shape pshape")
 
 
 def construct_solver(data_xds_list,
                      gain_xds_list,
+                     t_bin_list,
                      t_map_list,
                      f_map_list,
                      d_map_list,
@@ -42,6 +43,7 @@ def construct_solver(data_xds_list,
         ant2_col = data_xds.ANTENNA2.data
         weight_col = data_xds.WEIGHT.data
         chan_freqs = data_xds.CHAN_FREQ.data
+        t_bin_arr = t_bin_list[xds_ind]
         t_map_arr = t_map_list[xds_ind]
         f_map_arr = f_map_list[xds_ind]
         d_map_arr = d_map_list[xds_ind]
@@ -57,18 +59,20 @@ def construct_solver(data_xds_list,
         # Create a blocker object.
         blocker = Blocker(solver_wrapper, "rf")
 
-        # Add relevant inputs to the blocker object.
+        # Add relevant inputs to the blocker object. TODO: Only pass in values
+        # required by the specific terms in use.
         blocker.add_input("model", model_col, "rfdc")
         blocker.add_input("data", data_col, "rfc")
         blocker.add_input("a1", ant1_col, "r")
         blocker.add_input("a2", ant2_col, "r")
         blocker.add_input("weights", weight_col, "rfc")
+        blocker.add_input("t_bin_arr", t_bin_arr, "rj")  # Not always needed.
         blocker.add_input("t_map_arr", t_map_arr, "rj")
         blocker.add_input("f_map_arr", f_map_arr, "fj")
         blocker.add_input("d_map_arr", d_map_arr)
         blocker.add_input("corr_mode", opts.input_ms_correlation_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
-        blocker.add_input("chan_freqs", chan_freqs, "f")
+        blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
 
         if opts.input_ms_is_bda:
             blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")
@@ -146,6 +150,7 @@ def expand_specs(gain_terms):
 
                 term_name = gxds.NAME
                 term_type = gxds.TYPE
+                term_args = gxds.ARGS
                 gain_chunk_spec = gxds.GAIN_SPEC
 
                 tc = gain_chunk_spec.tchunk[tc_ind]
@@ -170,6 +175,7 @@ def expand_specs(gain_terms):
 
                 term_list.append(term_spec_tup(term_name,
                                                term_type,
+                                               term_args,
                                                term_shape,
                                                parm_shape))
 

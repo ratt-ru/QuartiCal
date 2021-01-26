@@ -83,6 +83,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
     solved_gain_xds_list = construct_solver(data_xds_list,
                                             gain_xds_list,
+                                            t_bin_list,
                                             t_map_list,
                                             f_map_list,
                                             d_map_list,

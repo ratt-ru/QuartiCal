@@ -43,6 +43,8 @@ class Gain:
         self.n_fipc = tuple(map(int, fipc[:, self.index]))
         self.n_fint = np.sum(self.n_fipc)
 
+        self.additional_args = []
+
     def make_xds(self):
 
         # Set up an xarray.Dataset describing the gain term.
@@ -61,6 +63,7 @@ class Gain:
                                 np.arange(self.n_f_chunk, dtype=np.int32))},
             attrs={"NAME": self.name,
                    "TYPE": self.type,
+                   "ARGS": self.additional_args,
                    **self.id_fields})
 
         return xds
@@ -132,6 +135,7 @@ class Delay(Gain):
         Gain.__init__(self, term_name, data_xds, tipc, fipc, opts)
 
         self.n_ppa = 2
+        self.additional_args = ["chan_freqs", "t_bin_arr"]
         self.gain_chunk_spec = gain_spec_tup(self.utime_chunks,
                                              self.freq_chunks,
                                              (self.n_ant,),
