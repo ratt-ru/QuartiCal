@@ -22,6 +22,11 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                  d_map_arr, corr_mode, active_term, inverse_gain_list,
                  gains, flags, params, chan_freqs, row_map, row_weights,
                  t_bin_arr):
+    """Solve for a delay.
+
+    Note that the paramter vector is ordered as [offset slope].
+
+    """
 
     n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
 
