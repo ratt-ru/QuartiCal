@@ -35,11 +35,16 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
     real_dtype = gains[active_term].real.dtype
 
-    intemediary_shape = (n_tint, n_fint, n_ant, n_dir, n_param, n_corr)
+    param_shape = (n_tint, n_fint, n_ant, n_dir, n_param, n_corr)
 
-    jhj = np.empty(intemediary_shape, dtype=real_dtype)
-    jhr = np.empty(intemediary_shape, dtype=real_dtype)
-    update = np.empty(intemediary_shape, dtype=real_dtype)
+    jhr = np.empty(param_shape, dtype=real_dtype)
+    update = np.empty(param_shape, dtype=real_dtype)
+
+    # This n_param**2 component can be optimised but that may introduce
+    # unecessary complexity.
+    jhj_shape = (n_tint, n_fint, n_ant, n_dir, n_param, n_param, n_corr)
+
+    jhj = np.empty(jhj_shape, dtype=real_dtype)
 
     for i in range(20):
 
@@ -307,8 +312,18 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
                     j00 = jh00.conjugate()
                     j11 = jh11.conjugate()
 
-                    jhj[t_m, f_m, a1_m, d, 0, 0] += (j00*w00*jh00).real
-                    jhj[t_m, f_m, a1_m, d, 0, 1] += (j11*w11*jh11).real
+                    jhj00 = j00*w00*jh00
+                    jhj11 = j11*w11*jh11
+
+                    jhj[t_m, f_m, a1_m, d, 0, 0, 0] += (jhj00).real
+                    jhj[t_m, f_m, a1_m, d, 0, 1, 0] += (jhj00*nu).real
+                    jhj[t_m, f_m, a1_m, d, 1, 0, 0] += (jhj00*nu).real
+                    jhj[t_m, f_m, a1_m, d, 1, 1, 0] += (jhj00*nu*nu).real
+
+                    jhj[t_m, f_m, a1_m, d, 0, 0, 1] += (jhj11).real
+                    jhj[t_m, f_m, a1_m, d, 0, 1, 1] += (jhj11*nu).real
+                    jhj[t_m, f_m, a1_m, d, 1, 0, 1] += (jhj11*nu).real
+                    jhj[t_m, f_m, a1_m, d, 1, 1, 1] += (jhj11*nu*nu).real
 
                     jh00 = tmp_jh_q[d, 0]
                     jh11 = tmp_jh_q[d, 1]
@@ -316,8 +331,18 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
                     j00 = jh00.conjugate()
                     j11 = jh11.conjugate()
 
-                    jhj[t_m, f_m, a2_m, d, 0, 0] += (j00*w00*jh00).real
-                    jhj[t_m, f_m, a2_m, d, 0, 1] += (j11*w11*jh11).real
+                    jhj00 = j00*w00*jh00
+                    jhj11 = j11*w11*jh11
+
+                    jhj[t_m, f_m, a2_m, d, 0, 0, 0] += (jhj00).real
+                    jhj[t_m, f_m, a2_m, d, 0, 1, 0] += (jhj00*nu).real
+                    jhj[t_m, f_m, a2_m, d, 1, 0, 0] += (jhj00*nu).real
+                    jhj[t_m, f_m, a2_m, d, 1, 1, 0] += (jhj00*nu*nu).real
+
+                    jhj[t_m, f_m, a2_m, d, 0, 0, 1] += (jhj11).real
+                    jhj[t_m, f_m, a2_m, d, 0, 1, 1] += (jhj11*nu).real
+                    jhj[t_m, f_m, a2_m, d, 1, 0, 1] += (jhj11*nu).real
+                    jhj[t_m, f_m, a2_m, d, 1, 1, 1] += (jhj11*nu*nu).real
 
     return
 
@@ -344,30 +369,39 @@ def _compute_update_impl(update, jhj, jhr, corr_mode):
 
 def update_diag(update, jhj, jhr, corr_mode):
 
-    n_tint, n_fint, n_ant, n_dir, n_param, n_corr = jhj.shape
+    n_tint, n_fint, n_ant, n_dir, n_param, _, n_corr = jhj.shape
 
     for t in range(n_tint):
         for f in range(n_fint):
             for a in range(n_ant):
                 for d in range(n_dir):
+                    for c in range(n_corr):
 
-                    jhj00 = jhj[t, f, a, d, 0, 0]
-                    jhj11 = jhj[t, f, a, d, 0, 1]
+                        jhj00 = jhj[t, f, a, d, 0, 0, c]
+                        jhj01 = jhj[t, f, a, d, 0, 1, c]
+                        jhj10 = jhj[t, f, a, d, 1, 0, c]
+                        jhj11 = jhj[t, f, a, d, 1, 1, c]
 
-                    det = (jhj00*jhj11)
+                        det = (jhj00*jhj11 - jhj01*jhj10)
 
-                    if det.real < 1e-6:
-                        jhjinv00 = 0
-                        jhjinv11 = 0
-                    else:
-                        jhjinv00 = 1/jhj00
-                        jhjinv11 = 1/jhj11
+                        if det.real < 1e-6:
+                            jhjinv00 = 0
+                            jhjinv01 = 0
+                            jhjinv10 = 0
+                            jhjinv11 = 0
+                        else:
+                            jhjinv00 = jhj11/det
+                            jhjinv01 = -jhj01/det
+                            jhjinv10 = -jhj10/det
+                            jhjinv11 = jhj00/det
 
-                    jhr00 = jhr[t, f, a, d, 0, 0]
-                    jhr11 = jhr[t, f, a, d, 0, 1]
+                        jhr_0 = jhr[t, f, a, d, 0, c]
+                        jhr_1 = jhr[t, f, a, d, 1, c]
 
-                    update[t, f, a, d, 0, 0] = (jhr00*jhjinv00)
-                    update[t, f, a, d, 0, 1] = (jhr11*jhjinv11)
+                        update[t, f, a, d, 0, c] = \
+                            jhjinv00*jhr_0 + jhjinv01*jhr_1
+                        update[t, f, a, d, 1, c] = \
+                            jhjinv10*jhr_0 + jhjinv11*jhr_1
 
     return
 
