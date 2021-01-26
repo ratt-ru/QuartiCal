@@ -243,7 +243,7 @@ def test_chunk_spec(data_xds, term_xds_list, expected_t_ints, expected_f_ints,
     specs = [tuple([tuple(tic), tuple(fic), (n_ant,), (n_dir,), (n_corr,)])
              for tic, fic in zip(expected_t_ints, expected_f_ints)]
 
-    assert all(spec == gxds.attrs["CHUNK_SPEC"]
+    assert all(spec == gxds.attrs["GAIN_SPEC"]
                for spec, gxds in zip(specs, term_xds_list))
 
 # ---------------------------add_calibration_graph-----------------------------

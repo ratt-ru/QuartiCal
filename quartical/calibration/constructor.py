@@ -4,11 +4,12 @@ from quartical.utils.dask import Blocker
 from collections import namedtuple
 
 
-term_spec_tup = namedtuple("term_spec_tup", "name type shape")
+term_spec_tup = namedtuple("term_spec_tup", "name type args shape pshape")
 
 
 def construct_solver(data_xds_list,
                      gain_xds_list,
+                     t_bin_list,
                      t_map_list,
                      f_map_list,
                      d_map_list,
@@ -41,6 +42,8 @@ def construct_solver(data_xds_list,
         ant1_col = data_xds.ANTENNA1.data
         ant2_col = data_xds.ANTENNA2.data
         weight_col = data_xds.WEIGHT.data
+        chan_freqs = data_xds.CHAN_FREQ.data
+        t_bin_arr = t_bin_list[xds_ind]
         t_map_arr = t_map_list[xds_ind]
         f_map_arr = f_map_list[xds_ind]
         d_map_arr = d_map_list[xds_ind]
@@ -56,17 +59,20 @@ def construct_solver(data_xds_list,
         # Create a blocker object.
         blocker = Blocker(solver_wrapper, "rf")
 
-        # Add relevant inputs to the blocker object.
+        # Add relevant inputs to the blocker object. TODO: Only pass in values
+        # required by the specific terms in use.
         blocker.add_input("model", model_col, "rfdc")
         blocker.add_input("data", data_col, "rfc")
         blocker.add_input("a1", ant1_col, "r")
         blocker.add_input("a2", ant2_col, "r")
         blocker.add_input("weights", weight_col, "rfc")
+        blocker.add_input("t_bin_arr", t_bin_arr, "rj")  # Not always needed.
         blocker.add_input("t_map_arr", t_map_arr, "rj")
         blocker.add_input("f_map_arr", f_map_arr, "fj")
         blocker.add_input("d_map_arr", d_map_arr)
         blocker.add_input("corr_mode", opts.input_ms_correlation_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
+        blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
 
         if opts.input_ms_is_bda:
             blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")
@@ -78,30 +84,43 @@ def construct_solver(data_xds_list,
         # Add relevant outputs to blocker object.
         for gi, gn in enumerate(opts.solver_gain_terms):
 
-            chunks = gain_terms[gi].CHUNK_SPEC
+            chunks = gain_terms[gi].GAIN_SPEC
             blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)
+
+            # If there is a PARAM_SPEC on the gain xds, it is also an output.
+            if hasattr(gain_terms[gi], "PARAM_SPEC"):
+                chunks = gain_terms[gi].PARAM_SPEC
+                blocker.add_output(f"{gn}-param", "rfadpc", chunks,
+                                   np.float64)
 
             chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
             blocker.add_output(f"{gn}-conviter", "rf", chunks, np.int64)
             blocker.add_output(f"{gn}-convperc", "rf", chunks, np.float64)
 
         # Apply function to inputs to produce dask array outputs (as dict).
-        output_array_dict = blocker.get_dask_outputs()
+        output_dict = blocker.get_dask_outputs()
 
         # Assign results to the relevant gain xarray.Dataset object.
         solved_gain_terms = []
 
         for gi, gain_xds in enumerate(gain_terms):
 
-            gain = output_array_dict[f"{gain_xds.NAME}-gain"]
-            convperc = output_array_dict[f"{gain_xds.NAME}-convperc"]
-            conviter = output_array_dict[f"{gain_xds.NAME}-conviter"]
+            result_vars = {}
 
-            solved_xds = gain_xds.assign(
-                {"gains": (("time_int", "freq_int", "ant", "dir", "corr"),
-                           gain),
-                 "conv_perc": (("t_chunk", "f_chunk"), convperc),
-                 "conv_iter": (("t_chunk", "f_chunk"), conviter)})
+            gain = output_dict[f"{gain_xds.NAME}-gain"]
+            result_vars["gains"] = (gain_xds.GAIN_AXES, gain)
+
+            convperc = output_dict[f"{gain_xds.NAME}-convperc"]
+            result_vars["conv_perc"] = (("t_chunk", "f_chunk"), convperc)
+
+            conviter = output_dict[f"{gain_xds.NAME}-conviter"]
+            result_vars["conv_iter"] = (("t_chunk", "f_chunk"), conviter)
+
+            if hasattr(gain_xds, "PARAM_SPEC"):
+                params = output_dict[f"{gain_xds.NAME}-param"]
+                result_vars["params"] = (gain_xds.PARAM_AXES, params)
+
+            solved_xds = gain_xds.assign(result_vars)
 
             solved_gain_terms.append(solved_xds)
 
@@ -119,8 +138,8 @@ def expand_specs(gain_terms):
     # represents frequency chunks and the inner-most list contains the
     # specs per term.
 
-    n_t_chunks = len(gain_terms[0].CHUNK_SPEC.tchunk)
-    n_f_chunks = len(gain_terms[0].CHUNK_SPEC.fchunk)
+    n_t_chunks = gain_terms[0].dims["t_chunk"]
+    n_f_chunks = gain_terms[0].dims["f_chunk"]
 
     tc_list = []
     for tc_ind in range(n_t_chunks):
@@ -131,20 +150,34 @@ def expand_specs(gain_terms):
 
                 term_name = gxds.NAME
                 term_type = gxds.TYPE
-                chunk_spec = gxds.CHUNK_SPEC
+                term_args = gxds.ARGS
+                gain_chunk_spec = gxds.GAIN_SPEC
 
-                tc = chunk_spec.tchunk[tc_ind]
-                fc = chunk_spec.fchunk[fc_ind]
+                tc = gain_chunk_spec.tchunk[tc_ind]
+                fc = gain_chunk_spec.fchunk[fc_ind]
 
-                ac = chunk_spec.achunk[0]  # No chunking along antenna axis.
-                dc = chunk_spec.dchunk[0]  # No chunking along direction axis.
-                cc = chunk_spec.cchunk[0]  # No chunking along corr axis.
+                ac = gain_chunk_spec.achunk[0]  # No chunking.
+                dc = gain_chunk_spec.dchunk[0]  # No chunking.
+                cc = gain_chunk_spec.cchunk[0]  # No chunking.
 
                 term_shape = (tc, fc, ac, dc, cc)
 
+                # Check if we have a spec for the parameters.
+                parm_chunk_spec = getattr(gxds, "PARAM_SPEC", ())
+                if parm_chunk_spec:
+                    tc_p = parm_chunk_spec.tchunk[tc_ind]
+                    fc_p = parm_chunk_spec.fchunk[fc_ind]
+                    pc = parm_chunk_spec.pchunk[0]
+
+                    parm_shape = (tc_p, fc_p, ac, dc, pc, cc)
+                else:
+                    parm_shape = ()
+
                 term_list.append(term_spec_tup(term_name,
                                                term_type,
-                                               term_shape))
+                                               term_args,
+                                               term_shape,
+                                               parm_shape))
 
             fc_list.append(term_list)
         tc_list.append(fc_list)
