@@ -3,6 +3,7 @@ import dask
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
+from daskms.reads import PARTITION_KEY
 from quartical.flagging.flagging import update_kwrds, ibfdtype
 from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import (is_set,
@@ -21,6 +22,7 @@ def read_xds_list(opts):
 
     Returns:
         data_xds_list: A list of appropriately chunked xarray datasets.
+        ref_xds_list: A list of appropriately chunked xarray datasets.
         updated_kwrds: A dictionary of updated column keywords.
     """
 
@@ -242,17 +244,21 @@ def read_xds_list(opts):
         if xds_updates:
             data_xds_list[xds_ind] = xds.assign(xds_updates)
 
+    for xds_ind, xds in enumerate(data_xds_list):
         for column, data_var in xds.data_vars.items():
             array = data_var.data
 
             if not isinstance(array, da.Array):
                 continue
 
+            partition = ((p, getattr(xds, p).item()) for p, _ in getattr(xds, PARTITION_KEY, ()))
+
             hlg = array.__dask_graph__()
             hlg.layers[array.name].annotations = {"__dask_array__": {
                 "dims": data_var.dims,
                 "chunks": array.chunks,
-                "dtype": array.dtype
+                "partition": dict(partition),
+                "dtype": array.dtype.name
             }}
 
     # Add the external bitflag dtype to the opts Namespace. This is necessary
