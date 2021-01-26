@@ -135,7 +135,7 @@ class Delay(Gain):
         Gain.__init__(self, term_name, data_xds, tipc, fipc, opts)
 
         self.n_ppa = 2
-        self.additional_args = ["chan_freqs"]
+        self.additional_args = ["chan_freqs", "t_bin_arr"]
         self.gain_chunk_spec = gain_spec_tup(self.utime_chunks,
                                              self.freq_chunks,
                                              (self.n_ant,),

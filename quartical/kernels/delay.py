@@ -20,7 +20,8 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                  d_map_arr, corr_mode, active_term, inverse_gain_list,
-                 gains, flags, params, chan_freqs, row_map, row_weights):
+                 gains, flags, params, chan_freqs, row_map, row_weights,
+                 t_bin_arr):
 
     n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
 
@@ -76,9 +77,13 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         finalize_update(update,
                         params,
                         gains[active_term],
-                        i,
+                        chan_freqs,
+                        t_bin_arr,
+                        f_map_arr,
+                        d_map_arr,
                         dd_term,
-                        literally(corr_mode))
+                        literally(corr_mode),
+                        active_term)
 
         # Check for gain convergence. TODO: This can be affected by the
         # weights. Currently unsure how or why, but using unity weights
@@ -368,28 +373,55 @@ def update_diag(update, jhj, jhr, corr_mode):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def finalize_update(update, params, gain, i_num, dd_term, corr_mode):
+def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
+                    d_map_arr, dd_term, corr_mode, active_term):
 
-    return _finalize_update(update, params, gain, i_num, dd_term, corr_mode)
+    return _finalize_update(update, params, gain, chan_freqs, t_bin_arr,
+                            f_map_arr, d_map_arr, dd_term, corr_mode,
+                            active_term)
 
 
-def _finalize_update(update, params, gain, i_num, dd_term, corr_mode):
+def _finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
+                     d_map_arr, dd_term, corr_mode, active_term):
     pass
 
 
 @overload(_finalize_update, inline="always")
-def _finalize_update_impl(update, params, gain, i_num, dd_term, corr_mode):
+def _finalize_update_impl(update, params, gain, chan_freqs, t_bin_arr,
+                          f_map_arr, d_map_arr, dd_term, corr_mode,
+                          active_term):
 
     if corr_mode.literal_value == "diag":
         return finalize_diag
     else:
-        raise NotImplementedError("Phase-only gain not yet supported in "
-                                  "non-diagonal modes.")
+        raise NotImplementedError("Delay not yet supported in non-diagonal "
+                                  "modes.")
 
 
-def finalize_diag(update, params, gain, i_num, dd_term, corr_mode):
+def finalize_diag(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
+                  d_map_arr, dd_term, corr_mode, active_term):
 
     params[:] = params[:] + update/2
 
-    # Commented out to prevent crash. TODO: Use mappings to return to gains.
-    # gain[:] = np.exp(1j*params[:, :, :, :, 0, :])  # This may be a bit slow.
+    n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
+
+    n_time, n_freq, _, _, _ = gain.shape
+
+    for t in range(n_time):
+        for f in range(n_freq):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    t_m = t_bin_arr[t, active_term]
+                    f_m = f_map_arr[f, active_term]
+                    d_m = d_map_arr[d, active_term]
+
+                    inter0 = params[t_m, f_m, a, d_m, 0, 0]
+                    delay0 = params[t_m, f_m, a, d_m, 1, 0]
+                    inter1 = params[t_m, f_m, a, d_m, 0, 1]
+                    delay1 = params[t_m, f_m, a, d_m, 1, 1]
+
+                    cf = chan_freqs[f]
+
+                    gain[t, f, a, d, 0] = np.exp(1j*(cf*delay0 + inter0))
+                    gain[t, f, a, d, 1] = np.exp(1j*(cf*delay1 + inter1))
