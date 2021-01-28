@@ -31,7 +31,7 @@ class Gain:
         self.n_dir = data_xds.dims["dir"]
         self.n_corr = data_xds.dims["corr"]
         self.id_fields = {f: data_xds.attrs[f]
-                          for f in ["FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"]}
+                          for f in ["FIELD_ID", "DATA_DESC_ID"]}
         self.utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
         self.freq_chunks = list(map(int, data_xds.chunks["chan"]))
         self.n_t_chunk = len(self.utime_chunks)
