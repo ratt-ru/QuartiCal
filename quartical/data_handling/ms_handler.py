@@ -37,9 +37,7 @@ def read_xds_list(opts):
     indexing_xds_list = xds_from_ms(opts.input_ms_name,
                                     columns=("TIME", "INTERVAL"),
                                     index_cols=("TIME",),
-                                    group_cols=("SCAN_NUMBER",
-                                                "FIELD_ID",
-                                                "DATA_DESC_ID"),
+                                    group_cols=opts.input_ms_group_by,
                                     taql_where="ANTENNA1 != ANTENNA2",
                                     chunks={"row": -1})
 
@@ -158,9 +156,7 @@ def read_xds_list(opts):
         opts.input_ms_name,
         columns=data_columns,
         index_cols=("TIME",),
-        group_cols=("SCAN_NUMBER",
-                    "FIELD_ID",
-                    "DATA_DESC_ID"),
+        group_cols=opts.input_ms_group_by,
         taql_where="ANTENNA1 != ANTENNA2",
         chunks=chunking_per_xds,
         column_keywords=True,
