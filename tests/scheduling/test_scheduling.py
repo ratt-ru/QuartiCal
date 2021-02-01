@@ -13,19 +13,26 @@ def test_distributed(base_opts):
     opts = Namespace(**vars(base_opts))
 
     with ExitStack() as stack:
-        cluster = stack.enter_context(LocalCluster(processes=False))
-        scheduler = cluster.scheduler
+        cluster = stack.enter_context(LocalCluster(processes=False, n_workers=4))
         client = stack.enter_context(Client(cluster))
+        scheduler = cluster.scheduler
 
+        opts.input_ms_time_chunk = 4
         opts.parallel = Namespace(scheduler='distributed',
                                   address=scheduler.address)
 
         opts._model_columns = ["MODEL_DATA"]
 
         datasets, _, _ = read_xds_list(opts)
+        assert len(datasets) == 2
+        assert len(datasets[0].chunks["row"]) == 29
+        assert len(datasets[1].chunks["row"]) == 27
 
         client.run_on_scheduler(install_plugin)
         assert len(scheduler.plugins) > 1
 
+        columns = ("DATA", "UVW", "TIME")
+        computes = [getattr(ds, c).data.sum() for c in columns for ds in datasets]
+
         with dask.config.set(optimization__fuse__active=False):
-            datasets[0].DATA.data.compute()
+            dask.compute(computes)

@@ -1,3 +1,4 @@
+from collections import defaultdict
 from ast import literal_eval
 from distributed.diagnostics import SchedulerPlugin
 
@@ -10,22 +11,34 @@ class QuarticalScheduler(SchedulerPlugin):
         tasks = scheduler.tasks
         workers = list(scheduler.workers.keys())
 
-        for k, a in kw["annotations"].get("__dask_array__", {}).items():
-            # Map block id's and chunks to dimensions
-            dims = {d: int(b) for d, b in zip(a["dims"], literal_eval(k)[1:])}
-            chunks = {d: c for d, c in zip(a["dims"], a["chunks"])}
+        partitions = defaultdict(list)
 
-            # Extract row block and number of row blocks
+        for k, a in kw["annotations"].get("__dask_array__", {}).items():
             try:
-                row_block = dims["row"]
-                nrow_blocks = len(chunks["row"])
+                p = a["partition"]
+                dims = a["dims"]
+                chunks = a["chunks"]
             except KeyError:
                 continue
 
-            # Stripe across workers
-            wid = int((row_block / nrow_blocks) * len(workers))
-            ts = tasks.get(k)
-            ts._worker_restrictions = set([workers[wid]])
+            ri = dims.index("row")
+            if ri == -1:
+                continue
+
+            # Map block id's and chunks to dimensions
+            block = tuple(map(int, literal_eval(k)[1:]))
+            pkey = p + (("__row_block__", block[ri]),)
+            partitions[pkey].append(k)
+
+        npartitions = len(partitions)
+
+        # Stripe partitions across workers
+        for p, (partition, keys) in enumerate(sorted(partitions.items())):
+            wid = int(len(workers) * p / npartitions)
+
+            for k in keys:
+                ts = tasks.get(k)
+                ts._worker_restrictions = set([workers[wid]])
 
 
 def install_plugin(dask_scheduler=None, **kwargs):

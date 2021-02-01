@@ -249,15 +249,16 @@ def read_xds_list(opts):
             if not isinstance(array, da.Array):
                 continue
 
-            partition = ((p, getattr(xds, p).item()) for p, _ in getattr(xds, PARTITION_KEY, ()))
+            partition = ((p, getattr(xds, p)) for p, _ in getattr(xds, PARTITION_KEY, ()))
 
             hlg = array.__dask_graph__()
             hlg.layers[array.name].annotations = {"__dask_array__": {
                 "dims": data_var.dims,
                 "chunks": array.chunks,
-                "partition": dict(partition),
+                "partition": tuple(partition),
                 "dtype": array.dtype.name
             }}
+
 
     # Add the external bitflag dtype to the opts Namespace. This is necessary
     # as internal bitflags may have a different dtype and we need to reconcile
