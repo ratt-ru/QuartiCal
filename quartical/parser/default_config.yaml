@@ -44,14 +44,20 @@ input-ms:
     #           channels to average together, or a value with a unit
     #           (e.g. '4MHz').
     #     default: "1"
-    # chunk-on:
-    #     nargs: +
-    #     type: str
-    #     help: If set, chunking strategy will insert boundaries based on
-    #           where the named column(s) jumps by >--input-ms-chunk-jump.
-    #           Multiple column names may be given, separated by spaces. Use
-    #           None to disable.
-    #     default: SCAN_NUMBER
+    group-by:
+        nargs: +
+        type: str
+        help: Input data will be partitioned into separate xarray datasets
+              based on the values of the specified columns. Multiple column
+              names may be given, separated by spaces.
+        choices:
+            - SCAN_NUMBER
+            - FIELD_ID
+            - DATA_DESC_ID
+        default:
+            - SCAN_NUMBER
+            - FIELD_ID
+            - DATA_DESC_ID
     # chunk-jump:
     #     nargs: +
     #     type: int

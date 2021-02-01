@@ -55,27 +55,6 @@ def _execute(exitstack):
     # Reads the measurement set using the relavant configuration from opts.
     data_xds_list, ref_xds_list, col_kwrds = read_xds_list(opts)
 
-    from glob import glob
-    import xarray
-    logger.info("Reading data from zms.")
-    data_xds_list = [xarray.open_zarr(pth)
-                     for pth in glob("3C147_bandpass.zms/*")]
-
-    # import zarr
-    # store = zarr.DirectoryStore("3C147_bandpass.zms/")
-
-    # zarr_writes = []
-    # for xds in data_xds_list:
-    #     zarr_writes.append(
-    #         xds.to_zarr(store,
-    #                     mode="w",
-    #                     group=f"F{xds.FIELD_ID:0>4}"
-    #                           f"D{xds.DATA_DESC_ID:0>4}",
-    #                     compute=False))
-
-    # dask.compute(zarr_writes)
-    # return
-
     # data_xds_list = data_xds_list[:2]
     # ref_xds_list = ref_xds_list[:16]
 
@@ -127,7 +106,7 @@ def _execute(exitstack):
 
         ms_writes = writes[ind*stride: (ind + 1)*stride]
 
-        outputs.append(dask.delayed(tuple)([*gain_writes[ind]]))
+        outputs.append(dask.delayed(tuple)([*ms_writes, *gain_writes[ind]]))
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
