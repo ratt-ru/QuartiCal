@@ -191,11 +191,13 @@ def read_xds_list(opts):
 
     # Add an attribute to the xds on which we will store the names of fields
     # which must be written to the MS. Also add the attribute which stores
-    # the unique time chunking per xds.
+    # the unique time chunking per xds. We have to convert the chunking to 
+    # python integers to avoid problems with serialization.
 
     data_xds_list = \
-        [xds.assign_attrs({"WRITE_COLS": [],
-                           "UTIME_CHUNKS": utime_chunking_per_xds[xds_ind]})
+        [xds.assign_attrs({
+            "WRITE_COLS": [],
+            "UTIME_CHUNKS": list(map(int, utime_chunking_per_xds[xds_ind]))})
          for xds_ind, xds in enumerate(data_xds_list)]
 
     # We may only want to use some of the input correlation values. xarray
