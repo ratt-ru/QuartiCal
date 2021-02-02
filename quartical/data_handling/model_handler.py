@@ -107,6 +107,7 @@ def add_model_graph(ms_xds, opts):
 
         modified_xds = xds.assign({"MODEL_DATA":
                                   (("row", "chan", "dir", "corr"), model)})
+        modified_xds.attrs.update(xds.attrs)
 
         model_xds_list.append(modified_xds)
 

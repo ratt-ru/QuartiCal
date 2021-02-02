@@ -3,13 +3,13 @@ import dask
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-from daskms.reads import PARTITION_KEY
 from quartical.flagging.flagging import update_kwrds, ibfdtype
 from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import (is_set,
                                          make_bitmask,
                                          initialise_bitflags)
 from quartical.data_handling.bda import process_bda_input, process_bda_output
+from quartical.scheduling import annotate
 from uuid import uuid4
 from loguru import logger
 
@@ -191,7 +191,7 @@ def read_xds_list(opts):
 
     # Add an attribute to the xds on which we will store the names of fields
     # which must be written to the MS. Also add the attribute which stores
-    # the unique time chunking per xds. We have to convert the chunking to 
+    # the unique time chunking per xds. We have to convert the chunking to
     # python integers to avoid problems with serialization.
 
     data_xds_list = \
@@ -242,23 +242,7 @@ def read_xds_list(opts):
         if xds_updates:
             data_xds_list[xds_ind] = xds.assign(xds_updates)
 
-    for xds_ind, xds in enumerate(data_xds_list):
-        for column, data_var in xds.data_vars.items():
-            array = data_var.data
-
-            if not isinstance(array, da.Array):
-                continue
-
-            partition = ((p, getattr(xds, p)) for p, _ in getattr(xds, PARTITION_KEY, ()))
-
-            hlg = array.__dask_graph__()
-            hlg.layers[array.name].annotations = {"__dask_array__": {
-                "dims": data_var.dims,
-                "chunks": array.chunks,
-                "partition": tuple(partition),
-                "dtype": array.dtype.name
-            }}
-
+    annotate(data_xds_list)
 
     # Add the external bitflag dtype to the opts Namespace. This is necessary
     # as internal bitflags may have a different dtype and we need to reconcile
@@ -405,6 +389,7 @@ def preprocess_xds_list(xds_list, col_kwrds, opts):
             {"DATA": (("row", "chan", "corr"), data_col),
              "WEIGHT": (("row", "chan", "corr"), weight_col),
              "DATA_BITFLAGS": (("row", "chan", "corr"), data_bitflags)})
+        output_xds.attrs.update(xds.attrs)
 
         output_xds_list.append(output_xds)
 
