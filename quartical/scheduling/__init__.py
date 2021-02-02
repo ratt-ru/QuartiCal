@@ -61,14 +61,14 @@ def annotate(obj, **annotations):
         for o in obj:
             annotate(o, **annotations)
     elif isinstance(obj, xarray.Dataset):
-        # Add any dataset partitioning information
-        # to annotations
-        partition = getattr(obj, PARTITION_KEY)
-
-        if partition:
-            pvalues = tuple((p, getattr(obj, p)) for p, _ in partition)
-            annotations = {**annotations,
-                           "partition": pvalues}
+        # Add any dataset partitioning information to annotations
+        try:
+            partition = getattr(obj, PARTITION_KEY)
+        except AttributeError:
+            pass
+        else:
+            partition = tuple((p, getattr(obj, p)) for p, _ in partition)
+            annotations = {**annotations, "partition": partition}
 
         for var in obj.data_vars.values():
             annotate(var, **annotations)
@@ -84,21 +84,23 @@ def annotate(obj, **annotations):
         annotate_dask_collection(obj, annotations)
     else:
         raise TypeError(f"obj must be a dask collection, "
-                        f"xarray.Dataset or xarray.DataArray. "
+                        f"xarray.Dataset, xarray.DataArray, "
+                        f"or list of the previous types. "
                         f"Got a: {type(obj)}")
 
 
 class QuarticalScheduler(SchedulerPlugin):
     def update_graph(self, scheduler, dsk=None, keys=None, restrictions=None, **kw):
-        if "annotations" not in kw:
+        try:
+            annotations = kw["annotations"]
+        except KeyError:
             return
 
         tasks = scheduler.tasks
         workers = list(scheduler.workers.keys())
-
         partitions = defaultdict(list)
 
-        for k, a in kw["annotations"].get("__dask_array__", {}).items():
+        for k, a in annotations.get("__dask_array__", {}).items():
             try:
                 p = a["partition"]
                 dims = a["dims"]
