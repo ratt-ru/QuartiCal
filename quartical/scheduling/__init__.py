@@ -125,10 +125,8 @@ class QuarticalScheduler(SchedulerPlugin):
 
         npartitions = len(partitions)
 
-        from pprint import pprint
         for p, (partition, keys) in enumerate(sorted(partitions.items())):
             roots = {k for k in keys if len(tasks.get(k)._dependencies) == 0}
-            pprint(keys)
 
         # Stripe partitions across workers
         for p, (partition, keys) in enumerate(sorted(partitions.items())):

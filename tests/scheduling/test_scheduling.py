@@ -108,11 +108,17 @@ def test_distributed(base_opts):
 
         computes = []
 
+        new_datasets = []
+
         for ds in datasets:
             K = phase_delay(lm, ds.UVW.data, chan_freq)
-            partition = dataset_partition(ds)
-            annotate(K, dims=("source", "row", "chan"), partition=partition)
-            computes.append(K.sum())
+            vis = K.sum(axis=0)[:, :, None]
+            nds = xr.Dataset({"DATA": (("row", "chan", "corr"), vis)})
+            nds.attrs.update(ds.attrs)
+            new_datasets.append(nds)
+
+        annotate(new_datasets)
+
 
         with dask.config.set(optimization__fuse__active=False):
-            dask.compute(computes)
+            dask.compute(new_datasets)
