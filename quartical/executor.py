@@ -35,19 +35,23 @@ def _execute(exitstack):
     preprocess.check_opts(opts)
     preprocess.interpret_model(opts)
 
-    if opts.parallel_scheduler == "distributed" and opts.parallel_address:
-        logger.info("Initializing distributed client.")
-        client = Client(opts.parallel_address)
-        exitstack.enter_context(client)
-        logger.info("Distributed client sucessfully initialized.")
-    elif opts.parallel_scheduler == "distributed":
-        logger.info("Initializing distributed client using LocalCluster.")
-        cluster = LocalCluster(processes=opts.parallel_nworker > 1,
-                               n_workers=opts.parallel_nworker,
-                               threads_per_worker=opts.parallel_nthread,
-                               memory_limit=0)
-        cluster = exitstack.enter_context(cluster)
-        exitstack.enter_context(Client(cluster))
+    if opts.parallel_scheduler == "distributed":
+        if opts.parallel_address:
+            logger.info("Initializing distributed client.")
+            client = Client(opts.parallel_address)
+            exitstack.enter_context(client)
+        else:
+            logger.info("Initializing distributed client using LocalCluster.")
+            cluster = LocalCluster(processes=opts.parallel_nworker > 1,
+                                   n_workers=opts.parallel_nworker,
+                                   threads_per_worker=opts.parallel_nthread,
+                                   memory_limit=0)
+            cluster = exitstack.enter_context(cluster)
+            exitstack.enter_context(Client(cluster))
+
+        # Disable fuse optimisation: https://github.com/dask/dask/issues/7036
+        opt_ctx = dask.config.set(optimization__fuse__active=False)
+        exitstack.enter_context(opt_ctx)
         logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
