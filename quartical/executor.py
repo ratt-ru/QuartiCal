@@ -2,9 +2,15 @@
 # Sets up logger - hereafter import logger from Loguru.
 
 from contextlib import ExitStack
+import time
+
+import dask
+from dask.diagnostics import ProgressBar
+from dask.distributed import Client, LocalCluster
+from loguru import logger
+import zarr
 
 import quartical.logging.init_logger  # noqa
-from loguru import logger
 from quartical.parser import parser, preprocess
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
@@ -12,11 +18,7 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
-import time
-from dask.diagnostics import ProgressBar
-import dask
-from dask.distributed import Client, LocalCluster
-import zarr
+from quartical.scheduling import install_plugin
 
 
 @logger.catch
@@ -38,8 +40,7 @@ def _execute(exitstack):
     if opts.parallel_scheduler == "distributed":
         if opts.parallel_address:
             logger.info("Initializing distributed client.")
-            client = Client(opts.parallel_address)
-            exitstack.enter_context(client)
+            client = exitstack.enter_context(Client(opts.parallel_address))
         else:
             logger.info("Initializing distributed client using LocalCluster.")
             cluster = LocalCluster(processes=opts.parallel_nworker > 1,
@@ -47,7 +48,14 @@ def _execute(exitstack):
                                    threads_per_worker=opts.parallel_nthread,
                                    memory_limit=0)
             cluster = exitstack.enter_context(cluster)
-            exitstack.enter_context(Client(cluster))
+            client = exitstack.enter_context(Client(cluster))
+
+        # Install Quartical Scheduler Plugin
+        # Controversial from a security POV,
+        # run_on_scheduler is a debugging function
+        # `dask-scheduler --preload install_plugin.py`
+        # is the standard but less convenient pattern
+        client.run_on_scheduler(install_plugin)
 
         # Disable fuse optimisation: https://github.com/dask/dask/issues/7036
         opt_ctx = dask.config.set(optimization__fuse__active=False)
