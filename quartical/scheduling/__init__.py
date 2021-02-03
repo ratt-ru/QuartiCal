@@ -56,18 +56,24 @@ def annotate_dask_collection(collection, annotations):
         top_layer.annotations = annotations
 
 
+def dataset_partition(ds):
+    # Add any dataset partitioning information to annotations
+    try:
+        partition = getattr(ds, PARTITION_KEY)
+    except AttributeError:
+        return None
+    else:
+        return tuple((p, getattr(ds, p)) for p, _ in partition)
+
+
 def annotate(obj, **annotations):
     if isinstance(obj, (tuple, list)):
         for o in obj:
             annotate(o, **annotations)
     elif isinstance(obj, xarray.Dataset):
-        # Add any dataset partitioning information to annotations
-        try:
-            partition = getattr(obj, PARTITION_KEY)
-        except AttributeError:
-            pass
-        else:
-            partition = tuple((p, getattr(obj, p)) for p, _ in partition)
+        partition = dataset_partition(obj)
+
+        if partition:
             annotations = {**annotations, "partition": partition}
 
         for var in obj.data_vars.values():
@@ -119,13 +125,18 @@ class QuarticalScheduler(SchedulerPlugin):
 
         npartitions = len(partitions)
 
+        from pprint import pprint
+        for p, (partition, keys) in enumerate(sorted(partitions.items())):
+            roots = {k for k in keys if len(tasks.get(k)._dependencies) == 0}
+            pprint(keys)
+
         # Stripe partitions across workers
         for p, (partition, keys) in enumerate(sorted(partitions.items())):
-            wid = int(len(workers) * p / npartitions)
+            worker = set([workers[int(len(workers) * p / npartitions)]])
 
             for k in keys:
                 ts = tasks.get(k)
-                ts._worker_restrictions = set([workers[wid]])
+                ts._worker_restrictions = worker
 
 
 def install_plugin(dask_scheduler=None, **kwargs):

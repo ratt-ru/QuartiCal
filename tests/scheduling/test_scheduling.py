@@ -9,9 +9,9 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from africanus.rime import phase_delay
+from africanus.rime.dask import phase_delay
 from quartical.data_handling.ms_handler import read_xds_list
-from quartical.scheduling import install_plugin, annotate
+from quartical.scheduling import install_plugin, annotate, dataset_partition
 
 
 def test_array_annotation():
@@ -50,7 +50,8 @@ def test_xarray_dataset_annotation():
 
     ds = xr.Dataset({"A": (("x", "y"), A), "B": (("x",), B)},
                     attrs={
-                        # Schema must be present
+                        # Schema must be present to extract
+                        # partition values
                         PARTITION_KEY: partition_schema,
                         "SCAN": 1,
                         "DDID": 2
@@ -102,8 +103,16 @@ def test_distributed(base_opts):
         client.run_on_scheduler(install_plugin)
         assert len(scheduler.plugins) > 1
 
-        columns = ("DATA", "UVW", "TIME")
-        computes = [getattr(ds, c).data.sum() for c in columns for ds in datasets]
+        chan_freq = da.linspace(.856e9, 2*.856e9, 16, chunks=4)
+        lm = da.random.random((4, 2), chunks=(2, 2))
+
+        computes = []
+
+        for ds in datasets:
+            K = phase_delay(lm, ds.UVW.data, chan_freq)
+            partition = dataset_partition(ds)
+            annotate(K, dims=("source", "row", "chan"), partition=partition)
+            computes.append(K.sum())
 
         with dask.config.set(optimization__fuse__active=False):
             dask.compute(computes)
