@@ -8,6 +8,7 @@ from quartical.statistics.statistics import (assign_interval_stats,
 from quartical.calibration.gain_types import term_types
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
+from quartical.scheduling import annotate
 from loguru import logger  # noqa
 from collections import namedtuple
 
@@ -97,6 +98,10 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                                f_map_list,
                                d_map_list,
                                opts)
+
+    annotate(gain_xds_list)
+    annotate(solved_gain_xds_list)
+    annotate(post_solve_data_xds_list)
 
     # for xds_ind, xds in enumerate(data_xds_list):
 
@@ -318,6 +323,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
         data_vars.update({k: (dims, v) for k, v in visibility_outputs.items()})
 
         post_solve_data_xds = data_xds.assign(data_vars)
+        post_solve_data_xds.attrs.update(data_xds.attrs)
 
         post_solve_data_xds_list.append(post_solve_data_xds)
 

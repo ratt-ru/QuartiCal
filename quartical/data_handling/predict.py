@@ -1,13 +1,14 @@
-from loguru import logger
+from collections import namedtuple, defaultdict
+from functools import lru_cache
+import weakref
+
+from astropy.io import fits
 import dask.array as da
 import dask
-import Tigger
-import weakref
 from daskms import xds_from_table
+from loguru import logger
 import numpy as np
-
-from quartical.utils.dask import blockwise_unique
-from quartical.utils.collections import freeze_default_dict
+import Tigger
 
 from africanus.coordinates.dask import radec_to_lm
 from africanus.rime.dask import (phase_delay as compute_phase_delay,
@@ -21,11 +22,9 @@ from africanus.model.spectral.dask import spectral_model
 from africanus.model.shape.dask import gaussian as gaussian_shape
 from africanus.util.beams import beam_filenames, beam_grids
 
-
-from collections import namedtuple, defaultdict
-from functools import lru_cache
-from astropy.io import fits
-
+from quartical.utils.dask import blockwise_unique
+from quartical.utils.collections import freeze_default_dict
+from quartical.scheduling import annotate, dataset_partition
 
 _einsum_corr_indices = 'ijkl'
 
@@ -459,7 +458,7 @@ def compute_p_jones(parallactic_angles, feed_xds, opts):
             parallactic_angles + receptor_angles[None, :, 0], opts._feed_type)
 
 
-def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
+def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts, partition):
     """Produces a net direction-independent matrix per time, channe, antenna.
 
     NOTE: This lacks test coverage.
@@ -471,6 +470,7 @@ def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
         feed_xds: xarray dataset containing feed information.
         phase_dir: The phase direction in radians.
         opts: A Namepspace of global options.
+        partition: tuple of (column, value) partition values.
 
     Returns:
         die_jones: A dask array representing the net direction-independent
@@ -486,7 +486,16 @@ def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
                                                         ant_xds["POSITION"],
                                                         phase_dir)
 
+        annotate(parallactic_angles,
+                 dims=("row", "ant"),
+                 partition=partition)
+
         p_jones = compute_p_jones(parallactic_angles, feed_xds, opts)
+
+
+        annotate(p_jones,
+                 dims=("row", "ant", "corr1", "corr2"),
+                 partition=partition)
 
         # Broadcasts the P-Jones matrix to the expeceted DIE dimensions.
         # TODO: This is only appropriate whilst there are no other DIE terms.
@@ -498,6 +507,10 @@ def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
         die_jones = da.broadcast_to(p_jones[:, :, None, :, :],
                                     (n_t, n_a, n_c, 2, 2),
                                     chunks=chunks)
+
+        annotate(die_jones,
+                 dims=("row", "ant", "chan", "corr1", "corr2"),
+                 partition=partition)
 
     return die_jones
 
@@ -516,7 +529,7 @@ def _unity_ant_scales(parangles, frequency, dtype_):
     return np.ones((na, nchan, 2), dtype=dtype_)
 
 
-def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
+def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts, partition):
     """Multiplies per-antenna direction-dependent Jones terms together.
 
     Adapted from https://github.com/ska-sa/codex-africanus.
@@ -531,6 +544,8 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
         pol: xarray dataset containing POLARIZATION subtable data.
         lm: dask array of per-source lm values.
         opts: A Namespace object containing global options.
+        partition: tuple of (column, value) partition values.
+
 
     Returns:
         Dask array containing the result of multiplying the
@@ -569,6 +584,13 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
                        new_axes={"comp": 2},
                        dtype=dtype)
 
+    annotate(parangles,
+             dims=("row", "ant"),
+             partition=partition)
+    annotate(zpe,
+             dims=("row", "ant", "chan", "point_error_component"),
+             partition=partition)
+
     # Load the beam information
     beam, lm_ext, freq_map = load_beams(opts.input_model_beam,
                                         corr_type,
@@ -582,8 +604,16 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
                              zpe, zas,
                              frequency)
 
+    annotate(beam_dde,
+             dims=("source", "row", "ant", "chan", "corr1", "corr2"),
+             partition=partition)
+
     # Multiply the beam by the feed rotation to form the DDE term
-    return da.einsum("stafij,tajk->stafik", beam_dde, p_jones)
+    jones = da.einsum("stafij,tajk->stafik", beam_dde, p_jones)
+    annotate(jones,
+             dims=("source", "row", "ant", "chan", "corr1", "corrr2"),
+             partition=partition)
+    return jones
 
 
 def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
@@ -605,6 +635,8 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
     Returns:
         The result of predict_vis - a graph describing the predict.
     """
+
+    partition = dataset_partition(ms)
 
     # Array containing source parameters.
     sources = sky_model[source_type]
@@ -650,9 +682,9 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
     jones = baseline_jones_multiply(corrs, *bl_jones_args)
     # DI will include P-jones when there is no other DE term. Otherwise P must
     # be applied before other DD terms.
-    die = die_factory(utime_val, frequency, ant, feed, phase_dir, opts)
+    die = die_factory(utime_val, frequency, ant, feed, phase_dir, opts, partition)
     dde = dde_factory(ms, utime_val, frequency, ant, feed, field, pol, lm,
-                      opts)
+                      opts, partition)
 
     return predict_vis(utime_ind, ms.ANTENNA1.data, ms.ANTENNA2.data,
                        dde, jones, dde, die, None, die)

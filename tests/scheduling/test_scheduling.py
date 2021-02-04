@@ -112,6 +112,8 @@ def test_distributed(base_opts):
 
         for ds in datasets:
             K = phase_delay(lm, ds.UVW.data, chan_freq)
+            partition = dataset_partition(ds)
+            annotate(K, dims=("source", "row", "chan"), partition=partition)
             vis = K.sum(axis=0)[:, :, None]
             nds = xr.Dataset({"DATA": (("row", "chan", "corr"), vis)})
             nds.attrs.update(ds.attrs)

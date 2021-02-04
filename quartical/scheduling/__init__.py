@@ -30,6 +30,14 @@ def annotate_dask_collection(collection, annotations):
         }
     }
 
+    # Try ensure the number of dims match the number of chunks (ndim)
+    try:
+        dims = annotations["dims"]
+    except KeyError:
+        pass
+    else:
+        assert len(annotations["chunks"]) == len(dims)
+
     if top_layer.annotations:
         # Annotations already exist, do some sanity checks
         try:

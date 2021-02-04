@@ -321,11 +321,13 @@ def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
     xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ", "CHAN_WIDTH"],
                               errors='ignore')
                 for xds in xds_list]
+    annotate(xds_list)
 
     write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
                                   columns=output_cols,
                                   column_keywords=output_kwrds,
                                   descriptor="ratt_ms(fixed=False)")
+    annotate(write_xds_list)
 
     return write_xds_list
 
