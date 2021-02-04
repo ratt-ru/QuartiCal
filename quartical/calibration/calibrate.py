@@ -90,7 +90,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                                             d_map_list,
                                             opts)
 
-    # Update the data xrray.Datasets with visiblity outputs.
+    # Update the data xarray.Datasets with visibility outputs.
     post_solve_data_xds_list = \
         make_visibility_output(data_xds_list,
                                solved_gain_xds_list,
@@ -98,10 +98,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                                f_map_list,
                                d_map_list,
                                opts)
-
-    annotate(gain_xds_list)
-    annotate(solved_gain_xds_list)
-    annotate(post_solve_data_xds_list)
 
     # for xds_ind, xds in enumerate(data_xds_list):
 
@@ -203,6 +199,8 @@ def make_gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
             term_xds_list.append(term_obj.make_xds())
 
         gain_xds_list.append(term_xds_list)
+
+    annotate(gain_xds_list)
 
     return gain_xds_list
 

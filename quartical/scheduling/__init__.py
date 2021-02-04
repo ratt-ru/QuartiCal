@@ -69,7 +69,7 @@ def dataset_partition(ds):
     try:
         partition = getattr(ds, PARTITION_KEY)
     except AttributeError:
-        return None
+        raise ValueError(f"{ds} has no {PARTITION_KEY} attribute")
     else:
         return tuple((p, getattr(ds, p)) for p, _ in partition)
 

@@ -4,6 +4,7 @@ from uuid import uuid4
 from copy import deepcopy
 from loguru import logger
 from quartical.flagging.flagging_kernels import madmax, threshold
+from quartical.scheduling import annotate, dataset_partition
 
 
 ibfdtype = np.uint16  # Data type for internal bitflags.
@@ -290,6 +291,8 @@ def finalise_flags(xds_list, col_kwrds, opts):
                         "FLAG_ROW": (xds.FLAG_ROW.dims, flag_row_col)})
         updated_xds.attrs["WRITE_COLS"] += \
             ["BITFLAG", "BITFLAG_ROW", "FLAG", "FLAG_ROW"]
+        update_xds.attrs[PARTITION_KEY] = xds.attrs[PARTITION_KEY]
+        update_xds.attrs.update(dict(dataset_partition(xds)))
 
         writable_xds.append(updated_xds)
 

@@ -327,6 +327,7 @@ def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
                                   columns=output_cols,
                                   column_keywords=output_kwrds,
                                   descriptor="ratt_ms(fixed=False)")
+    [wds.attrs.update(ds.attrs) for ds, wds in zip(xds_list, write_xds_list)]
     annotate(write_xds_list)
 
     return write_xds_list
