@@ -143,6 +143,7 @@ class QuarticalScheduler(SchedulerPlugin):
             for k in keys:
                 ts = tasks.get(k)
                 ts._worker_restrictions = worker
+                ts._loose_restrictions = False
 
 
 def install_plugin(dask_scheduler=None, **kwargs):
