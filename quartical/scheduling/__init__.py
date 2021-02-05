@@ -147,4 +147,4 @@ class QuarticalScheduler(SchedulerPlugin):
 
 
 def install_plugin(dask_scheduler=None, **kwargs):
-    dask_scheduler.add_plugin(QuarticalScheduler(**kwargs))
+    dask_scheduler.add_plugin(QuarticalScheduler(**kwargs), idempotent=True)
