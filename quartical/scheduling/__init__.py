@@ -122,6 +122,9 @@ class QuarticalScheduler(SchedulerPlugin):
             except KeyError:
                 continue
 
+            if "row" not in dims:  # Plugin dies on ("chan", "term").
+                continue
+
             ri = dims.index("row")
             if ri == -1:
                 continue
