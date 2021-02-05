@@ -18,7 +18,7 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
-from quartical.scheduling import install_plugin
+from quartical.scheduling import install_plugin, annotate
 
 
 @logger.catch
@@ -85,6 +85,10 @@ def _execute(exitstack):
         data_xds_list = add_mad_graph(data_xds_list, opts)
 
     writable_xds = finalise_flags(data_xds_list, col_kwrds, opts)
+
+    annotate(writable_xds)
+    for gxds_list in gains_per_xds:
+        annotate(gxds_list)
 
     writes = write_xds_list(writable_xds, ref_xds_list, col_kwrds, opts)
 

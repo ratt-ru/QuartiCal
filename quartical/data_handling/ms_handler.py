@@ -396,6 +396,8 @@ def preprocess_xds_list(xds_list, col_kwrds, opts):
 
         output_xds_list.append(output_xds)
 
+    annotate(output_xds_list)
+
     return output_xds_list
 
 
