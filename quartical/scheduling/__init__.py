@@ -122,11 +122,9 @@ class QuarticalScheduler(SchedulerPlugin):
             except KeyError:
                 continue
 
-            if "row" not in dims:  # Plugin dies on ("chan", "term").
-                continue
-
-            ri = dims.index("row")
-            if ri == -1:
+            try:
+                ri = dims.index("row")
+            except ValueError:
                 continue
 
             # Map block id's and chunks to dimensions
