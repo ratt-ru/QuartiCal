@@ -1,4 +1,5 @@
 import dask.array as da
+from daskms.reads import PARTITION_KEY
 import numpy as np
 from uuid import uuid4
 from copy import deepcopy
