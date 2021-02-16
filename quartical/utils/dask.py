@@ -2,11 +2,11 @@ import dask.array as da
 import numpy as np
 from dask.base import tokenize
 from dask.array.core import HighLevelGraph
+from dask.highlevelgraph import BasicLayer
 from operator import getitem
 from dask.utils import apply, funcname
 from collections import namedtuple
 from itertools import product
-from functools import wraps
 
 
 class as_dict:
@@ -42,7 +42,7 @@ class Blocker:
     _input = namedtuple("input", "name value index_list")
     _output = namedtuple("output", "name index_list chunks dtype")
 
-    def __init__(self, func, index_string):
+    def __init__(self, func, index_string, annotation=None):
         """Basic initialisation of the blocker object.
 
         Args:
@@ -57,6 +57,7 @@ class Blocker:
         self.func_axes = list(index_string)
         self.input_axes = {}
         self.dask_inputs = []
+        self.annotation = annotation
 
         self.inputs = []
         self.outputs = []
@@ -141,7 +142,7 @@ class Blocker:
 
             graph[(layer_name, *k)] = (apply, self.func, [], (dict, kwargs))
 
-        layers.update({layer_name: graph})
+        layers.update({layer_name: BasicLayer(graph, self.annotation)})
         deps.update({layer_name: {k.name for k in self.dask_inputs}})
 
         # At this point we have a dictionary which describes the chunkwise

@@ -152,6 +152,9 @@ def read_xds_list(opts):
     data_columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "DATA", "FLAG",
                     "FLAG_ROW", "UVW") + extra_columns
 
+    extra_schema = {cn: {'dims': ('chan', 'corr')}
+                    for cn in opts._model_columns}
+
     data_xds_list, col_kwrds = xds_from_ms(
         opts.input_ms_name,
         columns=data_columns,
@@ -160,7 +163,8 @@ def read_xds_list(opts):
         taql_where="ANTENNA1 != ANTENNA2",
         chunks=chunking_per_xds,
         column_keywords=True,
-        table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')}}])
+        table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')},
+                             **extra_schema}])
 
     # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
     # for undoing BDA.
@@ -395,6 +399,8 @@ def preprocess_xds_list(xds_list, col_kwrds, opts):
         output_xds.attrs.update(xds.attrs)
 
         output_xds_list.append(output_xds)
+
+    annotate(output_xds_list)
 
     return output_xds_list
 

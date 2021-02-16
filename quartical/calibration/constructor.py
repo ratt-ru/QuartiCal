@@ -2,6 +2,7 @@ import numpy as np
 from quartical.calibration.solver import solver_wrapper
 from quartical.utils.dask import Blocker
 from collections import namedtuple
+from quartical.scheduling import dataset_partition
 
 
 term_spec_tup = namedtuple("term_spec_tup", "name type args shape pshape")
@@ -56,8 +57,10 @@ def construct_solver(data_xds_list,
         # Take the compact chunking info on the gain xdss and expand it.
         spec_list = expand_specs(gain_terms)
 
+        annotation = make_annotation(data_xds)
+
         # Create a blocker object.
-        blocker = Blocker(solver_wrapper, "rf")
+        blocker = Blocker(solver_wrapper, "rf", annotation)
 
         # Add relevant inputs to the blocker object. TODO: Only pass in values
         # required by the specific terms in use.
@@ -183,3 +186,19 @@ def expand_specs(gain_terms):
         tc_list.append(fc_list)
 
     return tc_list
+
+
+def make_annotation(xds):
+
+    annotation = \
+        {
+            "__dask_array__": {
+                "dtype": 'object',
+                "chunks": (len(xds.chunks["row"])*(1,),
+                           len(xds.chunks["chan"])*(1,)),
+                "partition": dataset_partition(xds),
+                "dims": ("row", "chan")
+            }
+        }
+
+    return annotation

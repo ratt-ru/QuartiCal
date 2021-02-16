@@ -5,7 +5,7 @@ import dask
 import dask.array as da
 from daskms.reads import PARTITION_KEY
 from dask.highlevelgraph import HighLevelGraph
-from distributed.diagnostics import SchedulerPlugin
+from distributed.diagnostics.plugin import SchedulerPlugin
 import xarray
 
 
@@ -104,7 +104,8 @@ def annotate(obj, **annotations):
 
 
 class QuarticalScheduler(SchedulerPlugin):
-    def update_graph(self, scheduler, dsk=None, keys=None, restrictions=None, **kw):
+    def update_graph(self, scheduler, dsk=None, keys=None, restrictions=None, 
+                     **kw):
         try:
             annotations = kw["annotations"]
         except KeyError:
@@ -122,8 +123,9 @@ class QuarticalScheduler(SchedulerPlugin):
             except KeyError:
                 continue
 
-            ri = dims.index("row")
-            if ri == -1:
+            try:
+                ri = dims.index("row")
+            except ValueError:
                 continue
 
             # Map block id's and chunks to dimensions
@@ -147,4 +149,4 @@ class QuarticalScheduler(SchedulerPlugin):
 
 
 def install_plugin(dask_scheduler=None, **kwargs):
-    dask_scheduler.add_plugin(QuarticalScheduler(**kwargs))
+    dask_scheduler.add_plugin(QuarticalScheduler(**kwargs), idempotent=True)
