@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import jit, prange, literally, generated_jit, types
-from numba.extending import overload, register_jitable
+from numba.extending import register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
@@ -23,8 +23,8 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
 def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, active_term, inverse_gains,
-                   gains, flags, row_map, row_weights):
+                     d_map_arr, corr_mode, active_term, inverse_gains,
+                     gains, flags, row_map, row_weights):
 
     if not isinstance(corr_mode, types.Literal):
         return lambda model, data, a1, a2, weights, t_map_arr, f_map_arr, \
@@ -43,8 +43,8 @@ def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     print("HELLO!")
 
     def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, active_term, inverse_gains,
-                   gains, flags, row_map, row_weights):
+             d_map_arr, corr_mode, active_term, inverse_gains,
+             gains, flags, row_map, row_weights):
 
         n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
@@ -88,9 +88,9 @@ def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             corr_mode)
 
             compute_update(update,
-                        jhj,
-                        jhr,
-                        corr_mode)
+                           jhj,
+                           jhr,
+                           corr_mode)
 
             finalize_update(update,
                             gains[active_term],
@@ -391,9 +391,6 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        # jh00, jh01, jh10, jh11 =\
-                        #     _multiplier(gb, mh00, mh01, mh10, m11)
-
                         # g00 = gb[0]
                         # g01 = gb[1]
                         # g10 = gb[2]
@@ -418,10 +415,12 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        gh00 = ga[0].conjugate()
-                        gh01 = ga[2].conjugate()
-                        gh10 = ga[1].conjugate()
-                        gh11 = ga[3].conjugate()
+                        # gh00 = ga[0].conjugate()
+                        # gh01 = ga[2].conjugate()
+                        # gh10 = ga[1].conjugate()
+                        # gh11 = ga[3].conjugate()
+
+                        gh00, gh01, gh10, gh11 = _unpack_ct(ga)
 
                         jh00 = (mh00*gh00 + mh01*gh10)
                         jh01 = (mh00*gh01 + mh01*gh11)
@@ -440,10 +439,12 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gai = inverse_gains[g][t_m, f_m, a1_m, d_m]
 
-                        ginv00 = gai[0]
-                        ginv01 = gai[1]
-                        ginv10 = gai[2]
-                        ginv11 = gai[3]
+                        # ginv00 = gai[0]
+                        # ginv01 = gai[1]
+                        # ginv10 = gai[2]
+                        # ginv11 = gai[3]
+
+                        ginv00, ginv01, ginv10, ginv11 = _unpack(gai)
 
                         jhr00 = (ginv00*r00 + ginv01*r10)
                         jhr01 = (ginv00*r01 + ginv01*r11)
@@ -475,10 +476,12 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        g00 = ga[0]
-                        g01 = ga[1]
-                        g10 = ga[2]
-                        g11 = ga[3]
+                        # g00 = ga[0]
+                        # g01 = ga[1]
+                        # g10 = ga[2]
+                        # g11 = ga[3]
+
+                        g00, g01, g10, g11 = _unpack(ga)
 
                         jh00 = (g00*m00 + g01*m10)
                         jh01 = (g00*m01 + g01*m11)
@@ -497,10 +500,12 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        gh00 = gb[0].conjugate()
-                        gh01 = gb[2].conjugate()
-                        gh10 = gb[1].conjugate()
-                        gh11 = gb[3].conjugate()
+                        # gh00 = gb[0].conjugate()
+                        # gh01 = gb[2].conjugate()
+                        # gh10 = gb[1].conjugate()
+                        # gh11 = gb[3].conjugate()
+
+                        gh00, gh01, gh10, gh11 = _unpack_ct(ga)
 
                         jh00 = (m00*gh00 + m01*gh10)
                         jh01 = (m00*gh01 + m01*gh11)
@@ -519,10 +524,12 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gbi = inverse_gains[g][t_m, f_m, a2_m, d_m]
 
-                        ginv00 = gbi[0]
-                        ginv01 = gbi[1]
-                        ginv10 = gbi[2]
-                        ginv11 = gbi[3]
+                        # ginv00 = gbi[0]
+                        # ginv01 = gbi[1]
+                        # ginv10 = gbi[2]
+                        # ginv11 = gbi[3]
+
+                        ginv00, ginv01, ginv10, ginv11 = _unpack(gbi)
 
                         jhr00 = (ginv00*rh00 + ginv01*rh10)
                         jhr01 = (ginv00*rh01 + ginv01*rh11)
@@ -582,8 +589,6 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
     return
 
 
-# @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
-#                nogil=True)
 @register_jitable
 def _multiplier(gb, mh00, mh01, mh10, mh11):
     if gb.shape[0] == 4:
