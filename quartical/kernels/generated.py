@@ -502,40 +502,32 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                 for d in range(n_gdir):
 
-                    jh00 = tmp_jh_p[d, 0]
-                    jh01 = tmp_jh_p[d, 1]
-                    jh10 = tmp_jh_p[d, 2]
-                    jh11 = tmp_jh_p[d, 3]
+                    jh00, jh01, jh10, jh11 = _unpack(tmp_jh_p[d])
 
-                    j00 = jh00.conjugate()
-                    j01 = jh10.conjugate()
-                    j10 = jh01.conjugate()
-                    j11 = jh11.conjugate()
+                    j00, j01, j10, j11 = _unpack_ct(tmp_jh_p[d])
 
-                    jhj[t_m, f_m, a1_m, d, 0] += (j00*w0*jh00 + j01*w3*jh10)
-                    jhj[t_m, f_m, a1_m, d, 1] += (j00*w0*jh01 + j01*w3*jh11)
-                    jhj[t_m, f_m, a1_m, d, 2] += (j10*w0*jh00 + j11*w3*jh10)
-                    jhj[t_m, f_m, a1_m, d, 3] += (j10*w0*jh01 + j11*w3*jh11)
+                    jhj_vec = jhj[t_m, f_m, a1_m, d]
 
-                    jh00 = tmp_jh_q[d, 0]
-                    jh01 = tmp_jh_q[d, 1]
-                    jh10 = tmp_jh_q[d, 2]
-                    jh11 = tmp_jh_q[d, 3]
+                    jhj_vec[0] += (j00*w0*jh00 + j01*w3*jh10)
+                    jhj_vec[1] += (j00*w0*jh01 + j01*w3*jh11)
+                    jhj_vec[2] += (j10*w0*jh00 + j11*w3*jh10)
+                    jhj_vec[3] += (j10*w0*jh01 + j11*w3*jh11)
 
-                    j00 = jh00.conjugate()
-                    j01 = jh10.conjugate()
-                    j10 = jh01.conjugate()
-                    j11 = jh11.conjugate()
+                    jh00, jh01, jh10, jh11 = _unpack(tmp_jh_q[d])
 
-                    jhj[t_m, f_m, a2_m, d, 0] += (j00*w0*jh00 + j01*w3*jh10)
-                    jhj[t_m, f_m, a2_m, d, 1] += (j00*w0*jh01 + j01*w3*jh11)
-                    jhj[t_m, f_m, a2_m, d, 2] += (j10*w0*jh00 + j11*w3*jh10)
-                    jhj[t_m, f_m, a2_m, d, 3] += (j10*w0*jh01 + j11*w3*jh11)
+                    j00, j01, j10, j11 = _unpack_ct(tmp_jh_q[d])
+
+                    jhj_vec = jhj[t_m, f_m, a2_m, d]
+
+                    jhj_vec[0] += (j00*w0*jh00 + j01*w3*jh10)
+                    jhj_vec[1] += (j00*w0*jh01 + j01*w3*jh11)
+                    jhj_vec[2] += (j10*w0*jh00 + j11*w3*jh10)
+                    jhj_vec[3] += (j10*w0*jh01 + j11*w3*jh11)
 
     return
 
 
-@register_jitable
+@register_jitable(inline="always")
 def _v1_mul_v2(v1, v2):
 
     v100, v101, v110, v111 = _unpack(v1)
@@ -549,7 +541,7 @@ def _v1_mul_v2(v1, v2):
     return v300, v301, v310, v311
 
 
-@register_jitable
+@register_jitable(inline="always")
 def _v1_mul_v2ct(v1, v2):
 
     v100, v101, v110, v111 = _unpack(v1)
@@ -563,7 +555,7 @@ def _v1_mul_v2ct(v1, v2):
     return v300, v301, v310, v311
 
 
-@register_jitable
+@register_jitable(inline="always")
 def _unpack(vec):
     if len(vec) == 4:
         return vec[0], vec[1], vec[2], vec[3]
@@ -573,7 +565,7 @@ def _unpack(vec):
         raise ValueError("Gain shape not understood.")
 
 
-@register_jitable
+@register_jitable(inline="always")
 def _unpack_ct(vec):
     if len(vec) == 4:
         return vec[0].conjugate(), \
