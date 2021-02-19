@@ -352,11 +352,8 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                 r = residual[row, f]
                 w = weights[row, f]  # Consider a map?
 
-                w0 = w[0]
-                # w1 = w[1]  # We do not use the off diagonal weights.
-                # w2 = w[2]  # We do not use the off diagonal weights.
-                w3 = w[3]
-
+                # We don't use the off-diagonal weights - may change.
+                w00, _, _, w11 = _unpack(w)
                 tmp_jh_p[:, :] = 0
                 tmp_jh_q[:, :] = 0
 
@@ -364,10 +361,10 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                     out_d = d_map_arr[active_term, d]
 
-                    r_vec[0] = w0*mul_rweight(r[0], row_weights, row_ind)
-                    r_vec[1] = w0*mul_rweight(r[1], row_weights, row_ind)
-                    r_vec[2] = w3*mul_rweight(r[2], row_weights, row_ind)
-                    r_vec[3] = w3*mul_rweight(r[3], row_weights, row_ind)
+                    r_vec[0] = w00*mul_rweight(r[0], row_weights, row_ind)
+                    r_vec[1] = w00*mul_rweight(r[1], row_weights, row_ind)
+                    r_vec[2] = w11*mul_rweight(r[2], row_weights, row_ind)
+                    r_vec[3] = w11*mul_rweight(r[3], row_weights, row_ind)
 
                     rh_vec[0] = r_vec[0].conjugate()
                     rh_vec[1] = r_vec[2].conjugate()
@@ -502,27 +499,27 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                 for d in range(n_gdir):
 
-                    jh00, jh01, jh10, jh11 = _unpack(tmp_jh_p[d])
+                    jhp = tmp_jh_p[d]
 
-                    j00, j01, j10, j11 = _unpack_ct(tmp_jh_p[d])
+                    jhj00, jhj01, jhj10, jhj11 = _v1ct_wmul_v2(jhp, jhp, w)
 
                     jhj_vec = jhj[t_m, f_m, a1_m, d]
 
-                    jhj_vec[0] += (j00*w0*jh00 + j01*w3*jh10)
-                    jhj_vec[1] += (j00*w0*jh01 + j01*w3*jh11)
-                    jhj_vec[2] += (j10*w0*jh00 + j11*w3*jh10)
-                    jhj_vec[3] += (j10*w0*jh01 + j11*w3*jh11)
+                    jhj_vec[0] += jhj00
+                    jhj_vec[1] += jhj01
+                    jhj_vec[2] += jhj10
+                    jhj_vec[3] += jhj11
 
-                    jh00, jh01, jh10, jh11 = _unpack(tmp_jh_q[d])
+                    jhq = tmp_jh_q[d]
 
-                    j00, j01, j10, j11 = _unpack_ct(tmp_jh_q[d])
+                    jhj00, jhj01, jhj10, jhj11 = _v1ct_wmul_v2(jhq, jhq, w)
 
                     jhj_vec = jhj[t_m, f_m, a2_m, d]
 
-                    jhj_vec[0] += (j00*w0*jh00 + j01*w3*jh10)
-                    jhj_vec[1] += (j00*w0*jh01 + j01*w3*jh11)
-                    jhj_vec[2] += (j10*w0*jh00 + j11*w3*jh10)
-                    jhj_vec[3] += (j10*w0*jh01 + j11*w3*jh11)
+                    jhj_vec[0] += jhj00
+                    jhj_vec[1] += jhj01
+                    jhj_vec[2] += jhj10
+                    jhj_vec[3] += jhj11
 
     return
 
@@ -551,6 +548,36 @@ def _v1_mul_v2ct(v1, v2):
     v301 = (v100*v201 + v101*v211)
     v310 = (v110*v200 + v111*v210)
     v311 = (v110*v201 + v111*v211)
+
+    return v300, v301, v310, v311
+
+
+@register_jitable(inline="always")
+def _v1_wmul_v2ct(v1, v2, w1):
+
+    v100, v101, v110, v111 = _unpack(v1)
+    v200, v201, v210, v211 = _unpack_ct(v2)
+    w100, w101, w110, w111 = _unpack(w1)
+
+    v300 = (v100*w100*v200 + v101*w111*v210)
+    v301 = (v100*w100*v201 + v101*w111*v211)
+    v310 = (v110*w100*v200 + v111*w111*v210)
+    v311 = (v110*w100*v201 + v111*w111*v211)
+
+    return v300, v301, v310, v311
+
+
+@register_jitable(inline="always")
+def _v1ct_wmul_v2(v1, v2, w1):
+
+    v100, v101, v110, v111 = _unpack_ct(v1)
+    v200, v201, v210, v211 = _unpack(v2)
+    w100, w101, w110, w111 = _unpack(w1)
+
+    v300 = (v100*w100*v200 + v101*w111*v210)
+    v301 = (v100*w100*v201 + v101*w111*v211)
+    v310 = (v110*w100*v200 + v111*w111*v210)
+    v311 = (v110*w100*v201 + v111*w111*v211)
 
     return v300, v301, v310, v311
 
