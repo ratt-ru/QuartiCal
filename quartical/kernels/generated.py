@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import jit, prange, literally, generated_jit, types
+from numba import prange, literally, generated_jit, types
 from numba.extending import register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
-from quartical.kernels.helpers import (get_row,
-                                       mul_rweight,
-                                       get_chan_extents,
-                                       get_row_extents)
+from quartical.kernels.convenience import (get_row,
+                                           mul_rweight,
+                                           get_chan_extents,
+                                           get_row_extents,
+                                           _v1_mul_v2,
+                                           _v1_mul_v2ct,
+                                           _v1ct_wmul_v2,
+                                           _unpack)
 from collections import namedtuple
 
 
@@ -522,87 +526,6 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                     jhj_vec[3] += jhj11
 
     return
-
-
-@register_jitable(inline="always")
-def _v1_mul_v2(v1, v2):
-
-    v100, v101, v110, v111 = _unpack(v1)
-    v200, v201, v210, v211 = _unpack(v2)
-
-    v300 = (v100*v200 + v101*v210)
-    v301 = (v100*v201 + v101*v211)
-    v310 = (v110*v200 + v111*v210)
-    v311 = (v110*v201 + v111*v211)
-
-    return v300, v301, v310, v311
-
-
-@register_jitable(inline="always")
-def _v1_mul_v2ct(v1, v2):
-
-    v100, v101, v110, v111 = _unpack(v1)
-    v200, v201, v210, v211 = _unpack_ct(v2)
-
-    v300 = (v100*v200 + v101*v210)
-    v301 = (v100*v201 + v101*v211)
-    v310 = (v110*v200 + v111*v210)
-    v311 = (v110*v201 + v111*v211)
-
-    return v300, v301, v310, v311
-
-
-@register_jitable(inline="always")
-def _v1_wmul_v2ct(v1, v2, w1):
-
-    v100, v101, v110, v111 = _unpack(v1)
-    v200, v201, v210, v211 = _unpack_ct(v2)
-    w100, w101, w110, w111 = _unpack(w1)
-
-    v300 = (v100*w100*v200 + v101*w111*v210)
-    v301 = (v100*w100*v201 + v101*w111*v211)
-    v310 = (v110*w100*v200 + v111*w111*v210)
-    v311 = (v110*w100*v201 + v111*w111*v211)
-
-    return v300, v301, v310, v311
-
-
-@register_jitable(inline="always")
-def _v1ct_wmul_v2(v1, v2, w1):
-
-    v100, v101, v110, v111 = _unpack_ct(v1)
-    v200, v201, v210, v211 = _unpack(v2)
-    w100, w101, w110, w111 = _unpack(w1)
-
-    v300 = (v100*w100*v200 + v101*w111*v210)
-    v301 = (v100*w100*v201 + v101*w111*v211)
-    v310 = (v110*w100*v200 + v111*w111*v210)
-    v311 = (v110*w100*v201 + v111*w111*v211)
-
-    return v300, v301, v310, v311
-
-
-@register_jitable(inline="always")
-def _unpack(vec):
-    if len(vec) == 4:
-        return vec[0], vec[1], vec[2], vec[3]
-    elif len(vec) == 2:
-        return vec[0], 0, 0, vec[1]
-    else:
-        raise ValueError("Gain shape not understood.")
-
-
-@register_jitable(inline="always")
-def _unpack_ct(vec):
-    if len(vec) == 4:
-        return vec[0].conjugate(), \
-               vec[2].conjugate(), \
-               vec[1].conjugate(), \
-               vec[3].conjugate()
-    elif len(vec) == 2:
-        return vec[0].conjugate(), 0, 0, vec[1].conjugate()
-    else:
-        raise ValueError("Gain shape not understood.")
 
 
 @register_jitable

@@ -3,7 +3,7 @@ import numpy as np
 from numba.extending import overload, register_jitable
 from numba import jit, prange, literally
 from numba.typed import List
-from quartical.kernels.helpers import get_dims, get_row, mul_rweight
+from quartical.kernels.convenience import get_dims, get_row, mul_rweight
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)

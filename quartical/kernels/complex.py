@@ -5,10 +5,10 @@ from numba.extending import overload, register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
-from quartical.kernels.helpers import (get_row,
-                                       mul_rweight,
-                                       get_chan_extents,
-                                       get_row_extents)
+from quartical.kernels.convenience import (get_row,
+                                           mul_rweight,
+                                           get_chan_extents,
+                                           get_row_extents)
 from collections import namedtuple
 
 
