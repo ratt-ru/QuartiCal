@@ -85,7 +85,7 @@ def _execute(exitstack):
     for xds_ind, gain_terms in enumerate(gains_per_xds):
         term_writes = []
         for term_ind, term in enumerate(gain_terms):
-            term_write = term.chunk({"time_int": -1}).to_zarr(
+            term_write = term.chunk({"t_int": -1}).to_zarr(
                 store,
                 mode="w",
                 group=f"{term.NAME}{xds_ind}",
@@ -94,8 +94,6 @@ def _execute(exitstack):
         gain_writes.append(term_writes)
 
     writes = [writes] if not isinstance(writes, list) else writes
-
-    # import pdb; pdb.set_trace()
 
     stride = len(writes)//len(gain_writes)
 

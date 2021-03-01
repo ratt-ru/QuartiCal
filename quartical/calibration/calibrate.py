@@ -77,6 +77,7 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
     # gains per data xarray.Dataset. This triggers some early compute.
     gain_xds_list = make_gain_xds_list(data_xds_list,
                                        t_map_list,
+                                       t_bin_list,
                                        f_map_list,
                                        opts)
 
@@ -138,7 +139,8 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
     return solved_gain_xds_list, post_solve_data_xds_list
 
 
-def make_gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
+def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
+                       opts):
     """Returns a list of xarray.Dataset objects describing the gain terms.
 
     For a given input xds containing data, creates an xarray.Dataset object
@@ -191,8 +193,10 @@ def make_gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
 
             term_obj = term_types[term_type](term_name,
                                              data_xds,
-                                             tipc_list[xds_ind],
-                                             fipc_list[xds_ind],
+                                             t_bin_list[xds_ind][:, term_ind],
+                                             f_map_list[xds_ind][:, term_ind],
+                                             tipc_list[xds_ind][:, term_ind],
+                                             fipc_list[xds_ind][:, term_ind],
                                              opts)
 
             term_xds_list.append(term_obj.make_xds())
