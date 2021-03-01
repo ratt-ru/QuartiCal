@@ -145,8 +145,18 @@ def _add_calibration_graph(data_xds_list, col_kwrds, xds_opts):
 
 
 @pytest.fixture(scope="module")
-def t_map_list(data_xds_list, xds_opts):
-    return make_t_maps(data_xds_list, xds_opts)[1]
+def tbin_list_tmap_list(data_xds_list, xds_opts):
+    return make_t_maps(data_xds_list, xds_opts)
+
+
+@pytest.fixture(scope="module")
+def t_map_list(tbin_list_tmap_list):
+    return tbin_list_tmap_list[1]
+
+
+@pytest.fixture(scope="module")
+def t_bin_list(tbin_list_tmap_list):
+    return tbin_list_tmap_list[0]
 
 
 @pytest.fixture(scope="module")
@@ -155,8 +165,9 @@ def f_map_list(data_xds_list, xds_opts):
 
 
 @pytest.fixture(scope="module")
-def gain_xds_list(data_xds_list, t_map_list, f_map_list, xds_opts):
-    return make_gain_xds_list(data_xds_list, t_map_list, f_map_list, xds_opts)
+def gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list, xds_opts):
+    return make_gain_xds_list(data_xds_list, t_map_list, t_bin_list,
+                              f_map_list, xds_opts)
 
 
 @pytest.fixture(scope="module")
@@ -212,14 +223,14 @@ def test_f_chunking(data_xds, term_xds_list, xds_opts):
 def test_t_ints(data_xds, term_xds_list, expected_t_ints):
     """Check that the time intervals are correct."""
 
-    assert all(int(sum(eti)) == gxds.dims["time_int"]
+    assert all(int(sum(eti)) == gxds.dims["t_int"]
                for eti, gxds in zip(expected_t_ints, term_xds_list))
 
 
 def test_f_ints(data_xds, term_xds_list, expected_f_ints):
     """Check that the frequency intervals are correct."""
 
-    assert all(int(sum(efi)) == gxds.dims["freq_int"]
+    assert all(int(sum(efi)) == gxds.dims["f_int"]
                for efi, gxds in zip(expected_f_ints, term_xds_list))
 
 
