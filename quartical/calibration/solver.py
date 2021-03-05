@@ -5,7 +5,7 @@ import gc
 
 
 def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, term_spec_list, **kwargs):
+                   d_map_arr, corr_mode, term_spec_list, *args, **kwargs):
 
     # This is rudimentary - it practice we may have more initialisation code
     # here for setting up parameters etc. TODO: Init actually needs to depend
@@ -18,7 +18,11 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
     for term_ind, term_spec in enumerate(term_spec_list):
         gain = np.zeros(term_spec.shape, dtype=np.complex128)
-        gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
+        if "initial_gain" in kwargs:
+            gain[:] = kwargs["initial_gain"]
+        else:
+            gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
+
         gain_tup += (gain,)
 
         additional_args.append(dict())
