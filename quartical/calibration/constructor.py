@@ -73,8 +73,13 @@ def construct_solver(data_xds_list,
         blocker.add_input("corr_mode", opts.input_ms_correlation_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
         blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
-        if "gains" in gain_terms[0].data_vars:
-            blocker.add_input("initial_gain", gain_terms[0].gains.data, "rfadc")
+
+        # TODO: Mildly hacky? If the gain dataset already has a gain variable,
+        # we want to pass it in.
+        for t in gain_terms:
+            if "gains" in t.data_vars:
+                blocker.add_input(f"{t.NAME}_initial_gain",
+                                  t.gains.data, "rfadc")
 
         if opts.input_ms_is_bda:
             blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")

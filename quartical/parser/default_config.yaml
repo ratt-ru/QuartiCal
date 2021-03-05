@@ -449,12 +449,10 @@ parallel:
     #     help: Set to 1 (and specify load-from or xfer-from) to load a
     #           precomputed term from disk.
     #     default: False
-    # load-from:
-    #     type: str
-    #     help: Load solutions from given database. The DB must define solutions
-    #           on the same time/frequency grid (i.e. should normally come from
-    #           calibrating the same pointing/observation).
-    #     default: None
+    load-from:
+        type: str
+        help: Load solutions from given database. 
+        default: None
     # xfer-from:
     #     type: str
     #     help: Transfer solutions from given database. Similar to -load-from,

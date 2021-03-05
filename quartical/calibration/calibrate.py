@@ -8,6 +8,7 @@ from quartical.statistics.statistics import (assign_interval_stats,
 from quartical.calibration.gain_types import term_types
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
+from quartical.calibration.interpolate import load_and_interpolate_gains
 from loguru import logger  # noqa
 from collections import namedtuple
 
@@ -81,7 +82,9 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
                                        f_map_list,
                                        opts)
 
-    gain_xds_list = read_gains(gain_xds_list)
+    # If there are gains to be loaded from disk, this will load an interpolate
+    # them to be consistent with this calibration run.
+    gain_xds_list = load_and_interpolate_gains(gain_xds_list, opts)
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
     solved_gain_xds_list = construct_solver(data_xds_list,
@@ -139,190 +142,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
     # Return the resulting graphs for the gains and updated xds.
     return solved_gain_xds_list, post_solve_data_xds_list
-
-
-def read_gains(gain_xds_list):
-
-    import xarray
-    import glob
-    import re
-    import numpy as np
-    from scipy.interpolate import InterpolatedUnivariateSpline, interp1d,pchip_interpolate
-
-    gain_dir = "/home/jonathan/3C147_tests/qcal_gains/"
-    load_order = sorted(glob.glob(gain_dir + "G*"),
-                        key=lambda x: float(re.findall("(\d+)", x)[-1]))
-
-    read_xds_list = [xarray.open_zarr(pth) for pth in load_order]
-
-    read_xds_list = [xds.assign(
-        {"phase": (("t_int", "f_int", "ant", "dir", "corr"),
-                   da.angle(xds.gains.data)),
-         "amp": (("t_int", "f_int", "ant", "dir", "corr"),
-                 da.absolute(xds.gains.data))})
-        for xds in read_xds_list]
-
-    read_xds_list = [gxds.swap_dims({"t_int": "mean_time",
-                                     "f_int": "mean_freq"})
-                     for gxds in read_xds_list]
-
-    read_xds_list = [gxds.reset_coords(("t_int", "f_int"), drop=True)
-                     for gxds in read_xds_list]
-
-    concat_xds = xarray.concat(read_xds_list, "mean_time", join='override')
-    concat_xds = concat_xds.chunk({"mean_time": -1, "mean_freq": -1})
-
-    # concat_xds = concat_xds.assign({"gains":
-    #     (concat_xds.gains.dims,
-    #     da.where(da.absolute(concat_xds.gains.data) < 1e-6, np.nan, concat_xds.gains.data))})
-
-    concat_xds = concat_xds.assign({"amp":
-        (concat_xds.amp.dims,
-        da.where(concat_xds.amp.data < 1e-6, np.nan, concat_xds.amp.data))})
-
-    concat_xds = concat_xds.assign({"phase":
-        (concat_xds.phase.dims,
-        da.where(~da.isfinite(concat_xds.amp.data), np.nan, concat_xds.phase.data))})
-
-    # foo = da.where(da.absolute(concat_xds.gains.data) < 1.e-6,
-    #                np.nan+1j*np.nan, concat_xds.gains.data)
-
-    # concat_xds = concat_xds.assign({"gains": ((concat_xds.gains.dims), foo)})    
-
-    # concat_xds = concat_xds.interpolate_na("mean_time", method="linear")
-    # concat_xds = concat_xds.interpolate_na("mean_freq", method="linear")
-
-    # concat_xds = concat_xds.assign({"gains":
-    #     ((tmp1.dims), tmp1.data)})
-
-    # tmp2 = concat_xds.gains.interpolate_na("mean_freq", method="cubic")
-
-    # concat_xds = concat_xds.assign({"gains":
-    #     ((tmp2.dims), tmp2.data)})
-
-    concat_xds = concat_xds.ffill("mean_time")
-    concat_xds = concat_xds.bfill("mean_time")
-    concat_xds = concat_xds.ffill("mean_freq")
-    concat_xds = concat_xds.bfill("mean_freq")
-    concat_xds = concat_xds.fillna(0)
-
-    # import pdb; pdb.set_trace()
-
-    # concat_xds = concat_xds.compute()
-
-    def interpolate(old, new, data):
-
-        # data[:, :, 18, :, :] = 0
-        # data[:, :, 20, :, :] = 0
-
-        pchip = pchip_interpolate(old, data, new,)
-
-        return pchip
-
-    
-    def interpolate2(old, new, data):
-
-        # data[:, :, 18, :, :] = 0
-        # data[:, :, 20, :, :] = 0
-
-        pchip = pchip_interpolate(old, data, new, axis=1)
-
-        return pchip
-
-    foo = [da.blockwise(interpolate, "tfadc",
-                        concat_xds.mean_time.data, "t",
-                        gxds[0].mean_time.values, None,
-                        concat_xds.amp.data, "tfadc",
-                        dtype=np.float64,
-                        adjust_chunks={"t": gxds[0].dims["t_int"]}) for gxds in gain_xds_list]
-    
-    bar = [da.blockwise(interpolate2, "tfadc",
-                        concat_xds.mean_freq.data, "f",
-                        gxds[0].mean_freq.values, None,
-                        foo[i], "tfadc",
-                        dtype=np.float64,
-                        adjust_chunks={"f": gxds[0].dims["f_int"]}) for i, gxds in enumerate(gain_xds_list)]
-
-    foo2 = [da.blockwise(interpolate, "tfadc",
-                         concat_xds.mean_time.data, "t",
-                         gxds[0].mean_time.values, None,
-                         concat_xds.phase.data, "tfadc",
-                         dtype=np.float64,
-                         adjust_chunks={"t": gxds[0].dims["t_int"]}) for gxds in gain_xds_list]
-    
-    bar2 = [da.blockwise(interpolate2, "tfadc",
-                         concat_xds.mean_freq.data, "f",
-                         gxds[0].mean_freq.values, None,
-                         foo2[i], "tfadc",
-                         dtype=np.float64,
-                         adjust_chunks={"f": gxds[0].dims["f_int"]}) for i, gxds in enumerate(gain_xds_list)]
-
-
-
-
-    # import pdb; pdb.set_trace()
-
-    # Concatenated input
-    # ------------------
-    interpolated_xds = [concat_xds.interp(
-        mean_time=xds[0].mean_time.data,
-        method="linear",
-        kwargs={"fill_value": "extrapolate"})
-        for xds in gain_xds_list]
-
-    # import pdb; pdb.set_trace()
-    # import pdb; pdb.set_trace()
-
-    interpolated_xds = [xds.interp(
-        mean_freq=gain_xds_list[i][0].mean_freq.data,
-        method="linear",
-        kwargs={"fill_value": "extrapolate"})
-        for i, xds in enumerate(interpolated_xds)]
-
-    interpolated_xds = [xds.assign({"amp": (xds.amp.dims, bar[i])}) for i, xds 
-                        in enumerate(interpolated_xds)]
-    interpolated_xds = [xds.assign({"phase": (xds.amp.dims, bar2[i])}) for i, xds 
-                        in enumerate(interpolated_xds)]
-
-    interpolated_xds = [xds.chunk({
-        "mean_time": gain_xds_list[i][0].mean_time.data.chunks[0],
-        "mean_freq": gain_xds_list[i][0].mean_freq.data.chunks[0]})
-        for i, xds in enumerate(interpolated_xds)]
-
-    # Non-concatenated input
-    # ----------------------
-    # interpolated_xds = [xds.interp(
-    #     mean_time=gain_xds_list[i][0].mean_time.data,
-    #     method="cubic",
-    #     kwargs={"fill_value": "extrapolate"})
-    #     for i, xds in enumerate(read_xds_list)]
-
-    # interpolated_xds = [xds.interp(
-    #     mean_freq=gain_xds_list[i][0].mean_freq.data,
-    #     method="cubic",
-    #     kwargs={"fill_value": "extrapolate"})
-    #     for i, xds in enumerate(interpolated_xds)]
-
-    # interpolated_xds = [xds.chunk({
-    #     "mean_time": gain_xds_list[i][0].mean_time.data.chunks[0],
-    #     "mean_freq": gain_xds_list[i][0].mean_freq.data.chunks[0]})
-    #     for i, xds in enumerate(interpolated_xds)]
-
-    # REAL + IMAG
-    # -----------
-    # gain_xds_list = \
-    #     [[gxds[0].assign({"gains": (("t_int", "f_int", "ant", "dir", "corr"),
-    #                                 interpolated_xds[i].gains.data)})]
-    #      for i, gxds in enumerate(gain_xds_list)]
-
-    # AMP + PHASE
-    # -----------
-    gain_xds_list = \
-        [[gxds[0].assign({"gains": (("t_int", "f_int", "ant", "dir", "corr"),
-          interpolated_xds[i].amp.data*da.exp(1j*interpolated_xds[i].phase.data))})]
-         for i, gxds in enumerate(gain_xds_list)]
-
-    return gain_xds_list
 
 
 def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,

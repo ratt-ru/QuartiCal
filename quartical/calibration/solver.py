@@ -18,8 +18,11 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
     for term_ind, term_spec in enumerate(term_spec_list):
         gain = np.zeros(term_spec.shape, dtype=np.complex128)
-        if "initial_gain" in kwargs:
-            gain[:] = kwargs["initial_gain"]
+        term_name = term_spec.name
+
+        # Check for initialisation data.
+        if f"{term_name}_initial_gain" in kwargs:
+            gain[:] = kwargs[f"{term_name}_initial_gain"]
         else:
             gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
 
