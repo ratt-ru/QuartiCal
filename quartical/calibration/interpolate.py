@@ -9,15 +9,15 @@ from scipy.interpolate import pchip_interpolate
 
 
 def sort_key(x):
+    """Key for finding all gains"""
+    # TODO: This needs to be more flexible/simpler - it is currently assuming
+    # a bit too much  about the way the gain directory is structured.
     return float(re.findall("(\d+)", x)[-1])  # noqa
 
 
 def load_and_interpolate_gains(gain_xds_list, opts):
 
     terms = opts.solver_gain_terms
-
-    # TODO: Naughty but possibly the best solution - reify the coordinates.
-    gain_xds_list = da.compute(gain_xds_list)[0]
 
     interp_xds_lol = []
 
@@ -46,30 +46,21 @@ def load_and_interpolate_gains(gain_xds_list, opts):
                  "amp": (("t_int", "f_int", "ant", "dir", "corr"),
                          da.absolute(load_xds.gains.data))})
 
-            # Swap from integer index to true values. TODO: Will need to be
-            # more sophiticated for parameterised terms.
-            interp_xds = interp_xds.swap_dims({"t_int": "mean_time",
-                                               "f_int": "mean_freq"})
-
             # Drop the unecessary data vars. TODO: Parametrised case.
             drop_vars = ("gains", "conv_perc", "conv_iter")
             interp_xds = interp_xds.drop_vars(drop_vars)
 
-            # Drop the integer indexing cooridnates as they are not needed.
-            drop_coords = ("t_int", "f_int")
-            interp_xds = interp_xds.reset_coords(drop_coords, drop=True)
-
             interp_xds_list.append(interp_xds)
 
-        time_lbounds = [xds.mean_time.values[0] for xds in interp_xds_list]
-        time_ubounds = [xds.mean_time.values[-1] for xds in interp_xds_list]
+        time_lbounds = [xds.t_int.values[0] for xds in interp_xds_list]
+        time_ubounds = [xds.t_int.values[-1] for xds in interp_xds_list]
 
         concat_requirements = []
 
         for txds in term_xds_list:
 
-            glb = txds.mean_time.data[0]
-            gub = txds.mean_time.data[-1]
+            glb = txds.t_int.data[0]
+            gub = txds.t_int.data[-1]
 
             overlaps = ~((gub < time_lbounds) | (glb > time_ubounds))
 
@@ -87,11 +78,11 @@ def load_and_interpolate_gains(gain_xds_list, opts):
             concat_requirements.append(interp_xds_list[xds_slice])
 
         # Concatenate gains near the interpolation values.
-        concat_xds_list = [xarray.concat(reqs, "mean_time", join="exact")
+        concat_xds_list = [xarray.concat(reqs, "t_int", join="exact")
                            for reqs in concat_requirements]
 
         # Remove the chunking from the concatenated datasets.
-        concat_xds_list = [cxds.chunk({"mean_time": -1, "mean_freq": -1})
+        concat_xds_list = [cxds.chunk({"t_int": -1, "f_int": -1})
                            for cxds in concat_xds_list]
 
         interp_xds_list = []
@@ -114,22 +105,22 @@ def load_and_interpolate_gains(gain_xds_list, opts):
 
             # TODO: This is INSANELY slow. Omitting until I come up with
             # a better solution.
-            # interp_xds = interp_xds.interpolate_na("mean_freq",
+            # interp_xds = interp_xds.interpolate_na("f_int",
             #                                        method="pchip")
 
             # This is a fast alternative to the above but it is definitely less
             # correct. Forward/back propagates values over missing entries.
-            interp_xds = interp_xds.ffill("mean_time")
-            interp_xds = interp_xds.bfill("mean_time")
-            interp_xds = interp_xds.ffill("mean_freq")
-            interp_xds = interp_xds.bfill("mean_freq")
+            interp_xds = interp_xds.ffill("t_int")
+            interp_xds = interp_xds.bfill("t_int")
+            interp_xds = interp_xds.ffill("f_int")
+            interp_xds = interp_xds.bfill("f_int")
             # If an entry is STILL missing, there is no data from which to
             # interp/propagate. Set to zero.
             interp_xds = interp_xds.fillna(0)
 
             interp_xds = interp_xds.interp(
-                {"mean_time": txds.mean_time.data,
-                 "mean_freq": txds.mean_freq.data},
+                {"t_int": txds.t_int.data,
+                 "f_int": txds.f_int.data},
                 kwargs={"fill_value": "extrapolate"})
 
             gains = interp_xds.amp.data*da.exp(1j*interp_xds.phase.data)
@@ -142,8 +133,8 @@ def load_and_interpolate_gains(gain_xds_list, opts):
             t_chunks = txds.GAIN_SPEC.tchunk
             f_chunks = txds.GAIN_SPEC.fchunk
 
-            interp_xds = interp_xds.chunk({"mean_time": t_chunks,
-                                           "mean_freq": f_chunks})
+            interp_xds = interp_xds.chunk({"t_int": t_chunks,
+                                           "f_int": f_chunks})
 
             # TODO: This is only going to work for a single term.
             interp_xds_list.append(interp_xds)
@@ -156,31 +147,31 @@ def load_and_interpolate_gains(gain_xds_list, opts):
 def pchip_interpolate_gains(interp_xds, txds):
 
     iamp = da.blockwise(pchip_interpolate, "tfadc",
-                        interp_xds.mean_time.values, None,
+                        interp_xds.t_int.values, None,
                         interp_xds.amp.data, "tfadc",
-                        txds.mean_time.values, None,
+                        txds.t_int.values, None,
                         dtype=np.float64,
                         adjust_chunks={"t": txds.dims["t_int"]})
 
     iamp = da.blockwise(pchip_interpolate, "tfadc",
-                        interp_xds.mean_freq.values, None,
+                        interp_xds.f_int.values, None,
                         iamp, "tfadc",
-                        txds.mean_freq.values, None,
+                        txds.f_int.values, None,
                         axis=1,
                         dtype=np.float64,
                         adjust_chunks={"f": txds.dims["f_int"]})
 
     iphase = da.blockwise(pchip_interpolate, "tfadc",
-                          interp_xds.mean_time.values, None,
+                          interp_xds.t_int.values, None,
                           interp_xds.phase.data, "tfadc",
-                          txds.mean_time.values, None,
+                          txds.t_int.values, None,
                           dtype=np.float64,
                           adjust_chunks={"t": txds.dims["t_int"]})
 
     iphase = da.blockwise(pchip_interpolate, "tfadc",
-                          interp_xds.mean_freq.values, None,
+                          interp_xds.f_int.values, None,
                           iphase, "tfadc",
-                          txds.mean_freq.values, None,
+                          txds.f_int.values, None,
                           axis=1,
                           dtype=np.float64,
                           adjust_chunks={"f": txds.dims["f_int"]})

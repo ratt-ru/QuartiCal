@@ -5,10 +5,10 @@ from quartical.kernels.generics import (compute_residual,
 from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_post_solve_chisq,
                                              assign_presolve_data_stats,)
-from quartical.calibration.gain_types import term_types
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
 from quartical.calibration.interpolate import load_and_interpolate_gains
+from quartical.calibration.gain_datasets import make_gain_xds_list
 from loguru import logger  # noqa
 from collections import namedtuple
 
@@ -142,73 +142,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
     # Return the resulting graphs for the gains and updated xds.
     return solved_gain_xds_list, post_solve_data_xds_list
-
-
-def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
-                       opts):
-    """Returns a list of xarray.Dataset objects describing the gain terms.
-
-    For a given input xds containing data, creates an xarray.Dataset object
-    per term which describes the term's dimensions.
-
-    Args:
-        data_xds_list: A list of xarray.Dataset objects containing MS data.
-        t_map_list: List of dask.Array objects containing time mappings.
-        f_map_list: List of dask.Array objects containing frequency mappings.
-        opts: A Namespace object containing global options.
-
-    Returns:
-        gain_xds_list: A list of lists of xarray.Dataset objects describing the
-            gain terms assosciated with each data xarray.Dataset.
-    """
-
-    tipc_list = []
-    fipc_list = []
-
-    for xds_ind, data_xds in enumerate(data_xds_list):
-
-        t_map_arr = t_map_list[xds_ind]
-        f_map_arr = f_map_list[xds_ind]
-
-        tipc_per_term = da.map_blocks(lambda arr: arr[-1:, :] + 1,
-                                      t_map_arr,
-                                      chunks=((1,)*t_map_arr.numblocks[0],
-                                              t_map_arr.chunks[1]))
-
-        fipc_per_term = da.map_blocks(lambda arr: arr[-1:, :] + 1,
-                                      f_map_arr,
-                                      chunks=((1,)*f_map_arr.numblocks[0],
-                                              f_map_arr.chunks[1]))
-
-        tipc_list.append(tipc_per_term)
-        fipc_list.append(fipc_per_term)
-
-    # This is an early compute which is necessary to figure out the gain dims.
-    tipc_list, fipc_list = da.compute(tipc_list, fipc_list)
-
-    gain_xds_list = []
-
-    for xds_ind, data_xds in enumerate(data_xds_list):
-
-        term_xds_list = []
-
-        for term_ind, term_name in enumerate(opts.solver_gain_terms):
-
-            term_type = getattr(opts, "{}_type".format(term_name))
-
-            term_obj = term_types[term_type](term_name,
-                                             data_xds,
-                                             t_bin_list[xds_ind][:, term_ind],
-                                             f_map_list[xds_ind][:, term_ind],
-                                             tipc_list[xds_ind][:, term_ind],
-                                             fipc_list[xds_ind][:, term_ind],
-                                             opts)
-
-            term_xds_list.append(term_obj.make_xds())
-
-        gain_xds_list.append(term_xds_list)
-
-    return gain_xds_list
 
 
 def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,

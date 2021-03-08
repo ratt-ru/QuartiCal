@@ -25,72 +25,70 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                    d_map_arr, corr_mode, active_term, inverse_gains,
                    gains, flags, row_map, row_weights):
 
-    return term_conv_info(0, 1)
+    n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
-    # n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
+    invert_gains(gains, inverse_gains, literally(corr_mode))
 
-    # invert_gains(gains, inverse_gains, literally(corr_mode))
+    dd_term = n_dir > 1
 
-    # dd_term = n_dir > 1
+    last_gain = gains[active_term].copy()
 
-    # last_gain = gains[active_term].copy()
+    cnv_perc = 0.
 
-    # cnv_perc = 0.
+    jhj = np.empty_like(gains[active_term])
+    jhr = np.empty_like(gains[active_term])
+    update = np.empty_like(gains[active_term])
 
-    # jhj = np.empty_like(gains[active_term])
-    # jhr = np.empty_like(gains[active_term])
-    # update = np.empty_like(gains[active_term])
+    for i in range(20):
 
-    # for i in range(20):
+        if dd_term:
+            residual = compute_residual(data, model, gains, a1, a2,
+                                        t_map_arr, f_map_arr, d_map_arr,
+                                        row_map, row_weights,
+                                        literally(corr_mode))
+        else:
+            residual = data
 
-    #     if dd_term:
-    #         residual = compute_residual(data, model, gains, a1, a2,
-    #                                     t_map_arr, f_map_arr, d_map_arr,
-    #                                     row_map, row_weights,
-    #                                     literally(corr_mode))
-    #     else:
-    #         residual = data
+        compute_jhj_jhr(jhj,
+                        jhr,
+                        model,
+                        gains,
+                        inverse_gains,
+                        residual,
+                        a1,
+                        a2,
+                        weights,
+                        t_map_arr,
+                        f_map_arr,
+                        d_map_arr,
+                        row_map,
+                        row_weights,
+                        active_term,
+                        literally(corr_mode))
 
-    #     compute_jhj_jhr(jhj,
-    #                     jhr,
-    #                     model,
-    #                     gains,
-    #                     inverse_gains,
-    #                     residual,
-    #                     a1,
-    #                     a2,
-    #                     weights,
-    #                     t_map_arr,
-    #                     f_map_arr,
-    #                     d_map_arr,
-    #                     row_map,
-    #                     row_weights,
-    #                     active_term,
-    #                     literally(corr_mode))
+        compute_update(update,
+                       jhj,
+                       jhr,
+                       literally(corr_mode))
 
-    #     compute_update(update,
-    #                    jhj,
-    #                    jhr,
-    #                    literally(corr_mode))
+        finalize_update(update,
+                        gains[active_term],
+                        i,
+                        dd_term,
+                        literally(corr_mode))
 
-    #     finalize_update(update,
-    #                     gains[active_term],
-    #                     i,
-    #                     dd_term,
-    #                     literally(corr_mode))
+        # Check for gain convergence. TODO: This can be affected by the
+        # weights. Currently unsure how or why, but using unity weights
+        # leads to monotonic convergence in all solution intervals.
 
-    #     # Check for gain convergence. TODO: This can be affected by the
-    #     # weights. Currently unsure how or why, but using unity weights
-    #     # leads to monotonic convergence in all solution intervals.
+        cnv_perc = compute_convergence(gains[active_term][:], last_gain)
 
-    #     cnv_perc = compute_convergence(gains[active_term][:], last_gain)
+        last_gain[:] = gains[active_term][:]
 
-    #     last_gain[:] = gains[active_term][:]
+        if cnv_perc > 0.99:
+            break
 
-    #     if cnv_perc > 0.99:
-    #         break
-
-    # return term_conv_info(i, cnv_perc)
+    return term_conv_info(i, cnv_perc)
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
