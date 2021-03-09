@@ -16,6 +16,8 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
     Args:
         data_xds_list: A list of xarray.Dataset objects containing MS data.
         t_map_list: List of dask.Array objects containing time mappings.
+        t_bin_list: List of dask.Array objects containing time binnings.
+            Binnings map unique time to solutiion interval, rather than row.
         f_map_list: List of dask.Array objects containing frequency mappings.
         opts: A Namespace object containing global options.
 
@@ -45,13 +47,15 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
 
             term_type = getattr(opts, "{}_type".format(term_name))
 
-            coords = coords_per_xds[xds_ind]
+            term_coords = coords_per_xds[xds_ind]
+            term_t_chunks = tipc_list[xds_ind][:, term_ind]
+            term_f_chunks = fipc_list[xds_ind][:, term_ind]
 
             term_obj = term_types[term_type](term_name,
                                              data_xds,
-                                             coords,
-                                             tipc_list[xds_ind][:, term_ind],
-                                             fipc_list[xds_ind][:, term_ind],
+                                             term_coords,
+                                             term_t_chunks,
+                                             term_f_chunks,
                                              opts)
 
             term_xds_list.append(term_obj.make_xds())
@@ -62,6 +66,19 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
 
 
 def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
+    '''Compute the per-term chunking of the gains.
+
+    Given a list of data xarray.Datasets as well as information about the
+    time and frequency mappings, computes the chunk sizes of the gain terms.
+
+    Args:
+        data_xds_list: A list of data-containing xarray.Dataset objects.
+        t_map_list: A list of arrays describing how times map to solint.
+        f_map_list: A list of arrays describing how freqs map to solint.
+
+    Returns:
+        A tuple of lists containing arrays which descibe the chunking.
+    '''
 
     tipc_list = []
     fipc_list = []
@@ -90,6 +107,24 @@ def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
 
 def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
                            fipc_list, opts):
+    '''Compute the cooridnates for the gain datasets.
+
+    Given a list of data xarray.Datasets as well as information about the
+    binning along the time and frequency axes, computes the true coordinate
+    values for the gain xarray.Datasets.
+
+    Args:
+        data_xds_list: A list of data-containing xarray.Dataset objects.
+        t_bin_list: A list of arrays describing how times map to solint.
+        f_map_list: A list of arrays describing how freqs map to solint.
+        tipc_list: A list of arrays contatining the number of time intervals
+            per chunk.
+        fipc_list: A list of arrays contatining the number of freq intervals
+            per chunk.
+
+    Returns:
+        A list of dictionaries containing the computed coordinate values.
+    '''
 
     coords_per_xds = []
 
