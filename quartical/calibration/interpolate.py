@@ -5,7 +5,7 @@ import numpy as np
 import xarray
 import glob
 import re
-from scipy.interpolate import pchip_interpolate
+from scipy.interpolate import pchip_interpolate, SmoothBivariateSpline
 
 
 def sort_key(x):
@@ -171,13 +171,14 @@ def make_interp_xds_list(term_xds_list, concat_xds_list):
 
         interp_xds = interp_xds.interp(
             {"t_int": txds.t_int.data,
-                "f_int": txds.f_int.data},
+             "f_int": txds.f_int.data},
             kwargs={"fill_value": "extrapolate"})
 
         gains = interp_xds.amp.data*da.exp(1j*interp_xds.phase.data)
 
-        # TODO: This is an alternative to the 2D interpolation above.
+        # TODO: These are alternatives to the 2D interpolation above.
         # gains = pchip_interpolate_gains(interp_xds, txds)
+        # gains = sspline_interpolate_gains(interp_xds, txds)
 
         interp_xds = txds.assign({"gains": (interp_xds.amp.dims, gains)})
 
@@ -223,6 +224,54 @@ def pchip_interpolate_gains(interp_xds, txds):
                           axis=1,
                           dtype=np.float64,
                           adjust_chunks={"f": txds.dims["f_int"]})
+
+    gains = iamp*da.exp(1j*iphase)
+
+    return gains
+
+
+def inner(x, y, z, xx, yy):
+
+    n_t, n_f, n_a, n_d, n_c = z.shape
+    n_ti, n_fi = xx.size, yy.size
+
+    zz = np.empty((n_ti, n_fi, n_a, n_d, n_c), dtype=z.dtype)
+
+    x, y = np.meshgrid(x, y, indexing='ij')
+    x, y = x.ravel(), y.ravel()
+
+    xx, yy = np.meshgrid(xx, yy, indexing='ij')
+    xx, yy = xx.ravel(), yy.ravel()
+
+    for a in range(n_a):
+        for c in range(n_c):
+            spl = SmoothBivariateSpline(x, y, z[:, :, a, :, c].ravel())
+            zz[:, :, a, :, c] = spl.ev(xx, yy).reshape(n_ti, n_fi, 1)
+
+    return zz
+
+
+def sspline_interpolate_gains(interp_xds, txds):
+
+    iamp = da.blockwise(inner, "tfadc",
+                        interp_xds.t_int.values, None,
+                        interp_xds.f_int.values, None,
+                        interp_xds.amp.data, "tfadc",
+                        txds.t_int.values, None,
+                        txds.f_int.values, None,
+                        dtype=np.float64,
+                        adjust_chunks={"t": txds.dims["t_int"],
+                                       "f": txds.dims["f_int"]})
+
+    iphase = da.blockwise(inner, "tfadc",
+                          interp_xds.t_int.values, None,
+                          interp_xds.f_int.values, None,
+                          interp_xds.phase.data, "tfadc",
+                          txds.t_int.values, None,
+                          txds.f_int.values, None,
+                          dtype=np.float64,
+                          adjust_chunks={"t": txds.dims["t_int"],
+                                         "f": txds.dims["f_int"]})
 
     gains = iamp*da.exp(1j*iphase)
 
