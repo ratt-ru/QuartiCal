@@ -63,12 +63,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
         per gain term per xarray dataset.
     """
 
-    # Calibrate per xds. This list will likely consist of an xds per SPW, per
-    # scan. This behaviour can be changed.
-
-    # data_stats_xds_list = []
-    # post_cal_data_xds_list = []
-
     # Figure out all mappings between data and solution intervals.
     t_bin_list, t_map_list = make_t_maps(data_xds_list, opts)
     f_map_list = make_f_maps(data_xds_list, opts)
