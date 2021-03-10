@@ -5,7 +5,8 @@ import numpy as np
 import xarray
 import glob
 import re
-from scipy.interpolate import pchip_interpolate, SmoothBivariateSpline
+from scipy.interpolate import interp2d
+from csaps import csaps
 
 
 def sort_key(x):
@@ -35,6 +36,8 @@ def load_and_interpolate_gains(gain_xds_list, opts):
     for term_ind, term in enumerate(opts.solver_gain_terms):
 
         gain_path = getattr(opts, f"{term}_load_from", None)
+        interp_mode = getattr(opts, f"{term}_interp_mode", None)
+        interp_method = getattr(opts, f"{term}_interp_method", None)
 
         # Pull out all the datasets for the current term into a flat list.
         term_xds_list = [tlist[term_ind] for tlist in gain_xds_list]
@@ -51,14 +54,16 @@ def load_and_interpolate_gains(gain_xds_list, opts):
         load_xds_list = [xarray.open_zarr(pth) for pth in load_order]
 
         # Convert to amp and phase. Drop unused data_vars.
-        ampphase_xds_list = convert_and_drop(load_xds_list)
+        converted_xds_list = convert_and_drop(load_xds_list, interp_mode)
 
         # Figure out which datasets need to be concatenated.
         concat_xds_list = make_concat_xds_list(term_xds_list,
-                                               ampphase_xds_list)
+                                               converted_xds_list)
 
         interp_xds_list = make_interp_xds_list(term_xds_list,
-                                               concat_xds_list)
+                                               concat_xds_list,
+                                               interp_mode,
+                                               interp_method)
 
         interp_xds_lol.append(interp_xds_list)
 
@@ -67,26 +72,33 @@ def load_and_interpolate_gains(gain_xds_list, opts):
     return [list(xds_list) for xds_list in zip(*interp_xds_lol)]
 
 
-def convert_and_drop(load_xds_list):
+def convert_and_drop(load_xds_list, interp_mode):
     """Convert complex gain into amplitude and phase. Drop unused data_vars."""
 
-    ampphase_xds_list = []
+    converted_xds_list = []
 
     for load_xds in load_xds_list:
-        # Convert the complex gain into amplitide and phase.
-        ampphase_xds = load_xds.assign(
-            {"phase": (("t_int", "f_int", "ant", "dir", "corr"),
-                       da.angle(load_xds.gains.data)),
-             "amp": (("t_int", "f_int", "ant", "dir", "corr"),
-                     da.absolute(load_xds.gains.data))})
+
+        dims = load_xds.gains.dims
+
+        if interp_mode == "ampphase":
+            # Convert the complex gain into amplitide and phase.
+            converted_xds = load_xds.assign(
+                {"phase": (dims, da.angle(load_xds.gains.data)),
+                 "amp": (dims, da.absolute(load_xds.gains.data))})
+        elif interp_mode == "reim":
+            # Convert the complex gain into amplitide and phase.
+            converted_xds = load_xds.assign(
+                {"re": (dims, load_xds.gains.data.real),
+                 "im": (dims, load_xds.gains.data.imag)})
 
         # Drop the unecessary data vars. TODO: Parametrised case.
         drop_vars = ("gains", "conv_perc", "conv_iter")
-        interp_xds = ampphase_xds.drop_vars(drop_vars)
+        converted_xds = converted_xds.drop_vars(drop_vars)
 
-        ampphase_xds_list.append(interp_xds)
+        converted_xds_list.append(converted_xds)
 
-    return ampphase_xds_list
+    return converted_xds_list
 
 
 def make_concat_xds_list(term_xds_list, interp_xds_list):
@@ -133,7 +145,8 @@ def make_concat_xds_list(term_xds_list, interp_xds_list):
     return concat_xds_list
 
 
-def make_interp_xds_list(term_xds_list, concat_xds_list):
+def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
+                         interp_method):
     """Given the concatenated datasets, interp to the desired datasets."""
 
     interp_xds_list = []
@@ -143,16 +156,28 @@ def make_interp_xds_list(term_xds_list, concat_xds_list):
     # an interim solution.
     for txds, cxds in zip(term_xds_list, concat_xds_list):
 
-        amp_sel = da.where(cxds.amp.data < 1e-6,
-                           np.nan,
-                           cxds.amp.data)
+        if interp_mode == "ampphase":
+            amp_sel = da.where(cxds.amp.data < 1e-6,
+                               np.nan,
+                               cxds.amp.data)
 
-        phase_sel = da.where(cxds.amp.data < 1e-6,
-                             np.nan,
-                             cxds.phase.data)
+            phase_sel = da.where(cxds.amp.data < 1e-6,
+                                 np.nan,
+                                 cxds.phase.data)
 
-        interp_xds = cxds.assign({"amp": (cxds.amp.dims, amp_sel),
-                                  "phase": (cxds.phase.dims, phase_sel)})
+            interp_xds = cxds.assign({"amp": (cxds.amp.dims, amp_sel),
+                                      "phase": (cxds.phase.dims, phase_sel)})
+        elif interp_mode == "reim":
+            re_sel = da.where((cxds.re.data < 1e-6) & (cxds.im.data < 1e-6),
+                              np.nan,
+                              cxds.re.data)
+
+            im_sel = da.where((cxds.re.data < 1e-6) & (cxds.im.data < 1e-6),
+                              np.nan,
+                              cxds.im.data)
+
+            interp_xds = cxds.assign({"re": (cxds.re.dims, re_sel),
+                                      "im": (cxds.im.dims, im_sel)})
 
         # TODO: This is INSANELY slow. Omitting until I come up with
         # a better solution.
@@ -169,18 +194,28 @@ def make_interp_xds_list(term_xds_list, concat_xds_list):
         # interp/propagate. Set to zero.
         interp_xds = interp_xds.fillna(0)
 
-        interp_xds = interp_xds.interp(
-            {"t_int": txds.t_int.data,
-             "f_int": txds.f_int.data},
-            kwargs={"fill_value": "extrapolate"})
+        # Interpolate with various methods.
+        if interp_method == "2dlinear":
+            interp_xds = interp_xds.interp(
+                {"t_int": txds.t_int.data,
+                 "f_int": txds.f_int.data},
+                kwargs={"fill_value": "extrapolate"})
+        elif interp_method == "2dspline":
+            interp_xds = spline2d_interpolate_gains(interp_xds,
+                                                    txds,
+                                                    interp_mode)
+        elif interp_method == "smoothingspline":
+            interp_xds = csaps2d_interpolate_gains(interp_xds,
+                                                   txds,
+                                                   interp_mode)
 
-        gains = interp_xds.amp.data*da.exp(1j*interp_xds.phase.data)
-
-        # TODO: These are alternatives to the 2D interpolation above.
-        # gains = pchip_interpolate_gains(interp_xds, txds)
-        # gains = sspline_interpolate_gains(interp_xds, txds)
-
-        interp_xds = txds.assign({"gains": (interp_xds.amp.dims, gains)})
+        # Convert the interpolated quantities back in gains.
+        if interp_mode == "ampphase":
+            gains = interp_xds.amp.data*da.exp(1j*interp_xds.phase.data)
+            interp_xds = txds.assign({"gains": (interp_xds.amp.dims, gains)})
+        elif interp_mode == "reim":
+            gains = interp_xds.re.data + 1j*interp_xds.im.data
+            interp_xds = txds.assign({"gains": (interp_xds.re.dims, gains)})
 
         t_chunks = txds.GAIN_SPEC.tchunk
         f_chunks = txds.GAIN_SPEC.fchunk
@@ -193,86 +228,92 @@ def make_interp_xds_list(term_xds_list, concat_xds_list):
     return interp_xds_list
 
 
-def pchip_interpolate_gains(interp_xds, txds):
-
-    iamp = da.blockwise(pchip_interpolate, "tfadc",
-                        interp_xds.t_int.values, None,
-                        interp_xds.amp.data, "tfadc",
-                        txds.t_int.values, None,
-                        dtype=np.float64,
-                        adjust_chunks={"t": txds.dims["t_int"]})
-
-    iamp = da.blockwise(pchip_interpolate, "tfadc",
-                        interp_xds.f_int.values, None,
-                        iamp, "tfadc",
-                        txds.f_int.values, None,
-                        axis=1,
-                        dtype=np.float64,
-                        adjust_chunks={"f": txds.dims["f_int"]})
-
-    iphase = da.blockwise(pchip_interpolate, "tfadc",
-                          interp_xds.t_int.values, None,
-                          interp_xds.phase.data, "tfadc",
-                          txds.t_int.values, None,
-                          dtype=np.float64,
-                          adjust_chunks={"t": txds.dims["t_int"]})
-
-    iphase = da.blockwise(pchip_interpolate, "tfadc",
-                          interp_xds.f_int.values, None,
-                          iphase, "tfadc",
-                          txds.f_int.values, None,
-                          axis=1,
-                          dtype=np.float64,
-                          adjust_chunks={"f": txds.dims["f_int"]})
-
-    gains = iamp*da.exp(1j*iphase)
-
-    return gains
-
-
-def inner(x, y, z, xx, yy):
+def spline2d(x, y, z, xx, yy):
 
     n_t, n_f, n_a, n_d, n_c = z.shape
     n_ti, n_fi = xx.size, yy.size
 
-    zz = np.empty((n_ti, n_fi, n_a, n_d, n_c), dtype=z.dtype)
+    zz = np.zeros((n_ti, n_fi, n_a, n_d, n_c), dtype=z.dtype)
 
-    x, y = np.meshgrid(x, y, indexing='ij')
-    x, y = x.ravel(), y.ravel()
-
-    xx, yy = np.meshgrid(xx, yy, indexing='ij')
-    xx, yy = xx.ravel(), yy.ravel()
-
+    # NOTE: x are the column coordinates and y and row coordinates.
     for a in range(n_a):
-        for c in range(n_c):
-            spl = SmoothBivariateSpline(x, y, z[:, :, a, :, c].ravel())
-            zz[:, :, a, :, c] = spl.ev(xx, yy).reshape(n_ti, n_fi, 1)
+        for d in range(n_d):
+            for c in range(n_c):
+                z_sel = z[:, :, a, d, c]
+                if not np.any(z_sel):
+                    continue
+                interp_func = interp2d(y, x, z_sel, kind="cubic")
+                zz[:, :, a, d, c] = interp_func(yy, xx).reshape(n_ti, n_fi)
 
     return zz
 
 
-def sspline_interpolate_gains(interp_xds, txds):
+def spline2d_interpolate_gains(interp_xds, txds, interp_mode):
 
-    iamp = da.blockwise(inner, "tfadc",
-                        interp_xds.t_int.values, None,
-                        interp_xds.f_int.values, None,
-                        interp_xds.amp.data, "tfadc",
-                        txds.t_int.values, None,
-                        txds.f_int.values, None,
-                        dtype=np.float64,
-                        adjust_chunks={"t": txds.dims["t_int"],
-                                       "f": txds.dims["f_int"]})
+    if interp_mode == "ampphase":
+        data_fields = ["amp", "phase"]
+    elif interp_mode == "reim":
+        data_fields = ["re", "im"]
 
-    iphase = da.blockwise(inner, "tfadc",
-                          interp_xds.t_int.values, None,
-                          interp_xds.f_int.values, None,
-                          interp_xds.phase.data, "tfadc",
-                          txds.t_int.values, None,
-                          txds.f_int.values, None,
-                          dtype=np.float64,
-                          adjust_chunks={"t": txds.dims["t_int"],
-                                         "f": txds.dims["f_int"]})
+    output_xds = txds
 
-    gains = iamp*da.exp(1j*iphase)
+    for data_field in data_fields:
+        interp = da.blockwise(spline2d, "tfadc",
+                              interp_xds.t_int.values, None,
+                              interp_xds.f_int.values, None,
+                              interp_xds[data_field].data, "tfadc",
+                              txds.t_int.values, None,
+                              txds.f_int.values, None,
+                              dtype=np.float64,
+                              adjust_chunks={"t": txds.dims["t_int"],
+                                             "f": txds.dims["f_int"]})
 
-    return gains
+        output_xds = output_xds.assign(
+            {data_field: (interp_xds[data_field].dims, interp)})
+
+    return output_xds
+
+
+def csaps2d(x, y, z, xx, yy):
+
+    n_t, n_f, n_a, n_d, n_c = z.shape
+    n_ti, n_fi = xx.size, yy.size
+
+    zz = np.zeros((n_ti, n_fi, n_a, n_d, n_c), dtype=z.dtype)
+
+    for a in range(n_a):
+        for d in range(n_d):
+            for c in range(n_c):
+                z_sel = z[:, :, a, d, c]
+                if not np.any(z_sel):
+                    continue
+                interp_vals = csaps([x, y], z_sel, [xx, yy]).values
+                zz[:, :, a, d, c] = interp_vals.reshape(n_ti, n_fi)
+
+    return zz
+
+
+def csaps2d_interpolate_gains(interp_xds, txds, interp_mode):
+
+    if interp_mode == "ampphase":
+        data_fields = ["amp", "phase"]
+    elif interp_mode == "reim":
+        data_fields = ["re", "im"]
+
+    output_xds = txds
+
+    for data_field in data_fields:
+        interp = da.blockwise(csaps2d, "tfadc",
+                              interp_xds.t_int.values, None,
+                              interp_xds.f_int.values, None,
+                              interp_xds[data_field].data, "tfadc",
+                              txds.t_int.values, None,
+                              txds.f_int.values, None,
+                              dtype=np.float64,
+                              adjust_chunks={"t": txds.dims["t_int"],
+                                             "f": txds.dims["f_int"]})
+
+        output_xds = output_xds.assign(
+            {data_field: (interp_xds[data_field].dims, interp)})
+
+    return output_xds

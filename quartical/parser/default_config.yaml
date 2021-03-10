@@ -453,6 +453,22 @@ parallel:
         type: str
         help: Load solutions from given database. 
         default: None
+    interp-mode:
+        type: str
+        help: Set interpolation mode.
+        choices:
+            - ampphase
+            - reim
+        default: reim
+    interp-method:
+        type: str
+        help: Set interpolation method. The smoothing spline implementation is
+              is experimental and slow.
+        choices:
+            - 2dlinear
+            - 2dspline
+            - smoothingspline
+        default: 2dlinear
     # xfer-from:
     #     type: str
     #     help: Transfer solutions from given database. Similar to -load-from,
