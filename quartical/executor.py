@@ -12,11 +12,11 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
+from quartical.calibration.gain_datasets import write_gain_datasets
 import time
 from dask.diagnostics import ProgressBar
 import dask
 from dask.distributed import Client, LocalCluster
-import zarr
 
 
 @logger.catch
@@ -66,7 +66,7 @@ def _execute(exitstack):
     data_xds_list = add_model_graph(data_xds_list, opts)
 
     # Adds the dask graph describing the calibration of the data.
-    gains_per_xds, data_xds_list = \
+    gain_xds_lol, data_xds_list = \
         add_calibration_graph(data_xds_list, col_kwrds, opts)
 
     if opts.flags_mad_enable:
@@ -76,29 +76,14 @@ def _execute(exitstack):
 
     writes = write_xds_list(writable_xds, ref_xds_list, col_kwrds, opts)
 
-    # This shouldn't be here. TODO: Move to separate function. In fact, this
-    # entire write construction needs some tidying.
-    store = zarr.DirectoryStore("qcal_gains")
-
-    gain_writes = []
-
-    for xds_ind, gain_terms in enumerate(gains_per_xds):
-        term_writes = []
-        for term_ind, term in enumerate(gain_terms):
-            term_write = term.chunk({"t_int": -1}).to_zarr(
-                store,
-                mode="w",
-                group=f"{term.NAME}{xds_ind}",
-                compute=False)
-            term_writes.append(term_write)
-        gain_writes.append(term_writes)
+    gain_writes = write_gain_datasets(gain_xds_lol, opts)
 
     writes = [writes] if not isinstance(writes, list) else writes
 
     stride = len(writes)//len(gain_writes)
 
     # Match up column and gain writes - avoids recompute, and necessary for
-    # handling BDA data.
+    # handling BDA data. TODO: This is like unnecessary, but need to verify.
     outputs = []
     for ind in range(len(gain_writes)):
 
