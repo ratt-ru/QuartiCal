@@ -3,17 +3,9 @@ from loguru import logger  # noqa
 import dask.array as da
 import numpy as np
 import xarray
-import glob
-import re
+import pathlib
 from scipy.interpolate import interp2d
 from csaps import csaps
-
-
-def sort_key(x):
-    """Key for finding all gains"""
-    # TODO: This needs to be more flexible/simpler - it is currently assuming
-    # a bit too much about the way the gain directory is structured.
-    return float(re.findall("(\d+)", x)[-1])  # noqa
 
 
 def load_and_interpolate_gains(gain_xds_list, opts):
@@ -46,19 +38,24 @@ def load_and_interpolate_gains(gain_xds_list, opts):
         if gain_path is None:
             interp_xds_lol.append(term_xds_list)
             continue
+        else:
+            gain_path = pathlib.Path(gain_path)
 
         # TODO: We are assuming that the datasets are monotonically increasing
         # in time with file name. The multi-SPW case may not work.
-        load_order = sorted(glob.glob(gain_path), key=sort_key)
 
-        load_xds_list = [xarray.open_zarr(pth) for pth in load_order]
+        load_paths = gain_path.glob(f"{gain_path.stem}*")
 
-        # Convert to amp and phase. Drop unused data_vars.
+        load_xds_list = [xarray.open_zarr(pth) for pth in load_paths]
+
+        # Convert to amp and phase/real and imag. Drop unused data_vars.
         converted_xds_list = convert_and_drop(load_xds_list, interp_mode)
+
+        sorted_xds_lol = sort_datasets(converted_xds_list)
 
         # Figure out which datasets need to be concatenated.
         concat_xds_list = make_concat_xds_list(term_xds_list,
-                                               converted_xds_list)
+                                               sorted_xds_lol)
 
         interp_xds_list = make_interp_xds_list(term_xds_list,
                                                concat_xds_list,
@@ -101,44 +98,92 @@ def convert_and_drop(load_xds_list, interp_mode):
     return converted_xds_list
 
 
-def make_concat_xds_list(term_xds_list, interp_xds_list):
+def sort_datasets(load_xds_list):
+    """Sort the loaded datasets by time and frequency."""
+
+    # We want to sort according the gain axes. TODO: Parameterised case?
+    t_axis, f_axis = load_xds_list[0].GAIN_AXES[:2]
+
+    time_lb = [xds[t_axis].values[0] for xds in load_xds_list]
+    freq_lb = [xds[f_axis].values[0] for xds in load_xds_list]
+
+    n_utime_lb = len(set(time_lb))  # Number of unique lower time bounds.
+    n_ufreq_lb = len(set(freq_lb))  # Number of unique lower freq bounds.
+
+    # Sort by the lower bounds of the time and freq axes.
+    sort_ind = np.lexsort([freq_lb, time_lb])
+
+    # Reshape the indices so we can split the time and frequency axes.
+    try:
+        sort_ind = sort_ind.reshape((n_utime_lb, n_ufreq_lb))
+    except ValueError as e:
+        raise ValueError(f"Gains on disk do not lie on a grid - "
+                         f"interpolation not possible. Python error: {e}.")
+
+    sorted_xds_lol = [[load_xds_list[sort_ind[i, j]]
+                      for j in range(n_ufreq_lb)]
+                      for i in range(n_utime_lb)]
+
+    return sorted_xds_lol
+
+
+def overlap_slice(lb, ub, lbounds, ubounds):
+    """Create a slice corresponding to the neighbourhood of domain (lb, ub)."""
+
+    overlaps = ~((ub < lbounds) | (lb > ubounds))
+
+    sel = np.where(overlaps)[0]
+    slice_lb = sel[0]
+    slice_ub = sel[-1] + 1  # Python indexing is not inclusive.
+
+    # Dilate. If the lower bound is zero, leave as is, else, include lb - 1.
+    slice_lb = slice_lb - 1 if slice_lb else slice_lb
+    # Upper slice may fall off the end - this is safe.
+    slice_ub = slice_ub + 1
+
+    return slice(slice_lb, slice_ub)
+
+
+def make_concat_xds_list(term_xds_list, sorted_xds_lol):
     """Map datasets on disk to the dataset required for calibration."""
 
-    # TODO: This is not yet adequate for the multi-SPW case. That will require
-    # concatenation over two dimensions and this mapping will be more
-    # complicated. Behaviour of solution ternsfer needs to be verified.
+    # We want to sort according the gain axes. TODO: Parameterised case?
+    t_axis, f_axis = sorted_xds_lol[0][0].GAIN_AXES[:2]
 
     # Figure out the upper and lower time bounds of each dataset.
-    time_lbounds = [xds.t_int.values[0] for xds in interp_xds_list]
-    time_ubounds = [xds.t_int.values[-1] for xds in interp_xds_list]
+    time_lbounds = [sl[0][t_axis].values[0] for sl in sorted_xds_lol]
+    time_ubounds = [sl[0][t_axis].values[-1] for sl in sorted_xds_lol]
+
+    # Figure out the upper and lower freq bounds of each dataset.
+    freq_lbounds = [xds[f_axis].values[0] for xds in sorted_xds_lol[0]]
+    freq_ubounds = [xds[f_axis].values[-1] for xds in sorted_xds_lol[0]]
 
     concat_xds_list = []
 
-    for txds in term_xds_list:
+    for term_xds in term_xds_list:
 
-        glb = txds.t_int.data[0]
-        gub = txds.t_int.data[-1]
+        tlb = term_xds[t_axis].data[0]
+        tub = term_xds[t_axis].data[-1]
+        flb = term_xds[f_axis].data[0]
+        fub = term_xds[f_axis].data[-1]
 
-        overlaps = ~((gub < time_lbounds) | (glb > time_ubounds))
+        concat_tslice = overlap_slice(tlb, tub, time_lbounds, time_ubounds)
+        concat_fslice = overlap_slice(flb, fub, freq_lbounds, freq_ubounds)
 
-        sel = np.where(overlaps)[0]
-        slice_lb = sel[0]
-        slice_ub = sel[-1] + 1  # Python indexing is not inclusive.
+        fconcat_xds_list = []
 
-        # If the lower bound is zero, leave as is, else, include lb - 1.
-        slice_lb = slice_lb - 1 if slice_lb else slice_lb
-        # Upper slice may fall off the end - this is safe.
-        slice_ub = slice_ub + 1
-
-        concat_slice = slice(slice_lb, slice_ub)
+        for xds_list in sorted_xds_lol[concat_tslice]:
+            fconcat_xds_list.append(xarray.concat(xds_list[concat_fslice],
+                                                  f_axis,
+                                                  join="exact"))
 
         # Concatenate gains near the interpolation values.
-        concat_xds = xarray.concat(interp_xds_list[concat_slice],
-                                   "t_int",
+        concat_xds = xarray.concat(fconcat_xds_list,
+                                   t_axis,
                                    join="exact")
 
         # Remove the chunking from the concatenated datasets.
-        concat_xds = concat_xds.chunk({"t_int": -1, "f_int": -1})
+        concat_xds = concat_xds.chunk({t_axis: -1, f_axis: -1})
 
         concat_xds_list.append(concat_xds)
 
