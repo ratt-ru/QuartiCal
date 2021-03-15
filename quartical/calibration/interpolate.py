@@ -41,9 +41,6 @@ def load_and_interpolate_gains(gain_xds_list, opts):
         else:
             gain_path = pathlib.Path(gain_path)
 
-        # TODO: We are assuming that the datasets are monotonically increasing
-        # in time with file name. The multi-SPW case may not work.
-
         load_paths = gain_path.glob(f"{gain_path.stem}*")
 
         load_xds_list = [xarray.open_zarr(pth) for pth in load_paths]
@@ -51,9 +48,12 @@ def load_and_interpolate_gains(gain_xds_list, opts):
         # Convert to amp and phase/real and imag. Drop unused data_vars.
         converted_xds_list = convert_and_drop(load_xds_list, interp_mode)
 
+        # Sort the datasets on disk into a list of lists, ordered by time
+        # and frequency.
         sorted_xds_lol = sort_datasets(converted_xds_list)
 
-        # Figure out which datasets need to be concatenated.
+        # Figure out which datasets need to be concatenated. TODO: This may
+        # slightly overconcatenate.
         concat_xds_list = make_concat_xds_list(term_xds_list,
                                                sorted_xds_lol)
 
@@ -89,7 +89,7 @@ def convert_and_drop(load_xds_list, interp_mode):
                 {"re": (dims, load_xds.gains.data.real),
                  "im": (dims, load_xds.gains.data.imag)})
 
-        # Drop the unecessary data vars. TODO: Parametrised case.
+        # Drop the unecessary data vars. TODO: Parametrised case?
         drop_vars = ("gains", "conv_perc", "conv_iter")
         converted_xds = converted_xds.drop_vars(drop_vars)
 
@@ -235,10 +235,11 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
 
         # This is a fast alternative to the above but it is definitely less
         # correct. Forward/back propagates values over missing entries.
-        interp_xds = interp_xds.ffill("t_int")
-        interp_xds = interp_xds.bfill("t_int")
-        interp_xds = interp_xds.ffill("f_int")
-        interp_xds = interp_xds.bfill("f_int")
+        t_axis, f_axis = term_xds.GAIN_AXES[:2]
+        interp_xds = interp_xds.ffill(t_axis)
+        interp_xds = interp_xds.bfill(t_axis)
+        interp_xds = interp_xds.ffill(f_axis)
+        interp_xds = interp_xds.bfill(f_axis)
         # If an entry is STILL missing, there is no data from which to
         # interp/propagate. Set to zero.
         interp_xds = interp_xds.fillna(0)
@@ -246,8 +247,8 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
         # Interpolate with various methods.
         if interp_method == "2dlinear":
             interp_xds = interp_xds.interp(
-                {"t_int": term_xds.t_int.data,
-                 "f_int": term_xds.f_int.data},
+                {t_axis: term_xds[t_axis].data,
+                 f_axis: term_xds[f_axis].data},
                 kwargs={"fill_value": "extrapolate"})
         elif interp_method == "2dspline":
             interp_xds = spline2d_interpolate_gains(interp_xds,
@@ -271,8 +272,7 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
         t_chunks = term_xds.GAIN_SPEC.tchunk
         f_chunks = term_xds.GAIN_SPEC.fchunk
 
-        interp_xds = interp_xds.chunk({"t_int": t_chunks,
-                                       "f_int": f_chunks})
+        interp_xds = interp_xds.chunk({t_axis: t_chunks, f_axis: f_chunks})
 
         interp_xds_list.append(interp_xds)
 
@@ -299,25 +299,26 @@ def spline2d(x, y, z, xx, yy):
     return zz
 
 
-def spline2d_interpolate_gains(interp_xds, txds, interp_mode):
+def spline2d_interpolate_gains(interp_xds, term_xds, interp_mode):
 
     if interp_mode == "ampphase":
         data_fields = ["amp", "phase"]
     elif interp_mode == "reim":
         data_fields = ["re", "im"]
 
-    output_xds = txds
+    output_xds = term_xds
+    t_axis, f_axis = output_xds.GAIN_AXES[:2]
 
     for data_field in data_fields:
         interp = da.blockwise(spline2d, "tfadc",
-                              interp_xds.t_int.values, None,
-                              interp_xds.f_int.values, None,
+                              interp_xds[t_axis].values, None,
+                              interp_xds[f_axis].values, None,
                               interp_xds[data_field].data, "tfadc",
-                              txds.t_int.values, None,
-                              txds.f_int.values, None,
+                              term_xds[t_axis].values, None,
+                              term_xds[f_axis].values, None,
                               dtype=np.float64,
-                              adjust_chunks={"t": txds.dims["t_int"],
-                                             "f": txds.dims["f_int"]})
+                              adjust_chunks={"t": term_xds.dims[t_axis],
+                                             "f": term_xds.dims[f_axis]})
 
         output_xds = output_xds.assign(
             {data_field: (interp_xds[data_field].dims, interp)})
@@ -344,25 +345,26 @@ def csaps2d(x, y, z, xx, yy):
     return zz
 
 
-def csaps2d_interpolate_gains(interp_xds, txds, interp_mode):
+def csaps2d_interpolate_gains(interp_xds, term_xds, interp_mode):
 
     if interp_mode == "ampphase":
         data_fields = ["amp", "phase"]
     elif interp_mode == "reim":
         data_fields = ["re", "im"]
 
-    output_xds = txds
+    output_xds = term_xds
+    t_axis, f_axis = output_xds.GAIN_AXES[:2]
 
     for data_field in data_fields:
         interp = da.blockwise(csaps2d, "tfadc",
-                              interp_xds.t_int.values, None,
-                              interp_xds.f_int.values, None,
+                              interp_xds[t_axis].values, None,
+                              interp_xds[f_axis].values, None,
                               interp_xds[data_field].data, "tfadc",
-                              txds.t_int.values, None,
-                              txds.f_int.values, None,
+                              term_xds[t_axis].values, None,
+                              term_xds[f_axis].values, None,
                               dtype=np.float64,
-                              adjust_chunks={"t": txds.dims["t_int"],
-                                             "f": txds.dims["f_int"]})
+                              adjust_chunks={"t": term_xds.dims[t_axis],
+                                             "f": term_xds.dims[f_axis]})
 
         output_xds = output_xds.assign(
             {data_field: (interp_xds[data_field].dims, interp)})
