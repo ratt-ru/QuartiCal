@@ -199,30 +199,34 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
     # TODO: This is dodgy. Ideally we shouldn't be reasoning about the
     # values of the gains - we should just use the gain flags. This is
     # an interim solution.
-    for txds, cxds in zip(term_xds_list, concat_xds_list):
+    for term_xds, concat_xds in zip(term_xds_list, concat_xds_list):
 
         if interp_mode == "ampphase":
-            amp_sel = da.where(cxds.amp.data < 1e-6,
+            amp_sel = da.where(concat_xds.amp.data < 1e-6,
                                np.nan,
-                               cxds.amp.data)
+                               concat_xds.amp.data)
 
-            phase_sel = da.where(cxds.amp.data < 1e-6,
+            phase_sel = da.where(concat_xds.amp.data < 1e-6,
                                  np.nan,
-                                 cxds.phase.data)
+                                 concat_xds.phase.data)
 
-            interp_xds = cxds.assign({"amp": (cxds.amp.dims, amp_sel),
-                                      "phase": (cxds.phase.dims, phase_sel)})
+            interp_xds = concat_xds.assign(
+                {"amp": (concat_xds.amp.dims, amp_sel),
+                 "phase": (concat_xds.phase.dims, phase_sel)})
         elif interp_mode == "reim":
-            re_sel = da.where((cxds.re.data < 1e-6) & (cxds.im.data < 1e-6),
+            re_sel = da.where((concat_xds.re.data < 1e-6) &
+                              (concat_xds.im.data < 1e-6),
                               np.nan,
-                              cxds.re.data)
+                              concat_xds.re.data)
 
-            im_sel = da.where((cxds.re.data < 1e-6) & (cxds.im.data < 1e-6),
+            im_sel = da.where((concat_xds.re.data < 1e-6) &
+                              (concat_xds.im.data < 1e-6),
                               np.nan,
-                              cxds.im.data)
+                              concat_xds.im.data)
 
-            interp_xds = cxds.assign({"re": (cxds.re.dims, re_sel),
-                                      "im": (cxds.im.dims, im_sel)})
+            interp_xds = concat_xds.assign(
+                {"re": (concat_xds.re.dims, re_sel),
+                 "im": (concat_xds.im.dims, im_sel)})
 
         # TODO: This is INSANELY slow. Omitting until I come up with
         # a better solution.
@@ -242,28 +246,30 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
         # Interpolate with various methods.
         if interp_method == "2dlinear":
             interp_xds = interp_xds.interp(
-                {"t_int": txds.t_int.data,
-                 "f_int": txds.f_int.data},
+                {"t_int": term_xds.t_int.data,
+                 "f_int": term_xds.f_int.data},
                 kwargs={"fill_value": "extrapolate"})
         elif interp_method == "2dspline":
             interp_xds = spline2d_interpolate_gains(interp_xds,
-                                                    txds,
+                                                    term_xds,
                                                     interp_mode)
         elif interp_method == "smoothingspline":
             interp_xds = csaps2d_interpolate_gains(interp_xds,
-                                                   txds,
+                                                   term_xds,
                                                    interp_mode)
 
         # Convert the interpolated quantities back in gains.
         if interp_mode == "ampphase":
             gains = interp_xds.amp.data*da.exp(1j*interp_xds.phase.data)
-            interp_xds = txds.assign({"gains": (interp_xds.amp.dims, gains)})
+            interp_xds = term_xds.assign(
+                {"gains": (interp_xds.amp.dims, gains)})
         elif interp_mode == "reim":
             gains = interp_xds.re.data + 1j*interp_xds.im.data
-            interp_xds = txds.assign({"gains": (interp_xds.re.dims, gains)})
+            interp_xds = term_xds.assign(
+                {"gains": (interp_xds.re.dims, gains)})
 
-        t_chunks = txds.GAIN_SPEC.tchunk
-        f_chunks = txds.GAIN_SPEC.fchunk
+        t_chunks = term_xds.GAIN_SPEC.tchunk
+        f_chunks = term_xds.GAIN_SPEC.fchunk
 
         interp_xds = interp_xds.chunk({"t_int": t_chunks,
                                        "f_int": f_chunks})
