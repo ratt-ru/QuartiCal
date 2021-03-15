@@ -6,6 +6,7 @@ import xarray
 import pathlib
 from scipy.interpolate import interp2d
 from csaps import csaps
+from numba import jit
 
 
 def load_and_interpolate_gains(gain_xds_list, opts):
@@ -228,21 +229,12 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
                 {"re": (concat_xds.re.dims, re_sel),
                  "im": (concat_xds.im.dims, im_sel)})
 
-        # TODO: This is INSANELY slow. Omitting until I come up with
-        # a better solution.
-        # interp_xds = interp_xds.interpolate_na("f_int",
-        #                                        method="pchip")
+        # This fills in missing values using linear interpolation, or by
+        # padding with the last good value (edges). Regions with no good data
+        # will be zeroed.
+        interp_xds = interpolate_missing(interp_xds, term_xds, interp_mode)
 
-        # This is a fast alternative to the above but it is definitely less
-        # correct. Forward/back propagates values over missing entries.
         t_axis, f_axis = term_xds.GAIN_AXES[:2]
-        interp_xds = interp_xds.ffill(t_axis)
-        interp_xds = interp_xds.bfill(t_axis)
-        interp_xds = interp_xds.ffill(f_axis)
-        interp_xds = interp_xds.bfill(f_axis)
-        # If an entry is STILL missing, there is no data from which to
-        # interp/propagate. Set to zero.
-        interp_xds = interp_xds.fillna(0)
 
         # Interpolate with various methods.
         if interp_method == "2dlinear":
@@ -370,3 +362,97 @@ def csaps2d_interpolate_gains(interp_xds, term_xds, interp_mode):
             {data_field: (interp_xds[data_field].dims, interp)})
 
     return output_xds
+
+
+@jit(nopython=True, nogil=True, cache=True)
+def fillmissing(x1, x2, y):
+
+    n_t, n_f, n_a, n_d, n_c = y.shape
+
+    yy = y.copy()
+
+    for f in range(n_f):
+        for a in range(n_a):
+            for d in range(n_d):
+                for c in range(n_c):
+                    y_sel = y[:, f, a, d, c]
+                    good_data = np.where(np.isfinite(y_sel))
+                    if len(good_data[0]) == 0:
+                        continue
+
+                    yy[:, f, a, d, c] = linterp(x1,
+                                                x1[good_data],
+                                                y_sel[good_data])
+
+    for t in range(n_t):
+        for a in range(n_a):
+            for d in range(n_d):
+                for c in range(n_c):
+                    y_sel = yy[t, :, a, d, c]
+                    good_data = np.where(np.isfinite(y_sel))
+                    if len(good_data[0]) == 0:
+                        # If there is no good data along frequency after
+                        # interpolating in time, we have no information
+                        # from which to interpolate - we zero these locations.
+                        yy[:, f, a, d, c] = 0
+                        continue
+
+                    yy[t, :, a, d, c] = linterp(x2,
+                                                x2[good_data],
+                                                y_sel[good_data])
+
+    return yy
+
+
+def interpolate_missing(interp_xds, term_xds, interp_mode):
+
+    if interp_mode == "ampphase":
+        data_fields = ["amp", "phase"]
+    elif interp_mode == "reim":
+        data_fields = ["re", "im"]
+
+    t_axis, f_axis = term_xds.GAIN_AXES[:2]
+
+    for data_field in data_fields:
+
+        interp = da.blockwise(fillmissing, "tfadc",
+                              interp_xds[t_axis].values, None,
+                              interp_xds[f_axis].values, None,
+                              interp_xds[data_field].data, "tfadc",
+                              dtype=np.float64)
+
+        interp_xds = interp_xds.assign(
+            {data_field: (interp_xds[data_field].dims, interp)})
+
+    return interp_xds
+
+
+@jit(nopython=True, nogil=True, cache=True)
+def linterp(xx, x, y):
+
+    xi = 0
+    xxi = 0
+
+    yy = np.zeros(xx.shape, dtype=y.dtype)
+    xxn = len(xx)
+
+    while xxi < xxn:
+        xxel = xx[xxi]
+        xel = x[xi]
+        if xxel == xel:
+            yy[xxi] = y[xi]
+            xxi += 1
+        elif xxel < x[0]:
+            yy[xxi] = y[0]
+            xxi += 1
+        elif xxel > x[-1]:
+            yy[xxi] = y[-1]
+            xxi += 1
+        elif (xxel > xel) & (xxel < x[xi + 1]):
+            slope = (y[xi + 1] - y[xi]) / (x[xi + 1] - xel)
+            yy[xxi] = slope * (xxel - xel) + y[xi]
+            xxi += 1
+        else:
+            xi += 1
+
+    return yy
