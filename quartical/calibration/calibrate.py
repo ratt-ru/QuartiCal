@@ -7,8 +7,8 @@ from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_presolve_data_stats,)
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
-from quartical.calibration.interpolate import load_and_interpolate_gains
 from quartical.calibration.gain_datasets import make_gain_xds_list
+from quartical.interpolation.interpolate import load_and_interpolate_gains
 from loguru import logger  # noqa
 from collections import namedtuple
 
