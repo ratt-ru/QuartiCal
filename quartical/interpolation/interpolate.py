@@ -90,9 +90,12 @@ def convert_and_drop(load_xds_list, interp_mode):
                 {"re": (dims, load_xds.gains.data.real),
                  "im": (dims, load_xds.gains.data.imag)})
 
-        # Drop the unecessary data vars. TODO: Parametrised case?
-        drop_vars = ("gains", "conv_perc", "conv_iter")
-        converted_xds = converted_xds.drop_vars(drop_vars)
+        # Drop the unecessary dims and data vars. TODO: At present, QuartiCal
+        # will always interpolate a gain, not the parameters. This makes it
+        # impossible to do a further solve on a parameterised term.
+        drop_dims = set(converted_xds.dims) - set(converted_xds.GAIN_AXES)
+        converted_xds = converted_xds.drop_dims(drop_dims)
+        converted_xds = converted_xds.drop_vars("gains")
 
         converted_xds_list.append(converted_xds)
 
@@ -148,20 +151,22 @@ def overlap_slice(lb, ub, lbounds, ubounds):
 def make_concat_xds_list(term_xds_list, sorted_xds_lol):
     """Map datasets on disk to the dataset required for calibration."""
 
-    # We want to sort according the gain axes. TODO: Parameterised case?
-    t_axis, f_axis = sorted_xds_lol[0][0].GAIN_AXES[:2]
+    # We want to use the axes of the gain on disk. TODO: Parameterised case?
+    ld_t_axis, ld_f_axis = sorted_xds_lol[0][0].GAIN_AXES[:2]
 
     # Figure out the upper and lower time bounds of each dataset.
-    time_lbounds = [sl[0][t_axis].values[0] for sl in sorted_xds_lol]
-    time_ubounds = [sl[0][t_axis].values[-1] for sl in sorted_xds_lol]
+    time_lbounds = [sl[0][ld_t_axis].values[0] for sl in sorted_xds_lol]
+    time_ubounds = [sl[0][ld_t_axis].values[-1] for sl in sorted_xds_lol]
 
     # Figure out the upper and lower freq bounds of each dataset.
-    freq_lbounds = [xds[f_axis].values[0] for xds in sorted_xds_lol[0]]
-    freq_ubounds = [xds[f_axis].values[-1] for xds in sorted_xds_lol[0]]
+    freq_lbounds = [xds[ld_f_axis].values[0] for xds in sorted_xds_lol[0]]
+    freq_ubounds = [xds[ld_f_axis].values[-1] for xds in sorted_xds_lol[0]]
 
     concat_xds_list = []
 
     for term_xds in term_xds_list:
+
+        t_axis, f_axis = term_xds.GAIN_AXES[:2]
 
         tlb = term_xds[t_axis].data[0]
         tub = term_xds[t_axis].data[-1]
@@ -175,16 +180,16 @@ def make_concat_xds_list(term_xds_list, sorted_xds_lol):
 
         for xds_list in sorted_xds_lol[concat_tslice]:
             fconcat_xds_list.append(xarray.concat(xds_list[concat_fslice],
-                                                  f_axis,
+                                                  ld_f_axis,
                                                   join="exact"))
 
         # Concatenate gains near the interpolation values.
         concat_xds = xarray.concat(fconcat_xds_list,
-                                   t_axis,
+                                   ld_t_axis,
                                    join="exact")
 
         # Remove the chunking from the concatenated datasets.
-        concat_xds = concat_xds.chunk({t_axis: -1, f_axis: -1})
+        concat_xds = concat_xds.chunk({ld_t_axis: -1, ld_f_axis: -1})
 
         concat_xds_list.append(concat_xds)
 
@@ -234,13 +239,15 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
         # will be zeroed.
         interp_xds = interpolate_missing(interp_xds, term_xds, interp_mode)
 
-        t_axis, f_axis = term_xds.GAIN_AXES[:2]
+        # We may be interpolating from one set of axes to another.
+        i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
+        t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
 
         # Interpolate with various methods.
         if interp_method == "2dlinear":
             interp_xds = interp_xds.interp(
-                {t_axis: term_xds[t_axis].data,
-                 f_axis: term_xds[f_axis].data},
+                {i_t_axis: term_xds[t_t_axis].data,
+                 i_f_axis: term_xds[t_f_axis].data},
                 kwargs={"fill_value": "extrapolate"})
         elif interp_method == "2dspline":
             interp_xds = spline2d_interpolate_gains(interp_xds,
@@ -255,16 +262,16 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
         if interp_mode == "ampphase":
             gains = interp_xds.amp.data*da.exp(1j*interp_xds.phase.data)
             interp_xds = term_xds.assign(
-                {"gains": (interp_xds.amp.dims, gains)})
+                {"gains": (term_xds.GAIN_AXES, gains)})
         elif interp_mode == "reim":
             gains = interp_xds.re.data + 1j*interp_xds.im.data
             interp_xds = term_xds.assign(
-                {"gains": (interp_xds.re.dims, gains)})
+                {"gains": (term_xds.GAIN_AXES, gains)})
 
         t_chunks = term_xds.GAIN_SPEC.tchunk
         f_chunks = term_xds.GAIN_SPEC.fchunk
 
-        interp_xds = interp_xds.chunk({t_axis: t_chunks, f_axis: f_chunks})
+        interp_xds = interp_xds.chunk({t_t_axis: t_chunks, t_f_axis: f_chunks})
 
         interp_xds_list.append(interp_xds)
 
@@ -299,21 +306,22 @@ def spline2d_interpolate_gains(interp_xds, term_xds, interp_mode):
         data_fields = ["re", "im"]
 
     output_xds = term_xds
-    t_axis, f_axis = output_xds.GAIN_AXES[:2]
+    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
+    t_t_axis, t_f_axis = output_xds.GAIN_AXES[:2]
 
     for data_field in data_fields:
         interp = da.blockwise(spline2d, "tfadc",
-                              interp_xds[t_axis].values, None,
-                              interp_xds[f_axis].values, None,
+                              interp_xds[i_t_axis].values, None,
+                              interp_xds[i_f_axis].values, None,
                               interp_xds[data_field].data, "tfadc",
-                              term_xds[t_axis].values, None,
-                              term_xds[f_axis].values, None,
+                              term_xds[t_t_axis].values, None,
+                              term_xds[t_f_axis].values, None,
                               dtype=np.float64,
-                              adjust_chunks={"t": term_xds.dims[t_axis],
-                                             "f": term_xds.dims[f_axis]})
+                              adjust_chunks={"t": term_xds.dims[t_t_axis],
+                                             "f": term_xds.dims[t_f_axis]})
 
         output_xds = output_xds.assign(
-            {data_field: (interp_xds[data_field].dims, interp)})
+            {data_field: (term_xds.GAIN_AXES, interp)})
 
     return output_xds
 
@@ -345,21 +353,22 @@ def csaps2d_interpolate_gains(interp_xds, term_xds, interp_mode):
         data_fields = ["re", "im"]
 
     output_xds = term_xds
-    t_axis, f_axis = output_xds.GAIN_AXES[:2]
+    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
+    t_t_axis, t_f_axis = output_xds.GAIN_AXES[:2]
 
     for data_field in data_fields:
         interp = da.blockwise(csaps2d, "tfadc",
-                              interp_xds[t_axis].values, None,
-                              interp_xds[f_axis].values, None,
+                              interp_xds[i_t_axis].values, None,
+                              interp_xds[i_f_axis].values, None,
                               interp_xds[data_field].data, "tfadc",
-                              term_xds[t_axis].values, None,
-                              term_xds[f_axis].values, None,
+                              term_xds[t_t_axis].values, None,
+                              term_xds[t_f_axis].values, None,
                               dtype=np.float64,
-                              adjust_chunks={"t": term_xds.dims[t_axis],
-                                             "f": term_xds.dims[f_axis]})
+                              adjust_chunks={"t": term_xds.dims[t_t_axis],
+                                             "f": term_xds.dims[t_f_axis]})
 
         output_xds = output_xds.assign(
-            {data_field: (interp_xds[data_field].dims, interp)})
+            {data_field: (term_xds.GAIN_AXES, interp)})
 
     return output_xds
 
@@ -411,7 +420,7 @@ def interpolate_missing(interp_xds, term_xds, interp_mode):
     elif interp_mode == "reim":
         data_fields = ["re", "im"]
 
-    t_axis, f_axis = term_xds.GAIN_AXES[:2]
+    t_axis, f_axis = interp_xds.GAIN_AXES[:2]
 
     for data_field in data_fields:
 
