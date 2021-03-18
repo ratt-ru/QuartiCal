@@ -189,7 +189,7 @@ def read_xds_list(opts):
 
     # Add an attribute to the xds on which we will store the names of fields
     # which must be written to the MS. Also add the attribute which stores
-    # the unique time chunking per xds. We have to convert the chunking to 
+    # the unique time chunking per xds. We have to convert the chunking to
     # python integers to avoid problems with serialization.
 
     data_xds_list = \

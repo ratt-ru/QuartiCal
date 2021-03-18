@@ -72,8 +72,9 @@ def d_map_list(data_xds_list, opts):
 
 
 @pytest.fixture(scope="module")
-def gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
-    return make_gain_xds_list(data_xds_list, t_map_list, f_map_list, opts)
+def gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list, opts):
+    return make_gain_xds_list(data_xds_list, t_map_list, t_bin_list,
+                              f_map_list, opts)
 
 
 @pytest.fixture(scope="module")

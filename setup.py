@@ -57,7 +57,8 @@ else:
                     "distributed",
                     "zarr",
                     "requests",
-                    "pytest"]
+                    "pytest",
+                    "csaps"]
 
 setup(name='quartical',
       version=quartical.__version__,
