@@ -7,7 +7,6 @@ from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import initialise_flags
 from quartical.data_handling.bda import process_bda_input, process_bda_output
 from quartical.scheduling import annotate
-from uuid import uuid4
 from loguru import logger
 
 
@@ -252,7 +251,9 @@ def write_xds_list(xds_list, ref_xds_list, opts):
 
     write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
                                   columns=output_cols)
-
+    # This is a kludge to handle the fact that xds_to_table doesn't preserve
+    # the annotation information/partition attributes. TODO: Improve upstream.
+    [wds.attrs.update(ds.attrs) for ds, wds in zip(xds_list, write_xds_list)]
     annotate(write_xds_list)
 
     return write_xds_list
