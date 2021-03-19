@@ -5,16 +5,14 @@ from loguru import logger  # noqa
 from quartical.flagging.flagging_kernels import madmax, threshold
 
 
-def finalise_flags(xds_list, col_kwrds, opts):
+def finalise_flags(xds_list, opts):
     """Finishes processing flags to produce writable flag data.
 
-    Given a list of xds and appropriately updated keywords, combines
-    uses the updated flag column to create appropriate flags for writing to
-    disk.
+    Given a list of xarray.Dataset objects, uses the updated flag column to
+    create appropriate flags for writing to disk.
 
     Args:
         xds_list: A list of xarray datasets.
-        col_kwrds: A dictionary of (updated) column keywowrds.
         opts: The options Namespace.
 
     Returns:

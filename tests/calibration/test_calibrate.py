@@ -41,20 +41,14 @@ def _read_xds_list(xds_opts):
 @pytest.fixture(scope="module")
 def data_xds_list(_read_xds_list, xds_opts):
 
-    ms_xds_list, _, col_kwrds = _read_xds_list
+    ms_xds_list, _ = _read_xds_list
 
     preprocessed_xds_list = \
-        preprocess_xds_list(ms_xds_list, col_kwrds, xds_opts)
+        preprocess_xds_list(ms_xds_list, xds_opts)
 
     data_xds_list = add_model_graph(preprocessed_xds_list, xds_opts)
 
     return data_xds_list
-
-
-@pytest.fixture(scope="module")
-def col_kwrds(_read_xds_list):
-
-    return _read_xds_list[2]
 
 
 @pytest.fixture(scope="module")
@@ -139,9 +133,9 @@ def expected_f_ints(data_xds, xds_opts):
 
 
 @pytest.fixture(scope="module")
-def _add_calibration_graph(data_xds_list, col_kwrds, xds_opts):
+def _add_calibration_graph(data_xds_list, xds_opts):
 
-    return add_calibration_graph(data_xds_list, col_kwrds, xds_opts)
+    return add_calibration_graph(data_xds_list, xds_opts)
 
 
 @pytest.fixture(scope="module")

@@ -17,7 +17,6 @@ def read_xds_list(opts):
 
     Returns:
         data_xds_list: A list of appropriately chunked xarray datasets.
-        updated_kwrds: A dictionary of updated column keywords.
     """
 
     # Create an xarray data set containing indexing columns. This is
@@ -126,14 +125,13 @@ def read_xds_list(opts):
     data_columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "DATA", "FLAG",
                     "FLAG_ROW", "UVW") + extra_columns
 
-    data_xds_list, col_kwrds = xds_from_ms(
+    data_xds_list = xds_from_ms(
         opts.input_ms_name,
         columns=data_columns,
         index_cols=("TIME",),
         group_cols=opts.input_ms_group_by,
         taql_where="ANTENNA1 != ANTENNA2",
-        chunks=chunking_per_xds,
-        column_keywords=True)
+        chunks=chunking_per_xds)
 
     # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
     # for undoing BDA.
@@ -184,16 +182,15 @@ def read_xds_list(opts):
                          f"but the measurement set only contains "
                          f"{opts._ms_ncorr} correlations")
 
-    return data_xds_list, ref_xds_list, col_kwrds
+    return data_xds_list, ref_xds_list
 
 
-def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
+def write_xds_list(xds_list, ref_xds_list, opts):
     """Writes fields spicified in the WRITE_COLS attribute to the MS.
 
     Args:
         xds_list: A list of xarray datasets.
         ref_xds_list: A list of reference xarray.Dataset objects.
-        col_kwrds: A dictionary of column keywords.
         opts: A Namepsace of global options.
 
     Returns:
@@ -232,8 +229,6 @@ def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
 
         output_cols += tuple(opts.output_column[:n_vis_prod])
 
-    output_kwrds = {cn: col_kwrds.get(cn, {}) for cn in output_cols}
-
     if opts.input_ms_is_bda:
         xds_list = process_bda_output(xds_list, ref_xds_list, output_cols,
                                       opts)
@@ -247,13 +242,12 @@ def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
                 for xds in xds_list]
 
     write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
-                                  columns=output_cols,
-                                  column_keywords=output_kwrds)
+                                  columns=output_cols)
 
     return write_xds_list
 
 
-def preprocess_xds_list(xds_list, col_kwrds, opts):
+def preprocess_xds_list(xds_list, opts):
     """Adds data preprocessing steps - inits flags, weights and fixes bad data.
 
     Given a list of xarray.DataSet objects, initializes the flag data,
@@ -262,7 +256,6 @@ def preprocess_xds_list(xds_list, col_kwrds, opts):
 
     Args:
         xds_list: A list of xarray.DataSet objects containing MS data.
-        col_kwrds: A dictionary of column keywords.
         opts: A Namepsace object of global options.
 
     Returns:

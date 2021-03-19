@@ -47,7 +47,7 @@ def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
                                       row_weights, corr_mode)
 
 
-def add_calibration_graph(data_xds_list, col_kwrds, opts):
+def add_calibration_graph(data_xds_list, opts):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -55,7 +55,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
     Args:
         data_xds_list: A list of xarray data sets/graphs providing input data.
-        col_kwrds: A dictionary containing column keywords.
         opts: A Namespace object containing all necessary configuration.
 
     Returns:
