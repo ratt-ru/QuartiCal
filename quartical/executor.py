@@ -8,7 +8,6 @@ import dask
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 from loguru import logger
-import zarr
 
 import quartical.logging.init_logger  # noqa
 from quartical.parser import parser, preprocess
@@ -18,7 +17,8 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
-from quartical.scheduling import install_plugin
+from quartical.scheduling import install_plugin, annotate
+from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 
 
 @logger.catch
@@ -67,8 +67,19 @@ def _execute(exitstack):
     # Reads the measurement set using the relavant configuration from opts.
     data_xds_list, ref_xds_list, col_kwrds = read_xds_list(opts)
 
-    # data_xds_list = data_xds_list[:2]
-    # ref_xds_list = ref_xds_list[:16]
+    # logger.info("Reading data from zms.")
+    # data_xds_list = xds_from_zarr("/home/jkenyon/lustre/ms/fresh_ms/"
+    #                               "1562500862_sdp_l0-A3562-corr-9fresh.zms")
+
+    # annotate(data_xds_list)
+
+    # writes = xds_to_zarr(data_xds_list, "/home/jkenyon/lustre/ms/fresh_ms/"
+    #                                     "1562500862_sdp_l0-A3562-corr-"
+    #                                     "9fresh.zms")
+
+    # dask.compute(writes)
+
+    # return
 
     # Preprocess the xds_list - initialise some values and fix bad data.
     data_xds_list = preprocess_xds_list(data_xds_list, col_kwrds, opts)
@@ -90,24 +101,16 @@ def _execute(exitstack):
 
     # This shouldn't be here. TODO: Move to separate function. In fact, this
     # entire write construction needs some tidying.
-    store = zarr.DirectoryStore("qcal_gains")
 
-    gain_writes = []
+    gain_writes = [[gt[i].chunk({"time_int": -1}) for gt in gains_per_xds]
+                   for i in range(len(opts.solver_gain_terms))]
 
-    for xds_ind, gain_terms in enumerate(gains_per_xds):
-        term_writes = []
-        for term_ind, term in enumerate(gain_terms):
-            term_write = term.chunk({"time_int": -1}).to_zarr(
-                store,
-                mode="w",
-                group=f"{term.NAME}{xds_ind}",
-                compute=False)
-            term_writes.append(term_write)
-        gain_writes.append(term_writes)
+    gain_writes = \
+        [xds_to_zarr(gain_writes[i],
+                     f"/home/jkenyon/lustre/ms/fresh_ms/gains.zarr/{term}")
+         for i, term in enumerate(opts.solver_gain_terms)]
 
     writes = [writes] if not isinstance(writes, list) else writes
-
-    # import pdb; pdb.set_trace()
 
     stride = len(writes)//len(gain_writes)
 

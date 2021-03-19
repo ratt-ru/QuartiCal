@@ -55,7 +55,7 @@ else:
 
                     "dask[array]"
                     "@git+https://github.com/dask/dask.git"
-                    "@master",
+                    "@main",
 
                     "astro-tigger-lsm",
                     "loguru",
@@ -63,7 +63,7 @@ else:
 
                     "distributed"
                     "@git+https://github.com/dask/distributed.git"
-                    "@master",
+                    "@main",
 
                     "requests",
                     "pytest"]
