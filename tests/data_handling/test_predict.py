@@ -57,7 +57,7 @@ def _predict(opts):
     # Forcefully add this to ensure that the comparison data is read.
     opts._model_columns = ["MODEL_DATA"]
 
-    ms_xds_list, _, _ = read_xds_list(opts)
+    ms_xds_list, _ = read_xds_list(opts)
 
     return predict(ms_xds_list, opts), ms_xds_list
 

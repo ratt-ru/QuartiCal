@@ -47,7 +47,7 @@ def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
                                       row_weights, corr_mode)
 
 
-def add_calibration_graph(data_xds_list, col_kwrds, opts):
+def add_calibration_graph(data_xds_list, opts):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -55,7 +55,6 @@ def add_calibration_graph(data_xds_list, col_kwrds, opts):
 
     Args:
         data_xds_list: A list of xarray data sets/graphs providing input data.
-        col_kwrds: A dictionary containing column keywords.
         opts: A Namespace object containing all necessary configuration.
 
     Returns:
@@ -248,10 +247,8 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
                               "_CORRECTED_RESIDUAL": corrected_residual,
                               "_CORRECTED_DATA": corrected_data}
 
-        dims = data_xds.DATA.dims  # All visiblity coloumns share these dims.
-        # TODO: This addition of CUBI_BITFLAG should be done elsewhere.
-        data_vars = {"CUBI_BITFLAG": (dims, data_xds.DATA_BITFLAGS.data)}
-        data_vars.update({k: (dims, v) for k, v in visibility_outputs.items()})
+        dims = data_xds.DATA.dims  # All visiblity columns share these dims.
+        data_vars = {k: (dims, v) for k, v in visibility_outputs.items()}
 
         post_solve_data_xds = data_xds.assign(data_vars)
 

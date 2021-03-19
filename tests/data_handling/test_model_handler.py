@@ -56,7 +56,7 @@ def opts(base_opts, freq_chunk, time_chunk, model_recipe):
 @pytest.fixture(scope="module")
 def _add_model_graph(opts):
 
-    ms_xds_list, _, col_kwrds = read_xds_list(opts)
+    ms_xds_list, _ = read_xds_list(opts)
 
     return add_model_graph(ms_xds_list, opts)
 

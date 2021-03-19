@@ -53,13 +53,13 @@ def _execute(exitstack):
     t0 = time.time()
 
     # Reads the measurement set using the relavant configuration from opts.
-    data_xds_list, ref_xds_list, col_kwrds = read_xds_list(opts)
+    data_xds_list, ref_xds_list = read_xds_list(opts)
 
     # data_xds_list = data_xds_list[:2]
     # ref_xds_list = ref_xds_list[:16]
 
     # Preprocess the xds_list - initialise some values and fix bad data.
-    data_xds_list = preprocess_xds_list(data_xds_list, col_kwrds, opts)
+    data_xds_list = preprocess_xds_list(data_xds_list, opts)
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
@@ -67,14 +67,14 @@ def _execute(exitstack):
 
     # Adds the dask graph describing the calibration of the data.
     gain_xds_lol, data_xds_list = \
-        add_calibration_graph(data_xds_list, col_kwrds, opts)
+        add_calibration_graph(data_xds_list, opts)
 
     if opts.flags_mad_enable:
         data_xds_list = add_mad_graph(data_xds_list, opts)
 
-    writable_xds = finalise_flags(data_xds_list, col_kwrds, opts)
+    writable_xds = finalise_flags(data_xds_list, opts)
 
-    writes = write_xds_list(writable_xds, ref_xds_list, col_kwrds, opts)
+    writes = write_xds_list(writable_xds, ref_xds_list, opts)
 
     gain_writes = write_gain_datasets(gain_xds_lol, opts)
 

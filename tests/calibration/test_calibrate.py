@@ -41,20 +41,14 @@ def _read_xds_list(xds_opts):
 @pytest.fixture(scope="module")
 def data_xds_list(_read_xds_list, xds_opts):
 
-    ms_xds_list, _, col_kwrds = _read_xds_list
+    ms_xds_list, _ = _read_xds_list
 
     preprocessed_xds_list = \
-        preprocess_xds_list(ms_xds_list, col_kwrds, xds_opts)
+        preprocess_xds_list(ms_xds_list, xds_opts)
 
     data_xds_list = add_model_graph(preprocessed_xds_list, xds_opts)
 
     return data_xds_list
-
-
-@pytest.fixture(scope="module")
-def col_kwrds(_read_xds_list):
-
-    return _read_xds_list[2]
 
 
 @pytest.fixture(scope="module")
@@ -139,9 +133,9 @@ def expected_f_ints(data_xds, xds_opts):
 
 
 @pytest.fixture(scope="module")
-def _add_calibration_graph(data_xds_list, col_kwrds, xds_opts):
+def _add_calibration_graph(data_xds_list, xds_opts):
 
-    return add_calibration_graph(data_xds_list, col_kwrds, xds_opts)
+    return add_calibration_graph(data_xds_list, xds_opts)
 
 
 @pytest.fixture(scope="module")
@@ -273,29 +267,5 @@ def test_has_gain_field(solved_gain_xds_list):
     assert all([hasattr(term_xds, "gains")
                 for term_xds_list in solved_gain_xds_list
                 for term_xds in term_xds_list])
-
-# TODO: These tests are temporarily defunct as this is no longer done inside
-# the calibration code. Should be moved to the write data tests.
-# def test_has_output_field(post_cal_data_xds_list, xds_opts):
-#     """Check that calibration assigns the output to the data xds."""
-
-#     assert all([hasattr(xds, col)
-#                 for col in xds_opts.output_column
-#                 for xds in post_cal_data_xds_list])
-
-
-# def test_has_bitflag_field(post_cal_data_xds_list):
-#     """Check that calibration assigns the bitflags to the data xds."""
-
-#     assert all([hasattr(xds, "CUBI_BITFLAG")
-#                 for xds in post_cal_data_xds_list])
-
-
-# def test_write_columns(post_cal_data_xds_list, xds_opts):
-#     """Check that the output column name is added to WRITE_COLS."""
-
-#     assert all([col in xds.attrs["WRITE_COLS"]
-#                 for col in xds_opts.output_column
-#                 for xds in post_cal_data_xds_list])
 
 # -----------------------------------------------------------------------------
