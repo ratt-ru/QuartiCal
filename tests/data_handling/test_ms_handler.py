@@ -29,7 +29,7 @@ def _read_xds_list(opts):
 @pytest.mark.data_handling
 def test_read_ms_nxds(_read_xds_list):
 
-    ms_xds_list, _, _ = _read_xds_list
+    ms_xds_list, _ = _read_xds_list
 
     # Check that we produce one xds per scan.
     assert len(ms_xds_list) == 2
@@ -38,7 +38,7 @@ def test_read_ms_nxds(_read_xds_list):
 @pytest.mark.data_handling
 def test_read_ms_cols(_read_xds_list):
 
-    ms_xds_list, _, _ = _read_xds_list
+    ms_xds_list, _ = _read_xds_list
 
     expected_col_names = ["TIME",
                           "ANTENNA1",
@@ -47,8 +47,6 @@ def test_read_ms_cols(_read_xds_list):
                           "FLAG",
                           "FLAG_ROW",
                           "UVW",
-                          "BITFLAG",
-                          "BITFLAG_ROW",
                           "MODEL_DATA"]
 
     # Check that all requested columns are present on each xds.
@@ -60,7 +58,7 @@ def test_read_ms_cols(_read_xds_list):
 @pytest.mark.data_handling
 def test_read_ms_time_chunks(_read_xds_list, opts):
 
-    ms_xds_list, _, _ = _read_xds_list
+    ms_xds_list, _ = _read_xds_list
 
     # Check that the time axis is correctly chunked.
     expected_t_dim = opts.input_ms_time_chunk or np.inf  # or handles 0.
@@ -73,7 +71,7 @@ def test_read_ms_time_chunks(_read_xds_list, opts):
 @pytest.mark.data_handling
 def test_read_ms_freq_chunks(_read_xds_list, opts):
 
-    ms_xds_list, _, _ = _read_xds_list
+    ms_xds_list, _ = _read_xds_list
 
     # Check that the frequency axis is correctly chunked.
     expected_f_dim = opts.input_ms_freq_chunk or np.inf  # or handles 0.
@@ -86,7 +84,7 @@ def test_read_ms_freq_chunks(_read_xds_list, opts):
 @pytest.fixture(scope="module")
 def _write_xds_list(_read_xds_list, opts):
 
-    ms_xds_list, ref_xds_list, col_kwrds = _read_xds_list
+    ms_xds_list, ref_xds_list = _read_xds_list
 
     ms_xds_list = [xds.assign({"_RESIDUAL": xds.DATA,
                                "_CORRECTED_DATA": xds.DATA,
@@ -96,7 +94,7 @@ def _write_xds_list(_read_xds_list, opts):
     ms_xds_list = [xds.assign_attrs({"WRITE_COLS": ["DATA"]})
                    for xds in ms_xds_list]
 
-    return write_xds_list(ms_xds_list, ref_xds_list, col_kwrds, opts)
+    return write_xds_list(ms_xds_list, ref_xds_list, opts)
 
 
 @pytest.mark.data_handling

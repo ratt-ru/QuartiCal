@@ -41,11 +41,6 @@ output:
     casa-tables: false
 flags:
     _description: Arguments pertaining to flagging behaviour.
-    apply-precal:
-    -   ~quartical
-    add-bitflags: true
-    reinit-bitflags: false
-    save-flagset: quartical
     mad-enable: false
     bl-mad-threshold: 10
     global-mad-threshold: 12

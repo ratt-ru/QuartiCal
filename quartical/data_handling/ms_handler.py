@@ -3,11 +3,8 @@ import dask
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-from quartical.flagging.flagging import update_kwrds, ibfdtype
 from quartical.weights.weights import initialize_weights
-from quartical.flagging.flagging import (is_set,
-                                         make_bitmask,
-                                         initialise_bitflags)
+from quartical.flagging.flagging import initialise_flags
 from quartical.data_handling.bda import process_bda_input, process_bda_output
 from quartical.scheduling import annotate
 from uuid import uuid4
@@ -22,8 +19,6 @@ def read_xds_list(opts):
 
     Returns:
         data_xds_list: A list of appropriately chunked xarray datasets.
-        ref_xds_list: A list of appropriately chunked xarray datasets.
-        updated_kwrds: A dictionary of updated column keywords.
     """
 
     # Create an xarray data set containing indexing columns. This is
@@ -92,32 +87,14 @@ def read_xds_list(opts):
     logger.info("Field table indicates phase centre is at ({} {}).",
                 opts._phase_dir[0], opts._phase_dir[1])
 
-    # Check whether the BITFLAG column exists - if not, we will need to add it
-    # or ignore it. TODO: Figure out how to prevent this thowing a message
-    # wall.
-
-    col_names = list(xds_from_ms(opts.input_ms_name)[0].keys())
-
-    if "BITFLAG" in col_names:
-        opts._bitflag_exists = True
-        logger.info("BITFLAG column is present.")
-    else:
-        opts._bitflag_exists = False
-        logger.info("BITFLAG column is missing. It will be added.")
-
-    if "BITFLAG_ROW" in col_names:
-        opts._bitflagrow_exists = True
-        logger.info("BITFLAG_ROW column is present.")
-    else:
-        opts._bitflagrow_exists = False
-        logger.info("BITFLAG_ROW column is missing. It will be added.")
-
     # Check whether the specified weight column exists. If not, log a warning
-    # and fall back to unity weights.
+    # and fall back to unity weights. TODO: Figure out how to prevent this
+    # thowing a message wall.
 
     opts._unity_weights = opts.input_ms_weight_column.lower() == "unity"
 
     if not opts._unity_weights:
+        col_names = list(xds_from_ms(opts.input_ms_name)[0].keys())
         if opts.input_ms_weight_column in col_names:
             logger.info(f"Using {opts.input_ms_weight_column} for weights.")
         else:
@@ -144,10 +121,8 @@ def read_xds_list(opts):
     # indexing columns so that they are consistent with the chunking strategy.
 
     extra_columns = tuple(opts._model_columns)
-    extra_columns += ("BITFLAG",) if opts._bitflag_exists else ()
-    extra_columns += ("BITFLAG_ROW",) if opts._bitflagrow_exists else ()
-    extra_columns += (opts.input_ms_weight_column,) if \
-        not opts._unity_weights else ()
+    if not opts._unity_weights:
+        extra_columns += (opts.input_ms_weight_column,)
 
     data_columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "DATA", "FLAG",
                     "FLAG_ROW", "UVW") + extra_columns
@@ -162,9 +137,7 @@ def read_xds_list(opts):
         group_cols=opts.input_ms_group_by,
         taql_where="ANTENNA1 != ANTENNA2",
         chunks=chunking_per_xds,
-        column_keywords=True,
-        table_schema=["MS", {"BITFLAG": {'dims': ('chan', 'corr')},
-                             **extra_schema}])
+        table_schema=["MS", {**extra_schema}])
 
     # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
     # for undoing BDA.
@@ -215,70 +188,22 @@ def read_xds_list(opts):
                          f"but the measurement set only contains "
                          f"{opts._ms_ncorr} correlations")
 
-    # If the BITFLAG and BITFLAG_ROW columns were missing, we simply add
-    # appropriately sized dask arrays to the data sets. These can be written
-    # to the MS at the end. Note that if we are adding the bitflag column,
-    # we initiliase it using the internal dtype. This reduces the memory
-    # footprint a little, although it will still ultimately be saved as an
-    # int32. TODO: Check whether we can write it as int16 to save space.
-
-    updated_kwrds = update_kwrds(col_kwrds, opts)
-
-    # The use of name below guaratees that dask produces unique arrays and
-    # avoids accidental aliasing.
-
-    for xds_ind, xds in enumerate(data_xds_list):
-        xds_updates = {}
-        if not opts._bitflag_exists:
-            data = da.zeros(xds.FLAG.data.shape,
-                            dtype=ibfdtype,
-                            chunks=xds.FLAG.data.chunks,
-                            name="bfzeros-" + uuid4().hex)
-            schema = ("row", "chan", "corr")
-            xds_updates["BITFLAG"] = (schema, data)
-        if not opts._bitflagrow_exists:
-            data = da.zeros(xds.FLAG_ROW.data.shape,
-                            dtype=ibfdtype,
-                            chunks=xds.FLAG_ROW.data.chunks,
-                            name="bfrzeros-" + uuid4().hex)
-            schema = ("row",)
-            xds_updates["BITFLAG_ROW"] = (schema, data)
-        if xds_updates:
-            data_xds_list[xds_ind] = xds.assign(xds_updates)
-
     annotate(data_xds_list)
 
-    # Add the external bitflag dtype to the opts Namespace. This is necessary
-    # as internal bitflags may have a different dtype and we need to reconcile
-    # the two. Note that we elect to interpret the input as an unsigned int
-    # to avoid issues with negation. TODO: Check/warn that the maximal bit
-    # is correct.
-    ebfdtype = data_xds_list[0].BITFLAG.dtype
-
-    if ebfdtype == np.int32:
-        opts._ebfdtype = np.uint32
-    elif ebfdtype == ibfdtype:
-        opts._ebfdtype = ibfdtype
-    else:
-        raise TypeError("BITFLAG type {} not supported.".format(ebfdtype))
-
-    return data_xds_list, ref_xds_list, updated_kwrds
+    return data_xds_list, ref_xds_list
 
 
-def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
+def write_xds_list(xds_list, ref_xds_list, opts):
     """Writes fields spicified in the WRITE_COLS attribute to the MS.
 
     Args:
         xds_list: A list of xarray datasets.
         ref_xds_list: A list of reference xarray.Dataset objects.
-        col_kwrds: A dictionary of column keywords.
         opts: A Namepsace of global options.
 
     Returns:
         write_xds_list: A list of xarray datasets indicating success of writes.
     """
-
-    import daskms.descriptors.ratt_ms  # noqa
 
     # If we selected some correlations, we need to be sure that whatever we
     # attempt to write back to the MS is still consistent. This does this using
@@ -312,8 +237,6 @@ def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
 
         output_cols += tuple(opts.output_column[:n_vis_prod])
 
-    output_kwrds = {cn: col_kwrds.get(cn, {}) for cn in output_cols}
-
     if opts.input_ms_is_bda:
         xds_list = process_bda_output(xds_list, ref_xds_list, output_cols,
                                       opts)
@@ -328,36 +251,28 @@ def write_xds_list(xds_list, ref_xds_list, col_kwrds, opts):
     annotate(xds_list)
 
     write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
-                                  columns=output_cols,
-                                  column_keywords=output_kwrds,
-                                  descriptor="ratt_ms(fixed=False)")
-    [wds.attrs.update(ds.attrs) for ds, wds in zip(xds_list, write_xds_list)]
+                                  columns=output_cols)
+
     annotate(write_xds_list)
 
     return write_xds_list
 
 
-def preprocess_xds_list(xds_list, col_kwrds, opts):
+def preprocess_xds_list(xds_list, opts):
     """Adds data preprocessing steps - inits flags, weights and fixes bad data.
 
-    Given a list of xarray.DataSet objects, initializes the bitflag data,
+    Given a list of xarray.DataSet objects, initializes the flag data,
     the weight data and fixes bad data points (NaN, inf, etc). TODO: This
     function can likely be improved/extended.
 
     Args:
         xds_list: A list of xarray.DataSet objects containing MS data.
-        col_kwrds: Column keywords - necessary for figuring out bitflags.
         opts: A Namepsace object of global options.
 
     Returns:
         output_xds_list: A list of xarray.DataSet objects containing MS data
             with preprocessing operations applied.
     """
-
-    # In the event that not all input BITFLAGS are required, generate a mask
-    # which can be applied to select the appropriate bits.
-
-    bitmask = make_bitmask(col_kwrds, opts)
 
     output_xds_list = []
 
@@ -366,37 +281,28 @@ def preprocess_xds_list(xds_list, col_kwrds, opts):
         # Unpack the data on the xds into variables with understandable names.
         # We create copies of arrays we intend to mutate as otherwise we end
         # up implicitly updating the xds.
-        data_col = xds.DATA.data.copy()
+        data_col = xds.DATA.data
         flag_col = xds.FLAG.data
         flag_row_col = xds.FLAG_ROW.data
-        bitflag_col = xds.BITFLAG.data
-        bitflag_row_col = xds.BITFLAG_ROW.data
+
+        # Anywhere we have a broken datapoint, zero it. These points will
+        # be flagged below.
+        data_col = da.where(da.isfinite(data_col), data_col, 0)
 
         weight_col = initialize_weights(xds, data_col, opts)
 
-        data_bitflags = initialise_bitflags(data_col,
-                                            weight_col,
-                                            flag_col,
-                                            flag_row_col,
-                                            bitflag_col,
-                                            bitflag_row_col,
-                                            bitmask)
+        flag_col = initialise_flags(data_col,
+                                    weight_col,
+                                    flag_col,
+                                    flag_row_col)
 
-        # Selections of the following form generate where operations - this
-        # will return a new array and is therefore distribution safe. It might
-        # be suboptimal though.
-
-        # If we raised the invalid bitflag, zero those data points.
-        data_col[is_set(data_bitflags, "INVALID")] = 0
-
-        # Anywhere we have a full resolution bitflag, we set the weight to 0.
-        weight_col[data_bitflags] = 0
+        # Anywhere we have a flag, we set the weight to 0.
+        weight_col = da.where(flag_col, 0, weight_col)
 
         output_xds = xds.assign(
             {"DATA": (("row", "chan", "corr"), data_col),
              "WEIGHT": (("row", "chan", "corr"), weight_col),
-             "DATA_BITFLAGS": (("row", "chan", "corr"), data_bitflags)})
-        output_xds.attrs.update(xds.attrs)
+             "FLAG": (("row", "chan", "corr"), flag_col)})
 
         output_xds_list.append(output_xds)
 

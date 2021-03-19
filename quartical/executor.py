@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 # Sets up logger - hereafter import logger from Loguru.
-
 from contextlib import ExitStack
-import time
-
+import quartical.logging.init_logger  # noqa
+from loguru import logger
 import dask
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
-from loguru import logger
-
-import quartical.logging.init_logger  # noqa
+import time
 from quartical.parser import parser, preprocess
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
@@ -19,6 +16,7 @@ from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin, annotate
 from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
+from quartical.calibration.gain_datasets import write_gain_datasets
 
 
 @logger.catch
@@ -65,7 +63,7 @@ def _execute(exitstack):
     t0 = time.time()
 
     # Reads the measurement set using the relavant configuration from opts.
-    data_xds_list, ref_xds_list, col_kwrds = read_xds_list(opts)
+    data_xds_list, ref_xds_list = read_xds_list(opts)
 
     # logger.info("Reading data from zms.")
     # data_xds_list = xds_from_zarr("/home/jkenyon/lustre/ms/fresh_ms/"
@@ -82,40 +80,31 @@ def _execute(exitstack):
     # return
 
     # Preprocess the xds_list - initialise some values and fix bad data.
-    data_xds_list = preprocess_xds_list(data_xds_list, col_kwrds, opts)
+    data_xds_list = preprocess_xds_list(data_xds_list, opts)
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
     data_xds_list = add_model_graph(data_xds_list, opts)
 
     # Adds the dask graph describing the calibration of the data.
-    gains_per_xds, data_xds_list = \
-        add_calibration_graph(data_xds_list, col_kwrds, opts)
+    gain_xds_lol, data_xds_list = \
+        add_calibration_graph(data_xds_list, opts)
 
     if opts.flags_mad_enable:
         data_xds_list = add_mad_graph(data_xds_list, opts)
 
-    writable_xds = finalise_flags(data_xds_list, col_kwrds, opts)
+    writable_xds = finalise_flags(data_xds_list, opts)
 
-    writes = write_xds_list(writable_xds, ref_xds_list, col_kwrds, opts)
+    writes = write_xds_list(writable_xds, ref_xds_list, opts)
 
-    # This shouldn't be here. TODO: Move to separate function. In fact, this
-    # entire write construction needs some tidying.
-
-    gain_writes = [[gt[i].chunk({"time_int": -1}) for gt in gains_per_xds]
-                   for i in range(len(opts.solver_gain_terms))]
-
-    gain_writes = \
-        [xds_to_zarr(gain_writes[i],
-                     f"/home/jkenyon/lustre/ms/fresh_ms/gains.zarr/{term}")
-         for i, term in enumerate(opts.solver_gain_terms)]
+    gain_writes = write_gain_datasets(gain_xds_lol, opts)
 
     writes = [writes] if not isinstance(writes, list) else writes
 
     stride = len(writes)//len(gain_writes)
 
     # Match up column and gain writes - avoids recompute, and necessary for
-    # handling BDA data.
+    # handling BDA data. TODO: This is like unnecessary, but need to verify.
     outputs = []
     for ind in range(len(gain_writes)):
 

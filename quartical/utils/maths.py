@@ -51,3 +51,17 @@ def arr_gcd(arr):
         raise ValueError(f"No GCD was found for {arr}.")
 
     return net_gcd
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def mean_for_index(arr, inds):
+
+    sums = np.zeros(np.max(inds) + 1, dtype=arr.dtype)
+    counts = np.zeros_like(sums)
+
+    for i in range(arr.size):
+        ind = inds[i]
+        sums[ind] += arr[i]
+        counts[ind] += 1
+
+    return sums/counts

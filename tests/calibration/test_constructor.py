@@ -39,12 +39,12 @@ def _read_xds_list(opts):
 @pytest.fixture(scope="module")
 def data_xds_list(_read_xds_list, opts):
 
-    ms_xds_list, _, col_kwrds = _read_xds_list
+    ms_xds_list, _ = _read_xds_list
 
     # We only need to test on one.
     ms_xds_list = ms_xds_list[:1]
 
-    preprocessed_xds_list = preprocess_xds_list(ms_xds_list, col_kwrds, opts)
+    preprocessed_xds_list = preprocess_xds_list(ms_xds_list, opts)
 
     data_xds_list = add_model_graph(preprocessed_xds_list, opts)
 
@@ -72,8 +72,9 @@ def d_map_list(data_xds_list, opts):
 
 
 @pytest.fixture(scope="module")
-def gain_xds_list(data_xds_list, t_map_list, f_map_list, opts):
-    return make_gain_xds_list(data_xds_list, t_map_list, f_map_list, opts)
+def gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list, opts):
+    return make_gain_xds_list(data_xds_list, t_map_list, t_bin_list,
+                              f_map_list, opts)
 
 
 @pytest.fixture(scope="module")
