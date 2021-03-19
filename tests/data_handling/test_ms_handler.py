@@ -47,8 +47,6 @@ def test_read_ms_cols(_read_xds_list):
                           "FLAG",
                           "FLAG_ROW",
                           "UVW",
-                          "BITFLAG",
-                          "BITFLAG_ROW",
                           "MODEL_DATA"]
 
     # Check that all requested columns are present on each xds.

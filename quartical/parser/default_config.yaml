@@ -231,32 +231,6 @@ output:
 
 flags:
     _description: Arguments pertaining to flagging behaviour.
-    apply-precal:
-        nargs: +
-        type: str
-        help: Which flagsets will be applied prior to calibration. Use
-              "~FLAGSET" to apply all bitflags except the named flagset
-              ("~quartical" is will ignore preexisting QuartiCal flags).
-              Use "FLAG" to just apply FLAG/FLAG_ROW.
-        default:
-            - ~quartical
-    # add-bitflags:
-    #     type: bool
-    #     help: If True, will automatically insert a BITFLAG column if one is not
-    #           already present. Will automatically populate the legacy bitflag
-    #           from FLAG and FLAG_ROW.
-    #     default: True
-    reinit-bitflags:
-        type: bool
-        help: If true, reinitializes BITFLAG column from scratch. Useful if the
-              existing BITFLAG column has been corrupted. Be careful with the
-              state of the FLAG/FLAG_ROW colum when you use this option.
-        default: False
-    # save-flagset:
-    #     type: str
-    #     help: Save solver flags to the named flagset. If None or zero, the
-    #           solver flags will not be saved.
-    #     default: quartical
     mad-enable:
         type: bool
         help: Enables the MAD flagging routines.

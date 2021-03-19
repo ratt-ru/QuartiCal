@@ -274,28 +274,4 @@ def test_has_gain_field(solved_gain_xds_list):
                 for term_xds_list in solved_gain_xds_list
                 for term_xds in term_xds_list])
 
-# TODO: These tests are temporarily defunct as this is no longer done inside
-# the calibration code. Should be moved to the write data tests.
-# def test_has_output_field(post_cal_data_xds_list, xds_opts):
-#     """Check that calibration assigns the output to the data xds."""
-
-#     assert all([hasattr(xds, col)
-#                 for col in xds_opts.output_column
-#                 for xds in post_cal_data_xds_list])
-
-
-# def test_has_bitflag_field(post_cal_data_xds_list):
-#     """Check that calibration assigns the bitflags to the data xds."""
-
-#     assert all([hasattr(xds, "CUBI_BITFLAG")
-#                 for xds in post_cal_data_xds_list])
-
-
-# def test_write_columns(post_cal_data_xds_list, xds_opts):
-#     """Check that the output column name is added to WRITE_COLS."""
-
-#     assert all([col in xds.attrs["WRITE_COLS"]
-#                 for col in xds_opts.output_column
-#                 for xds in post_cal_data_xds_list])
-
 # -----------------------------------------------------------------------------
