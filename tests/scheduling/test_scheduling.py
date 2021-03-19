@@ -3,7 +3,7 @@ from contextlib import ExitStack
 
 import dask
 import dask.array as da
-from daskms.reads import PARTITION_KEY
+from daskms.constants import DASKMS_PARTITION_KEY as PARTITION_KEY
 from distributed import Client, LocalCluster
 import numpy as np
 import pytest

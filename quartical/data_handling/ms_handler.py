@@ -130,7 +130,7 @@ def read_xds_list(opts):
     extra_schema = {cn: {'dims': ('chan', 'corr')}
                     for cn in opts._model_columns}
 
-    data_xds_list, col_kwrds = xds_from_ms(
+    data_xds_list = xds_from_ms(
         opts.input_ms_name,
         columns=data_columns,
         index_cols=("TIME",),

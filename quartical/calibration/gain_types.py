@@ -1,5 +1,5 @@
 from collections import namedtuple
-from daskms.reads import PARTITION_KEY
+from daskms.constants import DASKMS_PARTITION_KEY as PARTITION_KEY
 from quartical.kernels.complex import complex_solver
 from quartical.kernels.phase import phase_solver
 from quartical.kernels.delay import delay_solver

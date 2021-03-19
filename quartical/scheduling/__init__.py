@@ -3,7 +3,7 @@ from ast import literal_eval
 
 import dask
 import dask.array as da
-from daskms.reads import PARTITION_KEY
+from daskms.constants import DASKMS_PARTITION_KEY as PARTITION_KEY
 from dask.highlevelgraph import HighLevelGraph
 from distributed.diagnostics.plugin import SchedulerPlugin
 import xarray
