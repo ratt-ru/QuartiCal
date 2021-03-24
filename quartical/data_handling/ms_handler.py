@@ -6,7 +6,8 @@ from daskms import xds_from_ms, xds_from_table, xds_to_table
 from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import initialise_flags
 from quartical.data_handling.bda import process_bda_input, process_bda_output
-from quartical.scheduling import annotate
+from quartical.scheduling import annotate, dataset_partition
+from dask.graph_manipulation import clone
 from loguru import logger
 
 
@@ -157,13 +158,20 @@ def read_xds_list(opts):
     # Add the actual channel frequecies to the xds - this is in preparation
     # for solvers which require this information. Also adds the antenna names
     # which will be useful when reference antennas are required.
-    data_xds_list = [xds.assign(
-        {"CHAN_FREQ":
-            (("chan",), spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data[0]),
-         "CHAN_WIDTH":
-            (("chan",), spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data[0]),
-         "ANT_NAME":
-            (("ant",), antenna_xds.NAME.data)}) for xds in data_xds_list]
+
+    tmp_xds_list = []
+
+    for xds in data_xds_list:
+        chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
+        chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
+        annotate(chan_freqs, dims=("chan",), partition=dataset_partition(xds))
+        annotate(chan_widths, dims=("chan",), partition=dataset_partition(xds))
+        tmp_xds_list.append(xds.assign(
+            {"CHAN_FREQ": (("chan",), chan_freqs[0]),
+             "CHAN_WIDTH": (("chan",), chan_widths[0]),
+             "ANT_NAME": (("ant",), antenna_xds.NAME.data)}))
+
+    data_xds_list = tmp_xds_list
 
     # Add an attribute to the xds on which we will store the names of fields
     # which must be written to the MS. Also add the attribute which stores

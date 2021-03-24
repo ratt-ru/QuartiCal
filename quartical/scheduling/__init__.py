@@ -104,7 +104,7 @@ def annotate(obj, **annotations):
 
 
 class QuarticalScheduler(SchedulerPlugin):
-    def update_graph(self, scheduler, dsk=None, keys=None, restrictions=None, 
+    def update_graph(self, scheduler, dsk=None, keys=None, restrictions=None,
                      **kw):
         try:
             annotations = kw["annotations"]

@@ -7,7 +7,7 @@ from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_presolve_data_stats,)
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
-from quartical.scheduling import annotate
+from quartical.scheduling import annotate, dataset_partition
 from quartical.calibration.gain_datasets import make_gain_xds_list
 from quartical.interpolation.interpolate import load_and_interpolate_gains
 from loguru import logger  # noqa
@@ -33,6 +33,12 @@ def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
                   row_map, row_weights, corr_mode, *gains):
     """Thin wrapper to handle an unknown number of input gains."""
 
+    # TODO: Remove once concatentation is fixed.
+    model = model[0]
+    t_map_arr = t_map_arr[0]
+    f_map_arr = f_map_arr[0]
+    gains = [gain[0][0] for gain in gains]
+
     return compute_residual(data, model, gains, a1, a2, t_map_arr,
                             f_map_arr, d_map_arr, row_map, row_weights,
                             corr_mode)
@@ -42,6 +48,11 @@ def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
                             d_map_arr, row_map, row_weights, corr_mode,
                             *gains):
     """Thin wrapper to handle an unknown number of input gains."""
+
+    # TODO: Remove once concatentation is fixed.
+    t_map_arr = t_map_arr[0]
+    f_map_arr = f_map_arr[0]
+    gains = [gain[0][0] for gain in gains]
 
     return compute_corrected_residual(residual, gains, a1, a2, t_map_arr,
                                       f_map_arr, d_map_arr, row_map,
@@ -67,6 +78,12 @@ def add_calibration_graph(data_xds_list, opts):
     t_bin_list, t_map_list = make_t_maps(data_xds_list, opts)
     f_map_list = make_f_maps(data_xds_list, opts)
     d_map_list = make_d_maps(data_xds_list, opts)
+
+    for i, xds in enumerate(data_xds_list):
+        partition = dataset_partition(xds)
+    #     annotate(t_bin_list[i], dims=("row", "term"), partition=partition)
+    #     annotate(t_map_list[i], dims=("row", "term"), partition=partition)
+        annotate(f_map_list[i], dims=("chan", "term"), partition=partition)
 
     # Create a list of lists of xarray.Dataset objects which will describe the
     # gains per data xarray.Dataset. This triggers some early compute.
@@ -199,7 +216,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
             *gain_list,
             dtype=data_col.dtype,
             align_arrays=False,
-            concatenate=True,
+            # concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 
@@ -217,7 +234,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
             *gain_list,
             dtype=residual.dtype,
             align_arrays=False,
-            concatenate=True,
+            # concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 
@@ -237,7 +254,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
             *gain_list,
             dtype=residual.dtype,
             align_arrays=False,
-            concatenate=True,
+            # concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 

@@ -1,8 +1,8 @@
 import dask.array as da
 import numpy as np
 from uuid import uuid4
-from daskms.optimisation import inlined_array
 from quartical.utils.dask import blockwise_unique
+from quartical.scheduling import annotate, dataset_partition
 
 
 def get_array_items(arr, inds):
@@ -56,6 +56,10 @@ def make_t_maps(data_xds_list, opts):
         utime_per_chunk = da.from_array(utime_chunks,
                                         chunks=(1,),
                                         name="utpc-" + uuid4().hex)
+
+        annotate(utime_per_chunk,
+                 dims=("row",),
+                 partition=dataset_partition(xds))
 
         t_bin_arr = make_t_binnings(utime_per_chunk, utime_intervals, opts)
         t_map_arr = make_t_mappings(utime_ind, t_bin_arr)
@@ -184,8 +188,6 @@ def make_f_mappings(chan_freqs, chan_widths, opts):
         new_axis=1,
         dtype=np.int32,
         name="fmaps-" + uuid4().hex)
-
-    f_map_arr = inlined_array(f_map_arr)
 
     return f_map_arr
 
