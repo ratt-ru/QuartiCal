@@ -99,25 +99,12 @@ def _execute(exitstack):
 
     gain_writes = write_gain_datasets(gain_xds_lol, opts)
 
-    writes = [writes] if not isinstance(writes, list) else writes
-
-    stride = len(writes)//len(gain_writes)
-
-    # Match up column and gain writes - avoids recompute, and necessary for
-    # handling BDA data. TODO: This is like unnecessary, but need to verify.
-    outputs = []
-    for ind in range(len(gain_writes)):
-
-        ms_writes = writes[ind*stride: (ind + 1)*stride]
-
-        outputs.append(dask.delayed(tuple)([*ms_writes, *gain_writes[ind]]))
-
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()
 
     with ProgressBar():
-        dask.compute(outputs,
+        dask.compute([gain_writes, writes],
                      num_workers=opts.parallel_nthread,
                      optimize_graph=True,
                      scheduler=opts.parallel_scheduler)
