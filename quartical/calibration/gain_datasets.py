@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 from loguru import logger  # noqa
 import dask.array as da
-import zarr
 import pathlib
 import shutil
+from daskms.experimental.zarr import xds_to_zarr
 from quartical.calibration.gain_types import term_types
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
+from quartical.scheduling import annotate
 
 
 def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
@@ -191,25 +192,17 @@ def write_gain_datasets(gain_xds_lol, opts):
 
     gain_writes = []
 
-    for xds_ind, gain_xds_list in enumerate(gain_xds_lol):
-        term_writes = []
-        for term_ind, term in enumerate(gain_xds_list):
-            # Remove all chunking on the gains.
-            rechunked_term = term.chunk({dim: -1 for dim in term.dims})
+    for ti, term_name in enumerate(opts.solver_gain_terms):
 
-            term_store = \
-                zarr.DirectoryStore(f"{gain_path.joinpath(term.NAME)}")
+        term_xds_list = [tl[ti].chunk({dim: -1 for dim in tl[ti].dims})
+                         for tl in gain_xds_lol]
 
-            # We want to include grouping info in the file names.
-            desc = "".join([f"{grp[0]}{term.attrs[grp]:0>4}"
-                            for grp in sorted(opts.input_ms_group_by)])
+        output_path = f"{gain_path.joinpath(term_name)}"
 
-            term_write = rechunked_term.to_zarr(
-                term_store,
-                mode="w",
-                group=f"{term.NAME}_{desc}",
-                compute=False)
-            term_writes.append(term_write)
+        term_writes = xds_to_zarr(term_xds_list, output_path)
+
+        annotate(term_writes)
+
         gain_writes.append(term_writes)
 
-    return gain_writes
+    return [list(terms) for terms in zip(*gain_writes)]
