@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import jit, literally
-from numba.extending import overload
+from numba import literally, generated_jit, types
+from numba.extending import register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual)
-from quartical.kernels.complex import compute_jhj_jhr
+from quartical.kernels.complex import jhj_jhr_diag, jhj_jhr_full
 from collections import namedtuple
 
 
@@ -16,161 +16,167 @@ stat_fields = {"conv_iters": np.int64,
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
 def kalman_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                   d_map_arr, corr_mode, active_term, inverse_gains,
                   gains, flags, row_map, row_weights):
 
-    n_tint, n_fint, n_ant, n_dir, n_corr = gains[active_term].shape
-
-    invert_gains(gains, inverse_gains, literally(corr_mode))
-
-    complex_dtype = gains[active_term].dtype
-    real_dtype = gains[active_term].real.dtype
-
-    # Initialise arrays for storing intemediary results. TODO: Custom
-    # kernels might make the leading time dimension superfluous.
-
-    intemediary_shape = (1, n_fint, n_ant, n_dir, n_corr)
-
-    jhj = np.empty(intemediary_shape, dtype=complex_dtype)
-    jhr = np.empty(intemediary_shape, dtype=complex_dtype)
-    g_update = np.empty(intemediary_shape, dtype=complex_dtype)
-    p_update = np.empty(intemediary_shape, dtype=real_dtype)
-
-    # Q and P have the same dimensions as the gain (or we represent them as
-    # though they do).
-
-    Q = np.zeros_like(gains[active_term], dtype=real_dtype)
-    P = np.ones_like(gains[active_term], dtype=real_dtype)
-    P[0] += Q[0]  # Add Q to P for for first iteration.
-
-    n_epoch = 2
-
-    for _ in range(n_epoch):
-
-        # ------------------------------FILTER---------------------------------
-
-        for i in range(n_tint):
-
-            # TODO: This is a dirty hack - implement special jhj and jhr code.
-            # This DOES NOT WORK for BDA data, and will need to be fixed.
-            sel = np.where(t_map_arr[:, active_term] == i)[0]
-
-            # Compute the (unweighted) residual values at the current time.
-            residual = \
-                compute_residual(data[sel, :, :],
-                                 model[sel, :, :, :],
-                                 [gains[active_term][i:i+1, :, :, :, :]],
-                                 a1[sel],
-                                 a2[sel],
-                                 np.zeros_like(t_map_arr[sel]),
-                                 f_map_arr,
-                                 d_map_arr,
-                                 row_map,
-                                 row_weights,
-                                 literally(corr_mode))
-
-            # Compute the entries of JHWr and the diagonal entries of JHWJ.
-            compute_jhj_jhr(jhj,
-                            jhr,
-                            model[sel, :, :, :],
-                            [gains[active_term][i:i+1, :, :, :, :]],
-                            inverse_gains,
-                            residual,
-                            a1[sel],
-                            a2[sel],
-                            weights[sel, :, :],
-                            np.zeros_like(t_map_arr[sel]),
-                            f_map_arr,
-                            d_map_arr,
-                            row_map,
-                            row_weights,
-                            active_term,
-                            literally(corr_mode))
-
-            # Compute the updates - this is where the inverse happens.
-            compute_update(g_update,
-                           p_update,
-                           jhj,
-                           jhr,
-                           P[i:i+1, :, :, :, :],
-                           literally(corr_mode))
-
-            # Update the gains and covariances (P).
-            gains[active_term][i:i+1, :, :, :, :] += 0.5*g_update
-            P[i:i+1, :, :, :, :] -= 0.5*p_update
-
-            # On all except the last iteration, we need to add Q to P and set
-            # the gain at t+1 equal to the gain at the current t.
-            if i < n_tint - 1:
-                gains[active_term][i+1, :, :, :, :] = \
-                    gains[active_term][i, :, :, :, :]
-                P[i+1, :, :, :, :] = P[i, :, :, :, :] + Q[i, :, :, :, :]
-
-        # -----------------------------SMOOTHER--------------------------------
-
-        # Set up the arrays to store the smoothed versions of G and P. Gs are
-        # needed to update Q.
-
-        smooth_gains = np.zeros_like(gains[active_term])
-        smooth_P = np.zeros_like(P)
-        Gs = np.zeros_like(P)
-
-        # The filter and smoother are set to agree at the final time step.
-        smooth_gains[-1] = gains[active_term][-1]
-        smooth_P[-1] = P[-1]
-
-        for i in range(n_tint-2, -1, -1):
-
-            # TODO: This shouldn't be returning G - this was just PoC.
-            Gs[i:i+1] = \
-                compute_smoother_update(g_update,
-                                        p_update,
-                                        gains[active_term][i:i+1, :, :, :, :],
-                                        smooth_gains[i+1:i+2, :, :, :, :],
-                                        P[i:i+1, :, :, :, :],
-                                        smooth_P[i+1:i+2, :, :, :, :],
-                                        Q[i:i+1, :, :, :, :],
-                                        literally(corr_mode))
-
-            smooth_gains[i:i+1, :, :, :, :] = \
-                gains[active_term][i:i+1] + 0.5*g_update
-            smooth_P[i:i+1, :, :, :, :] = P[i:i+1] + 0.5*p_update
-
-        # TODO: Q really shouldn't have a time axis - I was just being lazy.
-        Q[:] = update_q(smooth_gains, smooth_P, Gs)
-
-        # Add Q here for the first step of the next filter run.
-        g0_diff = smooth_gains[0] - gains[active_term][0]
-        P[0] = (smooth_P[0] + g0_diff * g0_diff.conjugate()).real + Q[0]
-
-        # Gains are set to the last set of smoothed gains.
-        gains[active_term][:] = smooth_gains[:]
-
-    return term_conv_info(0, 0)  # This has no meaning for this solver.
-
-
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_update(g_update, p_update, jhj, jhr, P, corr_mode):
-
-    return _compute_update(g_update, p_update, jhj, jhr, P,
-                           literally(corr_mode))
-
-
-def _compute_update(g_update, p_update, jhj, jhr, P, corr_mode):
-    pass
-
-
-@overload(_compute_update, inline="always")
-def _compute_update_impl(g_update, p_update, jhj, jhr, P, corr_mode):
+    if not isinstance(corr_mode, types.Literal):
+        return lambda model, data, a1, a2, weights, t_map_arr, f_map_arr, \
+                   d_map_arr, corr_mode, active_term, inverse_gains, \
+                   gains, flags, row_map, row_weights: literally(corr_mode)
 
     if corr_mode.literal_value == "diag":
-        return update_diag
+        compute_jhj_jhr = jhj_jhr_diag
+        compute_update = update_diag
+        compute_smoother_update = smoother_update_diag
+
     else:
-        return update_full
+        compute_jhj_jhr = jhj_jhr_full
+        compute_update = update_full
+        compute_smoother_update = smoother_update_full
+
+    def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
+             d_map_arr, corr_mode, active_term, inverse_gains,
+             gains, flags, row_map, row_weights):
+
+        n_tint, n_fint, n_ant, n_dir, n_corr = gains[active_term].shape
+
+        invert_gains(gains, inverse_gains, corr_mode)
+
+        complex_dtype = gains[active_term].dtype
+        real_dtype = gains[active_term].real.dtype
+
+        # Initialise arrays for storing intemediary results. TODO: Custom
+        # kernels might make the leading time dimension superfluous.
+
+        intemediary_shape = (1, n_fint, n_ant, n_dir, n_corr)
+
+        jhj = np.empty(intemediary_shape, dtype=complex_dtype)
+        jhr = np.empty(intemediary_shape, dtype=complex_dtype)
+        g_update = np.empty(intemediary_shape, dtype=complex_dtype)
+        p_update = np.empty(intemediary_shape, dtype=real_dtype)
+
+        # Q and P have the same dimensions as the gain (or we represent them as
+        # though they do).
+
+        Q = np.zeros_like(gains[active_term], dtype=real_dtype)
+        P = np.ones_like(gains[active_term], dtype=real_dtype)
+        P[0] += Q[0]  # Add Q to P for for first iteration.
+
+        n_epoch = 2
+
+        for _ in range(n_epoch):
+
+            # ----------------------------FILTER-------------------------------
+
+            for i in range(n_tint):
+
+                # TODO: This is a dirty hack - implement special jhj and jhr
+                # code. This DOES NOT WORK for BDA data, and will need to be
+                # fixed.
+                sel = np.where(t_map_arr[:, active_term] == i)[0]
+
+                # Compute the (unweighted) residual values at the current time.
+                residual = \
+                    compute_residual(data[sel, :, :],
+                                     model[sel, :, :, :],
+                                     [gains[active_term][i:i+1, :, :, :, :]],
+                                     a1[sel],
+                                     a2[sel],
+                                     np.zeros_like(t_map_arr[sel]),
+                                     f_map_arr,
+                                     d_map_arr,
+                                     row_map,
+                                     row_weights,
+                                     corr_mode)
+
+                # Compute the entries of JHWr and the diagonal entries of JHWJ.
+                compute_jhj_jhr(jhj,
+                                jhr,
+                                model[sel, :, :, :],
+                                [gains[active_term][i:i+1, :, :, :, :]],
+                                inverse_gains,
+                                residual,
+                                a1[sel],
+                                a2[sel],
+                                weights[sel, :, :],
+                                np.zeros_like(t_map_arr[sel]),
+                                f_map_arr,
+                                d_map_arr,
+                                row_map,
+                                row_weights,
+                                active_term,
+                                corr_mode)
+
+                # Compute the updates - this is where the inverse happens.
+                compute_update(g_update,
+                               p_update,
+                               jhj,
+                               jhr,
+                               P[i:i+1, :, :, :, :],
+                               corr_mode)
+
+                # Update the gains and covariances (P).
+                gains[active_term][i:i+1, :, :, :, :] += 0.5*g_update
+                P[i:i+1, :, :, :, :] -= 0.5*p_update
+
+                # On all except the last iteration, we need to add Q to P and
+                # set the gain at t+1 equal to the gain at the current t.
+                if i < n_tint - 1:
+                    gains[active_term][i+1, :, :, :, :] = \
+                        gains[active_term][i, :, :, :, :]
+                    P[i+1, :, :, :, :] = P[i, :, :, :, :] + Q[i, :, :, :, :]
+
+            # ---------------------------SMOOTHER------------------------------
+
+            # Set up the arrays to store the smoothed versions of G and P. Gs
+            # are needed to update Q.
+
+            smooth_gains = np.zeros_like(gains[active_term])
+            smooth_P = np.zeros_like(P)
+            Gs = np.zeros_like(P)
+
+            # The filter and smoother are set to agree at the final time step.
+            smooth_gains[-1] = gains[active_term][-1]
+            smooth_P[-1] = P[-1]
+
+            for i in range(n_tint-2, -1, -1):
+
+                # TODO: This shouldn't be returning G - this was just PoC.
+                Gs[i:i+1] = \
+                    compute_smoother_update(
+                        g_update,
+                        p_update,
+                        gains[active_term][i:i+1, :, :, :, :],
+                        smooth_gains[i+1:i+2, :, :, :, :],
+                        P[i:i+1, :, :, :, :],
+                        smooth_P[i+1:i+2, :, :, :, :],
+                        Q[i:i+1, :, :, :, :],
+                        corr_mode)
+
+                smooth_gains[i:i+1, :, :, :, :] = \
+                    gains[active_term][i:i+1] + 0.5*g_update
+                smooth_P[i:i+1, :, :, :, :] = P[i:i+1] + 0.5*p_update
+
+            # TODO: Q really shouldn't have a time axis - I was just being
+            # lazy.
+            Q[:] = update_q(smooth_gains, smooth_P, Gs)
+
+            # Add Q here for the first step of the next filter run.
+            g0_diff = smooth_gains[0] - gains[active_term][0]
+            P[0] = (smooth_P[0] + g0_diff * g0_diff.conjugate()).real + Q[0]
+
+            # Gains are set to the last set of smoothed gains.
+            gains[active_term][:] = smooth_gains[:]
+
+        return term_conv_info(0, 0)  # This has no meaning for this solver.
+
+    return impl
 
 
+@register_jitable
 def update_diag(g_update, p_update, jhj, jhr, P, corr_mode):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
@@ -215,6 +221,7 @@ def update_diag(g_update, p_update, jhj, jhr, P, corr_mode):
     return
 
 
+@register_jitable
 def update_full(g_update, p_update, jhj, jhr, P, corr_mode):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
@@ -272,29 +279,7 @@ def update_full(g_update, p_update, jhj, jhr, P, corr_mode):
     return
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_smoother_update(g_update, p_update, gains, smooth_gains, P,
-                            smooth_P, Q, corr_mode):
-
-    return _compute_smoother_update(g_update, p_update, gains, smooth_gains,
-                                    P, smooth_P, Q, literally(corr_mode))
-
-
-def _compute_smoother_update(g_update, p_update, gains, smooth_gains, P,
-                             smooth_P, Q, corr_mode):
-    pass
-
-
-@overload(_compute_smoother_update, inline="always")
-def _compute_smoother_update_impl(g_update, p_update, gains, smooth_gains, P,
-                                  smooth_P, Q, corr_mode):
-
-    if corr_mode.literal_value == "diag":
-        return smoother_update_diag
-    else:
-        return smoother_update_full
-
-
+@register_jitable
 def smoother_update_diag(g_update, p_update, gains, smooth_gains, P, smooth_P,
                          Q, corr_mode):
 
@@ -340,6 +325,7 @@ def smoother_update_diag(g_update, p_update, gains, smooth_gains, P, smooth_P,
     return Gs
 
 
+@register_jitable
 def smoother_update_full(g_update, p_update, gains, smooth_gains, P, smooth_P,
                          Q, corr_mode):
 
@@ -405,7 +391,7 @@ def smoother_update_full(g_update, p_update, gains, smooth_gains, P, smooth_P,
     return Gs
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@register_jitable
 def update_q(ms, Ps, G):
     """
     Here we compute the optimal prior parameters resulting from estimation for

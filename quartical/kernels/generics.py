@@ -1,100 +1,95 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba.extending import overload, register_jitable
-from numba import jit, prange, literally
+from numba import prange, literally, generated_jit, types, jit
+from numba.extending import register_jitable
 from numba.typed import List
-from quartical.kernels.helpers import get_dims, get_row, mul_rweight
+from quartical.kernels.convenience import get_dims, get_row, mul_rweight
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
 def invert_gains(gain_list, inverse_gains, mode):
 
-    for gain_ind, gain in enumerate(gain_list):
-
-        n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
-
-        inverse_gain = inverse_gains[gain_ind]
-
-        for t in range(n_tint):
-            for f in range(n_fint):
-                for a in range(n_ant):
-                    for d in range(n_dir):
-
-                        _invert(gain[t, f, a, d, :],
-                                inverse_gain[t, f, a, d, :],
-                                literally(mode))
-
-
-def _invert(gain, inverse_gain, mode):
-    pass
-
-
-@overload(_invert, inline='always')
-def _invert_impl(gain, inverse_gain, mode):
+    if not isinstance(mode, types.Literal):
+        return lambda gain_list, inverse_gains, mode: literally(mode)
 
     if mode.literal_value == "diag":
-        def _invert_impl(gain, inverse_gain, mode):
-
-            g00 = gain[..., 0]
-            g11 = gain[..., 1]
-
-            det = g00*g11
-
-            if np.abs(det) < 1e-6:
-                inverse_gain[..., 0] = 0
-                inverse_gain[..., 1] = 0
-            else:
-                inverse_gain[..., 0] = 1/g00
-                inverse_gain[..., 1] = 1/g11
-
-        return _invert_impl
-
+        invert = invert_diag
     else:
-        def _invert_impl(gain, inverse_gain, mode):
+        invert = invert_full
 
-            g00 = gain[..., 0]
-            g01 = gain[..., 1]
-            g10 = gain[..., 2]
-            g11 = gain[..., 3]
+    def impl(gain_list, inverse_gains, mode):
+        for gain_ind, gain in enumerate(gain_list):
 
-            det = (g00*g11 - g01*g10)
+            n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-            if np.abs(det) < 1e-6:
-                inverse_gain[..., 0] = 0
-                inverse_gain[..., 1] = 0
-                inverse_gain[..., 2] = 0
-                inverse_gain[..., 3] = 0
-            else:
-                inverse_gain[..., 0] = g11/det
-                inverse_gain[..., 1] = -g01/det
-                inverse_gain[..., 2] = -g10/det
-                inverse_gain[..., 3] = g00/det
+            inverse_gain = inverse_gains[gain_ind]
 
-        return _invert_impl
+            for t in range(n_tint):
+                for f in range(n_fint):
+                    for a in range(n_ant):
+                        for d in range(n_dir):
+
+                            invert(gain[t, f, a, d, :],
+                                   inverse_gain[t, f, a, d, :],
+                                   mode)
+
+    return impl
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@register_jitable
+def invert_diag(gain, inverse_gain, mode):
+
+    g00 = gain[..., 0]
+    g11 = gain[..., 1]
+
+    det = g00*g11
+
+    if np.abs(det) < 1e-6:
+        inverse_gain[..., 0] = 0
+        inverse_gain[..., 1] = 0
+    else:
+        inverse_gain[..., 0] = 1/g00
+        inverse_gain[..., 1] = 1/g11
+
+
+@register_jitable
+def invert_full(gain, inverse_gain, mode):
+
+    g00 = gain[..., 0]
+    g01 = gain[..., 1]
+    g10 = gain[..., 2]
+    g11 = gain[..., 3]
+
+    det = (g00*g11 - g01*g10)
+
+    if np.abs(det) < 1e-6:
+        inverse_gain[..., 0] = 0
+        inverse_gain[..., 1] = 0
+        inverse_gain[..., 2] = 0
+        inverse_gain[..., 3] = 0
+    else:
+        inverse_gain[..., 0] = g11/det
+        inverse_gain[..., 1] = -g01/det
+        inverse_gain[..., 2] = -g10/det
+        inverse_gain[..., 3] = g00/det
+
+
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
 def compute_residual(data, model, gain_list, a1, a2, t_map_arr,
                      f_map_arr, d_map_arr, row_map, row_weights, mode):
 
-    return _compute_residual(data, model, gain_list, a1, a2, t_map_arr,
-                             f_map_arr, d_map_arr, row_map, row_weights,
-                             literally(mode))
-
-
-def _compute_residual(data, model, gain_list, a1, a2, t_map_arr,
-                      f_map_arr, d_map_arr, row_map, row_weights, mode):
-    pass
-
-
-@overload(_compute_residual, inline='always')
-def _compute_residual_impl(data, model, gain_list, a1, a2, t_map_arr,
-                           f_map_arr, d_map_arr, row_map, row_weights, mode):
+    if not isinstance(mode, types.Literal):
+        return lambda data, model, gain_list, a1, a2, t_map_arr, f_map_arr, \
+                      d_map_arr, row_map, row_weights, mode: literally(mode)
 
     if mode.literal_value == "diag":
-        return residual_diag
+        impl = residual_diag
     else:
-        return residual_full
+        impl = residual_full
+
+    return impl
 
 
 @register_jitable
@@ -206,30 +201,22 @@ def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
     return residual
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
 def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
                                f_map_arr, d_map_arr, row_map, row_weights,
                                mode):
 
-    return _compute_corrected_residual(residual, gain_list, a1, a2,
-                                       t_map_arr, f_map_arr, d_map_arr,
-                                       row_map, row_weights, literally(mode))
-
-
-def _compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
-                                f_map_arr, d_map_arr, row_map, row_weights,
-                                mode):
-    pass
-
-
-@overload(_compute_corrected_residual, inline='always')
-def _compute_corrected_impl(residual, gain_list, a1, a2, t_map_arr,
-                            f_map_arr, d_map_arr, row_map, row_weights, mode):
+    if not isinstance(mode, types.Literal):
+        return lambda residual, gain_list, a1, a2, t_map_arr, f_map_arr, \
+                      d_map_arr, row_map, row_weights, mode: literally(mode)
 
     if mode.literal_value == "diag":
-        return corrected_residual_diag
+        impl = corrected_residual_diag
     else:
-        return corrected_residual_full
+        impl = corrected_residual_full
+
+    return impl
 
 
 @register_jitable
