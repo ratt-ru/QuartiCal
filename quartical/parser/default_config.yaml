@@ -145,11 +145,10 @@ input-model:
 
 output:
     _description: Arguments pertaining to output products.
-    # directory:
-    #     type: str
-    #     help: Base name of directory for output files. The suffix .cc-out will
-    #           be implicitly appended, unless OUTDIR ends with a slash.
-    #     default: quartical
+    gain_dir:
+        type: str
+        help: Name of directory for output gains.
+        default: gains.qcal
     # file-name:
     #     type: str
     #     help: Base name for output files. Full base path will be
@@ -232,32 +231,6 @@ output:
 
 flags:
     _description: Arguments pertaining to flagging behaviour.
-    apply-precal:
-        nargs: +
-        type: str
-        help: Which flagsets will be applied prior to calibration. Use
-              "~FLAGSET" to apply all bitflags except the named flagset
-              ("~quartical" is will ignore preexisting QuartiCal flags).
-              Use "FLAG" to just apply FLAG/FLAG_ROW.
-        default:
-            - ~quartical
-    # add-bitflags:
-    #     type: bool
-    #     help: If True, will automatically insert a BITFLAG column if one is not
-    #           already present. Will automatically populate the legacy bitflag
-    #           from FLAG and FLAG_ROW.
-    #     default: True
-    reinit-bitflags:
-        type: bool
-        help: If true, reinitializes BITFLAG column from scratch. Useful if the
-              existing BITFLAG column has been corrupted. Be careful with the
-              state of the FLAG/FLAG_ROW colum when you use this option.
-        default: False
-    # save-flagset:
-    #     type: str
-    #     help: Save solver flags to the named flagset. If None or zero, the
-    #           solver flags will not be saved.
-    #     default: quartical
     mad-enable:
         type: bool
         help: Enables the MAD flagging routines.
@@ -450,12 +423,26 @@ parallel:
     #     help: Set to 1 (and specify load-from or xfer-from) to load a
     #           precomputed term from disk.
     #     default: False
-    # load-from:
-    #     type: str
-    #     help: Load solutions from given database. The DB must define solutions
-    #           on the same time/frequency grid (i.e. should normally come from
-    #           calibrating the same pointing/observation).
-    #     default: None
+    load-from:
+        type: str
+        help: Load solutions from given database. 
+        default: None
+    interp-mode:
+        type: str
+        help: Set interpolation mode.
+        choices:
+            - ampphase
+            - reim
+        default: reim
+    interp-method:
+        type: str
+        help: Set interpolation method. The smoothing spline implementation is
+              is experimental and slow.
+        choices:
+            - 2dlinear
+            - 2dspline
+            - smoothingspline
+        default: 2dlinear
     # xfer-from:
     #     type: str
     #     help: Transfer solutions from given database. Similar to -load-from,
