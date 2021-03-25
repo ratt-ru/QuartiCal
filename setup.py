@@ -59,7 +59,7 @@ else:
 
                     "astro-tigger-lsm",
                     "loguru",
-                    "numba<=0.52.0",  # Numba pinned until dispatch is fixed.
+                    "numba",
 
                     "distributed"
                     "@git+https://github.com/dask/distributed.git"

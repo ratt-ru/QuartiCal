@@ -85,7 +85,8 @@ def test_distributed(base_opts):
     opts = Namespace(**vars(base_opts))
 
     with ExitStack() as stack:
-        cluster = stack.enter_context(LocalCluster(processes=False, n_workers=4))
+        cluster = \
+            stack.enter_context(LocalCluster(processes=False, n_workers=4))
         client = stack.enter_context(Client(cluster))
         scheduler = cluster.scheduler
 
@@ -95,7 +96,7 @@ def test_distributed(base_opts):
 
         opts._model_columns = ["MODEL_DATA"]
 
-        datasets, _, _ = read_xds_list(opts)
+        datasets, _ = read_xds_list(opts)
         assert len(datasets) == 2
         assert len(datasets[0].chunks["row"]) == 29
         assert len(datasets[1].chunks["row"]) == 27
@@ -105,8 +106,6 @@ def test_distributed(base_opts):
 
         chan_freq = da.linspace(.856e9, 2*.856e9, 16, chunks=4)
         lm = da.random.random((4, 2), chunks=(2, 2))
-
-        computes = []
 
         new_datasets = []
 
@@ -120,7 +119,6 @@ def test_distributed(base_opts):
             new_datasets.append(nds)
 
         annotate(new_datasets)
-
 
         with dask.config.set(optimization__fuse__active=False):
             dask.compute(new_datasets)
