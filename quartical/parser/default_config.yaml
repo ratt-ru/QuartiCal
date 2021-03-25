@@ -344,6 +344,7 @@ parallel:
             - robust
             - kalman
             - delay
+            - generated
         default: complex
     # parametrisation:
     #     type: str
