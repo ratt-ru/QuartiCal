@@ -2,7 +2,7 @@ import numpy as np
 from quartical.calibration.solver import solver_wrapper
 from quartical.utils.dask import Blocker
 from collections import namedtuple
-from quartical.scheduling import dataset_partition
+from quartical.scheduling import annotate, dataset_partition
 
 
 term_spec_tup = namedtuple("term_spec_tup", "name type args shape pshape")
@@ -131,6 +131,8 @@ def construct_solver(data_xds_list,
                 result_vars["params"] = (gain_xds.PARAM_AXES, params)
 
             solved_xds = gain_xds.assign(result_vars)
+
+            annotate(solved_xds)
 
             solved_gain_terms.append(solved_xds)
 

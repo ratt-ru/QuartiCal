@@ -3,7 +3,7 @@ import numpy as np
 from uuid import uuid4
 from loguru import logger  # noqa
 from quartical.flagging.flagging_kernels import madmax, threshold
-from quartical.scheduling import annotate
+from quartical.scheduling import annotate, dataset_partition
 
 
 def finalise_flags(xds_list, opts):
@@ -25,11 +25,13 @@ def finalise_flags(xds_list, opts):
     for xds in xds_list:
 
         flag_col = xds.FLAG.data
-        flag_row_col = da.all(flag_col, axis=(1, 2))
+        flag_row_col = xds.FLAG_ROW.data#da.all(flag_col, axis=(1, 2))
+
+        annotate(flag_row_col, dims=("row",), partition=dataset_partition(xds))
 
         updated_xds = \
             xds.assign({"FLAG_ROW": (xds.FLAG_ROW.dims, flag_row_col)})
-        updated_xds.attrs["WRITE_COLS"] += ["FLAG", "FLAG_ROW"]
+        updated_xds.attrs["WRITE_COLS"] += ("FLAG", "FLAG_ROW")
 
         writable_xds.append(updated_xds)
 

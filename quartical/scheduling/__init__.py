@@ -3,9 +3,12 @@ from ast import literal_eval
 
 import dask
 import dask.array as da
+import numpy as np
 from daskms.constants import DASKMS_PARTITION_KEY as PARTITION_KEY
 from dask.highlevelgraph import HighLevelGraph
 from distributed.diagnostics.plugin import SchedulerPlugin
+from dask.core import get_dependencies, reverse_dict, get_deps, getcycle
+from dask.order import ndependencies, graph_metrics
 import xarray
 
 
@@ -115,6 +118,8 @@ class QuarticalScheduler(SchedulerPlugin):
         workers = list(scheduler.workers.keys())
         partitions = defaultdict(list)
 
+        
+
         for k, a in annotations.get("__dask_array__", {}).items():
             try:
                 p = a["partition"]
@@ -126,6 +131,8 @@ class QuarticalScheduler(SchedulerPlugin):
             try:
                 ri = dims.index("row")
             except ValueError:
+                print(f"{k} not understood")
+                print(f"{tasks.get(k)}")
                 continue
 
             # Map block id's and chunks to dimensions
@@ -150,3 +157,89 @@ class QuarticalScheduler(SchedulerPlugin):
 
 def install_plugin(dask_scheduler=None, **kwargs):
     dask_scheduler.add_plugin(QuarticalScheduler(**kwargs), idempotent=True)
+
+
+def interrogate_annotations(collection):
+
+    hlg = collection.__dask_graph__()
+    layers = hlg.layers
+    deps = hlg.dependencies
+
+    for k, v in layers.items():
+        if v.annotations is None:
+            print(k, deps[k])
+
+    for k, v in deps.items():
+        if layers[k].annotations is None:
+            print(k, v)
+
+    # import pdb; pdb.set_trace()
+
+    return
+
+
+def annotate_traversal(collection):
+
+    hlg = collection.__dask_graph__()
+    layers = hlg.layers
+
+    dependencies = {k: get_dependencies(hlg, k) for k in hlg}
+    dependents = reverse_dict(dependencies)
+    _, total_dependencies = ndependencies(dependencies, dependents)
+
+    # [k for (k, v) in dependents.items() if v == set()]
+
+    max_depth = max(total_dependencies.values())
+    max_depth_layer_names = \
+        [k for (k, v) in total_dependencies.items() if v == max_depth]
+    max_depth_layer_names = sorted(max_depth_layer_names)
+
+    max_depth_deps = [dependencies[d] for d in max_depth_layer_names]
+    max_depth_deps_hash = [hash(tuple(d)) for d in max_depth_deps]
+
+    group_map = dict.fromkeys(max_depth_deps_hash)
+    group_map = {k: v for k, v in zip(group_map.keys(), range(len(group_map)))}
+    group_map = [group_map[h] for h in max_depth_deps_hash]
+
+    for group, task_name in zip(group_map, max_depth_layer_names):
+
+        unravelled_deps = unravel_deps(dependencies, task_name)
+        
+        annotate_layers(layers, unravelled_deps, task_name, group)
+
+    import pdb; pdb.set_trace()
+
+    return
+
+
+def annotate_layers(layers, unravelled_deps, task_name, group):
+
+    for name in [task_name, *unravelled_deps]:
+
+        layer_name = name[0]
+
+        annotation = layers[layer_name].annotations
+
+        if isinstance(annotation, dict):
+            if not ("__group__" in annotation):
+                annotation["__group__"] = defaultdict(set)
+        else:
+            annotation = {"__group__": defaultdict(set)}
+
+        annotation["__group__"][name] |= {group}
+
+    # import pdb; pdb.set_trace()
+
+    return
+
+
+def unravel_deps(hlg_deps, name, unravelled_deps=None):
+
+    if unravelled_deps is None:
+        unravelled_deps = set()
+
+    for dep in hlg_deps[name]:
+        unravelled_deps |= {dep}
+        unravel_deps(hlg_deps, dep, unravelled_deps)
+
+    return unravelled_deps

@@ -14,7 +14,7 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
-from quartical.scheduling import install_plugin
+from quartical.scheduling import annotate, install_plugin, interrogate_annotations, dataset_partition, annotate_traversal
 from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 from quartical.calibration.gain_datasets import write_gain_datasets
 
@@ -60,20 +60,41 @@ def _execute(exitstack):
         exitstack.enter_context(opt_ctx)
         logger.info("Distributed client sucessfully initialized.")
 
+    cluster.scheduler.plugins.pop(0)
+
     t0 = time.time()
 
     # Reads the measurement set using the relavant configuration from opts.
     data_xds_list, ref_xds_list = read_xds_list(opts)
 
     # logger.info("Reading data from zms.")
-    # data_xds_list = xds_from_zarr("/home/jkenyon/lustre/ms/fresh_ms/"
-    #                               "1562500862_sdp_l0-A3562-corr-9fresh.zms")
-
+    # data_xds_list = xds_from_zarr("/home/jonathan/3C147_tests/3C147_daskms.zms")
     # annotate(data_xds_list)
 
-    # writes = xds_to_zarr(data_xds_list, "/home/jkenyon/lustre/ms/fresh_ms/"
-    #                                     "1562500862_sdp_l0-A3562-corr-"
-    #                                     "9fresh.zms")
+    def fix_annotations(collection):
+
+        hlg = collection.__dask_graph__()
+        layers = hlg.layers
+        deps = hlg.dependencies
+
+        for k, v in deps.items():
+            if layers[k].annotations is None:
+                annotation = {
+                    "__dask_array__": {
+                        "dtype": 'ndarray',
+                        "chunks": collection.chunks["row"],
+                        "partition": dataset_partition(collection),
+                        "dims": ("row",)}}
+                layers[k].annotations = annotation
+
+        return
+
+    for xds in data_xds_list:
+        fix_annotations(xds)
+        # interrogate_annotations(xds)
+
+
+    # writes = xds_to_zarr(data_xds_list, "/home/jonathan/3C147_tests/3C147_daskms.zms")
 
     # dask.compute(writes)
 
@@ -97,27 +118,33 @@ def _execute(exitstack):
 
     writes = write_xds_list(writable_xds, ref_xds_list, opts)
 
+    # interrogate_annotations(gain_xds_lol[0][0])
+
     gain_writes = write_gain_datasets(gain_xds_lol, opts)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
+    # interrogate_annotations(writes[0])
+    annotate_traversal(gain_xds_lol[0][0])
+    # annotate_traversal(gain_writes[0][0])
+
     t0 = time.time()
 
-    with ProgressBar():
-        dask.compute([gain_writes, writes],
-                     num_workers=opts.parallel_nthread,
-                     optimize_graph=True,
-                     scheduler=opts.parallel_scheduler)
+    # with ProgressBar():
+    #     dask.compute([gain_writes, writes],
+    #                  num_workers=opts.parallel_nthread,
+    #                  optimize_graph=True,
+    #                  scheduler=opts.parallel_scheduler)
 
-    logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
+    # logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
-    # dask.visualize(outputs,
+    # dask.visualize(gain_xds_lol[0][0],
     #                color='order', cmap='autumn',
     #                filename='order.pdf', node_attr={'penwidth': '10'})
 
-    # dask.visualize(outputs,
-    #                filename='graph.pdf',
-    #                optimize_graph=True)
+    dask.visualize(writes[0],
+                   filename='graph.pdf',
+                   optimize_graph=False)
 
     # dask.visualize(*gains_per_xds["G"],
     #                filename='gain_graph',

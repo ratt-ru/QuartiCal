@@ -7,7 +7,7 @@ from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_presolve_data_stats,)
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
-from quartical.scheduling import annotate, dataset_partition
+from quartical.scheduling import annotate, dataset_partition, interrogate_annotations
 from quartical.calibration.gain_datasets import make_gain_xds_list
 from quartical.interpolation.interpolate import load_and_interpolate_gains
 from loguru import logger  # noqa
@@ -81,8 +81,8 @@ def add_calibration_graph(data_xds_list, opts):
 
     for i, xds in enumerate(data_xds_list):
         partition = dataset_partition(xds)
-    #     annotate(t_bin_list[i], dims=("row", "term"), partition=partition)
-    #     annotate(t_map_list[i], dims=("row", "term"), partition=partition)
+        annotate(t_bin_list[i], dims=("row", "term"), partition=partition)
+        annotate(t_map_list[i], dims=("row", "term"), partition=partition)
         annotate(f_map_list[i], dims=("chan", "term"), partition=partition)
 
     # Create a list of lists of xarray.Dataset objects which will describe the

@@ -294,7 +294,12 @@ def blockwise_unique(arr, chunks=None, return_index=False,
     if return_counts:
         output_names.append("counts")
 
-    B = Blocker(as_dict(np.unique, *output_names), "r")
+    from copy import deepcopy
+    annotation = deepcopy(arr.__dask_graph__().layers[arr.name].annotations)
+    if annotation is not None:
+        annotation['__dask_array__']['chunks'] = (len(arr.chunks[0])*(1,),)
+
+    B = Blocker(as_dict(np.unique, *output_names), "r", annotation=annotation)
 
     B.add_input("ar", arr, "r")
     B.add_input("return_index", return_index)

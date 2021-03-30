@@ -180,7 +180,7 @@ def read_xds_list(opts):
 
     data_xds_list = \
         [xds.assign_attrs({
-            "WRITE_COLS": [],
+            "WRITE_COLS": (),
             "UTIME_CHUNKS": list(map(int, utime_chunking_per_xds[xds_ind]))})
          for xds_ind, xds in enumerate(data_xds_list)]
 
@@ -296,7 +296,12 @@ def preprocess_xds_list(xds_list, opts):
 
         # Anywhere we have a broken datapoint, zero it. These points will
         # be flagged below.
-        data_col = da.where(da.isfinite(data_col), data_col, 0)
+        finite_data = da.isfinite(data_col)
+        annotate(finite_data,
+                 dims=("row", "chan", "corr"),
+                 partition=dataset_partition(xds))
+
+        data_col = da.where(finite_data, data_col, 0)
 
         weight_col = initialize_weights(xds, data_col, opts)
 

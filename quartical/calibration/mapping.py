@@ -36,10 +36,22 @@ def make_t_maps(data_xds_list, opts):
         # Convert the time column data into indices. Chunks is expected to
         # be a tuple of tuples.
         utime_chunks = xds.UTIME_CHUNKS
-        _, utime_loc, utime_ind = blockwise_unique(time_col,
-                                                   chunks=(utime_chunks,),
-                                                   return_index=True,
-                                                   return_inverse=True)
+        foo, utime_loc, utime_ind = blockwise_unique(time_col,
+                                                     chunks=(utime_chunks,),
+                                                     return_index=True,
+                                                     return_inverse=True)
+
+        annotate(foo,
+                 dims=("row"),
+                 partition=dataset_partition(xds))
+
+        annotate(utime_loc,
+                 dims=("row"),
+                 partition=dataset_partition(xds))
+
+        annotate(utime_ind,
+                 dims=("row"),
+                 partition=dataset_partition(xds))
 
         # Assosciate each unique time with an interval. This assumes that
         # all rows at a given time have the same interval as the
@@ -50,6 +62,10 @@ def make_t_maps(data_xds_list, opts):
             utime_loc,
             chunks=utime_loc.chunks,
             dtype=np.float64)
+
+        annotate(utime_intervals,
+                 dims=("row"),
+                 partition=dataset_partition(xds))
 
         # Daskify the chunks per array - these are already known from the
         # initial chunking step.
