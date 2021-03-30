@@ -125,8 +125,9 @@ def _execute(exitstack):
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     # interrogate_annotations(writes[0])
-    annotate_traversal(gain_xds_lol[0][0])
+    # annotate_traversal(gain_xds_lol[0][0])
     # annotate_traversal(gain_writes[0][0])
+    annotate_traversal(writes[0])
 
     t0 = time.time()
 

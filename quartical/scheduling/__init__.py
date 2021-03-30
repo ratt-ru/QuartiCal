@@ -187,27 +187,114 @@ def annotate_traversal(collection):
     dependents = reverse_dict(dependencies)
     _, total_dependencies = ndependencies(dependencies, dependents)
 
-    # [k for (k, v) in dependents.items() if v == set()]
+    # ----------------------------ATTEMPT1-------------------------------------
 
-    max_depth = max(total_dependencies.values())
-    max_depth_layer_names = \
-        [k for (k, v) in total_dependencies.items() if v == max_depth]
-    max_depth_layer_names = sorted(max_depth_layer_names)
+    # max_depth = max(total_dependencies.values())
+    # max_depth_layer_names = \
+    #     [k for (k, v) in total_dependencies.items() if v == max_depth]
+    # max_depth_layer_names = sorted(max_depth_layer_names)
 
-    max_depth_deps = [dependencies[d] for d in max_depth_layer_names]
-    max_depth_deps_hash = [hash(tuple(d)) for d in max_depth_deps]
+    # max_depth_deps = [dependencies[d] for d in max_depth_layer_names]
+    # max_depth_deps_hash = [hash(tuple(d)) for d in max_depth_deps]
 
-    group_map = dict.fromkeys(max_depth_deps_hash)
-    group_map = {k: v for k, v in zip(group_map.keys(), range(len(group_map)))}
-    group_map = [group_map[h] for h in max_depth_deps_hash]
+    # group_map = dict.fromkeys(max_depth_deps_hash)
+    # group_map = {k: v for k, v in zip(group_map.keys(), range(len(group_map)))}
+    # group_map = [group_map[h] for h in max_depth_deps_hash]
 
-    for group, task_name in zip(group_map, max_depth_layer_names):
+    # for group, task_name in zip(group_map, max_depth_layer_names):
 
-        unravelled_deps = unravel_deps(dependencies, task_name)
+    #     unravelled_deps = unravel_deps(dependencies, task_name)
         
-        annotate_layers(layers, unravelled_deps, task_name, group)
+    #     annotate_layers(layers, unravelled_deps, task_name, group)
+
+    # ----------------------------ATTEMPT2-------------------------------------
+
+    terminal_nodes = {k for (k, v) in dependents.items() if v == set()}
+    root_nodes = {k for (k, v) in dependencies.items() if v == set()}
+
+    roots_per_terminal = {}
+    unravelled_deps = {}
+
+    for group_id, task_name in enumerate(terminal_nodes):
+        unravelled_deps[task_name] = unravel_deps(dependencies, task_name)
+        roots_per_terminal[task_name] = root_nodes & unravelled_deps[task_name]
+
+    root_hashes = {hash(tuple(v)): v for k, v in roots_per_terminal.items()}
+
+    group = 0
+    hash_map = defaultdict(set)
+
+    for k, v in root_hashes.items():
+        if sum([v.issubset(vv) for vv in root_hashes.values()]) > 1:
+            continue
+        else:
+            hash_map[k] |= set([group])
+            group += 1
+
+    for k, v in root_hashes.items():
+        shared_roots = \
+            {kk: None for kk, vv in root_hashes.items() if v.issubset(vv)}
+        shared_roots.pop(k)
+        if shared_roots:
+            hash_map[k] = \
+                set().union(*[hash_map[kk] for kk in shared_roots.keys()])
+
+    for k, v in unravelled_deps.items():
+
+        group = hash_map[hash(tuple(roots_per_terminal[k]))]
+
+        annotate_layers(layers, v, k, group)
+        
+    import pdb; pdb.set_trace()
+
+    return
+
+
+def propagate_annotations(layers, dependents, root_deps):
+
+    all_dependents = set()
+
+    for task_name in root_deps:
+
+        all_dependents |= unravel_deps(dependents, task_name)
 
     import pdb; pdb.set_trace()
+
+        # layer_name = task_name[0]
+
+        # annotation = layers[layer_name].annotations
+
+        # if isinstance(annotation, dict):
+        #     if not ("__group__" in annotation):
+        #         annotation["__group__"] = defaultdict(set)
+        # else:
+        #     annotation = {"__group__": defaultdict(set)}
+
+        # annotation["__group__"][name] |= {group}
+
+    # import pdb; pdb.set_trace()
+
+    return
+
+
+
+
+
+def annotate_roots(layers, root_deps, group):
+
+    for task_name in root_deps:
+
+        layer_name = task_name[0]
+
+        annotation = layers[layer_name].annotations
+
+        if isinstance(annotation, dict):
+            if not ("__group__" in annotation):
+                annotation["__group__"] = defaultdict(set)
+        else:
+            annotation = {"__group__": defaultdict(set)}
+
+        annotation["__group__"][task_name] |= {group}
 
     return
 
@@ -220,15 +307,18 @@ def annotate_layers(layers, unravelled_deps, task_name, group):
 
         annotation = layers[layer_name].annotations
 
+        if annotation is None:
+            annotation = layers[layer_name].annotations = {}
+
         if isinstance(annotation, dict):
             if not ("__group__" in annotation):
                 annotation["__group__"] = defaultdict(set)
         else:
-            annotation = {"__group__": defaultdict(set)}
+            raise ValueError(f"Annotations are expected to be a dictionary - "
+                             f"got {type(annotation)}.")
 
-        annotation["__group__"][name] |= {group}
-
-    # import pdb; pdb.set_trace()
+        # annotation["__group__"][name] |= {group}
+        annotation["__group__"][name] |= group
 
     return
 
