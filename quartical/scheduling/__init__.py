@@ -9,6 +9,7 @@ from dask.highlevelgraph import HighLevelGraph
 from distributed.diagnostics.plugin import SchedulerPlugin
 from dask.core import get_dependencies, reverse_dict, get_deps, getcycle
 from dask.order import ndependencies, graph_metrics
+from dask.base import tokenize
 import xarray
 
 
@@ -131,8 +132,8 @@ class QuarticalScheduler(SchedulerPlugin):
             try:
                 ri = dims.index("row")
             except ValueError:
-                print(f"{k} not understood")
-                print(f"{tasks.get(k)}")
+                # print(f"{k} not understood")
+                # print(f"{tasks.get(k)}")
                 continue
 
             # Map block id's and chunks to dimensions
@@ -212,40 +213,38 @@ def annotate_traversal(collection):
     terminal_nodes = {k for (k, v) in dependents.items() if v == set()}
     root_nodes = {k for (k, v) in dependencies.items() if v == set()}
 
-    roots_per_terminal = {}
+    terminal_roots = {}
     unravelled_deps = {}
 
     for group_id, task_name in enumerate(terminal_nodes):
         unravelled_deps[task_name] = unravel_deps(dependencies, task_name)
-        roots_per_terminal[task_name] = root_nodes & unravelled_deps[task_name]
+        terminal_roots[task_name] = root_nodes & unravelled_deps[task_name]
 
-    root_hashes = {hash(tuple(v)): v for k, v in roots_per_terminal.items()}
+    root_tokens = {tokenize(*sorted(v)): v for v in terminal_roots.values()}
 
     group = 0
     hash_map = defaultdict(set)
 
-    for k, v in root_hashes.items():
-        if sum([v.issubset(vv) for vv in root_hashes.values()]) > 1:
+    for k, v in root_tokens.items():
+        if any([v < vv for vv in root_tokens.values()]):  # Strict subset.
             continue
         else:
             hash_map[k] |= set([group])
             group += 1
 
-    for k, v in root_hashes.items():
-        shared_roots = \
-            {kk: None for kk, vv in root_hashes.items() if v.issubset(vv)}
-        shared_roots.pop(k)
+    for k, v in root_tokens.items():
+        shared_roots = {kk: None for kk, vv in root_tokens.items() if v < vv}
         if shared_roots:
             hash_map[k] = \
                 set().union(*[hash_map[kk] for kk in shared_roots.keys()])
 
     for k, v in unravelled_deps.items():
 
-        group = hash_map[hash(tuple(roots_per_terminal[k]))]
+        group = hash_map[tokenize(*sorted(terminal_roots[k]))]
 
         annotate_layers(layers, v, k, group)
-        
-    import pdb; pdb.set_trace()
+
+    # import pdb; pdb.set_trace()
 
     return
 
