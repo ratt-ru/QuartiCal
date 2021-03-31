@@ -3,13 +3,12 @@ from ast import literal_eval
 
 import dask
 import dask.array as da
-import numpy as np
 from daskms.constants import DASKMS_PARTITION_KEY as PARTITION_KEY
 from dask.highlevelgraph import HighLevelGraph
 from distributed.diagnostics.plugin import SchedulerPlugin
-from dask.core import get_dependencies, reverse_dict, get_deps, getcycle
-from dask.order import ndependencies, graph_metrics
-from dask.base import tokenize
+from dask.core import get_deps
+from dask.order import ndependencies
+from dask.base import tokenize, unpack_collections, collections_to_dsk
 import xarray
 
 
@@ -119,8 +118,6 @@ class QuarticalScheduler(SchedulerPlugin):
         workers = list(scheduler.workers.keys())
         partitions = defaultdict(list)
 
-        
-
         for k, a in annotations.get("__dask_array__", {}).items():
             try:
                 p = a["partition"]
@@ -179,36 +176,24 @@ def interrogate_annotations(collection):
     return
 
 
-def annotate_traversal(collection):
+def grouped_annotate(*args):
 
-    hlg = collection.__dask_graph__()
+    group_offset = 0
+
+    for collections in zip(*args):
+        group_offset = annotate_traversal(*collections,
+                                          group_offset=group_offset)
+
+
+def annotate_traversal(*args, group_offset=0):
+
+    collections, _ = unpack_collections(*args, traverse=True)
+
+    hlg = collections_to_dsk(collections, optimize_graph=False)
     layers = hlg.layers
 
-    dependencies = {k: get_dependencies(hlg, k) for k in hlg}
-    dependents = reverse_dict(dependencies)
+    dependencies, dependents = get_deps(hlg)
     _, total_dependencies = ndependencies(dependencies, dependents)
-
-    # ----------------------------ATTEMPT1-------------------------------------
-
-    # max_depth = max(total_dependencies.values())
-    # max_depth_layer_names = \
-    #     [k for (k, v) in total_dependencies.items() if v == max_depth]
-    # max_depth_layer_names = sorted(max_depth_layer_names)
-
-    # max_depth_deps = [dependencies[d] for d in max_depth_layer_names]
-    # max_depth_deps_hash = [hash(tuple(d)) for d in max_depth_deps]
-
-    # group_map = dict.fromkeys(max_depth_deps_hash)
-    # group_map = {k: v for k, v in zip(group_map.keys(), range(len(group_map)))}
-    # group_map = [group_map[h] for h in max_depth_deps_hash]
-
-    # for group, task_name in zip(group_map, max_depth_layer_names):
-
-    #     unravelled_deps = unravel_deps(dependencies, task_name)
-        
-    #     annotate_layers(layers, unravelled_deps, task_name, group)
-
-    # ----------------------------ATTEMPT2-------------------------------------
 
     terminal_nodes = {k for (k, v) in dependents.items() if v == set()}
     root_nodes = {k for (k, v) in dependencies.items() if v == set()}
@@ -222,15 +207,14 @@ def annotate_traversal(collection):
 
     root_tokens = {tokenize(*sorted(v)): v for v in terminal_roots.values()}
 
-    group = 0
     hash_map = defaultdict(set)
 
     for k, v in root_tokens.items():
         if any([v < vv for vv in root_tokens.values()]):  # Strict subset.
             continue
         else:
-            hash_map[k] |= set([group])
-            group += 1
+            hash_map[k] |= set([group_offset])
+            group_offset += 1
 
     for k, v in root_tokens.items():
         shared_roots = {kk: None for kk, vv in root_tokens.items() if v < vv}
@@ -244,58 +228,7 @@ def annotate_traversal(collection):
 
         annotate_layers(layers, v, k, group)
 
-    # import pdb; pdb.set_trace()
-
-    return
-
-
-def propagate_annotations(layers, dependents, root_deps):
-
-    all_dependents = set()
-
-    for task_name in root_deps:
-
-        all_dependents |= unravel_deps(dependents, task_name)
-
-    import pdb; pdb.set_trace()
-
-        # layer_name = task_name[0]
-
-        # annotation = layers[layer_name].annotations
-
-        # if isinstance(annotation, dict):
-        #     if not ("__group__" in annotation):
-        #         annotation["__group__"] = defaultdict(set)
-        # else:
-        #     annotation = {"__group__": defaultdict(set)}
-
-        # annotation["__group__"][name] |= {group}
-
-    # import pdb; pdb.set_trace()
-
-    return
-
-
-
-
-
-def annotate_roots(layers, root_deps, group):
-
-    for task_name in root_deps:
-
-        layer_name = task_name[0]
-
-        annotation = layers[layer_name].annotations
-
-        if isinstance(annotation, dict):
-            if not ("__group__" in annotation):
-                annotation["__group__"] = defaultdict(set)
-        else:
-            annotation = {"__group__": defaultdict(set)}
-
-        annotation["__group__"][task_name] |= {group}
-
-    return
+    return group_offset
 
 
 def annotate_layers(layers, unravelled_deps, task_name, group):
@@ -316,7 +249,6 @@ def annotate_layers(layers, unravelled_deps, task_name, group):
             raise ValueError(f"Annotations are expected to be a dictionary - "
                              f"got {type(annotation)}.")
 
-        # annotation["__group__"][name] |= {group}
         annotation["__group__"][name] |= group
 
     return

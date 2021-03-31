@@ -14,7 +14,12 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
-from quartical.scheduling import annotate, install_plugin, interrogate_annotations, dataset_partition, annotate_traversal
+from quartical.scheduling import (annotate,
+                                  install_plugin,
+                                  interrogate_annotations,
+                                  dataset_partition,
+                                  grouped_annotate,
+                                  annotate_traversal)
 from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 from quartical.calibration.gain_datasets import write_gain_datasets
 
@@ -93,7 +98,6 @@ def _execute(exitstack):
         fix_annotations(xds)
         # interrogate_annotations(xds)
 
-
     # writes = xds_to_zarr(data_xds_list, "/home/jonathan/3C147_tests/3C147_daskms.zms")
 
     # dask.compute(writes)
@@ -118,16 +122,13 @@ def _execute(exitstack):
 
     writes = write_xds_list(writable_xds, ref_xds_list, opts)
 
-    # interrogate_annotations(gain_xds_lol[0][0])
-
     gain_writes = write_gain_datasets(gain_xds_lol, opts)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
-    # interrogate_annotations(writes[0])
-    # annotate_traversal(gain_xds_lol[0][0])
-    # annotate_traversal(gain_writes[0][0])
-    annotate_traversal(writes[0])
+    t0 = time.time()
+    grouped_annotate(gain_writes, writes)
+    logger.success("{:.2f} seconds taken to annotate graph.", time.time() - t0)
 
     t0 = time.time()
 
@@ -143,7 +144,7 @@ def _execute(exitstack):
     #                color='order', cmap='autumn',
     #                filename='order.pdf', node_attr={'penwidth': '10'})
 
-    dask.visualize(writes[0],
+    dask.visualize(writes[:4], gain_writes[:4],
                    filename='graph.pdf',
                    optimize_graph=False)
 
