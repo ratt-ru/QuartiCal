@@ -1,11 +1,9 @@
 from collections import namedtuple
-from daskms.constants import DASKMS_PARTITION_KEY as PARTITION_KEY
 from quartical.kernels.complex import complex_solver
 from quartical.kernels.phase import phase_solver
 from quartical.kernels.delay import delay_solver
 from quartical.kernels.kalman import kalman_solver
 from quartical.kernels.generated import generated_solver
-from quartical.scheduling import dataset_partition
 import numpy as np
 import xarray
 
@@ -53,8 +51,6 @@ class Gain:
         self.interval_freqs = coords[f"{self.name}_mean_freq"]
 
         self.additional_args = []
-        self.partition = {**dict(dataset_partition(data_xds)),
-                          PARTITION_KEY: getattr(data_xds, PARTITION_KEY)}
 
     def make_xds(self):
 
@@ -74,8 +70,7 @@ class Gain:
             attrs={"NAME": self.name,
                    "TYPE": self.type,
                    "ARGS": self.additional_args,
-                   **self.id_fields,
-                   **self.partition})
+                   **self.id_fields})
 
         return xds
 

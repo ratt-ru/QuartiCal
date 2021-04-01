@@ -42,7 +42,7 @@ class Blocker:
     _input = namedtuple("input", "name value index_list")
     _output = namedtuple("output", "name index_list chunks dtype")
 
-    def __init__(self, func, index_string, annotation=None):
+    def __init__(self, func, index_string):
         """Basic initialisation of the blocker object.
 
         Args:
@@ -57,7 +57,6 @@ class Blocker:
         self.func_axes = list(index_string)
         self.input_axes = {}
         self.dask_inputs = []
-        self.annotation = annotation
 
         self.inputs = []
         self.outputs = []
@@ -142,7 +141,7 @@ class Blocker:
 
             graph[(layer_name, *k)] = (apply, self.func, [], (dict, kwargs))
 
-        layers.update({layer_name: MaterializedLayer(graph, self.annotation)})
+        layers.update({layer_name: MaterializedLayer(graph)})
         deps.update({layer_name: {k.name for k in self.dask_inputs}})
 
         # At this point we have a dictionary which describes the chunkwise
@@ -294,12 +293,7 @@ def blockwise_unique(arr, chunks=None, return_index=False,
     if return_counts:
         output_names.append("counts")
 
-    from copy import deepcopy
-    annotation = deepcopy(arr.__dask_graph__().layers[arr.name].annotations)
-    if annotation is not None:
-        annotation['__dask_array__']['chunks'] = (len(arr.chunks[0])*(1,),)
-
-    B = Blocker(as_dict(np.unique, *output_names), "r", annotation=annotation)
+    B = Blocker(as_dict(np.unique, *output_names), "r")
 
     B.add_input("ar", arr, "r")
     B.add_input("return_index", return_index)

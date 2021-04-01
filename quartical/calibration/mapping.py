@@ -2,7 +2,6 @@ import dask.array as da
 import numpy as np
 from uuid import uuid4
 from quartical.utils.dask import blockwise_unique
-from quartical.scheduling import annotate, dataset_partition
 
 
 def get_array_items(arr, inds):
@@ -36,22 +35,10 @@ def make_t_maps(data_xds_list, opts):
         # Convert the time column data into indices. Chunks is expected to
         # be a tuple of tuples.
         utime_chunks = xds.UTIME_CHUNKS
-        foo, utime_loc, utime_ind = blockwise_unique(time_col,
-                                                     chunks=(utime_chunks,),
-                                                     return_index=True,
-                                                     return_inverse=True)
-
-        annotate(foo,
-                 dims=("row"),
-                 partition=dataset_partition(xds))
-
-        annotate(utime_loc,
-                 dims=("row"),
-                 partition=dataset_partition(xds))
-
-        annotate(utime_ind,
-                 dims=("row"),
-                 partition=dataset_partition(xds))
+        _, utime_loc, utime_ind = blockwise_unique(time_col,
+                                                   chunks=(utime_chunks,),
+                                                   return_index=True,
+                                                   return_inverse=True)
 
         # Assosciate each unique time with an interval. This assumes that
         # all rows at a given time have the same interval as the
@@ -63,19 +50,11 @@ def make_t_maps(data_xds_list, opts):
             chunks=utime_loc.chunks,
             dtype=np.float64)
 
-        annotate(utime_intervals,
-                 dims=("row"),
-                 partition=dataset_partition(xds))
-
         # Daskify the chunks per array - these are already known from the
         # initial chunking step.
         utime_per_chunk = da.from_array(utime_chunks,
                                         chunks=(1,),
                                         name="utpc-" + uuid4().hex)
-
-        annotate(utime_per_chunk,
-                 dims=("row",),
-                 partition=dataset_partition(xds))
 
         t_bin_arr = make_t_binnings(utime_per_chunk, utime_intervals, opts)
         t_map_arr = make_t_mappings(utime_ind, t_bin_arr)

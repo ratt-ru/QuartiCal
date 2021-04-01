@@ -1,7 +1,6 @@
 import dask.array as da
 import numpy as np
 import uuid
-from quartical.scheduling import annotate, dataset_partition
 
 
 def initialize_weights(xds, data_col, opts):
@@ -27,11 +26,7 @@ def initialize_weights(xds, data_col, opts):
                              name="weights-" + uuid.uuid4().hex,
                              dtype=np.float32)
 
-        annotate(weight_col,
-                 dims=('row', 'chan', 'corr'),
-                 partition=dataset_partition(xds))
     else:
-        # We use a copy to prevent mutating the xds.
         weight_col = xds[opts.input_ms_weight_column].data
 
     # The following handles the fact that the chosen weight column might

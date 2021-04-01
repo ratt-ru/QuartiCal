@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
 from quartical.data_handling.predict import predict
-from quartical.scheduling import annotate
 from loguru import logger  # noqa
 
 
@@ -108,10 +107,7 @@ def add_model_graph(ms_xds, opts):
 
         modified_xds = xds.assign({"MODEL_DATA":
                                   (("row", "chan", "dir", "corr"), model)})
-        modified_xds.attrs.update(xds.attrs)
 
         model_xds_list.append(modified_xds)
-
-    annotate(model_xds_list)
 
     return model_xds_list

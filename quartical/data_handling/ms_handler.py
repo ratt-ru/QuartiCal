@@ -6,7 +6,6 @@ from daskms import xds_from_ms, xds_from_table, xds_to_table
 from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import initialise_flags
 from quartical.data_handling.bda import process_bda_input, process_bda_output
-from quartical.scheduling import annotate, dataset_partition
 from dask.graph_manipulation import clone
 from loguru import logger
 
@@ -164,8 +163,6 @@ def read_xds_list(opts):
     for xds in data_xds_list:
         chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
         chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
-        annotate(chan_freqs, dims=("chan",), partition=dataset_partition(xds))
-        annotate(chan_widths, dims=("chan",), partition=dataset_partition(xds))
         tmp_xds_list.append(xds.assign(
             {"CHAN_FREQ": (("chan",), chan_freqs[0]),
              "CHAN_WIDTH": (("chan",), chan_widths[0]),
@@ -194,8 +191,6 @@ def read_xds_list(opts):
         raise ValueError(f"--input-ms-correlation-mode was set to full, "
                          f"but the measurement set only contains "
                          f"{opts._ms_ncorr} correlations")
-
-    annotate(data_xds_list)
 
     return data_xds_list, ref_xds_list
 
@@ -255,14 +250,9 @@ def write_xds_list(xds_list, ref_xds_list, opts):
     xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ", "CHAN_WIDTH"],
                               errors='ignore')
                 for xds in xds_list]
-    annotate(xds_list)
 
     write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
                                   columns=output_cols)
-    # This is a kludge to handle the fact that xds_to_table doesn't preserve
-    # the annotation information/partition attributes. TODO: Improve upstream.
-    [wds.attrs.update(ds.attrs) for ds, wds in zip(xds_list, write_xds_list)]
-    annotate(write_xds_list)
 
     return write_xds_list
 
@@ -296,12 +286,8 @@ def preprocess_xds_list(xds_list, opts):
 
         # Anywhere we have a broken datapoint, zero it. These points will
         # be flagged below.
-        finite_data = da.isfinite(data_col)
-        annotate(finite_data,
-                 dims=("row", "chan", "corr"),
-                 partition=dataset_partition(xds))
 
-        data_col = da.where(finite_data, data_col, 0)
+        data_col = da.where(da.isfinite(data_col), data_col, 0)
 
         weight_col = initialize_weights(xds, data_col, opts)
 
@@ -319,8 +305,6 @@ def preprocess_xds_list(xds_list, opts):
              "FLAG": (("row", "chan", "corr"), flag_col)})
 
         output_xds_list.append(output_xds)
-
-    annotate(output_xds_list)
 
     return output_xds_list
 

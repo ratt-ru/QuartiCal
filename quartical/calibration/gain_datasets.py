@@ -7,7 +7,6 @@ from daskms.experimental.zarr import xds_to_zarr
 from quartical.calibration.gain_types import term_types
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
-from quartical.scheduling import annotate
 
 
 def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
@@ -200,8 +199,6 @@ def write_gain_datasets(gain_xds_lol, opts):
         output_path = f"{gain_path.joinpath(term_name)}"
 
         term_writes = xds_to_zarr(term_xds_list, output_path)
-
-        annotate(term_writes)
 
         gain_writes.append(term_writes)
 

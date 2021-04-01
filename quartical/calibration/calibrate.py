@@ -7,7 +7,6 @@ from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_presolve_data_stats,)
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
-from quartical.scheduling import annotate, dataset_partition, interrogate_annotations
 from quartical.calibration.gain_datasets import make_gain_xds_list
 from quartical.interpolation.interpolate import load_and_interpolate_gains
 from loguru import logger  # noqa
@@ -78,12 +77,6 @@ def add_calibration_graph(data_xds_list, opts):
     t_bin_list, t_map_list = make_t_maps(data_xds_list, opts)
     f_map_list = make_f_maps(data_xds_list, opts)
     d_map_list = make_d_maps(data_xds_list, opts)
-
-    for i, xds in enumerate(data_xds_list):
-        partition = dataset_partition(xds)
-        annotate(t_bin_list[i], dims=("row", "term"), partition=partition)
-        annotate(t_map_list[i], dims=("row", "term"), partition=partition)
-        annotate(f_map_list[i], dims=("chan", "term"), partition=partition)
 
     # Create a list of lists of xarray.Dataset objects which will describe the
     # gains per data xarray.Dataset. This triggers some early compute.
@@ -269,7 +262,6 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
         data_vars = {k: (dims, v) for k, v in visibility_outputs.items()}
 
         post_solve_data_xds = data_xds.assign(data_vars)
-        post_solve_data_xds.attrs.update(data_xds.attrs)
 
         post_solve_data_xds_list.append(post_solve_data_xds)
 

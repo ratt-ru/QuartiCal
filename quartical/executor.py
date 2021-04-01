@@ -14,12 +14,7 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
-from quartical.scheduling import (annotate,
-                                  install_plugin,
-                                  interrogate_annotations,
-                                  dataset_partition,
-                                  grouped_annotate,
-                                  annotate_traversal)
+from quartical.scheduling import install_plugin, grouped_annotate
 from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 from quartical.calibration.gain_datasets import write_gain_datasets
 
@@ -75,34 +70,9 @@ def _execute(exitstack):
 
     # logger.info("Reading data from zms.")
     # data_xds_list = xds_from_zarr("/home/jonathan/3C147_tests/3C147_daskms.zms")
-    # annotate(data_xds_list)
-
-    def fix_annotations(collection):
-
-        hlg = collection.__dask_graph__()
-        layers = hlg.layers
-        deps = hlg.dependencies
-
-        for k, v in deps.items():
-            if layers[k].annotations is None:
-                annotation = {
-                    "__dask_array__": {
-                        "dtype": 'ndarray',
-                        "chunks": collection.chunks["row"],
-                        "partition": dataset_partition(collection),
-                        "dims": ("row",)}}
-                layers[k].annotations = annotation
-
-        return
-
-    for xds in data_xds_list:
-        fix_annotations(xds)
-        # interrogate_annotations(xds)
 
     # writes = xds_to_zarr(data_xds_list, "/home/jonathan/3C147_tests/3C147_daskms.zms")
-
     # dask.compute(writes)
-
     # return
 
     # Preprocess the xds_list - initialise some values and fix bad data.
