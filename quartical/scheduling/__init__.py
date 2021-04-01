@@ -154,7 +154,8 @@ class QuarticalScheduler(SchedulerPlugin):
 
 
 def install_plugin(dask_scheduler=None, **kwargs):
-    dask_scheduler.add_plugin(QuarticalScheduler(**kwargs), idempotent=True)
+    # dask_scheduler.add_plugin(QuarticalScheduler(**kwargs), idempotent=True)
+    dask_scheduler.add_plugin(AutoScheduler(**kwargs), idempotent=True)
 
 
 def interrogate_annotations(collection):
@@ -235,7 +236,7 @@ def annotate_layers(layers, unravelled_deps, task_name, group):
 
     for name in [task_name, *unravelled_deps]:
 
-        layer_name = name[0]
+        layer_name = name[0] if isinstance(name, tuple) else name
 
         annotation = layers[layer_name].annotations
 
@@ -249,7 +250,7 @@ def annotate_layers(layers, unravelled_deps, task_name, group):
             raise ValueError(f"Annotations are expected to be a dictionary - "
                              f"got {type(annotation)}.")
 
-        annotation["__group__"][name] |= group
+        annotation["__group__"][str(name)] |= group
 
     return
 
@@ -264,3 +265,32 @@ def unravel_deps(hlg_deps, name, unravelled_deps=None):
         unravel_deps(hlg_deps, dep, unravelled_deps)
 
     return unravelled_deps
+
+
+class AutoScheduler(SchedulerPlugin):
+    def update_graph(self, scheduler, dsk=None, keys=None, restrictions=None,
+                     **kw):
+        try:
+            annotations = kw["annotations"]["__group__"]
+        except KeyError:
+            return
+
+        tasks = scheduler.tasks
+        workers = list(scheduler.workers.keys())
+        n_worker = len(workers)
+
+        for k, tsk in tasks.items():
+            try:
+                grp = annotations.get(k).get(k)
+            except AttributeError:  # Annotations on delayed objects disappear?
+                print(f"Annotations appear to be absent for {tsk}.")
+                continue
+            except KeyError:
+                print(f"No valid annotation for {k}.")
+                continue
+            except SyntaxError:
+                print(annotations.get(k).get(k))
+                print(f"Literal eval failed for {k}.")
+                continue
+            tsk._worker_restrictions = {workers[g % n_worker] for g in grp}
+            tsk._loose_restrictions = False

@@ -41,6 +41,7 @@ def _execute(exitstack):
     preprocess.interpret_model(opts)
 
     if opts.parallel_scheduler == "distributed":
+        optimize_graph = False
         if opts.parallel_address:
             logger.info("Initializing distributed client.")
             client = exitstack.enter_context(Client(opts.parallel_address))
@@ -64,8 +65,8 @@ def _execute(exitstack):
         opt_ctx = dask.config.set(optimization__fuse__active=False)
         exitstack.enter_context(opt_ctx)
         logger.info("Distributed client sucessfully initialized.")
-
-    cluster.scheduler.plugins.pop(0)
+    else:
+        optimize_graph = True
 
     t0 = time.time()
 
@@ -124,6 +125,10 @@ def _execute(exitstack):
 
     gain_writes = write_gain_datasets(gain_xds_lol, opts)
 
+    # TODO: Dirty hack to coerce coordinate writes into graph. This should
+    # should probably be handled by daskms.
+    gain_writes = [dask.delayed(bool)(gw) for gw in gain_writes]
+
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()
@@ -132,21 +137,23 @@ def _execute(exitstack):
 
     t0 = time.time()
 
-    # with ProgressBar():
-    #     dask.compute([gain_writes, writes],
-    #                  num_workers=opts.parallel_nthread,
-    #                  optimize_graph=True,
-    #                  scheduler=opts.parallel_scheduler)
+    with ProgressBar():
 
-    # logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
+        dask.compute(writes, gain_writes,
+                     num_workers=opts.parallel_nthread,
+                     optimize_graph=optimize_graph,
+                     scheduler=opts.parallel_scheduler)
 
-    # dask.visualize(gain_xds_lol[0][0],
+    logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
+
+    # dask.visualize(writes[:2],# gain_writes[:2],
     #                color='order', cmap='autumn',
-    #                filename='order.pdf', node_attr={'penwidth': '10'})
+    #                filename='order.pdf', node_attr={'penwidth': '10'},
+    #                optimize_graph=False)
 
-    dask.visualize(writes[:4], gain_writes[:4],
-                   filename='graph.pdf',
-                   optimize_graph=False)
+    # dask.visualize(writes[:2],# gain_writes[:2],
+    #                filename='graph.pdf',
+    #                optimize_graph=False)
 
     # dask.visualize(*gains_per_xds["G"],
     #                filename='gain_graph',
