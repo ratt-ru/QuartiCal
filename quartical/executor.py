@@ -96,7 +96,7 @@ def _execute(exitstack):
     gain_writes = write_gain_datasets(gain_xds_lol, opts)
 
     # TODO: Dirty hack to coerce coordinate writes into graph. This should
-    # should probably be handled by daskms.
+    # should probably be handled by daskms. Requires disabled optimization.
     gain_writes = [dask.delayed(bool)(gw) for gw in gain_writes]
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)

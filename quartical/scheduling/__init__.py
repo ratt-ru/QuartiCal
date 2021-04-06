@@ -1,4 +1,5 @@
 from collections import defaultdict
+import warnings
 
 from distributed.diagnostics.plugin import SchedulerPlugin
 from dask.core import get_deps
@@ -11,6 +12,7 @@ def install_plugin(dask_scheduler=None, **kwargs):
 
 
 def interrogate_annotations(collection):
+    """Utitlity function to identify unannotated layers in a collection."""
 
     hlg = collection.__dask_graph__()
     layers = hlg.layers
@@ -19,10 +21,6 @@ def interrogate_annotations(collection):
     for k, v in layers.items():
         if v.annotations is None:
             print(k, deps[k])
-
-    for k, v in deps.items():
-        if layers[k].annotations is None:
-            print(k, v)
 
     return
 
@@ -106,6 +104,7 @@ def annotate_layers(layers, unravelled_deps, task_name, group):
 
 
 def unravel_deps(hlg_deps, name, unravelled_deps=None):
+    """Recursively construct a set of all dependencies for a specific task."""
 
     if unravelled_deps is None:
         unravelled_deps = set()
@@ -120,6 +119,7 @@ def unravel_deps(hlg_deps, name, unravelled_deps=None):
 class AutoScheduler(SchedulerPlugin):
     def update_graph(self, scheduler, dsk=None, keys=None, restrictions=None,
                      **kw):
+        """Uses __group__ annotations to assign tasks to specific workers."""
         try:
             annotations = kw["annotations"]["__group__"]
         except KeyError:
@@ -131,16 +131,20 @@ class AutoScheduler(SchedulerPlugin):
 
         for k, tsk in tasks.items():
             try:
+                # From all annotations, get this task's annotation. Double get
+                # arises as we have a dict per layer.
                 grp = annotations.get(k).get(k)
             except AttributeError:  # Annotations on delayed objects disappear?
-                print(f"Annotations appear to be absent for {tsk}.")
+                warnings.warn(
+                    f"__group__ annotations appear to be absent for {tsk}. "
+                    f"This usually happens for annotated Delayed objects "
+                    f"when optimization is enabled.")
                 continue
             except KeyError:
-                print(f"No valid annotation for {k}.")
+                warnings.warn(f"No valid __group__ annotation for {k}.")
                 continue
-            except SyntaxError:
-                print(annotations.get(k).get(k))
-                print(f"Literal eval failed for {k}.")
-                continue
+
+            # TODO: This is a little simplisitic - a round-robin stategy will
+            # be suboptimal when the graph is inhomogeonous.
             tsk._worker_restrictions = {workers[g % n_worker] for g in grp}
             tsk._loose_restrictions = False
