@@ -24,7 +24,7 @@ def interrogate_annotations(collection):
     return
 
 
-def grouped_annotate(*args):
+def grouped_annotate(*args, destructive=True):
     """Annotate several collections zipping them together.
 
     This is a conveneince function which has performance implications. The
@@ -38,7 +38,8 @@ def grouped_annotate(*args):
 
     for collections in zip(*args):
         group_offset = annotate_traversal(*collections,
-                                          group_offset=group_offset)
+                                          group_offset=group_offset,
+                                          destructive=destructive)
 
 
 def annotate_traversal(*args, group_offset=0, destructive=True):
@@ -64,24 +65,35 @@ def annotate_traversal(*args, group_offset=0, destructive=True):
         # Associate terminal nodes with root nodes.
         terminal_roots[task_name] = root_nodes & unravelled_deps[task_name]
 
-    # Create a unique token for each set of terminal roots.
+    # Create a unique token for each set of terminal roots. TODO: This is very
+    # strict. What about nodes with very similar roots?
     root_tokens = {tokenize(*sorted(v)): v for v in terminal_roots.values()}
 
     hash_map = defaultdict(set)
 
+    # Associate terminal roots with a specific group if they are not a subset
+    # of another larger root set.
     for k, v in root_tokens.items():
-        # TODO: Add special handling for terminal nodes with identical roots.
         if any([v < vv for vv in root_tokens.values()]):  # Strict subset.
             continue
         else:
             hash_map[k] |= set([group_offset])
             group_offset += 1
 
+    # If roots were a subset, they should share the annotation of their
+    # superset/s.
     for k, v in root_tokens.items():
         shared_roots = {kk: None for kk, vv in root_tokens.items() if v < vv}
         if shared_roots:
             hash_map[k] = \
                 set().union(*[hash_map[kk] for kk in shared_roots.keys()])
+
+    # By default, destroy existing __group__ annotations.
+    if destructive:
+        annotations = [layer.annotations for layer in layers.values()]
+        for annotation in annotations:
+            if annotation and "__group__" in annotation:
+                del annotation["__group__"]
 
     for k, v in unravelled_deps.items():
 
