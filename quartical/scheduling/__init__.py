@@ -3,7 +3,6 @@ import warnings
 
 from distributed.diagnostics.plugin import SchedulerPlugin
 from dask.core import get_deps
-from dask.order import ndependencies
 from dask.base import tokenize, unpack_collections, collections_to_dsk
 
 
@@ -26,39 +25,52 @@ def interrogate_annotations(collection):
 
 
 def grouped_annotate(*args):
+    """Annotate several collections zipping them together.
 
-    group_offset = 0
+    This is a conveneince function which has performance implications. The
+    standard appraoch in dask is to simply fuse the graphs of all the dask
+    collections in a python collection. This is highly suboptimal when there
+    is no overlap between the graphs. This annotates by zipping python lists
+    together. TODO: Make more sophisticated/automatic?
+    """
+
+    group_offset = 0  # Keeps track of abstract group.
 
     for collections in zip(*args):
         group_offset = annotate_traversal(*collections,
                                           group_offset=group_offset)
 
 
-def annotate_traversal(*args, group_offset=0):
+def annotate_traversal(*args, group_offset=0, destructive=True):
 
     collections, _ = unpack_collections(*args, traverse=True)
 
+    # Merge the dask graphs of the collections. Produces a HighLevelGraph.
     hlg = collections_to_dsk(collections, optimize_graph=False)
     layers = hlg.layers
 
     dependencies, dependents = get_deps(hlg)
-    _, total_dependencies = ndependencies(dependencies, dependents)
 
+    # Terminal nodes have no dependents, root nodes have no dependencies.
     terminal_nodes = {k for (k, v) in dependents.items() if v == set()}
     root_nodes = {k for (k, v) in dependencies.items() if v == set()}
 
     terminal_roots = {}
     unravelled_deps = {}
 
-    for group_id, task_name in enumerate(terminal_nodes):
+    for task_name in terminal_nodes:
+        # Get dependencies per task.
         unravelled_deps[task_name] = unravel_deps(dependencies, task_name)
+        # Associate terminal nodes with root nodes.
         terminal_roots[task_name] = root_nodes & unravelled_deps[task_name]
 
+    # Create a unique token for each set of terminal roots.
     root_tokens = {tokenize(*sorted(v)): v for v in terminal_roots.values()}
 
     hash_map = defaultdict(set)
 
     for k, v in root_tokens.items():
+        # TODO: Add special handling for terminal nodes with identical roots.
         if any([v < vv for vv in root_tokens.values()]):  # Strict subset.
             continue
         else:
@@ -81,6 +93,14 @@ def annotate_traversal(*args, group_offset=0):
 
 
 def annotate_layers(layers, unravelled_deps, task_name, group):
+    """Given a task, annoatate the layers associated with that task.
+
+    Args:
+        layers: A dictionary of all the layers.
+        unreavelled_deps: A set of all the dependencies of the task.
+        task_name: Name of the task.
+        group: The abstract group with which to annotate.
+    """
 
     for name in [task_name, *unravelled_deps]:
 
