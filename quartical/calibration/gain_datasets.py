@@ -200,7 +200,7 @@ def write_gain_datasets(gain_xds_lol, opts):
         term_xds_list = [tl[ti].chunk({dim: -1 for dim in tl[ti].dims})
                          for tl in gain_xds_lol]
 
-        output_path = f"{gain_path.joinpath(term_name)}"
+        output_path = f"{gain_path}{'::' + term_name}"
 
         term_writes = xds_to_zarr(term_xds_list, output_path)
 
