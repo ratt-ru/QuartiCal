@@ -14,7 +14,7 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
-from quartical.scheduling import install_plugin, grouped_annotate
+from quartical.scheduling import install_plugin
 from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 from quartical.calibration.gain_datasets import write_gain_datasets
 
@@ -98,13 +98,9 @@ def _execute(exitstack):
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     if opts.parallel_scheduler == "distributed":
-        t0 = time.time()
         # TODO: Dirty hack to coerce coordinate writes into graph. This should
         # should probably be handled by daskms. Requires disabled optimization.
         gain_writes = [dask.delayed(bool)(gw) for gw in gain_writes]
-        grouped_annotate(gain_writes, writes)
-        logger.success(f"{time.time() - t0:.2f} seconds taken to annotate "
-                       f"graph.")
 
     t0 = time.time()
 

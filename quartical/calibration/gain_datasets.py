@@ -7,7 +7,6 @@ from daskms.experimental.zarr import xds_to_zarr
 from quartical.calibration.gain_types import term_types
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
-from quartical.scheduling import grouped_annotate
 
 
 def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
@@ -105,8 +104,6 @@ def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
         tipc_list.append(tipc_per_term)
         fipc_list.append(fipc_per_term)
 
-    grouped_annotate(tipc_list, fipc_list)
-
     # This is an early compute which is necessary to figure out the gain dims.
     return da.compute(tipc_list, fipc_list)
 
@@ -170,7 +167,6 @@ def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
 
         coords_per_xds.append(coord_dict)
 
-    grouped_annotate(coords_per_xds)
     # We take the hit on a second early compute in order to make loading and
     # interpolating gains a less complicated operation.
     return da.compute(coords_per_xds)[0]
