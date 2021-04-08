@@ -36,7 +36,6 @@ def _execute(exitstack):
     preprocess.interpret_model(opts)
 
     if opts.parallel_scheduler == "distributed":
-        optimize_graph = False
         if opts.parallel_address:
             logger.info("Initializing distributed client.")
             client = exitstack.enter_context(Client(opts.parallel_address))
@@ -56,12 +55,7 @@ def _execute(exitstack):
         # is the standard but less convenient pattern
         client.run_on_scheduler(install_plugin)
 
-        # Disable fuse optimisation: https://github.com/dask/dask/issues/7036
-        opt_ctx = dask.config.set(optimization__fuse__active=False)
-        exitstack.enter_context(opt_ctx)
         logger.info("Distributed client sucessfully initialized.")
-    else:
-        optimize_graph = True
 
     t0 = time.time()
 
@@ -108,7 +102,7 @@ def _execute(exitstack):
 
         dask.compute(writes, gain_writes,
                      num_workers=opts.parallel_nthread,
-                     optimize_graph=optimize_graph,
+                     optimize_graph=True,
                      scheduler=opts.parallel_scheduler)
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
