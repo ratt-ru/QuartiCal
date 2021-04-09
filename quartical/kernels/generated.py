@@ -12,7 +12,11 @@ from quartical.kernels.convenience import (get_row,
                                            _v1_mul_v2,
                                            _v1_mul_v2ct,
                                            _v1ct_wmul_v2,
-                                           _unpack)
+                                           _unpack,
+                                           _unpack_ct,
+                                           _iunpack,
+                                           _iunpack_ct,
+                                           _iadd4)
 from collections import namedtuple
 
 
@@ -43,8 +47,6 @@ def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         compute_jhj_jhr = jhj_jhr_full
         compute_update = update_full
         finalize_update = finalize_full
-
-    print("HELLO!")
 
     def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
              d_map_arr, corr_mode, active_term, inverse_gains,
@@ -370,10 +372,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                     r_vec[2] = w11*mul_rweight(r[2], row_weights, row_ind)
                     r_vec[3] = w11*mul_rweight(r[3], row_weights, row_ind)
 
-                    rh_vec[0] = r_vec[0].conjugate()
-                    rh_vec[1] = r_vec[2].conjugate()
-                    rh_vec[2] = r_vec[1].conjugate()
-                    rh_vec[3] = r_vec[3].conjugate()
+                    _iunpack_ct(rh_vec, r_vec)
 
                     m = model[row, f, d]
 
@@ -382,10 +381,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                     m_vec[2] = mul_rweight(m[2], row_weights, row_ind)
                     m_vec[3] = mul_rweight(m[3], row_weights, row_ind)
 
-                    mh_vec[0] = m_vec[0].conjugate()
-                    mh_vec[1] = m_vec[2].conjugate()
-                    mh_vec[2] = m_vec[1].conjugate()
-                    mh_vec[3] = m_vec[3].conjugate()
+                    _iunpack_ct(mh_vec, m_vec)
 
                     for g in range(n_gains - 1, -1, -1):
 
@@ -394,12 +390,8 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        jh00, jh01, jh10, jh11 = _v1_mul_v2(gb, mh_vec)
-
-                        mh_vec[0] = jh00
-                        mh_vec[1] = jh01
-                        mh_vec[2] = jh10
-                        mh_vec[3] = jh11
+                        jh_vec = _v1_mul_v2(gb, mh_vec)
+                        _iunpack(mh_vec, jh_vec)
 
                     for g in range(n_gains - 1, active_term, -1):
 
@@ -408,12 +400,8 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        jh00, jh01, jh10, jh11 = _v1_mul_v2ct(mh_vec, ga)
-
-                        mh_vec[0] = jh00
-                        mh_vec[1] = jh01
-                        mh_vec[2] = jh10
-                        mh_vec[3] = jh11
+                        jh_vec = _v1_mul_v2ct(mh_vec, ga)
+                        _iunpack(mh_vec, jh_vec)
 
                     for g in range(active_term):
 
@@ -422,27 +410,16 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gai = inverse_gains[g][t_m, f_m, a1_m, d_m]
 
-                        jhr00, jhr01, jhr10, jhr11 = _v1_mul_v2(gai, r_vec)
-
-                        r_vec[0] = jhr00
-                        r_vec[1] = jhr01
-                        r_vec[2] = jhr10
-                        r_vec[3] = jhr11
+                        jhr_vec = _v1_mul_v2(gai, r_vec)
+                        _iunpack(r_vec, jhr_vec)
 
                     t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
 
-                    jhr00, jhr01, jhr10, jhr11 = _v1_mul_v2(r_vec, mh_vec)
+                    jhr_vec = _v1_mul_v2(r_vec, mh_vec)
 
-                    jhr[t_m, f_m, a1_m, out_d, 0] += jhr00
-                    jhr[t_m, f_m, a1_m, out_d, 1] += jhr01
-                    jhr[t_m, f_m, a1_m, out_d, 2] += jhr10
-                    jhr[t_m, f_m, a1_m, out_d, 3] += jhr11
-
-                    tmp_jh_p[out_d, 0] += jh00
-                    tmp_jh_p[out_d, 1] += jh01
-                    tmp_jh_p[out_d, 2] += jh10
-                    tmp_jh_p[out_d, 3] += jh11
+                    _iadd4(jhr[t_m, f_m, a1_m, out_d], jhr_vec)
+                    _iadd4(tmp_jh_p[out_d], jh_vec)
 
                     for g in range(n_gains-1, -1, -1):
 
@@ -451,12 +428,8 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        jh00, jh01, jh10, jh11 = _v1_mul_v2(ga, m_vec)
-
-                        m_vec[0] = jh00
-                        m_vec[1] = jh01
-                        m_vec[2] = jh10
-                        m_vec[3] = jh11
+                        jh_vec = _v1_mul_v2(ga, m_vec)
+                        _iunpack(m_vec, jh_vec)
 
                     for g in range(n_gains - 1, active_term, -1):
 
@@ -465,12 +438,8 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        jh00, jh01, jh10, jh11 = _v1_mul_v2ct(m_vec, gb)
-
-                        m_vec[0] = jh00
-                        m_vec[1] = jh01
-                        m_vec[2] = jh10
-                        m_vec[3] = jh11
+                        jh_vec = _v1_mul_v2ct(m_vec, gb)
+                        _iunpack(m_vec, jh_vec)
 
                     for g in range(active_term):
 
@@ -479,51 +448,28 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gbi = inverse_gains[g][t_m, f_m, a2_m, d_m]
 
-                        jhr00, jhr01, jhr10, jhr11 = _v1_mul_v2(gbi, rh_vec)
-
-                        rh_vec[0] = jhr00
-                        rh_vec[1] = jhr01
-                        rh_vec[2] = jhr10
-                        rh_vec[3] = jhr11
+                        jhr_vec = _v1_mul_v2(gbi, rh_vec)
+                        _iunpack(rh_vec, jhr_vec)
 
                     t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
 
-                    jhr00, jhr01, jhr10, jhr11 = _v1_mul_v2(rh_vec, m_vec)
+                    jhr_vec = _v1_mul_v2(rh_vec, m_vec)
 
-                    jhr[t_m, f_m, a2_m, out_d, 0] += jhr00
-                    jhr[t_m, f_m, a2_m, out_d, 1] += jhr01
-                    jhr[t_m, f_m, a2_m, out_d, 2] += jhr10
-                    jhr[t_m, f_m, a2_m, out_d, 3] += jhr11
-
-                    tmp_jh_q[out_d, 0] += jh00
-                    tmp_jh_q[out_d, 1] += jh01
-                    tmp_jh_q[out_d, 2] += jh10
-                    tmp_jh_q[out_d, 3] += jh11
+                    _iadd4(jhr[t_m, f_m, a2_m, out_d], jhr_vec)
+                    _iadd4(tmp_jh_q[out_d], jh_vec)
 
                 for d in range(n_gdir):
 
                     jhp = tmp_jh_p[d]
-
-                    jhj00, jhj01, jhj10, jhj11 = _v1ct_wmul_v2(jhp, jhp, w)
-
-                    jhj_vec = jhj[t_m, f_m, a1_m, d]
-
-                    jhj_vec[0] += jhj00
-                    jhj_vec[1] += jhj01
-                    jhj_vec[2] += jhj10
-                    jhj_vec[3] += jhj11
+                    jhj_vec = _v1ct_wmul_v2(jhp, jhp, w)
+                    jhj_sel = jhj[t_m, f_m, a1_m, d]
+                    _iadd4(jhj_sel, jhj_vec)
 
                     jhq = tmp_jh_q[d]
-
-                    jhj00, jhj01, jhj10, jhj11 = _v1ct_wmul_v2(jhq, jhq, w)
-
-                    jhj_vec = jhj[t_m, f_m, a2_m, d]
-
-                    jhj_vec[0] += jhj00
-                    jhj_vec[1] += jhj01
-                    jhj_vec[2] += jhj10
-                    jhj_vec[3] += jhj11
+                    jhj_vec = _v1ct_wmul_v2(jhq, jhq, w)
+                    jhj_sel = jhj[t_m, f_m, a2_m, d]
+                    _iadd4(jhj_sel, jhj_vec)
 
     return
 

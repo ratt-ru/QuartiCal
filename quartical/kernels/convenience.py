@@ -219,3 +219,37 @@ def _unpack_ct(vec):
         return vec[0].conjugate(), 0, 0, vec[1].conjugate()
     else:
         raise ValueError("Gain shape not understood.")
+
+
+@register_jitable(inline="always")
+def _iunpack(out, vec):
+    if len(vec) == 4:
+        out[0], out[1], out[2], out[3] = vec[0], vec[1], vec[2], vec[3]
+    elif len(vec) == 2:
+        out[0], out[1], out[2], out[3] = vec[0], 0, 0, vec[1]
+    else:
+        raise ValueError("Gain shape not understood.")
+
+
+@register_jitable(inline="always")
+def _iunpack_ct(out, vec):
+    if len(vec) == 4:
+        out[0] = vec[0].conjugate()
+        out[1] = vec[2].conjugate()
+        out[2] = vec[1].conjugate()
+        out[3] = vec[3].conjugate()
+    elif len(vec) == 2:
+        out[0] = vec[0].conjugate()
+        out[1] = 0
+        out[2] = 0
+        out[3] = vec[1].conjugate()
+    else:
+        raise ValueError("Gain shape not understood.")
+
+
+@register_jitable(inline="always")
+def _iadd4(out, vec):
+    out[0] += vec[0]
+    out[1] += vec[1]
+    out[2] += vec[2]
+    out[3] += vec[3]
