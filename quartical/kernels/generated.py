@@ -359,7 +359,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                 w = weights[row, f]  # Consider a map?
 
                 # We don't use the off-diagonal weights - may change.
-                w00, _, _, w11 = _unpack(w)
+                w00, _, _, w11 = _unpack(w, corr_mode)
                 tmp_jh_p[:, :] = 0
                 tmp_jh_q[:, :] = 0
 
@@ -372,7 +372,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                     r_vec[2] = w11*mul_rweight(r[2], row_weights, row_ind)
                     r_vec[3] = w11*mul_rweight(r[3], row_weights, row_ind)
 
-                    _iunpack_ct(rh_vec, r_vec)
+                    _iunpack_ct(rh_vec, r_vec, corr_mode)
 
                     m = model[row, f, d]
 
@@ -381,7 +381,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                     m_vec[2] = mul_rweight(m[2], row_weights, row_ind)
                     m_vec[3] = mul_rweight(m[3], row_weights, row_ind)
 
-                    _iunpack_ct(mh_vec, m_vec)
+                    _iunpack_ct(mh_vec, m_vec, corr_mode)
 
                     for g in range(n_gains - 1, -1, -1):
 
@@ -390,8 +390,8 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        jh_vec = _v1_mul_v2(gb, mh_vec)
-                        _iunpack(mh_vec, jh_vec)
+                        jh_vec = _v1_mul_v2(gb, mh_vec, corr_mode)
+                        _iunpack(mh_vec, jh_vec, corr_mode)
 
                     for g in range(n_gains - 1, active_term, -1):
 
@@ -400,8 +400,8 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        jh_vec = _v1_mul_v2ct(mh_vec, ga)
-                        _iunpack(mh_vec, jh_vec)
+                        jh_vec = _v1_mul_v2ct(mh_vec, ga, corr_mode)
+                        _iunpack(mh_vec, jh_vec, corr_mode)
 
                     for g in range(active_term):
 
@@ -410,13 +410,13 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gai = inverse_gains[g][t_m, f_m, a1_m, d_m]
 
-                        jhr_vec = _v1_mul_v2(gai, r_vec)
-                        _iunpack(r_vec, jhr_vec)
+                        jhr_vec = _v1_mul_v2(gai, r_vec, corr_mode)
+                        _iunpack(r_vec, jhr_vec, corr_mode)
 
                     t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
 
-                    jhr_vec = _v1_mul_v2(r_vec, mh_vec)
+                    jhr_vec = _v1_mul_v2(r_vec, mh_vec, corr_mode)
 
                     _iadd4(jhr[t_m, f_m, a1_m, out_d], jhr_vec)
                     _iadd4(tmp_jh_p[out_d], jh_vec)
@@ -428,8 +428,8 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        jh_vec = _v1_mul_v2(ga, m_vec)
-                        _iunpack(m_vec, jh_vec)
+                        jh_vec = _v1_mul_v2(ga, m_vec, corr_mode)
+                        _iunpack(m_vec, jh_vec, corr_mode)
 
                     for g in range(n_gains - 1, active_term, -1):
 
@@ -438,8 +438,8 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        jh_vec = _v1_mul_v2ct(m_vec, gb)
-                        _iunpack(m_vec, jh_vec)
+                        jh_vec = _v1_mul_v2ct(m_vec, gb, corr_mode)
+                        _iunpack(m_vec, jh_vec, corr_mode)
 
                     for g in range(active_term):
 
@@ -448,13 +448,13 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gbi = inverse_gains[g][t_m, f_m, a2_m, d_m]
 
-                        jhr_vec = _v1_mul_v2(gbi, rh_vec)
-                        _iunpack(rh_vec, jhr_vec)
+                        jhr_vec = _v1_mul_v2(gbi, rh_vec, corr_mode)
+                        _iunpack(rh_vec, jhr_vec, corr_mode)
 
                     t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
 
-                    jhr_vec = _v1_mul_v2(rh_vec, m_vec)
+                    jhr_vec = _v1_mul_v2(rh_vec, m_vec, corr_mode)
 
                     _iadd4(jhr[t_m, f_m, a2_m, out_d], jhr_vec)
                     _iadd4(tmp_jh_q[out_d], jh_vec)
@@ -462,12 +462,12 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                 for d in range(n_gdir):
 
                     jhp = tmp_jh_p[d]
-                    jhj_vec = _v1ct_wmul_v2(jhp, jhp, w)
+                    jhj_vec = _v1ct_wmul_v2(jhp, jhp, w, corr_mode)
                     jhj_sel = jhj[t_m, f_m, a1_m, d]
                     _iadd4(jhj_sel, jhj_vec)
 
                     jhq = tmp_jh_q[d]
-                    jhj_vec = _v1ct_wmul_v2(jhq, jhq, w)
+                    jhj_vec = _v1ct_wmul_v2(jhq, jhq, w, corr_mode)
                     jhj_sel = jhj[t_m, f_m, a2_m, d]
                     _iadd4(jhj_sel, jhj_vec)
 

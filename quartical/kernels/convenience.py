@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from numba.extending import overload, register_jitable
-from numba import jit, types
+from numba import jit, types, generated_jit
 import numpy as np
 
 
@@ -10,6 +10,12 @@ injit = jit(nogil=True,
             fastmath=True,
             cache=True,
             inline="always")
+
+gjit = generated_jit(nopython=True,
+                     fastmath=True,
+                     parallel=False,
+                     cache=True,
+                     nogil=True)
 
 # TODO: Consider whether these should have true optionals. This will likely
 # require them all to be implemented as overloads.
@@ -141,24 +147,10 @@ def get_row_extents(t_map_arr, active_term, n_tint):
 
 
 @register_jitable(inline="always")
-def _v1_mul_v2(v1, v2):
+def _v1_mul_v2(v1, v2, md):
 
-    v100, v101, v110, v111 = _unpack(v1)
-    v200, v201, v210, v211 = _unpack(v2)
-
-    v300 = (v100*v200 + v101*v210)
-    v301 = (v100*v201 + v101*v211)
-    v310 = (v110*v200 + v111*v210)
-    v311 = (v110*v201 + v111*v211)
-
-    return v300, v301, v310, v311
-
-
-@register_jitable(inline="always")
-def _v1_mul_v2ct(v1, v2):
-
-    v100, v101, v110, v111 = _unpack(v1)
-    v200, v201, v210, v211 = _unpack_ct(v2)
+    v100, v101, v110, v111 = _unpack(v1, md)
+    v200, v201, v210, v211 = _unpack(v2, md)
 
     v300 = (v100*v200 + v101*v210)
     v301 = (v100*v201 + v101*v211)
@@ -169,11 +161,25 @@ def _v1_mul_v2ct(v1, v2):
 
 
 @register_jitable(inline="always")
-def _v1_wmul_v2ct(v1, v2, w1):
+def _v1_mul_v2ct(v1, v2, md):
 
-    v100, v101, v110, v111 = _unpack(v1)
-    v200, v201, v210, v211 = _unpack_ct(v2)
-    w100, w101, w110, w111 = _unpack(w1)
+    v100, v101, v110, v111 = _unpack(v1, md)
+    v200, v201, v210, v211 = _unpack_ct(v2, md)
+
+    v300 = (v100*v200 + v101*v210)
+    v301 = (v100*v201 + v101*v211)
+    v310 = (v110*v200 + v111*v210)
+    v311 = (v110*v201 + v111*v211)
+
+    return v300, v301, v310, v311
+
+
+@register_jitable(inline="always")
+def _v1_wmul_v2ct(v1, v2, w1, md):
+
+    v100, v101, v110, v111 = _unpack(v1, md)
+    v200, v201, v210, v211 = _unpack_ct(v2, md)
+    w100, w101, w110, w111 = _unpack(w1, md)
 
     v300 = (v100*w100*v200 + v101*w111*v210)
     v301 = (v100*w100*v201 + v101*w111*v211)
@@ -184,11 +190,11 @@ def _v1_wmul_v2ct(v1, v2, w1):
 
 
 @register_jitable(inline="always")
-def _v1ct_wmul_v2(v1, v2, w1):
+def _v1ct_wmul_v2(v1, v2, w1, md):
 
-    v100, v101, v110, v111 = _unpack_ct(v1)
-    v200, v201, v210, v211 = _unpack(v2)
-    w100, w101, w110, w111 = _unpack(w1)
+    v100, v101, v110, v111 = _unpack_ct(v1, md)
+    v200, v201, v210, v211 = _unpack(v2, md)
+    w100, w101, w110, w111 = _unpack(w1, md)
 
     v300 = (v100*w100*v200 + v101*w111*v210)
     v301 = (v100*w100*v201 + v101*w111*v211)
@@ -198,53 +204,62 @@ def _v1ct_wmul_v2(v1, v2, w1):
     return v300, v301, v310, v311
 
 
-@register_jitable(inline="always")
-def _unpack(vec):
-    if len(vec) == 4:
-        return vec[0], vec[1], vec[2], vec[3]
-    elif len(vec) == 2:
-        return vec[0], 0, 0, vec[1]
+@gjit
+def _unpack(vec, md):
+
+    if md.literal_value == "full":
+        def impl(vec, md):
+            return vec[0], vec[1], vec[2], vec[3]
     else:
-        raise ValueError("Gain shape not understood.")
+        def impl(vec, md):
+            return vec[0], 0, 0, vec[1]
+
+    return impl
 
 
-@register_jitable(inline="always")
-def _unpack_ct(vec):
-    if len(vec) == 4:
-        return vec[0].conjugate(), \
-               vec[2].conjugate(), \
-               vec[1].conjugate(), \
-               vec[3].conjugate()
-    elif len(vec) == 2:
-        return vec[0].conjugate(), 0, 0, vec[1].conjugate()
+@gjit
+def _unpack_ct(vec, md):
+    if md.literal_value == "full":
+        def impl(vec, md):
+            return vec[0].conjugate(), \
+                   vec[2].conjugate(), \
+                   vec[1].conjugate(), \
+                   vec[3].conjugate()
     else:
-        raise ValueError("Gain shape not understood.")
+        def impl(vec, md):
+            return vec[0].conjugate(), 0, 0, vec[1].conjugate()
+
+    return impl
 
 
-@register_jitable(inline="always")
-def _iunpack(out, vec):
-    if len(vec) == 4:
-        out[0], out[1], out[2], out[3] = vec[0], vec[1], vec[2], vec[3]
-    elif len(vec) == 2:
-        out[0], out[1], out[2], out[3] = vec[0], 0, 0, vec[1]
+@gjit
+def _iunpack(out, vec, md):
+    if md.literal_value == "full":
+        def impl(out, vec, md):
+            out[0], out[1], out[2], out[3] = vec[0], vec[1], vec[2], vec[3]
     else:
-        raise ValueError("Gain shape not understood.")
+        def impl(out, vec, md):
+            out[0], out[1], out[2], out[3] = vec[0], 0, 0, vec[1]
+
+    return impl
 
 
-@register_jitable(inline="always")
-def _iunpack_ct(out, vec):
-    if len(vec) == 4:
-        out[0] = vec[0].conjugate()
-        out[1] = vec[2].conjugate()
-        out[2] = vec[1].conjugate()
-        out[3] = vec[3].conjugate()
-    elif len(vec) == 2:
-        out[0] = vec[0].conjugate()
-        out[1] = 0
-        out[2] = 0
-        out[3] = vec[1].conjugate()
+@gjit
+def _iunpack_ct(out, vec, md):
+    if md.literal_value == "full":
+        def impl(out, vec, md):
+            out[0] = vec[0].conjugate()
+            out[1] = vec[2].conjugate()
+            out[2] = vec[1].conjugate()
+            out[3] = vec[3].conjugate()
     else:
-        raise ValueError("Gain shape not understood.")
+        def impl(out, vec, md):
+            out[0] = vec[0].conjugate()
+            out[1] = 0
+            out[2] = 0
+            out[3] = vec[1].conjugate()
+
+    return impl
 
 
 @register_jitable(inline="always")
