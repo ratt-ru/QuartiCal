@@ -146,62 +146,110 @@ def get_row_extents(t_map_arr, active_term, n_tint):
     return row_starts, row_stops
 
 
-@register_jitable(inline="always")
+@gjit
 def _v1_mul_v2(v1, v2, md):
 
-    v100, v101, v110, v111 = _unpack(v1, md)
-    v200, v201, v210, v211 = _unpack(v2, md)
+    if md.literal_value == "full" or md.literal_value == "mixed":
+        def impl(v1, v2, md):
+            v100, v101, v110, v111 = _unpack(v1, md)
+            v200, v201, v210, v211 = _unpack(v2, md)
 
-    v300 = (v100*v200 + v101*v210)
-    v301 = (v100*v201 + v101*v211)
-    v310 = (v110*v200 + v111*v210)
-    v311 = (v110*v201 + v111*v211)
+            v300 = (v100*v200 + v101*v210)
+            v301 = (v100*v201 + v101*v211)
+            v310 = (v110*v200 + v111*v210)
+            v311 = (v110*v201 + v111*v211)
 
-    return v300, v301, v310, v311
+            return v300, v301, v310, v311
+    else:
+        def impl(v1, v2, md):
+            v100, v111 = _unpack(v1, md)
+            v200, v211 = _unpack(v2, md)
+
+            v300 = v100*v200
+            v311 = v111*v211
+
+            return v300, v311
+
+    return impl
 
 
-@register_jitable(inline="always")
+@gjit
 def _v1_mul_v2ct(v1, v2, md):
 
-    v100, v101, v110, v111 = _unpack(v1, md)
-    v200, v201, v210, v211 = _unpack_ct(v2, md)
+    if md.literal_value == "full" or md.literal_value == "mixed":
+        def impl(v1, v2, md):
+            v100, v101, v110, v111 = _unpack(v1, md)
+            v200, v201, v210, v211 = _unpack_ct(v2, md)
 
-    v300 = (v100*v200 + v101*v210)
-    v301 = (v100*v201 + v101*v211)
-    v310 = (v110*v200 + v111*v210)
-    v311 = (v110*v201 + v111*v211)
+            v300 = (v100*v200 + v101*v210)
+            v301 = (v100*v201 + v101*v211)
+            v310 = (v110*v200 + v111*v210)
+            v311 = (v110*v201 + v111*v211)
 
-    return v300, v301, v310, v311
+            return v300, v301, v310, v311
+    else:
+        def impl(v1, v2, md):
+            v100, v111 = _unpack(v1, md)
+            v200, v211 = _unpack_ct(v2, md)
+
+            v300 = v100*v200
+            v311 = v111*v211
+
+            return v300, v311
 
 
-@register_jitable(inline="always")
+@gjit
 def _v1_wmul_v2ct(v1, v2, w1, md):
 
-    v100, v101, v110, v111 = _unpack(v1, md)
-    v200, v201, v210, v211 = _unpack_ct(v2, md)
-    w100, w101, w110, w111 = _unpack(w1, md)
+    if md.literal_value == "full" or md.literal_value == "mixed":
+        def impl(v1, v2, w1, md):
+            v100, v101, v110, v111 = _unpack(v1, md)
+            v200, v201, v210, v211 = _unpack_ct(v2, md)
+            w100, w101, w110, w111 = _unpack(w1, md)
 
-    v300 = (v100*w100*v200 + v101*w111*v210)
-    v301 = (v100*w100*v201 + v101*w111*v211)
-    v310 = (v110*w100*v200 + v111*w111*v210)
-    v311 = (v110*w100*v201 + v111*w111*v211)
+            v300 = (v100*w100*v200 + v101*w111*v210)
+            v301 = (v100*w100*v201 + v101*w111*v211)
+            v310 = (v110*w100*v200 + v111*w111*v210)
+            v311 = (v110*w100*v201 + v111*w111*v211)
 
-    return v300, v301, v310, v311
+            return v300, v301, v310, v311
+    else:
+        def impl(v1, v2, w1, md):
+            v100, v111 = _unpack(v1, md)
+            v200, v211 = _unpack_ct(v2, md)
+            w100, w111 = _unpack(w1, md)
+
+            v300 = v100*w100*v200
+            v311 = v111*w111*v211
+
+            return v300, v311
 
 
-@register_jitable(inline="always")
+@gjit
 def _v1ct_wmul_v2(v1, v2, w1, md):
 
-    v100, v101, v110, v111 = _unpack_ct(v1, md)
-    v200, v201, v210, v211 = _unpack(v2, md)
-    w100, w101, w110, w111 = _unpack(w1, md)
+    if md.literal_value == "full" or md.literal_value == "mixed":
+        def impl(v1, v2, w1, md):
+            v100, v101, v110, v111 = _unpack_ct(v1, md)
+            v200, v201, v210, v211 = _unpack(v2, md)
+            w100, w101, w110, w111 = _unpack(w1, md)
 
-    v300 = (v100*w100*v200 + v101*w111*v210)
-    v301 = (v100*w100*v201 + v101*w111*v211)
-    v310 = (v110*w100*v200 + v111*w111*v210)
-    v311 = (v110*w100*v201 + v111*w111*v211)
+            v300 = (v100*w100*v200 + v101*w111*v210)
+            v301 = (v100*w100*v201 + v101*w111*v211)
+            v310 = (v110*w100*v200 + v111*w111*v210)
+            v311 = (v110*w100*v201 + v111*w111*v211)
 
-    return v300, v301, v310, v311
+            return v300, v301, v310, v311
+    else:
+        def impl(v1, v2, w1, md):
+            v100, v111 = _unpack_ct(v1, md)
+            v200, v211 = _unpack(v2, md)
+            w100, w111 = _unpack(w1, md)
+
+            v300 = v100*w100*v200
+            v311 = v111*w111*v211
+
+            return v300, v311
 
 
 @gjit
