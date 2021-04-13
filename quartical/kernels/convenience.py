@@ -197,6 +197,8 @@ def _v1_mul_v2ct(v1, v2, md):
 
             return v300, v311
 
+    return impl
+
 
 @gjit
 def _v1_wmul_v2ct(v1, v2, w1, md):
@@ -224,6 +226,8 @@ def _v1_wmul_v2ct(v1, v2, w1, md):
 
             return v300, v311
 
+    return impl
+
 
 @gjit
 def _v1ct_wmul_v2(v1, v2, w1, md):
@@ -250,6 +254,8 @@ def _v1ct_wmul_v2(v1, v2, w1, md):
             v311 = v111*w111*v211
 
             return v300, v311
+
+    return impl
 
 
 @gjit
