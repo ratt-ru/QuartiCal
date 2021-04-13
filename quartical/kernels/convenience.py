@@ -210,9 +210,15 @@ def _unpack(vec, md):
     if md.literal_value == "full":
         def impl(vec, md):
             return vec[0], vec[1], vec[2], vec[3]
+    elif md.literal_value == "diag":
+        def impl(vec, md):
+            return vec[0], vec[1]
     else:
         def impl(vec, md):
-            return vec[0], 0, 0, vec[1]
+            if len(vec) == 4:
+                return vec[0], vec[1], vec[2], vec[3]
+            else:
+                return vec[0], 0, 0, vec[1]
 
     return impl
 
@@ -225,9 +231,18 @@ def _unpack_ct(vec, md):
                    vec[2].conjugate(), \
                    vec[1].conjugate(), \
                    vec[3].conjugate()
+    elif md.literal_value == "diag":
+        def impl(vec, md):
+            return vec[0].conjugate(), vec[1].conjugate()
     else:
         def impl(vec, md):
-            return vec[0].conjugate(), 0, 0, vec[1].conjugate()
+            if len(vec) == 4:
+                return vec[0].conjugate(), \
+                       vec[2].conjugate(), \
+                       vec[1].conjugate(), \
+                       vec[3].conjugate()
+            else:
+                return vec[0].conjugate(), 0, 0, vec[1].conjugate()
 
     return impl
 
@@ -237,6 +252,9 @@ def _iunpack(out, vec, md):
     if md.literal_value == "full":
         def impl(out, vec, md):
             out[0], out[1], out[2], out[3] = vec[0], vec[1], vec[2], vec[3]
+    elif md.literal_value == "diag":
+        def impl(out, vec, md):
+            out[0], out[1] = vec[0], vec[1]
     else:
         def impl(out, vec, md):
             out[0], out[1], out[2], out[3] = vec[0], 0, 0, vec[1]
@@ -252,6 +270,10 @@ def _iunpack_ct(out, vec, md):
             out[1] = vec[2].conjugate()
             out[2] = vec[1].conjugate()
             out[3] = vec[3].conjugate()
+    elif md.literal_value == "diag":
+        def impl(out, vec, md):
+            out[0] = vec[0].conjugate()
+            out[1] = vec[1].conjugate()
     else:
         def impl(out, vec, md):
             out[0] = vec[0].conjugate()
