@@ -16,7 +16,7 @@ from quartical.kernels.convenience import (get_row,
                                            _unpack_ct,
                                            _iunpack,
                                            _iunpack_ct,
-                                           _iadd4)
+                                           _iadd)
 from collections import namedtuple
 
 
@@ -418,8 +418,8 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                     jhr_vec = _v1_mul_v2(r_vec, mh_vec, corr_mode)
 
-                    _iadd4(jhr[t_m, f_m, a1_m, out_d], jhr_vec)
-                    _iadd4(tmp_jh_p[out_d], jh_vec)
+                    _iadd(jhr[t_m, f_m, a1_m, out_d], jhr_vec, corr_mode)
+                    _iadd(tmp_jh_p[out_d], jh_vec, corr_mode)
 
                     for g in range(n_gains-1, -1, -1):
 
@@ -456,20 +456,20 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                     jhr_vec = _v1_mul_v2(rh_vec, m_vec, corr_mode)
 
-                    _iadd4(jhr[t_m, f_m, a2_m, out_d], jhr_vec)
-                    _iadd4(tmp_jh_q[out_d], jh_vec)
+                    _iadd(jhr[t_m, f_m, a2_m, out_d], jhr_vec, corr_mode)
+                    _iadd(tmp_jh_q[out_d], jh_vec, corr_mode)
 
                 for d in range(n_gdir):
 
                     jhp = tmp_jh_p[d]
                     jhj_vec = _v1ct_wmul_v2(jhp, jhp, w, corr_mode)
                     jhj_sel = jhj[t_m, f_m, a1_m, d]
-                    _iadd4(jhj_sel, jhj_vec)
+                    _iadd(jhj_sel, jhj_vec, corr_mode)
 
                     jhq = tmp_jh_q[d]
                     jhj_vec = _v1ct_wmul_v2(jhq, jhq, w, corr_mode)
                     jhj_sel = jhj[t_m, f_m, a2_m, d]
-                    _iadd4(jhj_sel, jhj_vec)
+                    _iadd(jhj_sel, jhj_vec, corr_mode)
 
     return
 
