@@ -6,7 +6,7 @@ from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
 from quartical.kernels.convenience import (get_row,
-                                           mul_rweight,
+                                           old_mul_rweight as mul_rweight,
                                            get_chan_extents,
                                            get_row_extents)
 from collections import namedtuple

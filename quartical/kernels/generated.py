@@ -6,19 +6,19 @@ from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
 from quartical.kernels.convenience import (get_row,
-                                           mul_rweight,
                                            get_chan_extents,
                                            get_row_extents,
-                                           _v1_mul_v2,
-                                           _v1_mul_v2ct,
-                                           _v1ct_wmul_v2,
-                                           _unpack,
-                                           _unpack_ct,
-                                           _iunpack,
-                                           _iunpack_ct,
-                                           _iadd,
-                                           _iwmul,
-                                           _valloc)
+                                           imul_rweight_factory,
+                                           v1_mul_v2_factory,
+                                           v1_mul_v2ct_factory,
+                                           v1ct_wmul_v2_factory,
+                                           unpack_factory,
+                                           unpackct_factory,
+                                           iunpack_factory,
+                                           iunpackct_factory,
+                                           iadd_factory,
+                                           iwmul_factory,
+                                           valloc_factory)
 from collections import namedtuple
 
 
@@ -187,16 +187,16 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                     out_d = d_map_arr[active_term, d]
 
-                    r00 = w00*mul_rweight(r[0], row_weights, row_ind)
-                    r11 = w11*mul_rweight(r[1], row_weights, row_ind)
+                    r00 = w00*imul_rweight(r[0], row_weights, row_ind)
+                    r11 = w11*imul_rweight(r[1], row_weights, row_ind)
 
                     rh00 = r00.conjugate()
                     rh11 = r11.conjugate()
 
                     m = model[row, f, d]
 
-                    m00 = mul_rweight(m[0], row_weights, row_ind)
-                    m11 = mul_rweight(m[1], row_weights, row_ind)
+                    m00 = imul_rweight(m[0], row_weights, row_ind)
+                    m11 = imul_rweight(m[1], row_weights, row_ind)
 
                     mh00 = m00.conjugate()
                     mh11 = m11.conjugate()
@@ -306,166 +306,186 @@ def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gains, residual, a1,
     return
 
 
-@register_jitable
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
 def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                  a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
                  row_weights, active_term, corr_mode):
 
-    _, n_chan, n_dir, n_corr = model.shape
+    if not isinstance(corr_mode, types.Literal):
+        return lambda jhj, jhr, model, gains, inverse_gains, residual, a1, \
+                 a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map, \
+                 row_weights, active_term, corr_mode: literally(corr_mode)
 
-    jhj[:] = 0
-    jhr[:] = 0
+    imul_rweight = imul_rweight_factory(corr_mode, row_weights)
+    v1_mul_v2 = v1_mul_v2_factory(corr_mode)
+    v1_mul_v2ct = v1_mul_v2ct_factory(corr_mode)
+    v1ct_wmul_v2 = v1ct_wmul_v2_factory(corr_mode)
+    iunpack = iunpack_factory(corr_mode)
+    iunpackct = iunpackct_factory(corr_mode)
+    iadd = iadd_factory(corr_mode)
+    iwmul = iwmul_factory(corr_mode)
+    valloc = valloc_factory(corr_mode)
 
-    n_tint, n_fint, n_ant, n_gdir, _ = gains[active_term].shape
-    n_int = n_tint*n_fint
+    def impl(jhj, jhr, model, gains, inverse_gains, residual, a1,
+             a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
+             row_weights, active_term, corr_mode):
+        _, n_chan, n_dir, n_corr = model.shape
 
-    n_gains = len(gains)
+        jhj[:] = 0
+        jhr[:] = 0
 
-    # Determine the starts and stops of the rows and channels associated with
-    # each solution interval. This could even be moved out for speed.
-    row_starts, row_stops = get_row_extents(t_map_arr,
-                                            active_term,
-                                            n_tint)
+        n_tint, n_fint, n_ant, n_gdir, _ = gains[active_term].shape
+        n_int = n_tint*n_fint
 
-    chan_starts, chan_stops = get_chan_extents(f_map_arr,
-                                               active_term,
-                                               n_fint,
-                                               n_chan)
+        n_gains = len(gains)
 
-    # Parallel over all solution intervals.
-    for i in prange(n_int):
+        # Determine the starts and stops of the rows and channels associated
+        # with each solution interval. This could even be moved out for speed.
+        row_starts, row_stops = get_row_extents(t_map_arr,
+                                                active_term,
+                                                n_tint)
 
-        ti = i//n_fint
-        fi = i - ti*n_fint
+        chan_starts, chan_stops = get_chan_extents(f_map_arr,
+                                                   active_term,
+                                                   n_fint,
+                                                   n_chan)
 
-        rs = row_starts[ti]
-        re = row_stops[ti]
-        fs = chan_starts[fi]
-        fe = chan_stops[fi]
+        # Parallel over all solution intervals.
+        for i in prange(n_int):
 
-        m_vec = _valloc(jhj.dtype, corr_mode)
-        mh_vec = _valloc(jhj.dtype, corr_mode)
-        r_vec = _valloc(jhj.dtype, corr_mode)
-        rh_vec = _valloc(jhj.dtype, corr_mode)
+            ti = i//n_fint
+            fi = i - ti*n_fint
 
-        tmp_jh_p = np.zeros((n_gdir, m_vec.size), dtype=jhj.dtype)
-        tmp_jh_q = np.zeros((n_gdir, m_vec.size), dtype=jhj.dtype)
+            rs = row_starts[ti]
+            re = row_stops[ti]
+            fs = chan_starts[fi]
+            fe = chan_stops[fi]
 
-        for row_ind in range(rs, re):
+            m_vec = valloc(jhj.dtype)
+            mh_vec = valloc(jhj.dtype)
+            r_vec = valloc(jhj.dtype)
+            rh_vec = valloc(jhj.dtype)
 
-            row = get_row(row_ind, row_map)
-            a1_m, a2_m = a1[row], a2[row]
+            tmp_jh_p = np.zeros((n_gdir, m_vec.size), dtype=jhj.dtype)
+            tmp_jh_q = np.zeros((n_gdir, m_vec.size), dtype=jhj.dtype)
 
-            for f in range(fs, fe):
+            for row_ind in range(rs, re):
 
-                r = residual[row, f]
-                w = weights[row, f]  # Consider a map?
+                row = get_row(row_ind, row_map)
+                a1_m, a2_m = a1[row], a2[row]
 
-                tmp_jh_p[:, :] = 0
-                tmp_jh_q[:, :] = 0
+                for f in range(fs, fe):
 
-                for d in range(n_dir):
+                    r = residual[row, f]
+                    w = weights[row, f]  # Consider a map?
 
-                    out_d = d_map_arr[active_term, d]
+                    tmp_jh_p[:, :] = 0
+                    tmp_jh_q[:, :] = 0
 
-                    mul_rweight(r, r_vec, row_weights, row_ind, corr_mode)
-                    _iwmul(r_vec, w, corr_mode)
-                    _iunpack_ct(rh_vec, r_vec, corr_mode)
+                    for d in range(n_dir):
 
-                    m = model[row, f, d]
-                    mul_rweight(m, m_vec, row_weights, row_ind, corr_mode)
+                        out_d = d_map_arr[active_term, d]
 
-                    _iunpack_ct(mh_vec, m_vec, corr_mode)
+                        imul_rweight(r, r_vec, row_weights, row_ind)
+                        iwmul(r_vec, w)
+                        iunpackct(rh_vec, r_vec)
 
-                    for g in range(n_gains - 1, -1, -1):
+                        m = model[row, f, d]
+                        imul_rweight(m, m_vec, row_weights, row_ind)
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        gb = gains[g][t_m, f_m, a2_m, d_m]
+                        iunpackct(mh_vec, m_vec)
 
-                        jh_vec = _v1_mul_v2(gb, mh_vec, corr_mode)
-                        _iunpack(mh_vec, jh_vec, corr_mode)
+                        for g in range(n_gains - 1, -1, -1):
 
-                    for g in range(n_gains - 1, active_term, -1):
+                            d_m = d_map_arr[g, d]  # Broadcast dir.
+                            t_m = t_map_arr[row_ind, g]
+                            f_m = f_map_arr[f, g]
+                            gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        ga = gains[g][t_m, f_m, a1_m, d_m]
+                            jh_vec = v1_mul_v2(gb, mh_vec)
+                            iunpack(mh_vec, jh_vec)
 
-                        jh_vec = _v1_mul_v2ct(mh_vec, ga, corr_mode)
-                        _iunpack(mh_vec, jh_vec, corr_mode)
+                        for g in range(n_gains - 1, active_term, -1):
 
-                    for g in range(active_term):
+                            d_m = d_map_arr[g, d]  # Broadcast dir.
+                            t_m = t_map_arr[row_ind, g]
+                            f_m = f_map_arr[f, g]
+                            ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        gai = inverse_gains[g][t_m, f_m, a1_m, d_m]
+                            jh_vec = v1_mul_v2ct(mh_vec, ga)
+                            iunpack(mh_vec, jh_vec)
 
-                        jhr_vec = _v1_mul_v2(gai, r_vec, corr_mode)
-                        _iunpack(r_vec, jhr_vec, corr_mode)
+                        for g in range(active_term):
 
-                    t_m = t_map_arr[row_ind, active_term]
-                    f_m = f_map_arr[f, active_term]
+                            d_m = d_map_arr[g, d]  # Broadcast dir.
+                            t_m = t_map_arr[row_ind, g]
+                            f_m = f_map_arr[f, g]
+                            gai = inverse_gains[g][t_m, f_m, a1_m, d_m]
 
-                    jhr_vec = _v1_mul_v2(r_vec, mh_vec, corr_mode)
+                            jhr_vec = v1_mul_v2(gai, r_vec)
+                            iunpack(r_vec, jhr_vec)
 
-                    _iadd(jhr[t_m, f_m, a1_m, out_d], jhr_vec, corr_mode)
-                    _iadd(tmp_jh_p[out_d], jh_vec, corr_mode)
+                        t_m = t_map_arr[row_ind, active_term]
+                        f_m = f_map_arr[f, active_term]
 
-                    for g in range(n_gains-1, -1, -1):
+                        jhr_vec = v1_mul_v2(r_vec, mh_vec)
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        ga = gains[g][t_m, f_m, a1_m, d_m]
+                        iadd(jhr[t_m, f_m, a1_m, out_d], jhr_vec)
+                        iadd(tmp_jh_p[out_d], jh_vec)
 
-                        jh_vec = _v1_mul_v2(ga, m_vec, corr_mode)
-                        _iunpack(m_vec, jh_vec, corr_mode)
+                        for g in range(n_gains-1, -1, -1):
 
-                    for g in range(n_gains - 1, active_term, -1):
+                            d_m = d_map_arr[g, d]  # Broadcast dir.
+                            t_m = t_map_arr[row_ind, g]
+                            f_m = f_map_arr[f, g]
+                            ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        gb = gains[g][t_m, f_m, a2_m, d_m]
+                            jh_vec = v1_mul_v2(ga, m_vec)
+                            iunpack(m_vec, jh_vec)
 
-                        jh_vec = _v1_mul_v2ct(m_vec, gb, corr_mode)
-                        _iunpack(m_vec, jh_vec, corr_mode)
+                        for g in range(n_gains - 1, active_term, -1):
 
-                    for g in range(active_term):
+                            d_m = d_map_arr[g, d]  # Broadcast dir.
+                            t_m = t_map_arr[row_ind, g]
+                            f_m = f_map_arr[f, g]
+                            gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        gbi = inverse_gains[g][t_m, f_m, a2_m, d_m]
+                            jh_vec = v1_mul_v2ct(m_vec, gb)
+                            iunpack(m_vec, jh_vec)
 
-                        jhr_vec = _v1_mul_v2(gbi, rh_vec, corr_mode)
-                        _iunpack(rh_vec, jhr_vec, corr_mode)
+                        for g in range(active_term):
 
-                    t_m = t_map_arr[row_ind, active_term]
-                    f_m = f_map_arr[f, active_term]
+                            d_m = d_map_arr[g, d]  # Broadcast dir.
+                            t_m = t_map_arr[row_ind, g]
+                            f_m = f_map_arr[f, g]
+                            gbi = inverse_gains[g][t_m, f_m, a2_m, d_m]
 
-                    jhr_vec = _v1_mul_v2(rh_vec, m_vec, corr_mode)
+                            jhr_vec = v1_mul_v2(gbi, rh_vec)
+                            iunpack(rh_vec, jhr_vec)
 
-                    _iadd(jhr[t_m, f_m, a2_m, out_d], jhr_vec, corr_mode)
-                    _iadd(tmp_jh_q[out_d], jh_vec, corr_mode)
+                        t_m = t_map_arr[row_ind, active_term]
+                        f_m = f_map_arr[f, active_term]
 
-                for d in range(n_gdir):
+                        jhr_vec = v1_mul_v2(rh_vec, m_vec)
 
-                    jhp = tmp_jh_p[d]
-                    jhj_vec = _v1ct_wmul_v2(jhp, jhp, w, corr_mode)
-                    jhj_sel = jhj[t_m, f_m, a1_m, d]
-                    _iadd(jhj_sel, jhj_vec, corr_mode)
+                        iadd(jhr[t_m, f_m, a2_m, out_d], jhr_vec)
+                        iadd(tmp_jh_q[out_d], jh_vec)
 
-                    jhq = tmp_jh_q[d]
-                    jhj_vec = _v1ct_wmul_v2(jhq, jhq, w, corr_mode)
-                    jhj_sel = jhj[t_m, f_m, a2_m, d]
-                    _iadd(jhj_sel, jhj_vec, corr_mode)
+                    for d in range(n_gdir):
 
-    return
+                        jhp = tmp_jh_p[d]
+                        jhj_vec = v1ct_wmul_v2(jhp, jhp, w)
+                        jhj_sel = jhj[t_m, f_m, a1_m, d]
+                        iadd(jhj_sel, jhj_vec)
+
+                        jhq = tmp_jh_q[d]
+                        jhj_vec = v1ct_wmul_v2(jhq, jhq, w)
+                        jhj_sel = jhj[t_m, f_m, a2_m, d]
+                        iadd(jhj_sel, jhj_vec)
+
+        return
+    return impl
 
 
 @register_jitable

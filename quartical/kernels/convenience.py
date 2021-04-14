@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-from numba.extending import overload, register_jitable
+from numba.extending import overload
 from numba import jit, types, generated_jit
 import numpy as np
 
 
 # Handy alias for functions that need to be jitted in this way.
-injit = jit(nogil=True,
+qcjit = jit(nogil=True,
             nopython=True,
             fastmath=True,
             cache=True,
@@ -108,32 +108,7 @@ def _old_mul_rweight(vis, weight, ind):
         return impl
 
 
-@gjit
-def mul_rweight(invis, outvis, weight, ind, md):
-
-    if isinstance(weight, types.NoneType):
-        def impl(invis, outvis, weight, ind, md):
-            outvis[:] = invis
-    else:
-        if md.literal_value == "full" or md.literal_value == "mixed":
-            def impl(invis, outvis, weight, ind, md):
-                v00, v01, v10, v11 = _unpack(invis, md)
-                w = weight[ind]
-                outvis[0] = w*v00
-                outvis[1] = w*v01
-                outvis[2] = w*v10
-                outvis[3] = w*v11
-        else:
-            def impl(invis, outvis, weight, ind, md):
-                v00, v11 = _unpack(invis, md)
-                w = weight[ind]
-                outvis[0] = w*v00
-                outvis[1] = w*v11
-
-    return impl
-
-
-@injit
+@qcjit
 def get_chan_extents(f_map_arr, active_term, n_fint, n_chan):
     """Given the frequency mappings, determines the start/stop indices."""
 
@@ -152,7 +127,7 @@ def get_chan_extents(f_map_arr, active_term, n_fint, n_chan):
     return chan_starts, chan_stops
 
 
-@injit
+@qcjit
 def get_row_extents(t_map_arr, active_term, n_tint):
     """Given the time mappings, determines the row start/stop indices."""
 
@@ -171,257 +146,287 @@ def get_row_extents(t_map_arr, active_term, n_tint):
     return row_starts, row_stops
 
 
-@gjit
-def _v1_mul_v2(v1, v2, md):
+def imul_rweight_factory(mode, weight):
 
-    if md.literal_value == "full" or md.literal_value == "mixed":
-        def impl(v1, v2, md):
-            v100, v101, v110, v111 = _unpack(v1, md)
-            v200, v201, v210, v211 = _unpack(v2, md)
-
-            v300 = (v100*v200 + v101*v210)
-            v301 = (v100*v201 + v101*v211)
-            v310 = (v110*v200 + v111*v210)
-            v311 = (v110*v201 + v111*v211)
-
-            return v300, v301, v310, v311
+    if isinstance(weight, types.NoneType):
+        def impl(invec, outvec, weight, ind):
+            outvec[:] = invec
     else:
-        def impl(v1, v2, md):
-            v100, v111 = _unpack(v1, md)
-            v200, v211 = _unpack(v2, md)
 
-            v300 = v100*v200
-            v311 = v111*v211
+        unpack = unpack_factory(mode)
 
-            return v300, v311
+        if mode.literal_value == "full" or mode.literal_value == "mixed":
+            def impl(invec, outvec, weight, ind):
+                v00, v01, v10, v11 = unpack(invec)
+                w = weight[ind]
+                outvec[0] = w*v00
+                outvec[1] = w*v01
+                outvec[2] = w*v10
+                outvec[3] = w*v11
+        else:
+            def impl(invec, outvec, weight, ind):
+                v00, v11 = unpack(invec)
+                w = weight[ind]
+                outvec[0] = w*v00
+                outvec[1] = w*v11
+    return qcjit(impl)
 
-    return impl
 
+def v1_mul_v2_factory(mode):
 
-@gjit
-def _v1_mul_v2ct(v1, v2, md):
+    unpack = unpack_factory(mode)
 
-    if md.literal_value == "full" or md.literal_value == "mixed":
-        def impl(v1, v2, md):
-            v100, v101, v110, v111 = _unpack(v1, md)
-            v200, v201, v210, v211 = _unpack_ct(v2, md)
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(v1, v2):
+            v1_00, v1_01, v1_10, v1_11 = unpack(v1)
+            v2_00, v2_01, v2_10, v2_11 = unpack(v2)
 
-            v300 = (v100*v200 + v101*v210)
-            v301 = (v100*v201 + v101*v211)
-            v310 = (v110*v200 + v111*v210)
-            v311 = (v110*v201 + v111*v211)
+            v3_00 = (v1_00*v2_00 + v1_01*v2_10)
+            v3_01 = (v1_00*v2_01 + v1_01*v2_11)
+            v3_10 = (v1_10*v2_00 + v1_11*v2_10)
+            v3_11 = (v1_10*v2_01 + v1_11*v2_11)
 
-            return v300, v301, v310, v311
+            return v3_00, v3_01, v3_10, v3_11
     else:
-        def impl(v1, v2, md):
-            v100, v111 = _unpack(v1, md)
-            v200, v211 = _unpack_ct(v2, md)
+        def impl(v1, v2):
+            v1_00, v1_11 = unpack(v1)
+            v2_00, v2_11 = unpack(v2)
 
-            v300 = v100*v200
-            v311 = v111*v211
+            v3_00 = v1_00*v2_00
+            v3_11 = v1_11*v2_11
 
-            return v300, v311
+            return v3_00, v3_11
+    return qcjit(impl)
 
-    return impl
 
+def v1_mul_v2ct_factory(mode):
 
-@gjit
-def _iwmul(v1, w1, md):
+    unpack = unpack_factory(mode)
+    unpackct = unpackct_factory(mode)
 
-    if md.literal_value == "full" or md.literal_value == "mixed":
-        def impl(v1, w1, md):
-            w100, w101, w110, w111 = _unpack(w1, md)
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(v1, v2):
+            v1_00, v1_01, v1_10, v1_11 = unpack(v1)
+            v2_00, v2_01, v2_10, v2_11 = unpackct(v2)
 
-            v1[0] *= w100
-            v1[1] *= w100
-            v1[2] *= w111
-            v1[3] *= w111
+            v3_00 = (v1_00*v2_00 + v1_01*v2_10)
+            v3_01 = (v1_00*v2_01 + v1_01*v2_11)
+            v3_10 = (v1_10*v2_00 + v1_11*v2_10)
+            v3_11 = (v1_10*v2_01 + v1_11*v2_11)
+
+            return v3_00, v3_01, v3_10, v3_11
     else:
-        def impl(v1, w1, o1, md):
-            v100, v111 = _unpack(v1, md)
-            w100, w111 = _unpack(w1, md)
+        def impl(v1, v2):
+            v1_00, v1_11 = unpack(v1)
+            v2_00, v2_11 = unpackct(v2)
 
-            o1[0] = v100*w100
-            o1[1] = v111*w111
+            v3_00 = v1_00*v2_00
+            v3_11 = v1_11*v2_11
 
-    return impl
+            return v3_00, v3_11
+    return qcjit(impl)
 
 
-@gjit
-def _v1_wmul_v2ct(v1, v2, w1, md):
+def iwmul_factory(mode):
 
-    if md.literal_value == "full" or md.literal_value == "mixed":
-        def impl(v1, v2, w1, md):
-            v100, v101, v110, v111 = _unpack(v1, md)
-            v200, v201, v210, v211 = _unpack_ct(v2, md)
-            w100, w101, w110, w111 = _unpack(w1, md)
+    unpack = unpack_factory(mode)
 
-            v300 = (v100*w100*v200 + v101*w111*v210)
-            v301 = (v100*w100*v201 + v101*w111*v211)
-            v310 = (v110*w100*v200 + v111*w111*v210)
-            v311 = (v110*w100*v201 + v111*w111*v211)
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(v1, w1):
+            w1_00, w1_01, w1_10, w1_11 = unpack(w1)
 
-            return v300, v301, v310, v311
+            v1[0] *= w1_00
+            v1[1] *= w1_00
+            v1[2] *= w1_11
+            v1[3] *= w1_11
     else:
-        def impl(v1, v2, w1, md):
-            v100, v111 = _unpack(v1, md)
-            v200, v211 = _unpack_ct(v2, md)
-            w100, w111 = _unpack(w1, md)
+        def impl(v1, w1):
+            w1_00, w1_11 = unpack(w1)
 
-            v300 = v100*w100*v200
-            v311 = v111*w111*v211
-
-            return v300, v311
-
-    return impl
+            v1[0] *= w1_00
+            v1[1] *= w1_11
+    return qcjit(impl)
 
 
-@gjit
-def _v1ct_wmul_v2(v1, v2, w1, md):
+def v1_wmul_v2ct_factory(mode):
 
-    if md.literal_value == "full" or md.literal_value == "mixed":
-        def impl(v1, v2, w1, md):
-            v100, v101, v110, v111 = _unpack_ct(v1, md)
-            v200, v201, v210, v211 = _unpack(v2, md)
-            w100, w101, w110, w111 = _unpack(w1, md)
+    unpack = unpack_factory(mode)
+    unpackct = unpackct_factory(mode)
 
-            v300 = (v100*w100*v200 + v101*w111*v210)
-            v301 = (v100*w100*v201 + v101*w111*v211)
-            v310 = (v110*w100*v200 + v111*w111*v210)
-            v311 = (v110*w100*v201 + v111*w111*v211)
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(v1, v2, w1):
+            v1_00, v1_01, v1_10, v1_11 = unpack(v1)
+            v2_00, v2_01, v2_10, v2_11 = unpackct(v2)
+            w1_00, w1_01, w1_10, w1_11 = unpack(w1)
 
-            return v300, v301, v310, v311
+            v3_00 = (v1_00*w1_00*v2_00 + v1_01*w1_11*v2_10)
+            v3_01 = (v1_00*w1_00*v2_01 + v1_01*w1_11*v2_11)
+            v3_10 = (v1_10*w1_00*v2_00 + v1_11*w1_11*v2_10)
+            v3_11 = (v1_10*w1_00*v2_01 + v1_11*w1_11*v2_11)
+
+            return v3_00, v3_01, v3_10, v3_11
     else:
-        def impl(v1, v2, w1, md):
-            v100, v111 = _unpack_ct(v1, md)
-            v200, v211 = _unpack(v2, md)
-            w100, w111 = _unpack(w1, md)
+        def impl(v1, v2, w1):
+            v1_00, v1_11 = unpack(v1)
+            v2_00, v2_11 = unpackct(v2)
+            w1_00, w1_11 = unpack(w1)
 
-            v300 = v100*w100*v200
-            v311 = v111*w111*v211
+            v3_00 = v1_00*w1_00*v2_00
+            v3_11 = v1_11*w1_11*v2_11
 
-            return v300, v311
+            return v3_00, v3_11
+    return qcjit(impl)
 
-    return impl
 
+def v1ct_wmul_v2_factory(mode):
 
-@gjit
-def _unpack(vec, md):
+    unpack = unpack_factory(mode)
+    unpackct = unpackct_factory(mode)
 
-    if md.literal_value == "full":
-        def impl(vec, md):
-            return vec[0], vec[1], vec[2], vec[3]
-    elif md.literal_value == "diag":
-        def impl(vec, md):
-            return vec[0], vec[1]
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(v1, v2, w1):
+            v1_00, v1_01, v1_10, v1_11 = unpackct(v1)
+            v2_00, v2_01, v2_10, v2_11 = unpack(v2)
+            w1_00, w1_01, w1_10, w1_11 = unpack(w1)
+
+            v3_00 = (v1_00*w1_00*v2_00 + v1_01*w1_11*v2_10)
+            v3_01 = (v1_00*w1_00*v2_01 + v1_01*w1_11*v2_11)
+            v3_10 = (v1_10*w1_00*v2_00 + v1_11*w1_11*v2_10)
+            v3_11 = (v1_10*w1_00*v2_01 + v1_11*w1_11*v2_11)
+
+            return v3_00, v3_01, v3_10, v3_11
     else:
-        def impl(vec, md):
-            if len(vec) == 4:
-                return vec[0], vec[1], vec[2], vec[3]
+        def impl(v1, v2, w1):
+            v1_00, v1_11 = unpackct(v1)
+            v2_00, v2_11 = unpack(v2)
+            w1_00, w1_11 = unpack(w1)
+
+            v3_00 = v1_00*w1_00*v2_00
+            v3_11 = v1_11*w1_11*v2_11
+
+            return v3_00, v3_11
+    return qcjit(impl)
+
+
+def unpack_factory(mode):
+
+    if mode.literal_value == "full":
+        def impl(invec):
+            return invec[0], invec[1], invec[2], invec[3]
+    elif mode.literal_value == "diag":
+        def impl(invec):
+            return invec[0], invec[1]
+    else:
+        def impl(invec):
+            if len(invec) == 4:
+                return invec[0], invec[1], invec[2], invec[3]
             else:
-                return vec[0], 0, 0, vec[1]
+                return invec[0], 0, 0, invec[1]
+    return qcjit(impl)
 
-    return impl
 
+def unpackct_factory(mode):
 
-@gjit
-def _unpack_ct(vec, md):
-    if md.literal_value == "full":
-        def impl(vec, md):
-            return vec[0].conjugate(), \
-                   vec[2].conjugate(), \
-                   vec[1].conjugate(), \
-                   vec[3].conjugate()
-    elif md.literal_value == "diag":
-        def impl(vec, md):
-            return vec[0].conjugate(), vec[1].conjugate()
+    if mode.literal_value == "full":
+        def impl(invec):
+            return np.conjugate(invec[0]), \
+                   np.conjugate(invec[2]), \
+                   np.conjugate(invec[1]), \
+                   np.conjugate(invec[3])
+    elif mode.literal_value == "diag":
+        def impl(invec):
+            return np.conjugate(invec[0]), \
+                   np.conjugate(invec[1])
     else:
-        def impl(vec, md):
-            if len(vec) == 4:
-                return vec[0].conjugate(), \
-                       vec[2].conjugate(), \
-                       vec[1].conjugate(), \
-                       vec[3].conjugate()
+        def impl(invec):
+            if len(invec) == 4:
+                return np.conjugate(invec[0]), \
+                       np.conjugate(invec[2]), \
+                       np.conjugate(invec[1]), \
+                       np.conjugate(invec[3])
             else:
-                return vec[0].conjugate(), 0, 0, vec[1].conjugate()
+                return np.conjugate(invec[0]), \
+                       0, \
+                       0, \
+                       np.conjugate(invec[1])
+    return qcjit(impl)
 
-    return impl
 
+def iunpack_factory(mode):
 
-@gjit
-def _iunpack(out, vec, md):
-    if md.literal_value == "full":
-        def impl(out, vec, md):
-            out[0], out[1], out[2], out[3] = vec[0], vec[1], vec[2], vec[3]
-    elif md.literal_value == "diag":
-        def impl(out, vec, md):
-            out[0], out[1] = vec[0], vec[1]
+    if mode.literal_value == "full":
+        def impl(outvec, invec):
+            outvec[0] = invec[0]
+            outvec[1] = invec[1]
+            outvec[2] = invec[2]
+            outvec[3] = invec[3]
+    elif mode.literal_value == "diag":
+        def impl(outvec, invec):
+            outvec[0] = invec[0]
+            outvec[1] = invec[1]
     else:
-        def impl(out, vec, md):
-            if len(vec) == 4:
-                out[0], out[1], out[2], out[3] = vec[0], vec[1], vec[2], vec[3]
+        def impl(outvec, invec):
+            if len(invec) == 4:
+                outvec[0] = invec[0]
+                outvec[1] = invec[1]
+                outvec[2] = invec[2]
+                outvec[3] = invec[3]
             else:
-                out[0], out[1], out[2], out[3] = vec[0], 0, 0, vec[1]
+                outvec[0] = invec[0]
+                outvec[1] = 0
+                outvec[2] = 0
+                outvec[3] = invec[1]
+    return qcjit(impl)
 
-    return impl
 
+def iunpackct_factory(mode):
 
-@gjit
-def _iunpack_ct(out, vec, md):
-    if md.literal_value == "full":
-        def impl(out, vec, md):
-            out[0] = vec[0].conjugate()
-            out[1] = vec[2].conjugate()
-            out[2] = vec[1].conjugate()
-            out[3] = vec[3].conjugate()
-    elif md.literal_value == "diag":
-        def impl(out, vec, md):
-            out[0] = vec[0].conjugate()
-            out[1] = vec[1].conjugate()
+    if mode.literal_value == "full":
+        def impl(outvec, invec):
+            outvec[0] = np.conjugate(invec[0])
+            outvec[1] = np.conjugate(invec[2])
+            outvec[2] = np.conjugate(invec[1])
+            outvec[3] = np.conjugate(invec[3])
+    elif mode.literal_value == "diag":
+        def impl(outvec, invec):
+            outvec[0] = np.conjugate(invec[0])
+            outvec[1] = np.conjugate(invec[1])
     else:
-        def impl(out, vec, md):
-            if len(vec) == 4:
-                out[0] = vec[0].conjugate()
-                out[1] = vec[2].conjugate()
-                out[2] = vec[1].conjugate()
-                out[3] = vec[3].conjugate()
+        def impl(outvec, invec):
+            if len(invec) == 4:
+                outvec[0] = np.conjugate(invec[0])
+                outvec[1] = np.conjugate(invec[2])
+                outvec[2] = np.conjugate(invec[1])
+                outvec[3] = np.conjugate(invec[3])
             else:
-                out[0] = vec[0].conjugate()
-                out[1] = 0
-                out[2] = 0
-                out[3] = vec[1].conjugate()
+                outvec[0] = np.conjugate(invec[0])
+                outvec[1] = 0
+                outvec[2] = 0
+                outvec[3] = np.conjugate(invec[1])
+    return qcjit(impl)
 
-    return impl
 
+def iadd_factory(mode):
 
-@gjit
-def _iadd(out, vec, md):
-    if md.literal_value == "full":
-        def impl(out, vec, md):
-            out[0] += vec[0]
-            out[1] += vec[1]
-            out[2] += vec[2]
-            out[3] += vec[3]
-    elif md.literal_value == "diag":
-        def impl(out, vec, md):
-            out[0] += vec[0]
-            out[1] += vec[1]
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(outvec, invec):
+            outvec[0] += invec[0]
+            outvec[1] += invec[1]
+            outvec[2] += invec[2]
+            outvec[3] += invec[3]
     else:
-        def impl(out, vec, md):
-            out[0] += vec[0]
-            out[1] += vec[1]
-            out[2] += vec[2]
-            out[3] += vec[3]
-
-    return impl
+        def impl(outvec, invec, mode):
+            outvec[0] += invec[0]
+            outvec[1] += invec[1]
+    return qcjit(impl)
 
 
-@gjit
-def _valloc(typ, md):
-    if md.literal_value == "full" or md.literal_value == "mixed":
-        def impl(typ, md):
-            return np.empty((4,), dtype=typ)
+def valloc_factory(mode):
+
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(dtype):
+            return np.empty((4,), dtype=dtype)
     else:
-        def impl(typ, md):
-            return np.empty((2,), dtype=typ)
-    return impl
+        def impl(dtype):
+            return np.empty((2,), dtype=dtype)
+    return qcjit(impl)
