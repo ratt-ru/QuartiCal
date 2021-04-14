@@ -16,7 +16,9 @@ from quartical.kernels.convenience import (get_row,
                                            _unpack_ct,
                                            _iunpack,
                                            _iunpack_ct,
-                                           _iadd)
+                                           _iadd,
+                                           _iwmul,
+                                           _valloc)
 from collections import namedtuple
 
 
@@ -341,12 +343,13 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
         fs = chan_starts[fi]
         fe = chan_stops[fi]
 
-        tmp_jh_p = np.zeros((n_gdir, n_corr), dtype=jhj.dtype)
-        tmp_jh_q = np.zeros((n_gdir, n_corr), dtype=jhj.dtype)
-        m_vec = np.empty((4,), dtype=jhj.dtype)
-        mh_vec = np.empty((4,), dtype=jhj.dtype)
-        r_vec = np.empty((4,), dtype=jhj.dtype)
-        rh_vec = np.empty((4,), dtype=jhj.dtype)
+        m_vec = _valloc(jhj.dtype, corr_mode)
+        mh_vec = _valloc(jhj.dtype, corr_mode)
+        r_vec = _valloc(jhj.dtype, corr_mode)
+        rh_vec = _valloc(jhj.dtype, corr_mode)
+
+        tmp_jh_p = np.zeros((n_gdir, m_vec.size), dtype=jhj.dtype)
+        tmp_jh_q = np.zeros((n_gdir, m_vec.size), dtype=jhj.dtype)
 
         for row_ind in range(rs, re):
 
@@ -358,8 +361,6 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                 r = residual[row, f]
                 w = weights[row, f]  # Consider a map?
 
-                # We don't use the off-diagonal weights - may change.
-                w00, _, _, w11 = _unpack(w, corr_mode)
                 tmp_jh_p[:, :] = 0
                 tmp_jh_q[:, :] = 0
 
@@ -367,19 +368,12 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                     out_d = d_map_arr[active_term, d]
 
-                    r_vec[0] = w00*mul_rweight(r[0], row_weights, row_ind)
-                    r_vec[1] = w00*mul_rweight(r[1], row_weights, row_ind)
-                    r_vec[2] = w11*mul_rweight(r[2], row_weights, row_ind)
-                    r_vec[3] = w11*mul_rweight(r[3], row_weights, row_ind)
-
+                    mul_rweight(r, r_vec, row_weights, row_ind, corr_mode)
+                    _iwmul(r_vec, w, corr_mode)
                     _iunpack_ct(rh_vec, r_vec, corr_mode)
 
                     m = model[row, f, d]
-
-                    m_vec[0] = mul_rweight(m[0], row_weights, row_ind)
-                    m_vec[1] = mul_rweight(m[1], row_weights, row_ind)
-                    m_vec[2] = mul_rweight(m[2], row_weights, row_ind)
-                    m_vec[3] = mul_rweight(m[3], row_weights, row_ind)
+                    mul_rweight(m, m_vec, row_weights, row_ind, corr_mode)
 
                     _iunpack_ct(mh_vec, m_vec, corr_mode)
 

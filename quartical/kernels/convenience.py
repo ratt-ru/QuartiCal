@@ -81,7 +81,7 @@ def _get_row(row_ind, row_map):
         return impl
 
 
-def mul_rweight(vis, weight, ind):
+def old_mul_rweight(vis, weight, ind):
     """Multiplies the row weight into a visiblity if weight is not None.
 
     Args:
@@ -95,8 +95,8 @@ def mul_rweight(vis, weight, ind):
     return
 
 
-@overload(mul_rweight, inline="always")
-def _mul_rweight(vis, weight, ind):
+@overload(old_mul_rweight, inline="always")
+def _old_mul_rweight(vis, weight, ind):
 
     if isinstance(weight, types.NoneType):
         def impl(vis, weight, ind):
@@ -106,6 +106,31 @@ def _mul_rweight(vis, weight, ind):
         def impl(vis, weight, ind):
             return vis*weight[ind]
         return impl
+
+
+@gjit
+def mul_rweight(invis, outvis, weight, ind, md):
+
+    if isinstance(weight, types.NoneType):
+        def impl(invis, outvis, weight, ind, md):
+            outvis[:] = invis
+    else:
+        if md.literal_value == "full" or md.literal_value == "mixed":
+            def impl(invis, outvis, weight, ind, md):
+                v00, v01, v10, v11 = _unpack(invis, md)
+                w = weight[ind]
+                outvis[0] = w*v00
+                outvis[1] = w*v01
+                outvis[2] = w*v10
+                outvis[3] = w*v11
+        else:
+            def impl(invis, outvis, weight, ind, md):
+                v00, v11 = _unpack(invis, md)
+                w = weight[ind]
+                outvis[0] = w*v00
+                outvis[1] = w*v11
+
+    return impl
 
 
 @injit
@@ -196,6 +221,28 @@ def _v1_mul_v2ct(v1, v2, md):
             v311 = v111*v211
 
             return v300, v311
+
+    return impl
+
+
+@gjit
+def _iwmul(v1, w1, md):
+
+    if md.literal_value == "full" or md.literal_value == "mixed":
+        def impl(v1, w1, md):
+            w100, w101, w110, w111 = _unpack(w1, md)
+
+            v1[0] *= w100
+            v1[1] *= w100
+            v1[2] *= w111
+            v1[3] *= w111
+    else:
+        def impl(v1, w1, o1, md):
+            v100, v111 = _unpack(v1, md)
+            w100, w111 = _unpack(w1, md)
+
+            o1[0] = v100*w100
+            o1[1] = v111*w111
 
     return impl
 
@@ -366,4 +413,15 @@ def _iadd(out, vec, md):
             out[2] += vec[2]
             out[3] += vec[3]
 
+    return impl
+
+
+@gjit
+def _valloc(typ, md):
+    if md.literal_value == "full" or md.literal_value == "mixed":
+        def impl(typ, md):
+            return np.empty((4,), dtype=typ)
+    else:
+        def impl(typ, md):
+            return np.empty((2,), dtype=typ)
     return impl
