@@ -312,11 +312,6 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                  a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
                  row_weights, active_term, corr_mode):
 
-    if not isinstance(corr_mode, types.Literal):
-        return lambda jhj, jhr, model, gains, inverse_gains, residual, a1, \
-                 a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map, \
-                 row_weights, active_term, corr_mode: literally(corr_mode)
-
     imul_rweight = imul_rweight_factory(corr_mode, row_weights)
     v1_mul_v2 = v1_mul_v2_factory(corr_mode)
     v1_mul_v2ct = v1_mul_v2ct_factory(corr_mode)
