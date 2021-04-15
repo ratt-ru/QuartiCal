@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from numba.extending import overload
-from numba import jit, types, generated_jit
+from numba import jit, types
 import numpy as np
 
 
@@ -10,12 +10,6 @@ qcjit = jit(nogil=True,
             fastmath=True,
             cache=True,
             inline="always")
-
-gjit = generated_jit(nopython=True,
-                     fastmath=True,
-                     parallel=False,
-                     cache=True,
-                     nogil=True)
 
 # TODO: Consider whether these should have true optionals. This will likely
 # require them all to be implemented as overloads.
