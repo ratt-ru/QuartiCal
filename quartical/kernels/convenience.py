@@ -199,6 +199,29 @@ def v1_mul_v2_factory(mode):
     return qcjit(impl)
 
 
+def v1_imul_v2_factory(mode):
+
+    unpack = unpack_factory(mode)
+
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(v1, v2, o1):
+            v1_00, v1_01, v1_10, v1_11 = unpack(v1)
+            v2_00, v2_01, v2_10, v2_11 = unpack(v2)
+
+            o1[0] = (v1_00*v2_00 + v1_01*v2_10)
+            o1[1] = (v1_00*v2_01 + v1_01*v2_11)
+            o1[2] = (v1_10*v2_00 + v1_11*v2_10)
+            o1[3] = (v1_10*v2_01 + v1_11*v2_11)
+    else:
+        def impl(v1, v2, o1):
+            v1_00, v1_11 = unpack(v1)
+            v2_00, v2_11 = unpack(v2)
+
+            o1[0] = v1_00*v2_00
+            o1[1] = v1_11*v2_11
+    return qcjit(impl)
+
+
 def v1_mul_v2ct_factory(mode):
 
     unpack = unpack_factory(mode)
@@ -224,6 +247,30 @@ def v1_mul_v2ct_factory(mode):
             v3_11 = v1_11*v2_11
 
             return v3_00, v3_11
+    return qcjit(impl)
+
+
+def v1_imul_v2ct_factory(mode):
+
+    unpack = unpack_factory(mode)
+    unpackct = unpackct_factory(mode)
+
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(v1, v2, o1):
+            v1_00, v1_01, v1_10, v1_11 = unpack(v1)
+            v2_00, v2_01, v2_10, v2_11 = unpackct(v2)
+
+            o1[0] = (v1_00*v2_00 + v1_01*v2_10)
+            o1[1] = (v1_00*v2_01 + v1_01*v2_11)
+            o1[2] = (v1_10*v2_00 + v1_11*v2_10)
+            o1[3] = (v1_10*v2_01 + v1_11*v2_11)
+    else:
+        def impl(v1, v2, o1):
+            v1_00, v1_11 = unpack(v1)
+            v2_00, v2_11 = unpackct(v2)
+
+            o1[0] = v1_00*v2_00
+            o1[1] = v1_11*v2_11
     return qcjit(impl)
 
 
