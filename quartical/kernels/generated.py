@@ -392,12 +392,11 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                             d_m = d_map_arr[g, d]  # Broadcast dir.
                             t_m = t_map_arr[row_ind, g]
                             f_m = f_map_arr[f, g]
-                            gb = gains[g][t_m, f_m, a2_m, d_m]
 
+                            gb = gains[g][t_m, f_m, a2_m, d_m]
                             v1_imul_v2(gb, mh_vec, mh_vec)
 
                             ga = gains[g][t_m, f_m, a1_m, d_m]
-
                             v1_imul_v2(ga, m_vec, m_vec)
 
                         for g in range(n_gains - 1, active_term, -1):
@@ -405,12 +404,11 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                             d_m = d_map_arr[g, d]  # Broadcast dir.
                             t_m = t_map_arr[row_ind, g]
                             f_m = f_map_arr[f, g]
-                            ga = gains[g][t_m, f_m, a1_m, d_m]
 
+                            ga = gains[g][t_m, f_m, a1_m, d_m]
                             v1_imul_v2ct(mh_vec, ga, mh_vec)
 
                             gb = gains[g][t_m, f_m, a2_m, d_m]
-
                             v1_imul_v2ct(m_vec, gb, m_vec)
 
                         for g in range(active_term):
@@ -418,12 +416,11 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                             d_m = d_map_arr[g, d]  # Broadcast dir.
                             t_m = t_map_arr[row_ind, g]
                             f_m = f_map_arr[f, g]
-                            gai = inverse_gains[g][t_m, f_m, a1_m, d_m]
 
+                            gai = inverse_gains[g][t_m, f_m, a1_m, d_m]
                             v1_imul_v2(gai, r_vec, r_vec)
 
                             gbi = inverse_gains[g][t_m, f_m, a2_m, d_m]
-
                             v1_imul_v2(gbi, rh_vec, rh_vec)
 
                         t_m = t_map_arr[row_ind, active_term]
