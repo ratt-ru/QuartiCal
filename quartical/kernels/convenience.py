@@ -149,8 +149,16 @@ def get_row_extents(t_map_arr, active_term, n_tint):
 def imul_rweight_factory(mode, weight):
 
     if isinstance(weight, types.NoneType):
-        def impl(invec, outvec, weight, ind):
-            outvec[:] = invec
+        if mode.literal_value == "full" or mode.literal_value == "mixed":
+            def impl(invec, outvec, weight, ind):
+                outvec[0] = invec[0]
+                outvec[1] = invec[1]
+                outvec[2] = invec[2]
+                outvec[3] = invec[3]
+        else:
+            def impl(invec, outvec, weight, ind):
+                outvec[0] = invec[0]
+                outvec[1] = invec[1]
     else:
 
         unpack = unpack_factory(mode)
