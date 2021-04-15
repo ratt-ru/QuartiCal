@@ -419,9 +419,9 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         t_m = t_map_arr[row_ind, active_term]
                         f_m = f_map_arr[f, active_term]
 
-                        jhr_vec = v1_mul_v2(r_vec, mh_vec)
+                        v1_imul_v2(r_vec, mh_vec, r_vec)
 
-                        iadd(jhr[t_m, f_m, a1_m, out_d], jhr_vec)
+                        iadd(jhr[t_m, f_m, a1_m, out_d], r_vec)
                         iadd(tmp_jh_p[out_d], mh_vec)
 
                         for g in range(n_gains-1, -1, -1):
@@ -454,9 +454,9 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         t_m = t_map_arr[row_ind, active_term]
                         f_m = f_map_arr[f, active_term]
 
-                        jhr_vec = v1_mul_v2(rh_vec, m_vec)
+                        v1_imul_v2(rh_vec, m_vec, rh_vec)
 
-                        iadd(jhr[t_m, f_m, a2_m, out_d], jhr_vec)
+                        iadd(jhr[t_m, f_m, a2_m, out_d], rh_vec)
                         iadd(tmp_jh_q[out_d], m_vec)
 
                     for d in range(n_gdir):
