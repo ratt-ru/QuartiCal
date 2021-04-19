@@ -55,7 +55,7 @@ def _execute(exitstack):
     # Reads the measurement set using the relavant configuration from opts.
     data_xds_list, ref_xds_list = read_xds_list(opts)
 
-    data_xds_list = data_xds_list[1:2]
+    # data_xds_list = data_xds_list[:2]
     # ref_xds_list = ref_xds_list[:16]
 
     # Preprocess the xds_list - initialise some values and fix bad data.
