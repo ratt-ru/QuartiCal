@@ -12,6 +12,7 @@ from quartical.kernels.convenience import (get_row,
                                            v1_imul_v2_factory,
                                            v1_imul_v2ct_factory,
                                            v1ct_wmul_v2_factory,
+                                           iunpack_factory,
                                            iunpackct_factory,
                                            iadd_factory,
                                            iwmul_factory,
@@ -313,6 +314,7 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
     v1_imul_v2 = v1_imul_v2_factory(corr_mode)
     v1_imul_v2ct = v1_imul_v2ct_factory(corr_mode)
     v1ct_wmul_v2 = v1ct_wmul_v2_factory(corr_mode)
+    iunpack = iunpack_factory(corr_mode)
     iunpackct = iunpackct_factory(corr_mode)
     iadd = iadd_factory(corr_mode)
     iwmul = iwmul_factory(corr_mode)
@@ -358,8 +360,13 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
             r_vec = valloc(jhj.dtype)
             rh_vec = valloc(jhj.dtype)
 
-            tmp_jh_p = np.zeros((n_gdir, m_vec.size), dtype=jhj.dtype)
-            tmp_jh_q = np.zeros((n_gdir, m_vec.size), dtype=jhj.dtype)
+            gains_a = valloc(jhj.dtype, leading_dims=(n_gains,))
+            gains_b = valloc(jhj.dtype, leading_dims=(n_gains,))
+            igains_a = valloc(jhj.dtype, leading_dims=(n_gains,))
+            igains_b = valloc(jhj.dtype, leading_dims=(n_gains,))
+
+            tmp_jh_p = valloc(jhj.dtype, leading_dims=(n_gdir,))
+            tmp_jh_q = valloc(jhj.dtype, leading_dims=(n_gdir,))
 
             for row_ind in range(rs, re):
 
@@ -376,7 +383,19 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                     for d in range(n_dir):
 
-                        out_d = d_map_arr[active_term, d]
+                        # Construct a small contiguous gain array.
+                        for gi in range(n_gains):
+                            d_m = d_map_arr[gi, d]  # Broadcast dir.
+                            t_m = t_map_arr[row_ind, gi]
+                            f_m = f_map_arr[f, gi]
+
+                            gain = gains[gi][t_m, f_m]
+                            inverse_gain = inverse_gains[gi][t_m, f_m]
+
+                            iunpack(gains_a[gi], gain[a1_m, d_m])
+                            iunpack(gains_b[gi], gain[a2_m, d_m])
+                            iunpack(igains_a[gi], inverse_gain[a1_m, d_m])
+                            iunpack(igains_b[gi], inverse_gain[a2_m, d_m])
 
                         imul_rweight(r, r_vec, row_weights, row_ind)
                         iwmul(r_vec, w)
@@ -384,47 +403,35 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                         m = model[row, f, d]
                         imul_rweight(m, m_vec, row_weights, row_ind)
-
                         iunpackct(mh_vec, m_vec)
 
                         for g in range(n_gains - 1, -1, -1):
 
-                            d_m = d_map_arr[g, d]  # Broadcast dir.
-                            t_m = t_map_arr[row_ind, g]
-                            f_m = f_map_arr[f, g]
-
-                            gb = gains[g][t_m, f_m, a2_m, d_m]
+                            gb = gains_b[g]
                             v1_imul_v2(gb, mh_vec, mh_vec)
 
-                            ga = gains[g][t_m, f_m, a1_m, d_m]
+                            ga = gains_a[g]
                             v1_imul_v2(ga, m_vec, m_vec)
 
                         for g in range(n_gains - 1, active_term, -1):
 
-                            d_m = d_map_arr[g, d]  # Broadcast dir.
-                            t_m = t_map_arr[row_ind, g]
-                            f_m = f_map_arr[f, g]
-
-                            ga = gains[g][t_m, f_m, a1_m, d_m]
+                            ga = gains_a[g]
                             v1_imul_v2ct(mh_vec, ga, mh_vec)
 
-                            gb = gains[g][t_m, f_m, a2_m, d_m]
+                            gb = gains_b[g]
                             v1_imul_v2ct(m_vec, gb, m_vec)
 
                         for g in range(active_term):
 
-                            d_m = d_map_arr[g, d]  # Broadcast dir.
-                            t_m = t_map_arr[row_ind, g]
-                            f_m = f_map_arr[f, g]
-
-                            gai = inverse_gains[g][t_m, f_m, a1_m, d_m]
+                            gai = igains_a[g]
                             v1_imul_v2(gai, r_vec, r_vec)
 
-                            gbi = inverse_gains[g][t_m, f_m, a2_m, d_m]
+                            gbi = igains_b[g]
                             v1_imul_v2(gbi, rh_vec, rh_vec)
 
                         t_m = t_map_arr[row_ind, active_term]
                         f_m = f_map_arr[f, active_term]
+                        out_d = d_map_arr[active_term, d]
 
                         v1_imul_v2(r_vec, mh_vec, r_vec)
 

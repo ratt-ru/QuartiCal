@@ -473,9 +473,9 @@ def iadd_factory(mode):
 def valloc_factory(mode):
 
     if mode.literal_value == "full" or mode.literal_value == "mixed":
-        def impl(dtype):
-            return np.empty((4,), dtype=dtype)
+        def impl(dtype, leading_dims=()):
+            return np.empty((*leading_dims, 4), dtype=dtype)
     else:
-        def impl(dtype):
-            return np.empty((2,), dtype=dtype)
+        def impl(dtype, leading_dims=None):
+            return np.empty((*leading_dims, 2), dtype=dtype)
     return qcjit(impl)
