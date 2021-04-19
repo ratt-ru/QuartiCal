@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, literally, generated_jit, types
+from numba import prange, literally, generated_jit, types, objmode
 from numba.extending import register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
@@ -17,6 +17,7 @@ from quartical.kernels.convenience import (get_row,
                                            iwmul_factory,
                                            valloc_factory)
 from collections import namedtuple
+import time
 
 
 # This can be done without a named tuple now. TODO: Add unpacking to
@@ -321,6 +322,9 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
     def impl(jhj, jhr, model, gains, inverse_gains, residual, a1,
              a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
              row_weights, active_term, corr_mode):
+        with objmode(time1='f8'):
+            time1 = time.perf_counter()
+            
         _, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
@@ -384,7 +388,6 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                         m = model[row, f, d]
                         imul_rweight(m, m_vec, row_weights, row_ind)
-
                         iunpackct(mh_vec, m_vec)
 
                         for g in range(n_gains - 1, -1, -1):
@@ -447,6 +450,9 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         jhj_vec = v1ct_wmul_v2(jhq, jhq, w)
                         jhj_sel = jhj[t_m, f_m, a2_m, d]
                         iadd(jhj_sel, jhj_vec)
+
+        with objmode():
+            print('time: {}'.format(time.perf_counter() - time1))
 
         return
     return impl

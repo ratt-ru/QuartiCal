@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, literally, generated_jit, types
+from numba import prange, literally, generated_jit, types, objmode
 from numba.extending import register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
@@ -10,6 +10,7 @@ from quartical.kernels.convenience import (get_row,
                                            get_chan_extents,
                                            get_row_extents)
 from collections import namedtuple
+import time
 
 
 # This can be done without a named tuple now. TODO: Add unpacking to
@@ -301,6 +302,9 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                  a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
                  row_weights, active_term, corr_mode):
 
+    with objmode(time1='f8'):
+        time1 = time.perf_counter()
+
     _, n_chan, n_dir, n_corr = model.shape
 
     jhj[:] = 0
@@ -358,24 +362,24 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                     out_d = d_map_arr[active_term, d]
 
-                    r00 = w0*mul_rweight(r[0], row_weights, row_ind)
-                    r01 = w0*mul_rweight(r[1], row_weights, row_ind)
-                    r10 = w3*mul_rweight(r[2], row_weights, row_ind)
-                    r11 = w3*mul_rweight(r[3], row_weights, row_ind)
+                    r00 = np.complex128(w0*mul_rweight(r[0], row_weights, row_ind))  # complex64
+                    r01 = np.complex128(w0*mul_rweight(r[1], row_weights, row_ind))
+                    r10 = np.complex128(w3*mul_rweight(r[2], row_weights, row_ind))
+                    r11 = np.complex128(w3*mul_rweight(r[3], row_weights, row_ind))
 
-                    rh00 = r00.conjugate()
+                    rh00 = r00.conjugate()  # complex64
                     rh01 = r10.conjugate()
                     rh10 = r01.conjugate()
                     rh11 = r11.conjugate()
 
                     m = model[row, f, d]
 
-                    m00 = mul_rweight(m[0], row_weights, row_ind)
-                    m01 = mul_rweight(m[1], row_weights, row_ind)
-                    m10 = mul_rweight(m[2], row_weights, row_ind)
-                    m11 = mul_rweight(m[3], row_weights, row_ind)
+                    m00 = np.complex128(mul_rweight(m[0], row_weights, row_ind))  # complex64
+                    m01 = np.complex128(mul_rweight(m[1], row_weights, row_ind))
+                    m10 = np.complex128(mul_rweight(m[2], row_weights, row_ind))
+                    m11 = np.complex128(mul_rweight(m[3], row_weights, row_ind))
 
-                    mh00 = m00.conjugate()
+                    mh00 = m00.conjugate()  # complex64
                     mh01 = m10.conjugate()
                     mh10 = m01.conjugate()
                     mh11 = m11.conjugate()
@@ -387,12 +391,12 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        g00 = gb[0]
+                        g00 = gb[0]  # complex128
                         g01 = gb[1]
                         g10 = gb[2]
                         g11 = gb[3]
 
-                        jh00 = (g00*mh00 + g01*mh10)
+                        jh00 = (g00*mh00 + g01*mh10)  # complex128
                         jh01 = (g00*mh01 + g01*mh11)
                         jh10 = (g10*mh00 + g11*mh10)
                         jh11 = (g10*mh01 + g11*mh11)
@@ -569,6 +573,9 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                     jhj[t_m, f_m, a2_m, d, 1] += (j00*w0*jh01 + j01*w3*jh11)
                     jhj[t_m, f_m, a2_m, d, 2] += (j10*w0*jh00 + j11*w3*jh10)
                     jhj[t_m, f_m, a2_m, d, 3] += (j10*w0*jh01 + j11*w3*jh11)
+
+    with objmode():
+        print('time: {}'.format(time.perf_counter() - time1))
 
     return
 

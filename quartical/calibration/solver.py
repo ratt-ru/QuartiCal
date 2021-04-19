@@ -2,6 +2,7 @@
 import numpy as np
 from quartical.calibration.gain_types import term_solvers
 import gc
+import time
 
 
 def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
@@ -62,10 +63,12 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
         solver = term_solvers[term_spec.type]
 
+        t0 = time.time()
         info_tup = \
             solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                    d_map_arr, corr_mode, gain_ind, inverse_gain_tup,
                    gain_tup, flag_tup, **additional_args[gain_ind])
+        print((term_spec.name, info_tup.conv_iters, time.time() - t0))
 
         results_dict[term_spec.name + "-conviter"] += \
             np.atleast_2d(info_tup.conv_iters)
