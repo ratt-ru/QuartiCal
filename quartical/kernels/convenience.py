@@ -478,3 +478,19 @@ def valloc_factory(mode):
         def impl(dtype, leading_dims=()):
             return np.empty((*leading_dims, 2), dtype=dtype)
     return qcjit(impl)
+
+
+def loop_var_factory(mode):
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(n_gains, active_term):
+            all_terms = np.arange(n_gains - 1, -1, -1)
+            gt_active = np.arange(n_gains - 1, active_term, -1)
+            lt_active = np.arange(active_term)
+            return all_terms, gt_active, lt_active
+    else:
+        def impl(n_gains, active_term):
+            all_terms = np.arange(n_gains - 1, -1, -1)
+            gt_active = np.where(np.arange(n_gains) != active_term)[0]
+            lt_active = np.arange(0)
+            return all_terms, gt_active, lt_active
+    return qcjit(impl)
