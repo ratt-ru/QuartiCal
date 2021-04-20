@@ -464,18 +464,17 @@ def iadd_factory(mode):
             outvec[2] += invec[2]
             outvec[3] += invec[3]
     else:
-        def impl(outvec, invec, mode):
+        def impl(outvec, invec):
             outvec[0] += invec[0]
             outvec[1] += invec[1]
     return qcjit(impl)
 
 
 def valloc_factory(mode):
-
     if mode.literal_value == "full" or mode.literal_value == "mixed":
         def impl(dtype, leading_dims=()):
             return np.empty((*leading_dims, 4), dtype=dtype)
     else:
-        def impl(dtype, leading_dims=None):
+        def impl(dtype, leading_dims=()):
             return np.empty((*leading_dims, 2), dtype=dtype)
     return qcjit(impl)
