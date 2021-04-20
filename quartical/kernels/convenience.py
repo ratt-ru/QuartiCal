@@ -494,3 +494,34 @@ def loop_var_factory(mode):
             lt_active = np.arange(0)
             return all_terms, gt_active, lt_active
     return qcjit(impl)
+
+
+def compute_det_factory(mode):
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(v1):
+            return v1[0]*v1[3] - v1[1]*v1[2]
+    else:
+        def impl(v1):
+            return v1[0]*v1[1]
+    return qcjit(impl)
+
+
+def iinverse_factory(mode):
+
+    unpack = unpack_factory(mode)
+
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(v1, det, o1):
+            v1_00, v1_01, v1_10, v1_11 = unpack(v1)
+
+            o1[0] = v1_11/det
+            o1[1] = -v1_01/det
+            o1[2] = -v1_10/det
+            o1[3] = v1_00/det
+    else:
+        def impl(v1, det, o1):
+            v1_00, v1_11 = unpack(v1)
+
+            o1[0] = v1_11/det
+            o1[1] = v1_00/det
+    return qcjit(impl)

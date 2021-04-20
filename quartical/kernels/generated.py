@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import prange, literally, generated_jit, types
-from numba.extending import register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
@@ -17,7 +16,9 @@ from quartical.kernels.convenience import (get_row,
                                            iadd_factory,
                                            iwmul_factory,
                                            valloc_factory,
-                                           loop_var_factory)
+                                           loop_var_factory,
+                                           compute_det_factory,
+                                           iinverse_factory)
 from collections import namedtuple
 
 
@@ -40,14 +41,9 @@ def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                    d_map_arr, corr_mode, active_term, inverse_gains, \
                    gains, flags, row_map, row_weights: literally(corr_mode)
 
-    if corr_mode.literal_value == "diag":
-        compute_jhj_jhr = jhj_jhr_full
-        compute_update = update_diag
-        finalize_update = finalize_full
-    else:
-        compute_jhj_jhr = jhj_jhr_full
-        compute_update = update_full
-        finalize_update = finalize_full
+    compute_jhj_jhr = jhj_jhr
+    compute_update = update
+    finalize_update = finalize
 
     def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
              d_map_arr, corr_mode, active_term, inverse_gains,
@@ -123,9 +119,9 @@ def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
-                 a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
-                 row_weights, active_term, corr_mode):
+def jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
+            a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
+            row_weights, active_term, corr_mode):
 
     imul_rweight = imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = v1_imul_v2_factory(corr_mode)
@@ -279,84 +275,46 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
     return impl
 
 
-@register_jitable
-def update_diag(update, jhj, jhr, corr_mode):
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
+def update(update, jhj, jhr, corr_mode):
 
-    n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
+    v1_imul_v2 = v1_imul_v2_factory(corr_mode)
+    compute_det = compute_det_factory(corr_mode)
+    iinverse = iinverse_factory(corr_mode)
 
-    for t in range(n_tint):
-        for f in range(n_fint):
-            for a in range(n_ant):
-                for d in range(n_dir):
+    def impl(update, jhj, jhr, corr_mode):
+        n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
 
-                    jhj00 = jhj[t, f, a, d, 0]
-                    jhj11 = jhj[t, f, a, d, 1]
+        for t in range(n_tint):
+            for f in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
 
-                    det = (jhj00*jhj11)
+                        jhj_sel = jhj[t, f, a, d]
 
-                    if det.real < 1e-6:
-                        jhjinv00 = 0
-                        jhjinv11 = 0
-                    else:
-                        jhjinv00 = 1/jhj00
-                        jhjinv11 = 1/jhj11
+                        det = compute_det(jhj_sel)
 
-                    jhr00 = jhr[t, f, a, d, 0]
-                    jhr11 = jhr[t, f, a, d, 1]
+                        if det.real < 1e-6:
+                            jhj_sel[:] = 0
+                        else:
+                            iinverse(jhj_sel, det, jhj_sel)
 
-                    update[t, f, a, d, 0] = (jhr00*jhjinv00)
-                    update[t, f, a, d, 1] = (jhr11*jhjinv11)
-
-    return
-
-
-@register_jitable
-def update_full(update, jhj, jhr, corr_mode):
-
-    n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
-
-    for t in range(n_tint):
-        for f in range(n_fint):
-            for a in range(n_ant):
-                for d in range(n_dir):
-
-                    jhj00 = jhj[t, f, a, d, 0]
-                    jhj01 = jhj[t, f, a, d, 1]
-                    jhj10 = jhj[t, f, a, d, 2]
-                    jhj11 = jhj[t, f, a, d, 3]
-
-                    det = (jhj00*jhj11 - jhj01*jhj10)
-
-                    if det.real < 1e-6:
-                        jhjinv00 = 0
-                        jhjinv01 = 0
-                        jhjinv10 = 0
-                        jhjinv11 = 0
-                    else:
-                        jhjinv00 = jhj11/det
-                        jhjinv01 = -jhj01/det
-                        jhjinv10 = -jhj10/det
-                        jhjinv11 = jhj00/det
-
-                    jhr00 = jhr[t, f, a, d, 0]
-                    jhr01 = jhr[t, f, a, d, 1]
-                    jhr10 = jhr[t, f, a, d, 2]
-                    jhr11 = jhr[t, f, a, d, 3]
-
-                    update[t, f, a, d, 0] = (jhr00*jhjinv00 + jhr01*jhjinv10)
-                    update[t, f, a, d, 1] = (jhr00*jhjinv01 + jhr01*jhjinv11)
-                    update[t, f, a, d, 2] = (jhr10*jhjinv00 + jhr11*jhjinv10)
-                    update[t, f, a, d, 3] = (jhr10*jhjinv01 + jhr11*jhjinv11)
-
-    return
+                        v1_imul_v2(jhr[t, f, a, d],
+                                   jhj_sel,
+                                   update[t, f, a, d])
+    return impl
 
 
-@register_jitable
-def finalize_full(update, gain, i_num, dd_term, corr_mode):
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
+def finalize(update, gain, i_num, dd_term, corr_mode):
 
-    if dd_term:
-        gain[:] = gain[:] + update/2
-    elif i_num % 2 == 0:
-        gain[:] = update
-    else:
-        gain[:] = (gain[:] + update)/2
+    def impl(update, gain, i_num, dd_term, corr_mode):
+        if dd_term:
+            gain[:] = gain[:] + update/2
+        elif i_num % 2 == 0:
+            gain[:] = update
+        else:
+            gain[:] = (gain[:] + update)/2
+    return impl
