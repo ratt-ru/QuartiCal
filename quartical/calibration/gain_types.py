@@ -29,7 +29,7 @@ class Gain:
         self.type = getattr(opts, f"{self.name}_type")
         self.n_chan = data_xds.dims["chan"]
         self.n_ant = data_xds.dims["ant"]
-        self.n_dir = data_xds.dims["dir"]
+        self.n_dir = data_xds.dims["dir"] if self.dd_term else 1
         self.n_corr = data_xds.dims["corr"]
         self.id_fields = {f: data_xds.attrs[f]
                           for f in opts.input_ms_group_by}
@@ -58,8 +58,7 @@ class Gain:
         xds = xarray.Dataset(
             data_vars={},
             coords={"ant": ("ant", np.arange(self.n_ant, dtype=np.int32)),
-                    "dir": ("dir", np.arange(self.n_dir if self.dd_term else 1,
-                                             dtype=np.int32)),
+                    "dir": ("dir", np.arange(self.n_dir, dtype=np.int32)),
                     "corr": ("corr", np.arange(self.n_corr, dtype=np.int32)),
                     "t_chunk": ("t_chunk",
                                 np.arange(self.n_t_chunk, dtype=np.int32)),
