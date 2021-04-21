@@ -6,19 +6,8 @@ from quartical.kernels.generics import (invert_gains,
                                         compute_convergence)
 from quartical.kernels.convenience import (get_row,
                                            get_chan_extents,
-                                           get_row_extents,
-                                           imul_rweight_factory,
-                                           v1_imul_v2_factory,
-                                           v1_imul_v2ct_factory,
-                                           v1ct_wmul_v2_factory,
-                                           iunpack_factory,
-                                           iunpackct_factory,
-                                           iadd_factory,
-                                           iwmul_factory,
-                                           valloc_factory,
-                                           loop_var_factory,
-                                           compute_det_factory,
-                                           iinverse_factory)
+                                           get_row_extents)
+import quartical.kernels.factories as factories
 from collections import namedtuple
 
 
@@ -123,16 +112,16 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
             a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
             row_weights, active_term, corr_mode):
 
-    imul_rweight = imul_rweight_factory(corr_mode, row_weights)
-    v1_imul_v2 = v1_imul_v2_factory(corr_mode)
-    v1_imul_v2ct = v1_imul_v2ct_factory(corr_mode)
-    v1ct_wmul_v2 = v1ct_wmul_v2_factory(corr_mode)
-    iunpack = iunpack_factory(corr_mode)
-    iunpackct = iunpackct_factory(corr_mode)
-    iadd = iadd_factory(corr_mode)
-    iwmul = iwmul_factory(corr_mode)
-    valloc = valloc_factory(corr_mode)
-    loop_var = loop_var_factory(corr_mode)
+    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
+    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
+    v1ct_wmul_v2 = factories.v1ct_wmul_v2_factory(corr_mode)
+    iunpack = factories.iunpack_factory(corr_mode)
+    iunpackct = factories.iunpackct_factory(corr_mode)
+    iadd = factories.iadd_factory(corr_mode)
+    iwmul = factories.iwmul_factory(corr_mode)
+    valloc = factories.valloc_factory(corr_mode)
+    loop_var = factories.loop_var_factory(corr_mode)
 
     def impl(jhj, jhr, model, gains, inverse_gains, residual, a1,
              a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
@@ -279,9 +268,9 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                nogil=True)
 def update(update, jhj, jhr, corr_mode):
 
-    v1_imul_v2 = v1_imul_v2_factory(corr_mode)
-    compute_det = compute_det_factory(corr_mode)
-    iinverse = iinverse_factory(corr_mode)
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
+    compute_det = factories.compute_det_factory(corr_mode)
+    iinverse = factories.iinverse_factory(corr_mode)
 
     def impl(update, jhj, jhr, corr_mode):
         n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
