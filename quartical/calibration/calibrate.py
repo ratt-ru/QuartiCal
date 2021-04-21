@@ -32,12 +32,6 @@ def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
                   row_map, row_weights, corr_mode, *gains):
     """Thin wrapper to handle an unknown number of input gains."""
 
-    # TODO: Remove once concatentation is fixed.
-    model = model[0]
-    t_map_arr = t_map_arr[0]
-    f_map_arr = f_map_arr[0]
-    gains = [gain[0][0] for gain in gains]
-
     return compute_residual(data, model, gains, a1, a2, t_map_arr,
                             f_map_arr, d_map_arr, row_map, row_weights,
                             corr_mode)
@@ -47,11 +41,6 @@ def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
                             d_map_arr, row_map, row_weights, corr_mode,
                             *gains):
     """Thin wrapper to handle an unknown number of input gains."""
-
-    # TODO: Remove once concatentation is fixed.
-    t_map_arr = t_map_arr[0]
-    f_map_arr = f_map_arr[0]
-    gains = [gain[0][0] for gain in gains]
 
     return compute_corrected_residual(residual, gains, a1, a2, t_map_arr,
                                       f_map_arr, d_map_arr, row_map,
@@ -209,7 +198,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
             *gain_list,
             dtype=data_col.dtype,
             align_arrays=False,
-            # concatenate=True,
+            concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 
@@ -227,7 +216,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
             *gain_list,
             dtype=residual.dtype,
             align_arrays=False,
-            # concatenate=True,
+            concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 
@@ -247,7 +236,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
             *gain_list,
             dtype=residual.dtype,
             align_arrays=False,
-            # concatenate=True,
+            concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 
