@@ -5,6 +5,7 @@ import weakref
 from astropy.io import fits
 import dask.array as da
 import dask
+from dask.graph_manipulation import clone
 from daskms import xds_from_table
 from loguru import logger
 import numpy as np
@@ -445,7 +446,7 @@ def compute_p_jones(parallactic_angles, feed_xds, opts):
     # applied before the beam. This currently makes assumes identical
     # receptor angles. TODO: Remove assumption when Codex gains functionality.
 
-    receptor_angles = feed_xds.RECEPTOR_ANGLE.data
+    receptor_angles = clone(feed_xds.RECEPTOR_ANGLE.data)
 
     if not da.all(receptor_angles[:, 0] == receptor_angles[:, 1]):
         logger.warning("RECEPTOR_ANGLE indicates non-orthoganal "
@@ -480,8 +481,9 @@ def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
     # If the beam is enabled, P-Jones has to be applied before the beam.
     if opts.input_model_apply_p_jones and not opts.input_model_beam:
 
+        ant_pos = clone(ant_xds["POSITION"].data)
         parallactic_angles = compute_parallactic_angles(utime_val,
-                                                        ant_xds["POSITION"],
+                                                        ant_pos,
                                                         phase_dir)
 
         p_jones = compute_p_jones(parallactic_angles, feed_xds, opts)
@@ -605,6 +607,7 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
     """
     # Array containing source parameters.
     sources = sky_model[source_type]
+    sources = sources._make([clone(s) for s in sources])
 
     # Select single dataset rows
     corrs = pol.NUM_CORR.data[0]
@@ -612,7 +615,9 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
     # Necessary to chunk the predict in frequency. TODO: Make this less hacky
     # when this is improved in dask-ms.
     frequency = da.from_array(spw.CHAN_FREQ.data[0], chunks=ms.chunks['chan'])
+    frequency = clone(frequency)
     phase_dir = field.PHASE_DIR.data[0][0]  # row, poly
+    phase_dir = clone(da.from_array(phase_dir))
 
     lm = radec_to_lm(sources.radec, phase_dir)
     # This likely shouldn't be exposed. TODO: Disable this switch?
