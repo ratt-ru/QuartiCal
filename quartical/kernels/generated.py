@@ -292,17 +292,18 @@ def update(update, jhj, jhr, corr_mode):
                     for d in range(n_dir):
 
                         jhj_sel = jhj[t, f, a, d]
+                        upd_sel = update[t, f, a, d]
 
                         det = compute_det(jhj_sel)
 
                         if det.real < 1e-6:
-                            jhj_sel[:] = 0
+                            upd_sel[:] = 0
                         else:
-                            iinverse(jhj_sel, det, jhj_sel)
+                            iinverse(jhj_sel, det, upd_sel)
 
                         v1_imul_v2(jhr[t, f, a, d],
-                                   jhj_sel,
-                                   update[t, f, a, d])
+                                   upd_sel,
+                                   upd_sel)
     return impl
 
 
