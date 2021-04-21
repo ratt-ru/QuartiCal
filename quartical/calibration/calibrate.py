@@ -88,7 +88,7 @@ def add_calibration_graph(data_xds_list, opts):
                                             d_map_list,
                                             opts)
 
-    # Update the data xrray.Datasets with visiblity outputs.
+    # Update the data xarray.Datasets with visibility outputs.
     post_solve_data_xds_list = \
         make_visibility_output(data_xds_list,
                                solved_gain_xds_list,

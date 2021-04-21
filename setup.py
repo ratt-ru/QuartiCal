@@ -37,7 +37,7 @@ on_rtd = os.environ.get('READTHEDOCS') == 'True'
 if on_rtd:
     requirements = ["ruamel.yaml",
                     "numpy",
-                    "dask-ms[xarray]"
+                    "dask-ms[xarray, zarr]"
                     "@git+https://github.com/ska-sa/dask-ms.git"
                     "@master",
                     "loguru",
@@ -45,17 +45,20 @@ if on_rtd:
 else:
     requirements = ["ruamel.yaml",
                     "numpy",
-                    "dask-ms[xarray]"
+
+                    "dask-ms[xarray, zarr]"
                     "@git+https://github.com/ska-sa/dask-ms.git"
                     "@master",
+
                     "codex-africanus[dask, scipy, astropy, python-casacore]"
                     "@git+https://github.com/ska-sa/codex-africanus.git"
                     "@master",
+
+                    "dask[array]",
                     "astro-tigger-lsm",
                     "loguru",
                     "numba",
                     "distributed",
-                    "zarr",
                     "requests",
                     "pytest",
                     "csaps"]

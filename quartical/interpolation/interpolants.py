@@ -143,7 +143,7 @@ def _interpolate_missing(x1, x2, y):
                         # If there is no good data along frequency after
                         # interpolating in time, we have no information
                         # from which to interpolate - we zero these locations.
-                        yy[:, f, a, d, c] = 0
+                        yy[t, :, a, d, c] = 0
                         continue
 
                     yy[t, :, a, d, c] = linterp(x2,

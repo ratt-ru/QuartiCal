@@ -2,11 +2,11 @@ import dask.array as da
 import numpy as np
 from dask.base import tokenize
 from dask.array.core import HighLevelGraph
+from dask.highlevelgraph import MaterializedLayer
 from operator import getitem
 from dask.utils import apply, funcname
 from collections import namedtuple
 from itertools import product
-from functools import wraps
 
 
 class as_dict:
@@ -141,7 +141,7 @@ class Blocker:
 
             graph[(layer_name, *k)] = (apply, self.func, [], (dict, kwargs))
 
-        layers.update({layer_name: graph})
+        layers.update({layer_name: MaterializedLayer(graph)})
         deps.update({layer_name: {k.name for k in self.dask_inputs}})
 
         # At this point we have a dictionary which describes the chunkwise
