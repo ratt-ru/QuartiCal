@@ -4,6 +4,7 @@ import dask.array as da
 import numpy as np
 import xarray
 import pathlib
+from daskms.experimental.zarr import xds_from_zarr
 from quartical.interpolation.interpolants import (interpolate_missing,
                                                   spline2d_interpolate_gains,
                                                   csaps2d_interpolate_gains)
@@ -42,9 +43,9 @@ def load_and_interpolate_gains(gain_xds_list, opts):
         else:
             gain_path = pathlib.Path(gain_path)
 
-        load_paths = gain_path.glob(f"{gain_path.stem}*")
+        load_path = f"{gain_path.parent}{'::' + gain_path.stem}"
 
-        load_xds_list = [xarray.open_zarr(pth) for pth in load_paths]
+        load_xds_list = xds_from_zarr(load_path)
 
         # Convert to amp and phase/real and imag. Drop unused data_vars.
         converted_xds_list = convert_and_drop(load_xds_list, interp_mode)

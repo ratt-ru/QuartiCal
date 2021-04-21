@@ -1,7 +1,6 @@
 import dask.array as da
 import numpy as np
 from uuid import uuid4
-from daskms.optimisation import inlined_array
 from quartical.utils.dask import blockwise_unique
 
 
@@ -184,8 +183,6 @@ def make_f_mappings(chan_freqs, chan_widths, opts):
         new_axis=1,
         dtype=np.int32,
         name="fmaps-" + uuid4().hex)
-
-    f_map_arr = inlined_array(f_map_arr)
 
     return f_map_arr
 

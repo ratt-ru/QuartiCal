@@ -6,6 +6,7 @@ from daskms import xds_from_ms, xds_from_table, xds_to_table
 from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import initialise_flags
 from quartical.data_handling.bda import process_bda_input, process_bda_output
+from dask.graph_manipulation import clone
 from loguru import logger
 
 
@@ -125,13 +126,17 @@ def read_xds_list(opts):
     data_columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "DATA", "FLAG",
                     "FLAG_ROW", "UVW") + extra_columns
 
+    extra_schema = {cn: {'dims': ('chan', 'corr')}
+                    for cn in opts._model_columns}
+
     data_xds_list = xds_from_ms(
         opts.input_ms_name,
         columns=data_columns,
         index_cols=("TIME",),
         group_cols=opts.input_ms_group_by,
         taql_where="ANTENNA1 != ANTENNA2",
-        chunks=chunking_per_xds)
+        chunks=chunking_per_xds,
+        table_schema=["MS", {**extra_schema}])
 
     # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
     # for undoing BDA.
@@ -152,13 +157,18 @@ def read_xds_list(opts):
     # Add the actual channel frequecies to the xds - this is in preparation
     # for solvers which require this information. Also adds the antenna names
     # which will be useful when reference antennas are required.
-    data_xds_list = [xds.assign(
-        {"CHAN_FREQ":
-            (("chan",), spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data[0]),
-         "CHAN_WIDTH":
-            (("chan",), spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data[0]),
-         "ANT_NAME":
-            (("ant",), antenna_xds.NAME.data)}) for xds in data_xds_list]
+
+    tmp_xds_list = []
+
+    for xds in data_xds_list:
+        chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
+        chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
+        tmp_xds_list.append(xds.assign(
+            {"CHAN_FREQ": (("chan",), chan_freqs[0]),
+             "CHAN_WIDTH": (("chan",), chan_widths[0]),
+             "ANT_NAME": (("ant",), antenna_xds.NAME.data)}))
+
+    data_xds_list = tmp_xds_list
 
     # Add an attribute to the xds on which we will store the names of fields
     # which must be written to the MS. Also add the attribute which stores
@@ -167,7 +177,7 @@ def read_xds_list(opts):
 
     data_xds_list = \
         [xds.assign_attrs({
-            "WRITE_COLS": [],
+            "WRITE_COLS": (),
             "UTIME_CHUNKS": list(map(int, utime_chunking_per_xds[xds_ind]))})
          for xds_ind, xds in enumerate(data_xds_list)]
 
@@ -276,6 +286,7 @@ def preprocess_xds_list(xds_list, opts):
 
         # Anywhere we have a broken datapoint, zero it. These points will
         # be flagged below.
+
         data_col = da.where(da.isfinite(data_col), data_col, 0)
 
         weight_col = initialize_weights(xds, data_col, opts)
