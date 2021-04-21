@@ -45,6 +45,7 @@ if on_rtd:
 else:
     requirements = ["ruamel.yaml",
                     "numpy",
+
                     "dask-ms[xarray, zarr]"
                     "@git+https://github.com/ska-sa/dask-ms.git"
                     "@master",
@@ -53,18 +54,11 @@ else:
                     "@git+https://github.com/ska-sa/codex-africanus.git"
                     "@master",
 
-                    "dask[array]"
-                    "@git+https://github.com/dask/dask.git"
-                    "@main",
-
+                    "dask[array]",
                     "astro-tigger-lsm",
                     "loguru",
                     "numba",
-
-                    "distributed"
-                    "@git+https://github.com/dask/distributed.git"
-                    "@main",
-
+                    "distributed",
                     "requests",
                     "pytest",
                     "csaps"]
