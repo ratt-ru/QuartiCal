@@ -102,7 +102,7 @@ def _execute(exitstack):
 
         dask.compute(writes, gain_writes,
                      num_workers=opts.parallel_nthread,
-                     optimize_graph=True,
+                     optimize_graph=False,
                      scheduler=opts.parallel_scheduler)
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
