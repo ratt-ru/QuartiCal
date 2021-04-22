@@ -32,8 +32,8 @@ class AutoRestrictor(SchedulerPlugin):
         dependents = reverse_dict(dependencies)
 
         # Terminal nodes have no dependents, root nodes have no dependencies.
-        terminal_nodes = {k for (k, v) in dependents.items() if v == set()}
-        root_nodes = {k for (k, v) in dependencies.items() if v == set()}
+        terminal_nodes = {k for (k, v) in dependents.items() if not v}
+        root_nodes = {k for (k, v) in dependencies.items() if not v}
 
         roots_per_terminal = {}
         terminal_deps = {}
