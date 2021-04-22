@@ -83,10 +83,12 @@ class AutoRestrictor(SchedulerPlugin):
             for tn in [k, *deps]:
                 try:
                     task = tasks[tn]
-                except KeyError:  # Keys may not have an assosciated task.
+                except KeyError:  # Keys may not have an associated task.
                     continue
                 if task._worker_restrictions is None:
                     task._worker_restrictions = set()
                 task._worker_restrictions |= \
                     {workers[g % n_worker] for g in group}
                 task._loose_restrictions = False
+                # (user priority, graph generation, dask.order priority)
+                task._priority = (min(group),) + task._priority[1:]
