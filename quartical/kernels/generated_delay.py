@@ -144,6 +144,7 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
     valloc = factories.valloc_factory(corr_mode)
     loop_var = factories.loop_var_factory(corr_mode)
     set_identity = factories.set_identity_factory(corr_mode)
+    deriv_mul = deriv_mul_factory(corr_mode)
 
     def impl(jhj, jhr, model, gains, inverse_gains, chan_freqs,
              residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
@@ -273,13 +274,17 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
                         v1_imul_v2(r_vec, mh_vec, r_vec)
                         v1_imul_v2(lmul_op_a, r_vec, r_vec)
 
-                        iadd(jhr[t_m, f_m, a1_m, out_d], r_vec)
+                        ga = gains_a[active_term]
+                        deriv_mul(ga, r_vec, jhr[t_m, f_m, a1_m, out_d], nu)
+
                         iadd(tmp_jh_p[out_d], mh_vec)
 
                         v1_imul_v2(rh_vec, m_vec, rh_vec)
                         v1_imul_v2(lmul_op_b, rh_vec, rh_vec)
 
-                        iadd(jhr[t_m, f_m, a2_m, out_d], rh_vec)
+                        gb = gains_b[active_term]
+                        deriv_mul(gb, rh_vec, jhr[t_m, f_m, a2_m, out_d], nu)
+
                         iadd(tmp_jh_q[out_d], m_vec)
 
                     for d in range(n_gdir):
@@ -362,3 +367,37 @@ def finalize(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
                         gain[t, f, a, d, 0] = np.exp(1j*(cf*delay0 + inter0))
                         gain[t, f, a, d, 1] = np.exp(1j*(cf*delay1 + inter1))
     return impl
+
+
+def deriv_mul_factory(mode):
+
+    unpack = factories.unpack_factory(mode)
+    unpackct = factories.unpackct_factory(mode)
+
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(gain, vec, jhr, nu):
+            g_00, g_01, g_10, g_11 = unpackct(gain)
+            v_00, v_01, v_10, v_11 = unpack(vec)
+
+            upd00 = (-1j*g_00*v_00).real
+            upd11 = (-1j*g_11*v_11).real
+
+            jhr[0, 0] += upd00
+            jhr[0, 1] += upd11
+
+            jhr[1, 0] += nu*upd00
+            jhr[1, 1] += nu*upd11
+    else:
+        def impl(gain, vec, jhr, nu):
+            g_00, g_11 = unpackct(gain)
+            v_00, v_11 = unpack(vec)
+
+            upd00 = (-1j*g_00*v_00).real
+            upd11 = (-1j*g_11*v_11).real
+
+            jhr[0, 0] += upd00
+            jhr[0, 1] += upd11
+
+            jhr[1, 0] += nu*upd00
+            jhr[1, 1] += nu*upd11
+    return factories.qcjit(impl)
