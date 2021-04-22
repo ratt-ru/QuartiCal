@@ -395,3 +395,18 @@ def iinverse_factory(mode):
             o1[0] = v1_11/det
             o1[1] = v1_00/det
     return qcjit(impl)
+
+
+def set_identity_factory(mode):
+
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(v1):
+            v1[0] = 1
+            v1[1] = 0
+            v1[2] = 0
+            v1[3] = 1
+    else:
+        def impl(v1):
+            v1[0] = 1
+            v1[1] = 1
+    return qcjit(impl)
