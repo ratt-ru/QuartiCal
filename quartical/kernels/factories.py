@@ -462,23 +462,3 @@ def set_identity_factory(mode):
             v1[0] = 1
             v1[1] = 1
     return qcjit(impl)
-
-
-def kron_factory(mode):
-
-    unpack = unpack_factory(mode)
-
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
-        def impl(v1, v2):
-            v1_00, v1_01, v1_10, v1_11 = unpack(v1)
-            v2_00, v2_01, v2_10, v2_11 = unpack(v2)
-
-            v1[0] = 1
-            v1[1] = 0
-            v1[2] = 0
-            v1[3] = 1
-    else:
-        def impl(v1, v2):
-            v1[0] = 1
-            v1[1] = 1
-    return qcjit(impl)

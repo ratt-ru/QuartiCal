@@ -147,6 +147,7 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
     loop_var = factories.loop_var_factory(corr_mode)
     set_identity = factories.set_identity_factory(corr_mode)
     deriv_mul = deriv_mul_factory(corr_mode)
+    jhmul = special_jh_mul_factory(corr_mode)
 
     def impl(jhj, jhr, model, gains, inverse_gains, chan_freqs,
              residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
@@ -200,10 +201,8 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
             lmul_op_a = valloc(complex_dtype)
             lmul_op_b = valloc(complex_dtype)
 
-            tmp_jh_rp = valloc(complex_dtype, leading_dims=(n_gdir,))
-            tmp_jh_rq = valloc(complex_dtype, leading_dims=(n_gdir,))
-            tmp_jh_lp = valloc(complex_dtype, leading_dims=(n_gdir,))
-            tmp_jh_lq = valloc(complex_dtype, leading_dims=(n_gdir,))
+            tmp_jh_p = np.empty((n_gdir, 4, 4), dtype=complex_dtype)
+            tmp_jh_q = np.empty((n_gdir, 4, 4), dtype=complex_dtype)
 
             for row_ind in range(rs, re):
 
@@ -215,10 +214,8 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                     r = residual[row, f]
                     w = weights[row, f]  # Consider a map?
 
-                    tmp_jh_rp[:, :] = 0
-                    tmp_jh_rq[:, :] = 0
-                    tmp_jh_lp[:, :] = 0
-                    tmp_jh_lq[:, :] = 0
+                    tmp_jh_p[:, :, :] = 0
+                    tmp_jh_q[:, :, :] = 0
 
                     nu = chan_freqs[f]
 
@@ -283,8 +280,7 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                         ga = gains_a[active_term]
                         deriv_mul(ga, r_vec, jhr[t_m, f_m, a1_m, out_d], nu)
 
-                        iadd(tmp_jh_rp[out_d], mh_vec)
-                        iadd(tmp_jh_lp[out_d], lmul_op_a)
+                        jhmul(lmul_op_a, mh_vec, ga, nu, tmp_jh_p[out_d])
 
                         v1_imul_v2(rh_vec, m_vec, rh_vec)
                         v1_imul_v2(lmul_op_b, rh_vec, rh_vec)
@@ -292,26 +288,19 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                         gb = gains_b[active_term]
                         deriv_mul(gb, rh_vec, jhr[t_m, f_m, a2_m, out_d], nu)
 
-                        iadd(tmp_jh_rq[out_d], m_vec)
-                        iadd(tmp_jh_lq[out_d], lmul_op_b)
+                        jhmul(lmul_op_b, m_vec, gb, nu, tmp_jh_q[out_d])
 
                     for d in range(n_gdir):
 
-                        jh_rp = tmp_jh_rp[d]
-                        jh_lp = tmp_jh_lp[d]
-                        jh_lrp = np.kron(jh_lp.reshape(2, 2), 
-                                         jh_rp.reshape(2, 2))
+                        jhp = tmp_jh_p[d]
+                        jhj_vec = v1ct_wmul_v2(jhp, jhp, w)
+                        jhj_sel = jhj[t_m, f_m, a1_m, d]
+                        iadd(jhj_sel, jhj_vec)
 
-                        print(jh_lrp)
-
-                        # jhj_vec = v1ct_wmul_v2(jh_lrp, jh_lrp, w)
-                        # jhj_sel = jhj[t_m, f_m, a1_m, d]
-                        # iadd(jhj_sel, jhj_vec)
-
-                        # jhq = tmp_jh_rq[d]
-                        # jhj_vec = v1ct_wmul_v2(jhq, jhq, w)
-                        # jhj_sel = jhj[t_m, f_m, a2_m, d]
-                        # iadd(jhj_sel, jhj_vec)
+                        jhq = tmp_jh_q[d]
+                        jhj_vec = v1ct_wmul_v2(jhq, jhq, w)
+                        jhj_sel = jhj[t_m, f_m, a2_m, d]
+                        iadd(jhj_sel, jhj_vec)
 
         return
     return impl
@@ -417,35 +406,92 @@ def deriv_mul_factory(mode):
     return factories.qcjit(impl)
 
 
-def jhj_mul_factory(mode):
+def special_jh_mul_factory(mode):
 
     unpack = factories.unpack_factory(mode)
     unpackct = factories.unpackct_factory(mode)
 
     if mode.literal_value == "full" or mode.literal_value == "mixed":
-        def impl(gain, vec, jhr, nu):
+        def impl(lop, rop, gain, nu, jh):
+            l_00, l_01, l_10, l_11 = unpack(lop)
+            r_00, r_10, r_01, r_11 = unpack(rop)  # Note the "transpose".
             g_00, g_01, g_10, g_11 = unpackct(gain)
-            v_00, v_01, v_10, v_11 = unpack(vec)
 
-            upd00 = (-1j*g_00*v_00).real
-            upd11 = (-1j*g_11*v_11).real
+            # This implements a special kronecker product, which simultaneously
+            # multiplies in derivative terms. This doesn't generalize to all
+            # terms.
 
-            jhr[0, 0] += upd00
-            jhr[0, 1] += upd11
+            # Top row.
+            rkl_00 = r_00*l_00
+            rkl_01 = r_00*l_01
+            rkl_02 = r_01*l_00
+            rkl_03 = r_01*l_01
+            # Bottom row.
+            rkl_30 = r_10*l_10
+            rkl_31 = r_10*l_11
+            rkl_32 = r_11*l_10
+            rkl_33 = r_11*l_11
 
-            jhr[1, 0] += nu*upd00
-            jhr[1, 1] += nu*upd11
+            # Coefficients generated by the derivative.
+            drv_00 = -1j*g_00
+            drv_10 = drv_00*nu
+            drv_23 = -1j*g_11
+            drv_33 = drv_23*nu
+
+            # (param_per_antenna, 4) result of special kronecker product.
+            jh[0, 0] += rkl_00*drv_00
+            jh[0, 1] += rkl_01*drv_00
+            jh[0, 2] += rkl_02*drv_00
+            jh[0, 3] += rkl_03*drv_00
+            jh[1, 0] += rkl_00*drv_10
+            jh[1, 1] += rkl_01*drv_10
+            jh[1, 2] += rkl_02*drv_10
+            jh[1, 3] += rkl_03*drv_10
+            jh[2, 0] += rkl_30*drv_23
+            jh[2, 1] += rkl_31*drv_23
+            jh[2, 2] += rkl_32*drv_23
+            jh[2, 3] += rkl_33*drv_23
+            jh[3, 0] += rkl_30*drv_33
+            jh[3, 1] += rkl_31*drv_33
+            jh[3, 2] += rkl_32*drv_33
+            jh[3, 3] += rkl_33*drv_33
     else:
-        def impl(gain, vec, jhr, nu):
-            g_00, g_11 = unpackct(gain)
-            v_00, v_11 = unpack(vec)
+        # TODO: NOT YET PROPERLY IMPLEMENTED.
+        def impl(lop, rop, gain, nu, jh):
+            l_00, l_01, l_10, l_11 = unpack(lop)
+            r_00, r_10, r_01, r_11 = unpack(rop)  # Note the "transpose".
+            g_00, g_01, g_10, g_11 = unpackct(gain)
 
-            upd00 = (-1j*g_00*v_00).real
-            upd11 = (-1j*g_11*v_11).real
+            # Top row.
+            rkl_00 = r_00*l_00
+            rkl_01 = r_00*l_01
+            rkl_02 = r_01*l_00
+            rkl_03 = r_01*l_01
+            # Bottom row.
+            rkl_30 = r_10*l_10
+            rkl_31 = r_10*l_11
+            rkl_32 = r_11*l_10
+            rkl_33 = r_11*l_11
 
-            jhr[0, 0] += upd00
-            jhr[0, 1] += upd11
+            drv_00 = -1j*g_00
+            drv_10 = drv_00*nu
+            drv_23 = -1j*g_11
+            drv_33 = drv_23*nu
 
-            jhr[1, 0] += nu*upd00
-            jhr[1, 1] += nu*upd11
+            jh[0, 0] += rkl_00*drv_00
+            jh[0, 1] += rkl_01*drv_00
+            jh[0, 2] += rkl_02*drv_00
+            jh[0, 3] += rkl_03*drv_00
+            jh[1, 0] += rkl_00*drv_10
+            jh[1, 1] += rkl_01*drv_10
+            jh[1, 2] += rkl_02*drv_10
+            jh[1, 3] += rkl_03*drv_10
+            jh[2, 0] += rkl_30*drv_23
+            jh[2, 1] += rkl_31*drv_23
+            jh[2, 2] += rkl_32*drv_23
+            jh[2, 3] += rkl_33*drv_23
+            jh[3, 0] += rkl_30*drv_33
+            jh[3, 1] += rkl_31*drv_33
+            jh[3, 2] += rkl_32*drv_33
+            jh[3, 3] += rkl_33*drv_33
     return factories.qcjit(impl)
