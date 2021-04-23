@@ -22,7 +22,7 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
 def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                 d_map_arr, corr_mode, active_term, inverse_gain_list,
+                 d_map_arr, corr_mode, active_term, inverse_gains,
                  gains, flags, params, chan_freqs, row_map, row_weights,
                  t_bin_arr):
     """Solve for a delay.
@@ -48,7 +48,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         param_shape = params.shape
         n_tint, n_fint, n_ant, n_dir, n_param, n_corr = param_shape
 
-        invert_gains(gains, inverse_gain_list, corr_mode)
+        invert_gains(gains, inverse_gains, corr_mode)
 
         dd_term = n_dir > 1
 
@@ -80,7 +80,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             jhr,
                             model,
                             gains,
-                            inverse_gain_list,
+                            inverse_gains,
                             chan_freqs,
                             residual,
                             a1,
@@ -94,21 +94,23 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             active_term,
                             corr_mode)
 
-            compute_update(update,
-                           jhj,
-                           jhr,
-                           corr_mode)
+            print("GOT HERE!")
 
-            finalize_update(update,
-                            params,
-                            gains[active_term],
-                            chan_freqs,
-                            t_bin_arr,
-                            f_map_arr,
-                            d_map_arr,
-                            dd_term,
-                            corr_mode,
-                            active_term)
+            # compute_update(update,
+            #                jhj,
+            #                jhr,
+            #                corr_mode)
+
+            # finalize_update(update,
+            #                 params,
+            #                 gains[active_term],
+            #                 chan_freqs,
+            #                 t_bin_arr,
+            #                 f_map_arr,
+            #                 d_map_arr,
+            #                 dd_term,
+            #                 corr_mode,
+            #                 active_term)
 
             # Check for gain convergence. TODO: This can be affected by the
             # weights. Currently unsure how or why, but using unity weights
@@ -128,7 +130,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
+def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
             residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
             row_map, row_weights, active_term, corr_mode):
 
@@ -154,7 +156,7 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
         jhj[:] = 0
         jhr[:] = 0
 
-        n_tint, n_fint, n_ant, n_gdir, _ = gains[active_term].shape
+        n_tint, n_fint, n_ant, n_gdir, n_param, _ = jhr.shape
         n_int = n_tint*n_fint
 
         complex_dtype = gains[active_term].dtype
@@ -198,8 +200,10 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
             lmul_op_a = valloc(complex_dtype)
             lmul_op_b = valloc(complex_dtype)
 
-            tmp_jh_p = valloc(complex_dtype, leading_dims=(n_gdir,))
-            tmp_jh_q = valloc(complex_dtype, leading_dims=(n_gdir,))
+            tmp_jh_rp = valloc(complex_dtype, leading_dims=(n_gdir,))
+            tmp_jh_rq = valloc(complex_dtype, leading_dims=(n_gdir,))
+            tmp_jh_lp = valloc(complex_dtype, leading_dims=(n_gdir,))
+            tmp_jh_lq = valloc(complex_dtype, leading_dims=(n_gdir,))
 
             for row_ind in range(rs, re):
 
@@ -211,8 +215,10 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
                     r = residual[row, f]
                     w = weights[row, f]  # Consider a map?
 
-                    tmp_jh_p[:, :] = 0
-                    tmp_jh_q[:, :] = 0
+                    tmp_jh_rp[:, :] = 0
+                    tmp_jh_rq[:, :] = 0
+                    tmp_jh_lp[:, :] = 0
+                    tmp_jh_lq[:, :] = 0
 
                     nu = chan_freqs[f]
 
@@ -277,7 +283,8 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
                         ga = gains_a[active_term]
                         deriv_mul(ga, r_vec, jhr[t_m, f_m, a1_m, out_d], nu)
 
-                        iadd(tmp_jh_p[out_d], mh_vec)
+                        iadd(tmp_jh_rp[out_d], mh_vec)
+                        iadd(tmp_jh_lp[out_d], lmul_op_a)
 
                         v1_imul_v2(rh_vec, m_vec, rh_vec)
                         v1_imul_v2(lmul_op_b, rh_vec, rh_vec)
@@ -285,19 +292,26 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
                         gb = gains_b[active_term]
                         deriv_mul(gb, rh_vec, jhr[t_m, f_m, a2_m, out_d], nu)
 
-                        iadd(tmp_jh_q[out_d], m_vec)
+                        iadd(tmp_jh_rq[out_d], m_vec)
+                        iadd(tmp_jh_lq[out_d], lmul_op_b)
 
                     for d in range(n_gdir):
 
-                        jhp = tmp_jh_p[d]
-                        jhj_vec = v1ct_wmul_v2(jhp, jhp, w)
-                        jhj_sel = jhj[t_m, f_m, a1_m, d]
-                        iadd(jhj_sel, jhj_vec)
+                        jh_rp = tmp_jh_rp[d]
+                        jh_lp = tmp_jh_lp[d]
+                        jh_lrp = np.kron(jh_lp.reshape(2, 2), 
+                                         jh_rp.reshape(2, 2))
 
-                        jhq = tmp_jh_q[d]
-                        jhj_vec = v1ct_wmul_v2(jhq, jhq, w)
-                        jhj_sel = jhj[t_m, f_m, a2_m, d]
-                        iadd(jhj_sel, jhj_vec)
+                        print(jh_lrp)
+
+                        # jhj_vec = v1ct_wmul_v2(jh_lrp, jh_lrp, w)
+                        # jhj_sel = jhj[t_m, f_m, a1_m, d]
+                        # iadd(jhj_sel, jhj_vec)
+
+                        # jhq = tmp_jh_rq[d]
+                        # jhj_vec = v1ct_wmul_v2(jhq, jhq, w)
+                        # jhj_sel = jhj[t_m, f_m, a2_m, d]
+                        # iadd(jhj_sel, jhj_vec)
 
         return
     return impl
@@ -370,6 +384,40 @@ def finalize(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
 
 
 def deriv_mul_factory(mode):
+
+    unpack = factories.unpack_factory(mode)
+    unpackct = factories.unpackct_factory(mode)
+
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(gain, vec, jhr, nu):
+            g_00, g_01, g_10, g_11 = unpackct(gain)
+            v_00, v_01, v_10, v_11 = unpack(vec)
+
+            upd00 = (-1j*g_00*v_00).real
+            upd11 = (-1j*g_11*v_11).real
+
+            jhr[0, 0] += upd00
+            jhr[0, 1] += upd11
+
+            jhr[1, 0] += nu*upd00
+            jhr[1, 1] += nu*upd11
+    else:
+        def impl(gain, vec, jhr, nu):
+            g_00, g_11 = unpackct(gain)
+            v_00, v_11 = unpack(vec)
+
+            upd00 = (-1j*g_00*v_00).real
+            upd11 = (-1j*g_11*v_11).real
+
+            jhr[0, 0] += upd00
+            jhr[0, 1] += upd11
+
+            jhr[1, 0] += nu*upd00
+            jhr[1, 1] += nu*upd11
+    return factories.qcjit(impl)
+
+
+def jhj_mul_factory(mode):
 
     unpack = factories.unpack_factory(mode)
     unpackct = factories.unpackct_factory(mode)
