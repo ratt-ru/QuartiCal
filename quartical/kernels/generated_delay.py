@@ -77,8 +77,6 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             else:
                 residual = data
 
-            print("A")
-
             compute_jhj_jhr(jhj,
                             jhr,
                             model,
@@ -97,14 +95,10 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             active_term,
                             corr_mode)
 
-            print("B")
-
             compute_update(update,
                            jhj,
                            jhr,
                            corr_mode)
-
-            print("C")
 
             finalize_update(update,
                             params,
@@ -116,8 +110,6 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             dd_term,
                             corr_mode,
                             active_term)
-
-            print("D")
 
             # Check for gain convergence. TODO: This can be affected by the
             # weights. Currently unsure how or why, but using unity weights
@@ -301,14 +293,12 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                     for d in range(n_gdir):
 
                         jhp = tmp_jh_p[d]
-                        jhj_vec = jhwjmul(jhp, w)
                         jhj_sel = jhj[t_m, f_m, a1_m, d]
-                        jhj_sel += jhj_vec
+                        jhwjmul(jhp, w, jhj_sel)
 
                         jhq = tmp_jh_q[d]
-                        jhj_vec = jhwjmul(jhq, w)
                         jhj_sel = jhj[t_m, f_m, a2_m, d]
-                        jhj_sel += jhj_vec
+                        jhwjmul(jhq, w, jhj_sel)
         return
     return impl
 
@@ -420,7 +410,7 @@ def special_jh_mul_factory(mode):
             r_00, r_10, r_01, r_11 = unpack(rop)  # Note the "transpose".
             g_00, g_01, g_10, g_11 = unpackct(gain)
 
-            # This implements a special kronecker product, which simultaneously
+            # This implements a special kronecker product which simultaneously
             # multiplies in derivative terms. This doesn't generalize to all
             # terms.
 
@@ -503,22 +493,40 @@ def special_jh_mul_factory(mode):
 def special_jh_wmul_j_factory(mode):
 
     unpack = factories.unpack_factory(mode)
+    unpackct = factories.unpackct_factory(mode)
 
     if mode.literal_value == "full" or mode.literal_value == "mixed":
-        def impl(jh, w):
+        # TODO: Add weights.
+        def impl(jh, w, jhj):
             w1_00, w1_01, w1_10, w1_11 = unpack(w)
 
-            tmp_w = np.diag(np.array([w1_00, w1_00, w1_11, w1_11],
-                                     dtype=jh.dtype))
+            n_ppa, n_corr = jh.shape
 
-            return (jh.dot(tmp_w).dot(np.conjugate(jh.T))).real
+            for i in range(n_ppa):
+                jh_0, jh_1, jh_2, jh_3 = unpack(jh[i])
+                for j in range(n_ppa):
+                    # Note "transpose" as I am abusing unpack.
+                    j_0, j_2, j_1, j_3 = unpackct(jh[j])
+
+                    jhj[i, j] += (jh_0*j_0 +
+                                  jh_1*j_1 +
+                                  jh_2*j_2 +
+                                  jh_3*j_3).real
     else:
         # TODO: NOT YET PROPERLY IMPLEMENTED.
-        def impl(jh, w):
+        def impl(jh, w, jhj):
             w1_00, w1_01, w1_10, w1_11 = unpack(w)
 
-            tmp_w = np.diag(np.array([w1_00, w1_00, w1_11, w1_11],
-                                     dtype=jh.dtype))
+            n_ppa, n_corr = jh.shape
 
-            return (jh.dot(tmp_w).dot(np.conjugate(jh.T))).real
+            for i in range(n_ppa):
+                jh_0, jh_1, jh_2, jh_3 = unpack(jh[i])
+                for j in range(n_ppa):
+                    # Note "transpose" as I am abusing unpack.
+                    j_0, j_2, j_1, j_3 = unpackct(jh[j])
+
+                    jhj[i, j] += (jh_0*j_0 +
+                                  jh_1*j_1 +
+                                  jh_2*j_2 +
+                                  jh_3*j_3).real
     return factories.qcjit(impl)
