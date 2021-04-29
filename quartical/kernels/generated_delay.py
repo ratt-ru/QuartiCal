@@ -195,8 +195,6 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
 
             gains_a = valloc(complex_dtype, leading_dims=(n_gains,))
             gains_b = valloc(complex_dtype, leading_dims=(n_gains,))
-            igains_a = valloc(complex_dtype, leading_dims=(n_gains,))
-            igains_b = valloc(complex_dtype, leading_dims=(n_gains,))
 
             lmul_op_a = valloc(complex_dtype)
             lmul_op_b = valloc(complex_dtype)
@@ -231,12 +229,9 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                             f_m = f_map_arr[f, gi]
 
                             gain = gains[gi][t_m, f_m]
-                            inverse_gain = inverse_gains[gi][t_m, f_m]
 
                             iunpack(gains_a[gi], gain[a1_m, d_m])
                             iunpack(gains_b[gi], gain[a2_m, d_m])
-                            iunpack(igains_a[gi], inverse_gain[a1_m, d_m])
-                            iunpack(igains_b[gi], inverse_gain[a2_m, d_m])
 
                         imul_rweight(r, r_vec, row_weights, row_ind)
                         iwmul(r_vec, w)
@@ -310,6 +305,8 @@ def update(update, jhj, jhr, corr_mode):
     def impl(update, jhj, jhr, corr_mode):
         n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
 
+        ident = np.eye(4)
+
         for t in range(n_tint):
             for f in range(n_fint):
                 for a in range(n_ant):
@@ -322,7 +319,7 @@ def update(update, jhj, jhr, corr_mode):
                         if det.real < 1e-6 or ~np.isfinite(det):
                             jhj_inv = np.zeros_like(jhj_sel)
                         else:
-                            jhj_inv = np.linalg.pinv(jhj_sel)
+                            jhj_inv = np.linalg.solve(jhj_sel, ident)
 
                         update[t, f, a, d] = jhj_inv.dot(jhr[t, f, a, d])
     return impl
@@ -361,7 +358,7 @@ def finalize(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
                         cf = chan_freqs[f]
 
                         gain[t, f, a, d, 0] = np.exp(1j*(cf*delay0 + inter0))
-                        gain[t, f, a, d, 1] = np.exp(1j*(cf*delay1 + inter1))
+                        gain[t, f, a, d, 3] = np.exp(1j*(cf*delay1 + inter1))
     return impl
 
 
@@ -504,14 +501,18 @@ def special_jh_wmul_j_factory(mode):
 
             for i in range(n_ppa):
                 jh_0, jh_1, jh_2, jh_3 = unpack(jh[i])
+                jhw_0 = jh_0*w1_00
+                jhw_1 = jh_1*w1_00
+                jhw_2 = jh_2*w1_11
+                jhw_3 = jh_3*w1_11
                 for j in range(n_ppa):
                     # Note "transpose" as I am abusing unpack.
                     j_0, j_2, j_1, j_3 = unpackct(jh[j])
 
-                    jhj[i, j] += (jh_0*j_0 +
-                                  jh_1*j_1 +
-                                  jh_2*j_2 +
-                                  jh_3*j_3).real
+                    jhj[i, j] += (jhw_0*j_0 +
+                                  jhw_1*j_1 +
+                                  jhw_2*j_2 +
+                                  jhw_3*j_3).real
     else:
         # TODO: NOT YET PROPERLY IMPLEMENTED.
         def impl(jh, w, jhj):
