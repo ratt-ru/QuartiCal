@@ -1,12 +1,9 @@
+from ast import literal_eval
 from collections import defaultdict
 
 from distributed.diagnostics.plugin import SchedulerPlugin
 from dask.core import reverse_dict
 from dask.base import tokenize
-
-
-def install_plugin(dask_scheduler=None, **kwargs):
-    dask_scheduler.add_plugin(AutoRestrictor(**kwargs), idempotent=True)
 
 
 def unravel_deps(hlg_deps, name, unravelled_deps=None):
@@ -92,3 +89,134 @@ class AutoRestrictor(SchedulerPlugin):
                 task._loose_restrictions = False
                 # (user priority, graph generation, dask.order priority)
                 task._priority = (min(group),) + task._priority[1:]
+
+
+COLOUR = "__quartical_colour__"
+
+class BreadthFirstSearch:
+    def __init__(self, dsk, roots, colour):
+        if not isinstance(roots, (tuple, list)):
+            roots = [roots]
+
+        print(f"{colour} has {len(roots)} roots")
+
+        self.roots = roots
+        self.dsk = dsk
+        self.colour = colour
+
+    def initialise(self):
+        for r in self.roots:
+            r._annotations[COLOUR] = self.colour
+
+        self.frontier = self.roots.copy()
+        self.n = 0
+
+    def iterate(self):
+        try:
+            # Remove first node in the frontier
+            node = self.frontier.pop(0)
+        except IndexError:
+            print(f"Stopping {self.colour} after {self.n} iterations")
+            raise StopIteration
+        # else:
+        #     assert self.colour == node._annotations[COLOUR]
+
+        for child in node.dependents:
+            if child in self.frontier:
+                continue
+
+            if COLOUR in child.annotations:
+                continue
+
+            child._annotations[COLOUR] = self.colour
+            self.frontier.append(child)
+
+        self.n += 1
+        return node
+
+    def __next__(self):
+        return self.iterate()
+
+
+    def __iter__(self):
+        self.initialise()
+        return self
+
+
+
+class ColouringPlugin(SchedulerPlugin):
+    def update_graph(self, scheduler, dsk=None,
+                     annotations=None, dependencies=None,
+                     **kw):
+
+        if not annotations:
+            return
+
+        partitions = defaultdict(list)
+
+        for k, a in annotations.get("__dask_array__", {}).items():
+            try:
+                p = a["partition"]
+                dims = a["dims"]
+                chunks = a["chunks"]
+            except KeyError:
+                continue
+
+            try:
+                ri = dims.index("row")
+            except ValueError:
+                continue
+
+            row_block = int(literal_eval(k)[1 + ri])
+            pkey = p + (("__row_block__", row_block))
+            partitions[pkey].append(k)
+
+        # print(f"partitions {len(partitions)}")
+        # from pprint import pprint
+        # pprint(partitions)
+
+        searches = []
+        tasks = scheduler.tasks
+
+        for colour, frontier in enumerate(partitions.values()):
+            roots = [tasks.get(k) for k in frontier]
+            assert all(t is not None for t in roots)
+            bfs = BreadthFirstSearch(dsk, roots, colour)
+            searches.append(bfs)
+
+        for bfs in searches:
+            bfs.initialise()
+
+        iterated = True
+
+        while iterated:
+            iterated = False
+
+            for bfs in searches:
+                try:
+                    bfs.iterate()
+                except StopIteration:
+                    pass
+                else:
+                    iterated = True
+
+        colour_counts = defaultdict(set)
+
+        for k, t in tasks.items():
+            try:
+                colour = t.annotations["colour"]
+            except KeyError:
+                pass
+            else:
+                print(f"{k} = {colour}")
+                colour_counts[colour].add(k)
+
+        from pprint import pprint
+        pprint({k: len(v) for k, v in colour_counts.items()})
+
+
+
+def install_plugin(dask_scheduler=None, **kwargs):
+    dask_scheduler.add_plugin(ColouringPlugin(**kwargs), idempotent=True)
+
+

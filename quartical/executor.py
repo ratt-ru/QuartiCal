@@ -8,6 +8,7 @@ from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 import time
 from quartical.parser import parser, preprocess
+from quartical.scheduling.annotation import annotate
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
                                                 preprocess_xds_list)
@@ -61,6 +62,9 @@ def _execute(exitstack):
 
     # Reads the measurement set using the relavant configuration from opts.
     data_xds_list, ref_xds_list = read_xds_list(opts)
+
+    annotate(data_xds_list)
+    annotate(ref_xds_list)
 
     # logger.info("Reading data from zms.")
     # data_xds_list = xds_from_zarr("/home/jonathan/3C147_tests/3C147_daskms.zms")
