@@ -4,7 +4,7 @@ from collections import defaultdict
 from distributed.diagnostics.plugin import SchedulerPlugin
 from dask.core import reverse_dict
 from dask.base import tokenize
-
+from dask.order import order
 
 def unravel_deps(hlg_deps, name, unravelled_deps=None):
     """Recursively construct a set of all dependencies for a specific task."""
@@ -94,14 +94,13 @@ class AutoRestrictor(SchedulerPlugin):
 COLOUR = "__quartical_colour__"
 
 class BreadthFirstSearch:
-    def __init__(self, dsk, roots, colour):
+    def __init__(self, roots, colour):
         if not isinstance(roots, (tuple, list)):
             roots = [roots]
 
         print(f"{colour} has {len(roots)} roots")
 
         self.roots = roots
-        self.dsk = dsk
         self.colour = colour
 
     def initialise(self):
@@ -109,34 +108,39 @@ class BreadthFirstSearch:
             r._annotations[COLOUR] = self.colour
 
         self.frontier = self.roots.copy()
+        self.dsk = {r.key: None for r in self.frontier}
         self.n = 0
 
     def iterate(self):
+        colour = self.colour
+
         try:
             # Remove first node in the frontier
             node = self.frontier.pop(0)
         except IndexError:
-            print(f"Stopping {self.colour} after {self.n} iterations")
             raise StopIteration
-        # else:
-        #     assert self.colour == node._annotations[COLOUR]
+        else:
+            assert colour == node._annotations[COLOUR]
 
         for child in node.dependents:
             if child in self.frontier:
                 continue
 
-            if COLOUR in child.annotations:
-                continue
+            child_colour = child._annotations.get(COLOUR, None)
 
-            child.annotations[COLOUR] = self.colour
-            self.frontier.append(child)
+            if child_colour is None:
+                child._annotations[COLOUR] = colour
+                self.frontier.append(child)
 
         self.n += 1
         return node
 
+    @property
+    def order(self):
+        return order(self.dsk)
+
     def __next__(self):
         return self.iterate()
-
 
     def __iter__(self):
         self.initialise()
@@ -177,16 +181,16 @@ class ColouringPlugin(SchedulerPlugin):
         for colour, frontier in enumerate(partitions.values()):
             roots = [tasks.get(k) for k in frontier]
             assert all(t is not None for t in roots)
-            bfs = BreadthFirstSearch(dsk, roots, colour)
+            bfs = BreadthFirstSearch(roots, colour)
             searches.append(bfs)
 
         for bfs in searches:
             bfs.initialise()
 
-        iterated = True
+        success = True
 
-        while iterated:
-            iterated = False
+        while success:
+            success = False
 
             # Do one iteration of each bfs
             for bfs in searches:
@@ -195,21 +199,22 @@ class ColouringPlugin(SchedulerPlugin):
                 except StopIteration:
                     pass
                 else:
-                    iterated = True
+                    # We just try iterate over the searches
+                    # once more
+                    success = True
 
-        colour_counts = defaultdict(set)
+        workers = list(scheduler.workers.keys())
+        n_workers = len(workers)
 
-        for k, t in tasks.items():
-            try:
-                colour = t.annotations[COLOUR]
-            except KeyError:
-                pass
-            else:
-                colour_counts[colour].add(k)
+        for s, bfs in enumerate(searches):
+            w = {workers[int(n_workers * s / len(searches))]}
 
-        # from pprint import pprint
-        # pprint({k: len(v) for k, v in colour_counts.items()})
-
+            for k, p in bfs.order.items():
+                priority = float(s)*10.0 + p / 1000.0
+                t = tasks.get(k)
+                t._priority = (priority,) + t.priority[1:]
+                t._worker_restrictions = w
+                t._loose_restrictions = False
 
 
 def install_plugin(dask_scheduler=None, **kwargs):
