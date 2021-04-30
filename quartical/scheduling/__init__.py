@@ -128,7 +128,7 @@ class BreadthFirstSearch:
             if COLOUR in child.annotations:
                 continue
 
-            child._annotations[COLOUR] = self.colour
+            child.annotations[COLOUR] = self.colour
             self.frontier.append(child)
 
         self.n += 1
@@ -171,10 +171,6 @@ class ColouringPlugin(SchedulerPlugin):
             pkey = p + (("__row_block__", row_block))
             partitions[pkey].append(k)
 
-        # print(f"partitions {len(partitions)}")
-        # from pprint import pprint
-        # pprint(partitions)
-
         searches = []
         tasks = scheduler.tasks
 
@@ -192,6 +188,7 @@ class ColouringPlugin(SchedulerPlugin):
         while iterated:
             iterated = False
 
+            # Do one iteration of each bfs
             for bfs in searches:
                 try:
                     bfs.iterate()
@@ -204,15 +201,14 @@ class ColouringPlugin(SchedulerPlugin):
 
         for k, t in tasks.items():
             try:
-                colour = t.annotations["colour"]
+                colour = t.annotations[COLOUR]
             except KeyError:
                 pass
             else:
-                print(f"{k} = {colour}")
                 colour_counts[colour].add(k)
 
-        from pprint import pprint
-        pprint({k: len(v) for k, v in colour_counts.items()})
+        # from pprint import pprint
+        # pprint({k: len(v) for k, v in colour_counts.items()})
 
 
 
