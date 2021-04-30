@@ -137,15 +137,13 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
     v1ct_imul_v2 = factories.v1ct_imul_v2_factory(corr_mode)
-    v1ct_wmul_v2 = factories.v1ct_wmul_v2_factory(corr_mode)
     iunpack = factories.iunpack_factory(corr_mode)
     iunpackct = factories.iunpackct_factory(corr_mode)
-    iadd = factories.iadd_factory(corr_mode)
     iwmul = factories.iwmul_factory(corr_mode)
     valloc = factories.valloc_factory(corr_mode)
     loop_var = factories.loop_var_factory(corr_mode)
     set_identity = factories.set_identity_factory(corr_mode)
-    deriv_mul = deriv_mul_factory(corr_mode)
+    accumulate_jhr = jhr_factory(corr_mode)
     jhmul = special_jh_mul_factory(corr_mode)
     jhwjmul = special_jh_wmul_j_factory(corr_mode)
 
@@ -269,19 +267,15 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                         f_m = f_map_arr[f, active_term]
                         out_d = d_map_arr[active_term, d]
 
-                        v1_imul_v2(r_vec, mh_vec, r_vec)
-                        v1_imul_v2(lmul_op_a, r_vec, r_vec)
-
                         ga = gains_a[active_term]
-                        deriv_mul(ga, r_vec, jhr[t_m, f_m, a1_m, out_d], nu)
+                        accumulate_jhr(ga, r_vec, mh_vec, lmul_op_a,
+                                       jhr[t_m, f_m, a1_m, out_d], nu)
 
                         jhmul(lmul_op_a, mh_vec, ga, nu, tmp_jh_p[out_d])
 
-                        v1_imul_v2(rh_vec, m_vec, rh_vec)
-                        v1_imul_v2(lmul_op_b, rh_vec, rh_vec)
-
                         gb = gains_b[active_term]
-                        deriv_mul(gb, rh_vec, jhr[t_m, f_m, a2_m, out_d], nu)
+                        accumulate_jhr(gb, rh_vec, m_vec, lmul_op_b,
+                                       jhr[t_m, f_m, a2_m, out_d], nu)
 
                         jhmul(lmul_op_b, m_vec, gb, nu, tmp_jh_q[out_d])
 
@@ -302,26 +296,67 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                nogil=True)
 def update(update, jhj, jhr, corr_mode):
 
-    def impl(update, jhj, jhr, corr_mode):
-        n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
+    if corr_mode.literal_value in ["full", "mixed"]:
+        def impl(update, jhj, jhr, corr_mode):
+            n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
 
-        ident = np.eye(4)
+            ident = np.eye(4)
 
-        for t in range(n_tint):
-            for f in range(n_fint):
-                for a in range(n_ant):
-                    for d in range(n_dir):
+            for t in range(n_tint):
+                for f in range(n_fint):
+                    for a in range(n_ant):
+                        for d in range(n_dir):
 
-                        jhj_sel = jhj[t, f, a, d]
+                            jhj_sel = jhj[t, f, a, d]
 
-                        det = np.linalg.det(jhj_sel)
+                            det = np.linalg.det(jhj_sel)
 
-                        if det.real < 1e-6 or ~np.isfinite(det):
-                            jhj_inv = np.zeros_like(jhj_sel)
-                        else:
-                            jhj_inv = np.linalg.solve(jhj_sel, ident)
+                            if det.real < 1e-6 or ~np.isfinite(det):
+                                jhj_inv = np.zeros_like(jhj_sel)
+                            else:
+                                jhj_inv = np.linalg.solve(jhj_sel, ident)
 
-                        update[t, f, a, d] = jhj_inv.dot(jhr[t, f, a, d])
+                            update[t, f, a, d] = jhj_inv.dot(jhr[t, f, a, d])
+    else:
+        def impl(update, jhj, jhr, corr_mode):
+
+            n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
+
+            for t in range(n_tint):
+                for f in range(n_fint):
+                    for a in range(n_ant):
+                        for d in range(n_dir):
+                            for sl in (slice(0, 2), slice(2, 4)):
+
+                                jhj_sel = jhj[t, f, a, d, sl, sl]
+
+                                jhj00 = jhj_sel[0, 0]
+                                jhj01 = jhj_sel[0, 1]
+                                jhj10 = jhj_sel[1, 0]
+                                jhj11 = jhj_sel[1, 1]
+
+                                det = (jhj00*jhj11 - jhj01*jhj10)
+
+                                if det.real < 1e-6:
+                                    jhjinv00 = 0
+                                    jhjinv01 = 0
+                                    jhjinv10 = 0
+                                    jhjinv11 = 0
+                                else:
+                                    jhjinv00 = jhj11/det
+                                    jhjinv01 = -jhj01/det
+                                    jhjinv10 = -jhj10/det
+                                    jhjinv11 = jhj00/det
+
+                                jhr_sel = jhr[t, f, a, d, sl]
+
+                                jhr_0 = jhr_sel[0]
+                                jhr_1 = jhr_sel[1]
+
+                                upd_sel = update[t, f, a, d, sl]
+
+                                upd_sel[0] = jhjinv00*jhr_0 + jhjinv01*jhr_1
+                                upd_sel[1] = jhjinv10*jhr_0 + jhjinv11*jhr_1
     return impl
 
 
@@ -351,8 +386,8 @@ def finalize(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
                         d_m = d_map_arr[d, active_term]
 
                         inter0 = params[t_m, f_m, a, d_m, 0, 0]
-                        delay0 = params[t_m, f_m, a, d_m, 1, 0]
                         inter1 = params[t_m, f_m, a, d_m, 0, 1]
+                        delay0 = params[t_m, f_m, a, d_m, 1, 0]
                         delay1 = params[t_m, f_m, a, d_m, 1, 1]
 
                         cf = chan_freqs[f]
@@ -362,36 +397,42 @@ def finalize(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
     return impl
 
 
-def deriv_mul_factory(mode):
+def jhr_factory(mode):
 
     unpack = factories.unpack_factory(mode)
     unpackct = factories.unpackct_factory(mode)
+    v1_imul_v2 = factories.v1_imul_v2_factory(mode)
 
     if mode.literal_value == "full" or mode.literal_value == "mixed":
-        def impl(gain, vec, jhr, nu):
+        def impl(gain, res, rop, lop, jhr, nu):
+
+            v1_imul_v2(res, rop, res)
+            v1_imul_v2(lop, res, res)
+
             g_00, g_01, g_10, g_11 = unpackct(gain)
-            v_00, v_01, v_10, v_11 = unpack(vec)
+            v_00, v_01, v_10, v_11 = unpack(res)
 
             upd00 = (-1j*g_00*v_00).real
             upd11 = (-1j*g_11*v_11).real
 
             jhr[0] += upd00
-            jhr[2] += upd11
-
             jhr[1] += nu*upd00
+            jhr[2] += upd11
             jhr[3] += nu*upd11
     else:
-        def impl(gain, vec, jhr, nu):
+        def impl(gain, res, rop, lop, jhr, nu):
+
+            v1_imul_v2(res, rop, res)
+
             g_00, g_11 = unpackct(gain)
-            v_00, v_11 = unpack(vec)
+            v_00, v_11 = unpack(res)
 
             upd00 = (-1j*g_00*v_00).real
             upd11 = (-1j*g_11*v_11).real
 
             jhr[0] += upd00
-            jhr[2] += upd11
-
             jhr[1] += nu*upd00
+            jhr[2] += upd11
             jhr[3] += nu*upd11
     return factories.qcjit(impl)
 
@@ -502,13 +543,25 @@ def special_jh_wmul_j_factory(mode):
             jh_23 = jh[2, 3]
             jh_33 = jh[3, 3]
 
-            jhj[0, 0] += (jh_00*w1_00*jh_00.conjugate()).real
-            jhj[0, 1] += (jh_00*w1_00*jh_10.conjugate()).real
-            jhj[1, 0] = jhj[0, 1]
-            jhj[1, 1] += (jh_10*w1_00*jh_10.conjugate()).real
+            # Conjugate transpose terms.
+            j_00 = jh_00.conjugate()
+            j_01 = jh_10.conjugate()
+            j_32 = jh_23.conjugate()
+            j_33 = jh_33.conjugate()
 
-            jhj[2, 2] += (jh_23*w1_11*jh_23.conjugate()).real
-            jhj[2, 3] += (jh_00*w1_00*jh_33.conjugate()).real
-            jhj[3, 2] = jhj[2, 3]
-            jhj[3, 3] += (jh_33*w1_11*jh_33.conjugate()).real
+            # Multiply in the weights.
+            jh_00 *= w1_00
+            jh_10 *= w1_00
+            jh_23 *= w1_11
+            jh_33 *= w1_11
+
+            jhj[0, 0] += (jh_00*j_00).real
+            jhj[0, 1] += (jh_00*j_01).real
+            jhj[1, 0] += (jh_10*j_00).real
+            jhj[1, 1] += (jh_10*j_01).real
+
+            jhj[2, 2] += (jh_23*j_32).real
+            jhj[2, 3] += (jh_23*j_33).real
+            jhj[3, 2] += (jh_33*j_32).real
+            jhj[3, 3] += (jh_33*j_33).real
     return factories.qcjit(impl)
