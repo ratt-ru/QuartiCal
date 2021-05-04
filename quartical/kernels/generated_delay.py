@@ -37,10 +37,6 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                       gains, flags, params, chan_freqs, row_map, row_weights, \
                       t_bin_arr: literally(corr_mode)
 
-    compute_jhj_jhr = jhj_jhr
-    compute_update = update
-    finalize_update = finalize
-
     def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
              corr_mode, active_term, inverse_gains, gains, flags, params,
              chan_freqs, row_map, row_weights, t_bin_arr):
@@ -129,9 +125,9 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
-            residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
-            row_map, row_weights, active_term, corr_mode):
+def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
+                    residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
+                    row_map, row_weights, active_term, corr_mode):
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -141,7 +137,7 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
     iunpackct = factories.iunpackct_factory(corr_mode)
     iwmul = factories.iwmul_factory(corr_mode)
     valloc = factories.valloc_factory(corr_mode)
-    loop_var = factories.loop_var_factory(corr_mode)
+    make_loop_vars = factories.loop_var_factory(corr_mode)
     set_identity = factories.set_identity_factory(corr_mode)
     accumulate_jhr = jhr_factory(corr_mode)
     jhmul = special_jh_mul_factory(corr_mode)
@@ -173,7 +169,7 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                                                    n_fint,
                                                    n_chan)
 
-        all_terms, gt_active, lt_active = loop_var(n_gains, active_term)
+        all_terms, gt_active, lt_active = make_loop_vars(n_gains, active_term)
 
         # Parallel over all solution intervals.
         for i in prange(n_int):
@@ -294,7 +290,7 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def update(update, jhj, jhr, corr_mode):
+def compute_update(update, jhj, jhr, corr_mode):
 
     if corr_mode.literal_value in ["full", "mixed"]:
         def impl(update, jhj, jhr, corr_mode):
@@ -362,8 +358,8 @@ def update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
-             d_map_arr, dd_term, corr_mode, active_term):
+def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
+                    d_map_arr, dd_term, corr_mode, active_term):
 
     def impl(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
              d_map_arr, dd_term, corr_mode, active_term):
