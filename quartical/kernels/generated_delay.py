@@ -368,9 +368,9 @@ def finalize(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
     def impl(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
              d_map_arr, dd_term, corr_mode, active_term):
         params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]/2
-        params[:, :, :, :, 0, 1] += update[:, :, :, :, 2]/2
+        params[:, :, :, :, 0, -1] += update[:, :, :, :, 2]/2
         params[:, :, :, :, 1, 0] += update[:, :, :, :, 1]/2
-        params[:, :, :, :, 1, 1] += update[:, :, :, :, 3]/2
+        params[:, :, :, :, 1, -1] += update[:, :, :, :, 3]/2
 
         n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
 
@@ -386,9 +386,9 @@ def finalize(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
                         d_m = d_map_arr[d, active_term]
 
                         inter0 = params[t_m, f_m, a, d_m, 0, 0]
-                        inter1 = params[t_m, f_m, a, d_m, 0, 1]
+                        inter1 = params[t_m, f_m, a, d_m, 0, -1]
                         delay0 = params[t_m, f_m, a, d_m, 1, 0]
-                        delay1 = params[t_m, f_m, a, d_m, 1, 1]
+                        delay1 = params[t_m, f_m, a, d_m, 1, -1]
 
                         cf = chan_freqs[f]
 
