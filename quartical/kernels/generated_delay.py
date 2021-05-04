@@ -186,16 +186,16 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
             fs = chan_starts[fi]
             fe = chan_stops[fi]
 
-            m_vec = valloc(complex_dtype)
-            mh_vec = valloc(complex_dtype)
-            r_vec = valloc(complex_dtype)
-            rh_vec = valloc(complex_dtype)
+            rop_pq = valloc(complex_dtype)
+            rop_qp = valloc(complex_dtype)
+            r_pq = valloc(complex_dtype)
+            r_qp = valloc(complex_dtype)
 
-            gains_a = valloc(complex_dtype, leading_dims=(n_gains,))
-            gains_b = valloc(complex_dtype, leading_dims=(n_gains,))
+            gains_p = valloc(complex_dtype, leading_dims=(n_gains,))
+            gains_q = valloc(complex_dtype, leading_dims=(n_gains,))
 
-            lmul_op_a = valloc(complex_dtype)
-            lmul_op_b = valloc(complex_dtype)
+            lop_pq = valloc(complex_dtype)
+            lop_qp = valloc(complex_dtype)
 
             tmp_jh_p = np.empty((n_gdir, n_ppa, n_ppa), dtype=complex_dtype)
             tmp_jh_q = np.empty((n_gdir, n_ppa, n_ppa), dtype=complex_dtype)
@@ -217,8 +217,8 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
 
                     for d in range(n_dir):
 
-                        set_identity(lmul_op_a)
-                        set_identity(lmul_op_b)
+                        set_identity(lop_pq)
+                        set_identity(lop_qp)
 
                         # Construct a small contiguous gain array.
                         for gi in range(n_gains):
@@ -228,66 +228,66 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
 
                             gain = gains[gi][t_m, f_m]
 
-                            iunpack(gains_a[gi], gain[a1_m, d_m])
-                            iunpack(gains_b[gi], gain[a2_m, d_m])
+                            iunpack(gains_p[gi], gain[a1_m, d_m])
+                            iunpack(gains_q[gi], gain[a2_m, d_m])
 
-                        imul_rweight(r, r_vec, row_weights, row_ind)
-                        iwmul(r_vec, w)
-                        iunpackct(rh_vec, r_vec)
+                        imul_rweight(r, r_pq, row_weights, row_ind)
+                        iwmul(r_pq, w)
+                        iunpackct(r_qp, r_pq)
 
                         m = model[row, f, d]
-                        imul_rweight(m, m_vec, row_weights, row_ind)
-                        iunpackct(mh_vec, m_vec)
+                        imul_rweight(m, rop_qp, row_weights, row_ind)
+                        iunpackct(rop_pq, rop_qp)
 
                         for g in all_terms:     # Unchanged
 
-                            gb = gains_b[g]
-                            v1_imul_v2(gb, mh_vec, mh_vec)
+                            g_q = gains_q[g]
+                            v1_imul_v2(g_q, rop_pq, rop_pq)
 
-                            ga = gains_a[g]
-                            v1_imul_v2(ga, m_vec, m_vec)
+                            g_p = gains_p[g]
+                            v1_imul_v2(g_p, rop_qp, rop_qp)
 
                         for g in gt_active:     # Unchanged
 
-                            ga = gains_a[g]
-                            v1_imul_v2ct(mh_vec, ga, mh_vec)
+                            g_p = gains_p[g]
+                            v1_imul_v2ct(rop_pq, g_p, rop_pq)
 
-                            gb = gains_b[g]
-                            v1_imul_v2ct(m_vec, gb, m_vec)
+                            g_q = gains_q[g]
+                            v1_imul_v2ct(rop_qp, g_q, rop_qp)
 
                         for g in lt_active:
 
-                            ga = gains_a[g]
-                            v1ct_imul_v2(ga, lmul_op_a, lmul_op_a)
+                            g_p = gains_p[g]
+                            v1ct_imul_v2(g_p, lop_pq, lop_pq)
 
-                            gb = gains_b[g]
-                            v1ct_imul_v2(gb, lmul_op_b, lmul_op_b)
+                            g_q = gains_q[g]
+                            v1ct_imul_v2(g_q, lop_qp, lop_qp)
 
                         t_m = t_map_arr[row_ind, active_term]
                         f_m = f_map_arr[f, active_term]
                         out_d = d_map_arr[active_term, d]
 
-                        ga = gains_a[active_term]
-                        accumulate_jhr(ga, r_vec, mh_vec, lmul_op_a,
+                        g_p = gains_p[active_term]
+                        accumulate_jhr(g_p, r_pq, rop_pq, lop_pq,
                                        jhr[t_m, f_m, a1_m, out_d], nu)
 
-                        jhmul(lmul_op_a, mh_vec, ga, nu, tmp_jh_p[out_d])
+                        jhmul(lop_pq, rop_pq, g_p, nu, tmp_jh_p[out_d])
 
-                        gb = gains_b[active_term]
-                        accumulate_jhr(gb, rh_vec, m_vec, lmul_op_b,
+                        g_q = gains_q[active_term]
+                        accumulate_jhr(g_q, r_qp, rop_qp, lop_qp,
                                        jhr[t_m, f_m, a2_m, out_d], nu)
 
-                        jhmul(lmul_op_b, m_vec, gb, nu, tmp_jh_q[out_d])
+                        jhmul(lop_qp, rop_qp, g_q, nu, tmp_jh_q[out_d])
 
                     for d in range(n_gdir):
 
-                        jhp = tmp_jh_p[d]
-                        jhj_sel = jhj[t_m, f_m, a1_m, d]
-                        jhwjmul(jhp, w, jhj_sel)
+                        jh_p = tmp_jh_p[d]
+                        jhj_p = jhj[t_m, f_m, a1_m, d]
+                        jhwjmul(jh_p, w, jhj_p)
 
-                        jhq = tmp_jh_q[d]
-                        jhj_sel = jhj[t_m, f_m, a2_m, d]
-                        jhwjmul(jhq, w, jhj_sel)
+                        jh_q = tmp_jh_q[d]
+                        jhj_q = jhj[t_m, f_m, a2_m, d]
+                        jhwjmul(jh_q, w, jhj_q)
         return
     return impl
 
