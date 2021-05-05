@@ -30,10 +30,6 @@ def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                    d_map_arr, corr_mode, active_term, inverse_gains, \
                    gains, flags, row_map, row_weights: literally(corr_mode)
 
-    compute_jhj_jhr = jhj_jhr
-    compute_update = update
-    finalize_update = finalize
-
     def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
              d_map_arr, corr_mode, active_term, inverse_gains,
              gains, flags, row_map, row_weights):
@@ -108,9 +104,9 @@ def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
-            a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
-            row_weights, active_term, corr_mode):
+def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
+                    a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
+                    row_weights, active_term, corr_mode):
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -147,6 +143,8 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                                                    n_fint,
                                                    n_chan)
 
+        # Determine loop variables based on where we are in the chain.
+        # gt means greater than (n>j) and lt means less than (n<j).
         all_terms, gt_active, lt_active = loop_var(n_gains, active_term)
 
         # Parallel over all solution intervals.
@@ -160,15 +158,15 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
             fs = chan_starts[fi]
             fe = chan_stops[fi]
 
-            m_vec = valloc(jhj.dtype)
-            mh_vec = valloc(jhj.dtype)
-            r_vec = valloc(jhj.dtype)
-            rh_vec = valloc(jhj.dtype)
+            rop_pq = valloc(jhj.dtype)  # Right-multiply operator for pq.
+            rop_qp = valloc(jhj.dtype)  # Right-multiply operator for qp.
+            r_pq = valloc(jhj.dtype)
+            r_qp = valloc(jhj.dtype)
 
-            gains_a = valloc(jhj.dtype, leading_dims=(n_gains,))
-            gains_b = valloc(jhj.dtype, leading_dims=(n_gains,))
-            igains_a = valloc(jhj.dtype, leading_dims=(n_gains,))
-            igains_b = valloc(jhj.dtype, leading_dims=(n_gains,))
+            gains_p = valloc(jhj.dtype, leading_dims=(n_gains,))
+            gains_q = valloc(jhj.dtype, leading_dims=(n_gains,))
+            igains_p = valloc(jhj.dtype, leading_dims=(n_gains,))
+            igains_q = valloc(jhj.dtype, leading_dims=(n_gains,))
 
             tmp_jh_p = valloc(jhj.dtype, leading_dims=(n_gdir,))
             tmp_jh_q = valloc(jhj.dtype, leading_dims=(n_gdir,))
@@ -197,68 +195,68 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                             gain = gains[gi][t_m, f_m]
                             inverse_gain = inverse_gains[gi][t_m, f_m]
 
-                            iunpack(gains_a[gi], gain[a1_m, d_m])
-                            iunpack(gains_b[gi], gain[a2_m, d_m])
-                            iunpack(igains_a[gi], inverse_gain[a1_m, d_m])
-                            iunpack(igains_b[gi], inverse_gain[a2_m, d_m])
+                            iunpack(gains_p[gi], gain[a1_m, d_m])
+                            iunpack(gains_q[gi], gain[a2_m, d_m])
+                            iunpack(igains_p[gi], inverse_gain[a1_m, d_m])
+                            iunpack(igains_q[gi], inverse_gain[a2_m, d_m])
 
-                        imul_rweight(r, r_vec, row_weights, row_ind)
-                        iwmul(r_vec, w)
-                        iunpackct(rh_vec, r_vec)
+                        imul_rweight(r, r_pq, row_weights, row_ind)
+                        iwmul(r_pq, w)
+                        iunpackct(r_qp, r_pq)
 
                         m = model[row, f, d]
-                        imul_rweight(m, m_vec, row_weights, row_ind)
-                        iunpackct(mh_vec, m_vec)
+                        imul_rweight(m, rop_qp, row_weights, row_ind)
+                        iunpackct(rop_pq, rop_qp)
 
                         for g in all_terms:
 
-                            gb = gains_b[g]
-                            v1_imul_v2(gb, mh_vec, mh_vec)
+                            g_q = gains_q[g]
+                            v1_imul_v2(g_q, rop_pq, rop_pq)
 
-                            ga = gains_a[g]
-                            v1_imul_v2(ga, m_vec, m_vec)
+                            g_p = gains_p[g]
+                            v1_imul_v2(g_p, rop_qp, rop_qp)
 
                         for g in gt_active:
 
-                            ga = gains_a[g]
-                            v1_imul_v2ct(mh_vec, ga, mh_vec)
+                            g_p = gains_p[g]
+                            v1_imul_v2ct(rop_pq, g_p, rop_pq)
 
-                            gb = gains_b[g]
-                            v1_imul_v2ct(m_vec, gb, m_vec)
+                            g_q = gains_q[g]
+                            v1_imul_v2ct(rop_qp, g_q, rop_qp)
 
                         for g in lt_active:
 
-                            gai = igains_a[g]
-                            v1_imul_v2(gai, r_vec, r_vec)
+                            ig_p = igains_p[g]
+                            v1_imul_v2(ig_p, r_pq, r_pq)
 
-                            gbi = igains_b[g]
-                            v1_imul_v2(gbi, rh_vec, rh_vec)
+                            ig_q = igains_q[g]
+                            v1_imul_v2(ig_q, r_qp, r_qp)
 
                         t_m = t_map_arr[row_ind, active_term]
                         f_m = f_map_arr[f, active_term]
                         out_d = d_map_arr[active_term, d]
 
-                        v1_imul_v2(r_vec, mh_vec, r_vec)
+                        v1_imul_v2(r_pq, rop_pq, r_pq)
 
-                        iadd(jhr[t_m, f_m, a1_m, out_d], r_vec)
-                        iadd(tmp_jh_p[out_d], mh_vec)
+                        iadd(jhr[t_m, f_m, a1_m, out_d], r_pq)
+                        iadd(tmp_jh_p[out_d], rop_pq)
 
-                        v1_imul_v2(rh_vec, m_vec, rh_vec)
+                        v1_imul_v2(r_qp, rop_qp, r_qp)
 
-                        iadd(jhr[t_m, f_m, a2_m, out_d], rh_vec)
-                        iadd(tmp_jh_q[out_d], m_vec)
+                        iadd(jhr[t_m, f_m, a2_m, out_d], r_qp)
+                        iadd(tmp_jh_q[out_d], rop_qp)
 
                     for d in range(n_gdir):
 
-                        jhp = tmp_jh_p[d]
-                        jhj_vec = v1ct_wmul_v2(jhp, jhp, w)
-                        jhj_sel = jhj[t_m, f_m, a1_m, d]
-                        iadd(jhj_sel, jhj_vec)
+                        jh_p = tmp_jh_p[d]
+                        jhj_vec = v1ct_wmul_v2(jh_p, jh_p, w)
+                        jhj_p = jhj[t_m, f_m, a1_m, d]
+                        iadd(jhj_p, jhj_vec)
 
-                        jhq = tmp_jh_q[d]
-                        jhj_vec = v1ct_wmul_v2(jhq, jhq, w)
-                        jhj_sel = jhj[t_m, f_m, a2_m, d]
-                        iadd(jhj_sel, jhj_vec)
+                        jh_q = tmp_jh_q[d]
+                        jhj_vec = v1ct_wmul_v2(jh_q, jh_q, w)
+                        jhj_q = jhj[t_m, f_m, a2_m, d]
+                        iadd(jhj_q, jhj_vec)
 
         return
     return impl
@@ -266,7 +264,7 @@ def jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def update(update, jhj, jhr, corr_mode):
+def compute_update(update, jhj, jhr, corr_mode):
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     compute_det = factories.compute_det_factory(corr_mode)
@@ -298,7 +296,7 @@ def update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize(update, gain, i_num, dd_term, corr_mode):
+def finalize_update(update, gain, i_num, dd_term, corr_mode):
 
     def impl(update, gain, i_num, dd_term, corr_mode):
         if dd_term:
