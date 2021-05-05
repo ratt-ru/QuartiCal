@@ -1,6 +1,6 @@
 from collections import namedtuple
 from quartical.kernels.complex import complex_solver
-from quartical.kernels.phase import phase_solver
+from quartical.kernels.generated_phase import phase_solver
 from quartical.kernels.generated_delay import delay_solver
 from quartical.kernels.kalman import kalman_solver
 from quartical.kernels.generated import generated_solver
