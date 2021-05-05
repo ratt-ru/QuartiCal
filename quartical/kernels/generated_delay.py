@@ -55,8 +55,6 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
         real_dtype = gains[active_term].real.dtype
 
-        # TODO: This n_param**2 component can be optimised but that may
-        # introduce unecessary complexity.
         jhj_shape = (n_tint, n_fint, n_ant, n_dir, n_ppa, n_ppa)
         jhj = np.empty(jhj_shape, dtype=real_dtype)
         jhr_shape = (n_tint, n_fint, n_ant, n_dir, n_ppa)
@@ -139,9 +137,9 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
     valloc = factories.valloc_factory(corr_mode)
     make_loop_vars = factories.loop_var_factory(corr_mode)
     set_identity = factories.set_identity_factory(corr_mode)
-    accumulate_jhr = jhr_factory(corr_mode)
-    jhmul = special_jh_mul_factory(corr_mode)
-    jhwjmul = special_jh_wmul_j_factory(corr_mode)
+    accumulate_jhr = accumulate_jhr_factory(corr_mode)
+    compute_jh = compute_jh_factory(corr_mode)
+    compute_jhwj = compute_jhwj_factory(corr_mode)
 
     def impl(jhj, jhr, model, gains, inverse_gains, chan_freqs,
              residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
@@ -169,6 +167,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                                                    n_fint,
                                                    n_chan)
 
+        # Determine loop variables based on where we are in the chain.
+        # gt means greater than (n>j) and lt means less than (n<j).
         all_terms, gt_active, lt_active = make_loop_vars(n_gains, active_term)
 
         # Parallel over all solution intervals.
@@ -182,16 +182,15 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
             fs = chan_starts[fi]
             fe = chan_stops[fi]
 
-            rop_pq = valloc(complex_dtype)
-            rop_qp = valloc(complex_dtype)
+            rop_pq = valloc(complex_dtype)  # Right-multiply operator for pq.
+            rop_qp = valloc(complex_dtype)  # Right-multiply operator for qp.
+            lop_pq = valloc(complex_dtype)  # Left-multiply operator for pq.
+            lop_qp = valloc(complex_dtype)  # Left-multiply operator for qp.
             r_pq = valloc(complex_dtype)
             r_qp = valloc(complex_dtype)
 
             gains_p = valloc(complex_dtype, leading_dims=(n_gains,))
             gains_q = valloc(complex_dtype, leading_dims=(n_gains,))
-
-            lop_pq = valloc(complex_dtype)
-            lop_qp = valloc(complex_dtype)
 
             tmp_jh_p = np.empty((n_gdir, n_ppa, n_ppa), dtype=complex_dtype)
             tmp_jh_q = np.empty((n_gdir, n_ppa, n_ppa), dtype=complex_dtype)
@@ -216,7 +215,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                         set_identity(lop_pq)
                         set_identity(lop_qp)
 
-                        # Construct a small contiguous gain array.
+                        # Construct a small contiguous gain array. This makes
+                        # the single term case fractionally slower.
                         for gi in range(n_gains):
                             d_m = d_map_arr[gi, d]  # Broadcast dir.
                             t_m = t_map_arr[row_ind, gi]
@@ -235,7 +235,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                         imul_rweight(m, rop_qp, row_weights, row_ind)
                         iunpackct(rop_pq, rop_qp)
 
-                        for g in all_terms:     # Unchanged
+                        for g in all_terms:
 
                             g_q = gains_q[g]
                             v1_imul_v2(g_q, rop_pq, rop_pq)
@@ -243,7 +243,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                             g_p = gains_p[g]
                             v1_imul_v2(g_p, rop_qp, rop_qp)
 
-                        for g in gt_active:     # Unchanged
+                        for g in gt_active:
 
                             g_p = gains_p[g]
                             v1_imul_v2ct(rop_pq, g_p, rop_pq)
@@ -267,23 +267,23 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                         accumulate_jhr(g_p, r_pq, rop_pq, lop_pq,
                                        jhr[t_m, f_m, a1_m, out_d], nu)
 
-                        jhmul(lop_pq, rop_pq, g_p, nu, tmp_jh_p[out_d])
+                        compute_jh(lop_pq, rop_pq, g_p, nu, tmp_jh_p[out_d])
 
                         g_q = gains_q[active_term]
                         accumulate_jhr(g_q, r_qp, rop_qp, lop_qp,
                                        jhr[t_m, f_m, a2_m, out_d], nu)
 
-                        jhmul(lop_qp, rop_qp, g_q, nu, tmp_jh_q[out_d])
+                        compute_jh(lop_qp, rop_qp, g_q, nu, tmp_jh_q[out_d])
 
                     for d in range(n_gdir):
 
                         jh_p = tmp_jh_p[d]
                         jhj_p = jhj[t_m, f_m, a1_m, d]
-                        jhwjmul(jh_p, w, jhj_p)
+                        compute_jhwj(jh_p, w, jhj_p)
 
                         jh_q = tmp_jh_q[d]
                         jhj_q = jhj[t_m, f_m, a2_m, d]
-                        jhwjmul(jh_q, w, jhj_q)
+                        compute_jhwj(jh_q, w, jhj_q)
         return
     return impl
 
@@ -312,6 +312,8 @@ def compute_update(update, jhj, jhr, corr_mode):
                             else:
                                 jhj_inv = np.linalg.solve(jhj_sel, ident)
 
+                            # TODO: This complains as linalg.solve produces
+                            # F_CONTIGUOUS output.
                             update[t, f, a, d] = jhj_inv.dot(jhr[t, f, a, d])
     else:
         def impl(update, jhj, jhr, corr_mode):
@@ -393,7 +395,7 @@ def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
     return impl
 
 
-def jhr_factory(mode):
+def accumulate_jhr_factory(mode):
 
     unpack = factories.unpack_factory(mode)
     unpackct = factories.unpackct_factory(mode)
@@ -408,13 +410,13 @@ def jhr_factory(mode):
             g_00, g_01, g_10, g_11 = unpackct(gain)
             v_00, v_01, v_10, v_11 = unpack(res)
 
-            upd00 = (-1j*g_00*v_00).real
-            upd11 = (-1j*g_11*v_11).real
+            upd_00 = (-1j*g_00*v_00).real
+            upd_11 = (-1j*g_11*v_11).real
 
-            jhr[0] += upd00
-            jhr[1] += nu*upd00
-            jhr[2] += upd11
-            jhr[3] += nu*upd11
+            jhr[0] += upd_00
+            jhr[1] += nu*upd_00
+            jhr[2] += upd_11
+            jhr[3] += nu*upd_11
     else:
         def impl(gain, res, rop, lop, jhr, nu):
 
@@ -423,17 +425,17 @@ def jhr_factory(mode):
             g_00, g_11 = unpackct(gain)
             v_00, v_11 = unpack(res)
 
-            upd00 = (-1j*g_00*v_00).real
-            upd11 = (-1j*g_11*v_11).real
+            upd_00 = (-1j*g_00*v_00).real
+            upd_11 = (-1j*g_11*v_11).real
 
-            jhr[0] += upd00
-            jhr[1] += nu*upd00
-            jhr[2] += upd11
-            jhr[3] += nu*upd11
+            jhr[0] += upd_00
+            jhr[1] += nu*upd_00
+            jhr[2] += upd_11
+            jhr[3] += nu*upd_11
     return factories.qcjit(impl)
 
 
-def special_jh_mul_factory(mode):
+def compute_jh_factory(mode):
 
     unpack = factories.unpack_factory(mode)
     unpackct = factories.unpackct_factory(mode)
@@ -505,7 +507,7 @@ def special_jh_mul_factory(mode):
     return factories.qcjit(impl)
 
 
-def special_jh_wmul_j_factory(mode):
+def compute_jhwj_factory(mode):
 
     unpack = factories.unpack_factory(mode)
     unpackct = factories.unpackct_factory(mode)
