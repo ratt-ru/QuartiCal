@@ -21,9 +21,9 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                     d_map_arr, corr_mode, active_term, inverse_gains,
-                     gains, flags, row_map, row_weights):
+def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
+                   d_map_arr, corr_mode, active_term, inverse_gains,
+                   gains, flags, row_map, row_weights):
 
     if not isinstance(corr_mode, types.Literal):
         return lambda model, data, a1, a2, weights, t_map_arr, f_map_arr, \
