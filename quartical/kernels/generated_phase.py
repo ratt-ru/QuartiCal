@@ -65,14 +65,6 @@ def phase_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             else:
                 residual = data
 
-            if dd_term:
-                residual = compute_residual(data, model, gains, a1, a2,
-                                            t_map_arr, f_map_arr, d_map_arr,
-                                            row_map, row_weights,
-                                            corr_mode)
-            else:
-                residual = data
-
             compute_jhj_jhr(jhj,
                             jhr,
                             model,
@@ -189,8 +181,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
             gains_p = valloc(complex_dtype, leading_dims=(n_gains,))
             gains_q = valloc(complex_dtype, leading_dims=(n_gains,))
 
-            tmp_jh_p = np.empty((n_gdir, n_ppa, 4), dtype=complex_dtype)
-            tmp_jh_q = np.empty((n_gdir, n_ppa, 4), dtype=complex_dtype)
+            tmp_jh_p = np.empty((n_gdir, n_ppa, n_corr), dtype=complex_dtype)
+            tmp_jh_q = np.empty((n_gdir, n_ppa, n_corr), dtype=complex_dtype)
 
             for row_ind in range(rs, re):
 
@@ -456,7 +448,7 @@ def compute_jh_factory(mode):
 
             # (param_per_antenna, 4) result of special kronecker product.
             jh[0, 0] += r_00*drv_00
-            jh[1, 3] += r_11*drv_13
+            jh[1, 1] += r_11*drv_13
     return factories.qcjit(impl)
 
 
@@ -490,12 +482,12 @@ def compute_jhwj_factory(mode):
             w1_00, w1_11 = unpack(w)
 
             jh_00 = jh[0, 0]
-            jh_13 = jh[1, 3]
+            jh_11 = jh[1, 1]
 
             # Conjugate transpose terms.
             j_00 = jh_00.conjugate()
-            j_31 = jh_13.conjugate()
+            j_11 = jh_11.conjugate()
 
             jhj[0, 0] += (jh_00*w1_00*j_00).real
-            jhj[1, 1] += (jh_13*w1_11*j_31).real
+            jhj[1, 1] += (jh_11*w1_11*j_11).real
     return factories.qcjit(impl)

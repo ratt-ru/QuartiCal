@@ -192,8 +192,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
             gains_p = valloc(complex_dtype, leading_dims=(n_gains,))
             gains_q = valloc(complex_dtype, leading_dims=(n_gains,))
 
-            tmp_jh_p = np.empty((n_gdir, n_ppa, n_ppa), dtype=complex_dtype)
-            tmp_jh_q = np.empty((n_gdir, n_ppa, n_ppa), dtype=complex_dtype)
+            tmp_jh_p = np.empty((n_gdir, n_ppa, n_corr), dtype=complex_dtype)
+            tmp_jh_q = np.empty((n_gdir, n_ppa, n_corr), dtype=complex_dtype)
 
             for row_ind in range(rs, re):
 
@@ -502,8 +502,8 @@ def compute_jh_factory(mode):
             # (param_per_antenna, 4) result of special kronecker product.
             jh[0, 0] += r_00*drv_00
             jh[1, 0] += r_00*drv_10
-            jh[2, 3] += r_11*drv_23
-            jh[3, 3] += r_11*drv_33
+            jh[2, 1] += r_11*drv_23
+            jh[3, 1] += r_11*drv_33
     return factories.qcjit(impl)
 
 
@@ -538,28 +538,28 @@ def compute_jhwj_factory(mode):
 
             jh_00 = jh[0, 0]
             jh_10 = jh[1, 0]
-            jh_23 = jh[2, 3]
-            jh_33 = jh[3, 3]
+            jh_21 = jh[2, 1]
+            jh_31 = jh[3, 1]
 
             # Conjugate transpose terms.
             j_00 = jh_00.conjugate()
             j_01 = jh_10.conjugate()
-            j_32 = jh_23.conjugate()
-            j_33 = jh_33.conjugate()
+            j_12 = jh_21.conjugate()
+            j_13 = jh_31.conjugate()
 
             # Multiply in the weights.
             jh_00 *= w1_00
             jh_10 *= w1_00
-            jh_23 *= w1_11
-            jh_33 *= w1_11
+            jh_21 *= w1_11
+            jh_31 *= w1_11
 
             jhj[0, 0] += (jh_00*j_00).real
             jhj[0, 1] += (jh_00*j_01).real
             jhj[1, 0] += (jh_10*j_00).real
             jhj[1, 1] += (jh_10*j_01).real
 
-            jhj[2, 2] += (jh_23*j_32).real
-            jhj[2, 3] += (jh_23*j_33).real
-            jhj[3, 2] += (jh_33*j_32).real
-            jhj[3, 3] += (jh_33*j_33).real
+            jhj[2, 2] += (jh_21*j_12).real
+            jhj[2, 3] += (jh_21*j_13).real
+            jhj[3, 2] += (jh_31*j_12).real
+            jhj[3, 3] += (jh_31*j_13).real
     return factories.qcjit(impl)
