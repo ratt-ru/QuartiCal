@@ -1,10 +1,17 @@
 from ast import literal_eval
 from collections import defaultdict
+import itertools
+import logging
 
 from distributed.diagnostics.plugin import SchedulerPlugin
+import dask
 from dask.core import reverse_dict
 from dask.base import tokenize
 from dask.order import order
+
+
+log = logging.getLogger(__file__)
+
 
 def unravel_deps(hlg_deps, name, unravelled_deps=None):
     """Recursively construct a set of all dependencies for a specific task."""
@@ -108,11 +115,13 @@ class BreadthFirstSearch:
             r._annotations[COLOUR] = self.colour
 
         self.frontier = self.roots.copy()
-        self.dsk = {r.key: None for r in self.frontier}
+        self.dsk = {r.key: () for r in self.frontier}
+        self.visited = set()
         self.n = 0
 
     def iterate(self):
         colour = self.colour
+        from operator import add
 
         try:
             # Remove first node in the frontier
@@ -121,16 +130,18 @@ class BreadthFirstSearch:
             raise StopIteration
         else:
             assert colour == node._annotations[COLOUR]
+            self.visited.add(node)
 
-        for child in node.dependents:
-            if child in self.frontier:
+        for child in itertools.chain(node.dependents, node.dependencies):
+            if child in self.frontier or child in self.visited:
                 continue
 
-            child_colour = child._annotations.get(COLOUR, None)
+            if child._annotations.get(COLOUR, None) is not None:
+                continue
 
-            if child_colour is None:
-                child._annotations[COLOUR] = colour
-                self.frontier.append(child)
+            child._annotations[COLOUR] = colour
+            self.frontier.append(child)
+            self.dsk[child.key] = (add, *node.dependencies)
 
         self.n += 1
         return node
@@ -149,13 +160,15 @@ class BreadthFirstSearch:
 
 
 class ColouringPlugin(SchedulerPlugin):
-    def update_graph(self, scheduler, dsk=None,
+    def update_graph(self, scheduler, tasks=None,
                      annotations=None, dependencies=None,
                      **kw):
+        dsk = tasks
 
         if not annotations:
             return
 
+        tasks = scheduler.tasks
         partitions = defaultdict(list)
 
         for k, a in annotations.get("__dask_array__", {}).items():
@@ -176,7 +189,6 @@ class ColouringPlugin(SchedulerPlugin):
             partitions[pkey].append(k)
 
         searches = []
-        tasks = scheduler.tasks
 
         for colour, frontier in enumerate(partitions.values()):
             roots = [tasks.get(k) for k in frontier]
@@ -206,16 +218,40 @@ class ColouringPlugin(SchedulerPlugin):
         workers = list(scheduler.workers.keys())
         n_workers = len(workers)
 
+        colours = {}
+
         for s, bfs in enumerate(searches):
             w = {workers[int(n_workers * s / len(searches))]}
 
             for k, p in bfs.order.items():
-                priority = float(s)*10.0 + p / 1000.0
+                priority = float(1 + s)*10.0 + p / 1000.0
+                # priority = float(1 + s)*10.0
                 t = tasks.get(k)
                 t._priority = (priority,) + t.priority[1:]
                 t._worker_restrictions = w
                 t._loose_restrictions = False
 
+                colours[k] = priority
+
+        if False:
+            # Graph visualization and debugging
+            import pickle
+            import logging
+            from distributed.protocol import deserialize, Serialized
+
+            dsk2 = {}
+
+            for k, v in dsk.items():
+                if isinstance(v, dict):
+                    dsk2[k] = (pickle.loads(v["function"]), *dependencies[k])
+                elif isinstance(v, Serialized):
+                    dsk2[k] = deserialize(v.header, v.frames)
+                else:
+                    dsk2[k] = v
+
+            dask.visualize(dsk2, color=colours, filename="graph.pdf")
+
+        log.info("Plugin done")
 
 def install_plugin(dask_scheduler=None, **kwargs):
     dask_scheduler.add_plugin(ColouringPlugin(**kwargs), idempotent=True)
