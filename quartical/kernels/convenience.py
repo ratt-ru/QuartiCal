@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-from numba.extending import overload, register_jitable
+from numba.extending import overload
 from numba import jit, types
 import numpy as np
 
 
 # Handy alias for functions that need to be jitted in this way.
-injit = jit(nogil=True,
+qcjit = jit(nogil=True,
             nopython=True,
             fastmath=True,
             cache=True,
@@ -75,7 +75,7 @@ def _get_row(row_ind, row_map):
         return impl
 
 
-def mul_rweight(vis, weight, ind):
+def old_mul_rweight(vis, weight, ind):
     """Multiplies the row weight into a visiblity if weight is not None.
 
     Args:
@@ -89,8 +89,8 @@ def mul_rweight(vis, weight, ind):
     return
 
 
-@overload(mul_rweight, inline="always")
-def _mul_rweight(vis, weight, ind):
+@overload(old_mul_rweight, inline="always")
+def _old_mul_rweight(vis, weight, ind):
 
     if isinstance(weight, types.NoneType):
         def impl(vis, weight, ind):
@@ -102,7 +102,7 @@ def _mul_rweight(vis, weight, ind):
         return impl
 
 
-@injit
+@qcjit
 def get_chan_extents(f_map_arr, active_term, n_fint, n_chan):
     """Given the frequency mappings, determines the start/stop indices."""
 
@@ -121,7 +121,7 @@ def get_chan_extents(f_map_arr, active_term, n_fint, n_chan):
     return chan_starts, chan_stops
 
 
-@injit
+@qcjit
 def get_row_extents(t_map_arr, active_term, n_tint):
     """Given the time mappings, determines the row start/stop indices."""
 
@@ -138,84 +138,3 @@ def get_row_extents(t_map_arr, active_term, n_tint):
         row_stops[:-1] = row_starts[1:]
 
     return row_starts, row_stops
-
-
-@register_jitable(inline="always")
-def _v1_mul_v2(v1, v2):
-
-    v100, v101, v110, v111 = _unpack(v1)
-    v200, v201, v210, v211 = _unpack(v2)
-
-    v300 = (v100*v200 + v101*v210)
-    v301 = (v100*v201 + v101*v211)
-    v310 = (v110*v200 + v111*v210)
-    v311 = (v110*v201 + v111*v211)
-
-    return v300, v301, v310, v311
-
-
-@register_jitable(inline="always")
-def _v1_mul_v2ct(v1, v2):
-
-    v100, v101, v110, v111 = _unpack(v1)
-    v200, v201, v210, v211 = _unpack_ct(v2)
-
-    v300 = (v100*v200 + v101*v210)
-    v301 = (v100*v201 + v101*v211)
-    v310 = (v110*v200 + v111*v210)
-    v311 = (v110*v201 + v111*v211)
-
-    return v300, v301, v310, v311
-
-
-@register_jitable(inline="always")
-def _v1_wmul_v2ct(v1, v2, w1):
-
-    v100, v101, v110, v111 = _unpack(v1)
-    v200, v201, v210, v211 = _unpack_ct(v2)
-    w100, w101, w110, w111 = _unpack(w1)
-
-    v300 = (v100*w100*v200 + v101*w111*v210)
-    v301 = (v100*w100*v201 + v101*w111*v211)
-    v310 = (v110*w100*v200 + v111*w111*v210)
-    v311 = (v110*w100*v201 + v111*w111*v211)
-
-    return v300, v301, v310, v311
-
-
-@register_jitable(inline="always")
-def _v1ct_wmul_v2(v1, v2, w1):
-
-    v100, v101, v110, v111 = _unpack_ct(v1)
-    v200, v201, v210, v211 = _unpack(v2)
-    w100, w101, w110, w111 = _unpack(w1)
-
-    v300 = (v100*w100*v200 + v101*w111*v210)
-    v301 = (v100*w100*v201 + v101*w111*v211)
-    v310 = (v110*w100*v200 + v111*w111*v210)
-    v311 = (v110*w100*v201 + v111*w111*v211)
-
-    return v300, v301, v310, v311
-
-
-@register_jitable(inline="always")
-def _unpack(vec):
-    if len(vec) == 4:
-        return vec[0], vec[1], vec[2], vec[3]
-    elif len(vec) == 2:
-        return vec[0], 0, 0, vec[1]
-    else:
-        raise ValueError("Gain shape not understood.")
-
-
-@register_jitable(inline="always")
-def _unpack_ct(vec):
-    if len(vec) == 4:
-        return vec[0].conjugate(), \
-               vec[2].conjugate(), \
-               vec[1].conjugate(), \
-               vec[3].conjugate()
-    elif len(vec) == 2:
-        return vec[0].conjugate(), 0, 0, vec[1].conjugate()
-    else:
-        raise ValueError("Gain shape not understood.")

@@ -3,7 +3,7 @@ import numpy as np
 from numba import prange, literally, generated_jit, types, jit
 from numba.extending import register_jitable
 from numba.typed import List
-from quartical.kernels.convenience import get_dims, get_row, mul_rweight
+from quartical.kernels.convenience import get_dims, get_row, old_mul_rweight
 
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
@@ -132,8 +132,10 @@ def residual_diag(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                     m00 = r00
                     m11 = r11
 
-                residual[row, f, 0] -= mul_rweight(r00, row_weights, row_ind)
-                residual[row, f, 1] -= mul_rweight(r11, row_weights, row_ind)
+                residual[row, f, 0] -= \
+                    old_mul_rweight(r00, row_weights, row_ind)
+                residual[row, f, 1] -= \
+                    old_mul_rweight(r11, row_weights, row_ind)
 
     return residual
 
@@ -193,10 +195,14 @@ def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                     m10 = r10
                     m11 = r11
 
-                residual[row, f, 0] -= mul_rweight(r00, row_weights, row_ind)
-                residual[row, f, 1] -= mul_rweight(r01, row_weights, row_ind)
-                residual[row, f, 2] -= mul_rweight(r10, row_weights, row_ind)
-                residual[row, f, 3] -= mul_rweight(r11, row_weights, row_ind)
+                residual[row, f, 0] -= \
+                    old_mul_rweight(r00, row_weights, row_ind)
+                residual[row, f, 1] -= \
+                    old_mul_rweight(r01, row_weights, row_ind)
+                residual[row, f, 2] -= \
+                    old_mul_rweight(r10, row_weights, row_ind)
+                residual[row, f, 3] -= \
+                    old_mul_rweight(r11, row_weights, row_ind)
 
     return residual
 
@@ -262,9 +268,9 @@ def corrected_residual_diag(residual, gain_list, a1, a2, t_map_arr,
                 cr11 = g11*cr11*gh11
 
             corrected_residual[row, f, 0] += \
-                mul_rweight(cr00, row_weights, row_ind)
+                old_mul_rweight(cr00, row_weights, row_ind)
             corrected_residual[row, f, 1] += \
-                mul_rweight(cr11, row_weights, row_ind)
+                old_mul_rweight(cr11, row_weights, row_ind)
 
     return corrected_residual
 
@@ -325,13 +331,13 @@ def corrected_residual_full(residual, gain_list, a1, a2, t_map_arr,
                 cr11 = (gr10*gh01 + gr11*gh11)
 
             corrected_residual[row, f, 0] += \
-                mul_rweight(cr00, row_weights, row_ind)
+                old_mul_rweight(cr00, row_weights, row_ind)
             corrected_residual[row, f, 1] += \
-                mul_rweight(cr01, row_weights, row_ind)
+                old_mul_rweight(cr01, row_weights, row_ind)
             corrected_residual[row, f, 2] += \
-                mul_rweight(cr10, row_weights, row_ind)
+                old_mul_rweight(cr10, row_weights, row_ind)
             corrected_residual[row, f, 3] += \
-                mul_rweight(cr11, row_weights, row_ind)
+                old_mul_rweight(cr11, row_weights, row_ind)
 
     return corrected_residual
 

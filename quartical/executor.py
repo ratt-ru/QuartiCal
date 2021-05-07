@@ -93,7 +93,7 @@ def _execute(exitstack):
 
     if opts.parallel_scheduler == "distributed":
         # TODO: Dirty hack to coerce coordinate writes into graph. This should
-        # should probably be handled by daskms. Requires disabled optimization.
+        # should probably be handled by daskms.
         gain_writes = [dask.delayed(bool)(gw) for gw in gain_writes]
 
     t0 = time.time()

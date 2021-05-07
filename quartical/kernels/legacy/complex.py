@@ -6,13 +6,9 @@ from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
 from quartical.kernels.convenience import (get_row,
-                                           mul_rweight,
+                                           old_mul_rweight as mul_rweight,
                                            get_chan_extents,
-                                           get_row_extents,
-                                           _v1_mul_v2,
-                                           _v1_mul_v2ct,
-                                           _v1ct_wmul_v2,
-                                           _unpack)
+                                           get_row_extents)
 from collections import namedtuple
 
 
@@ -26,9 +22,9 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                     d_map_arr, corr_mode, active_term, inverse_gains,
-                     gains, flags, row_map, row_weights):
+def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
+                   d_map_arr, corr_mode, active_term, inverse_gains,
+                   gains, flags, row_map, row_weights):
 
     if not isinstance(corr_mode, types.Literal):
         return lambda model, data, a1, a2, weights, t_map_arr, f_map_arr, \
@@ -43,8 +39,6 @@ def generated_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         compute_jhj_jhr = jhj_jhr_full
         compute_update = update_full
         finalize_update = finalize_full
-
-    print("HELLO!")
 
     def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
              d_map_arr, corr_mode, active_term, inverse_gains,
@@ -341,10 +335,6 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
         tmp_jh_p = np.zeros((n_gdir, n_corr), dtype=jhj.dtype)
         tmp_jh_q = np.zeros((n_gdir, n_corr), dtype=jhj.dtype)
-        m_vec = np.empty((4,), dtype=jhj.dtype)
-        mh_vec = np.empty((4,), dtype=jhj.dtype)
-        r_vec = np.empty((4,), dtype=jhj.dtype)
-        rh_vec = np.empty((4,), dtype=jhj.dtype)
 
         for row_ind in range(rs, re):
 
@@ -356,8 +346,11 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                 r = residual[row, f]
                 w = weights[row, f]  # Consider a map?
 
-                # We don't use the off-diagonal weights - may change.
-                w00, _, _, w11 = _unpack(w)
+                w0 = w[0]
+                # w1 = w[1]  # We do not use the off diagonal weights.
+                # w2 = w[2]  # We do not use the off diagonal weights.
+                w3 = w[3]
+
                 tmp_jh_p[:, :] = 0
                 tmp_jh_q[:, :] = 0
 
@@ -365,27 +358,27 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                     out_d = d_map_arr[active_term, d]
 
-                    r_vec[0] = w00*mul_rweight(r[0], row_weights, row_ind)
-                    r_vec[1] = w00*mul_rweight(r[1], row_weights, row_ind)
-                    r_vec[2] = w11*mul_rweight(r[2], row_weights, row_ind)
-                    r_vec[3] = w11*mul_rweight(r[3], row_weights, row_ind)
+                    r00 = w0*mul_rweight(r[0], row_weights, row_ind)
+                    r01 = w0*mul_rweight(r[1], row_weights, row_ind)
+                    r10 = w3*mul_rweight(r[2], row_weights, row_ind)
+                    r11 = w3*mul_rweight(r[3], row_weights, row_ind)
 
-                    rh_vec[0] = r_vec[0].conjugate()
-                    rh_vec[1] = r_vec[2].conjugate()
-                    rh_vec[2] = r_vec[1].conjugate()
-                    rh_vec[3] = r_vec[3].conjugate()
+                    rh00 = r00.conjugate()
+                    rh01 = r10.conjugate()
+                    rh10 = r01.conjugate()
+                    rh11 = r11.conjugate()
 
                     m = model[row, f, d]
 
-                    m_vec[0] = mul_rweight(m[0], row_weights, row_ind)
-                    m_vec[1] = mul_rweight(m[1], row_weights, row_ind)
-                    m_vec[2] = mul_rweight(m[2], row_weights, row_ind)
-                    m_vec[3] = mul_rweight(m[3], row_weights, row_ind)
+                    m00 = mul_rweight(m[0], row_weights, row_ind)
+                    m01 = mul_rweight(m[1], row_weights, row_ind)
+                    m10 = mul_rweight(m[2], row_weights, row_ind)
+                    m11 = mul_rweight(m[3], row_weights, row_ind)
 
-                    mh_vec[0] = m_vec[0].conjugate()
-                    mh_vec[1] = m_vec[2].conjugate()
-                    mh_vec[2] = m_vec[1].conjugate()
-                    mh_vec[3] = m_vec[3].conjugate()
+                    mh00 = m00.conjugate()
+                    mh01 = m10.conjugate()
+                    mh10 = m01.conjugate()
+                    mh11 = m11.conjugate()
 
                     for g in range(n_gains - 1, -1, -1):
 
@@ -394,12 +387,20 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        jh00, jh01, jh10, jh11 = _v1_mul_v2(gb, mh_vec)
+                        g00 = gb[0]
+                        g01 = gb[1]
+                        g10 = gb[2]
+                        g11 = gb[3]
 
-                        mh_vec[0] = jh00
-                        mh_vec[1] = jh01
-                        mh_vec[2] = jh10
-                        mh_vec[3] = jh11
+                        jh00 = (g00*mh00 + g01*mh10)
+                        jh01 = (g00*mh01 + g01*mh11)
+                        jh10 = (g10*mh00 + g11*mh10)
+                        jh11 = (g10*mh01 + g11*mh11)
+
+                        mh00 = jh00
+                        mh01 = jh01
+                        mh10 = jh10
+                        mh11 = jh11
 
                     for g in range(n_gains - 1, active_term, -1):
 
@@ -408,12 +409,20 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        jh00, jh01, jh10, jh11 = _v1_mul_v2ct(mh_vec, ga)
+                        gh00 = ga[0].conjugate()
+                        gh01 = ga[2].conjugate()
+                        gh10 = ga[1].conjugate()
+                        gh11 = ga[3].conjugate()
 
-                        mh_vec[0] = jh00
-                        mh_vec[1] = jh01
-                        mh_vec[2] = jh10
-                        mh_vec[3] = jh11
+                        jh00 = (mh00*gh00 + mh01*gh10)
+                        jh01 = (mh00*gh01 + mh01*gh11)
+                        jh10 = (mh10*gh00 + mh11*gh10)
+                        jh11 = (mh10*gh01 + mh11*gh11)
+
+                        mh00 = jh00
+                        mh01 = jh01
+                        mh10 = jh10
+                        mh11 = jh11
 
                     for g in range(active_term):
 
@@ -422,22 +431,28 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gai = inverse_gains[g][t_m, f_m, a1_m, d_m]
 
-                        jhr00, jhr01, jhr10, jhr11 = _v1_mul_v2(gai, r_vec)
+                        ginv00 = gai[0]
+                        ginv01 = gai[1]
+                        ginv10 = gai[2]
+                        ginv11 = gai[3]
 
-                        r_vec[0] = jhr00
-                        r_vec[1] = jhr01
-                        r_vec[2] = jhr10
-                        r_vec[3] = jhr11
+                        jhr00 = (ginv00*r00 + ginv01*r10)
+                        jhr01 = (ginv00*r01 + ginv01*r11)
+                        jhr10 = (ginv10*r00 + ginv11*r10)
+                        jhr11 = (ginv10*r01 + ginv11*r11)
+
+                        r00 = jhr00
+                        r01 = jhr01
+                        r10 = jhr10
+                        r11 = jhr11
 
                     t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
 
-                    jhr00, jhr01, jhr10, jhr11 = _v1_mul_v2(r_vec, mh_vec)
-
-                    jhr[t_m, f_m, a1_m, out_d, 0] += jhr00
-                    jhr[t_m, f_m, a1_m, out_d, 1] += jhr01
-                    jhr[t_m, f_m, a1_m, out_d, 2] += jhr10
-                    jhr[t_m, f_m, a1_m, out_d, 3] += jhr11
+                    jhr[t_m, f_m, a1_m, out_d, 0] += (r00*jh00 + r01*jh10)
+                    jhr[t_m, f_m, a1_m, out_d, 1] += (r00*jh01 + r01*jh11)
+                    jhr[t_m, f_m, a1_m, out_d, 2] += (r10*jh00 + r11*jh10)
+                    jhr[t_m, f_m, a1_m, out_d, 3] += (r10*jh01 + r11*jh11)
 
                     tmp_jh_p[out_d, 0] += jh00
                     tmp_jh_p[out_d, 1] += jh01
@@ -451,12 +466,20 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         ga = gains[g][t_m, f_m, a1_m, d_m]
 
-                        jh00, jh01, jh10, jh11 = _v1_mul_v2(ga, m_vec)
+                        g00 = ga[0]
+                        g01 = ga[1]
+                        g10 = ga[2]
+                        g11 = ga[3]
 
-                        m_vec[0] = jh00
-                        m_vec[1] = jh01
-                        m_vec[2] = jh10
-                        m_vec[3] = jh11
+                        jh00 = (g00*m00 + g01*m10)
+                        jh01 = (g00*m01 + g01*m11)
+                        jh10 = (g10*m00 + g11*m10)
+                        jh11 = (g10*m01 + g11*m11)
+
+                        m00 = jh00
+                        m01 = jh01
+                        m10 = jh10
+                        m11 = jh11
 
                     for g in range(n_gains - 1, active_term, -1):
 
@@ -465,12 +488,20 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gb = gains[g][t_m, f_m, a2_m, d_m]
 
-                        jh00, jh01, jh10, jh11 = _v1_mul_v2ct(m_vec, gb)
+                        gh00 = gb[0].conjugate()
+                        gh01 = gb[2].conjugate()
+                        gh10 = gb[1].conjugate()
+                        gh11 = gb[3].conjugate()
 
-                        m_vec[0] = jh00
-                        m_vec[1] = jh01
-                        m_vec[2] = jh10
-                        m_vec[3] = jh11
+                        jh00 = (m00*gh00 + m01*gh10)
+                        jh01 = (m00*gh01 + m01*gh11)
+                        jh10 = (m10*gh00 + m11*gh10)
+                        jh11 = (m10*gh01 + m11*gh11)
+
+                        m00 = jh00
+                        m01 = jh01
+                        m10 = jh10
+                        m11 = jh11
 
                     for g in range(active_term):
 
@@ -479,22 +510,28 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         f_m = f_map_arr[f, g]
                         gbi = inverse_gains[g][t_m, f_m, a2_m, d_m]
 
-                        jhr00, jhr01, jhr10, jhr11 = _v1_mul_v2(gbi, rh_vec)
+                        ginv00 = gbi[0]
+                        ginv01 = gbi[1]
+                        ginv10 = gbi[2]
+                        ginv11 = gbi[3]
 
-                        rh_vec[0] = jhr00
-                        rh_vec[1] = jhr01
-                        rh_vec[2] = jhr10
-                        rh_vec[3] = jhr11
+                        jhr00 = (ginv00*rh00 + ginv01*rh10)
+                        jhr01 = (ginv00*rh01 + ginv01*rh11)
+                        jhr10 = (ginv10*rh00 + ginv11*rh10)
+                        jhr11 = (ginv10*rh01 + ginv11*rh11)
+
+                        rh00 = jhr00
+                        rh01 = jhr01
+                        rh10 = jhr10
+                        rh11 = jhr11
 
                     t_m = t_map_arr[row_ind, active_term]
                     f_m = f_map_arr[f, active_term]
 
-                    jhr00, jhr01, jhr10, jhr11 = _v1_mul_v2(rh_vec, m_vec)
-
-                    jhr[t_m, f_m, a2_m, out_d, 0] += jhr00
-                    jhr[t_m, f_m, a2_m, out_d, 1] += jhr01
-                    jhr[t_m, f_m, a2_m, out_d, 2] += jhr10
-                    jhr[t_m, f_m, a2_m, out_d, 3] += jhr11
+                    jhr[t_m, f_m, a2_m, out_d, 0] += (rh00*jh00 + rh01*jh10)
+                    jhr[t_m, f_m, a2_m, out_d, 1] += (rh00*jh01 + rh01*jh11)
+                    jhr[t_m, f_m, a2_m, out_d, 2] += (rh10*jh00 + rh11*jh10)
+                    jhr[t_m, f_m, a2_m, out_d, 3] += (rh10*jh01 + rh11*jh11)
 
                     tmp_jh_q[out_d, 0] += jh00
                     tmp_jh_q[out_d, 1] += jh01
@@ -503,27 +540,35 @@ def jhj_jhr_full(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                 for d in range(n_gdir):
 
-                    jhp = tmp_jh_p[d]
+                    jh00 = tmp_jh_p[d, 0]
+                    jh01 = tmp_jh_p[d, 1]
+                    jh10 = tmp_jh_p[d, 2]
+                    jh11 = tmp_jh_p[d, 3]
 
-                    jhj00, jhj01, jhj10, jhj11 = _v1ct_wmul_v2(jhp, jhp, w)
+                    j00 = jh00.conjugate()
+                    j01 = jh10.conjugate()
+                    j10 = jh01.conjugate()
+                    j11 = jh11.conjugate()
 
-                    jhj_vec = jhj[t_m, f_m, a1_m, d]
+                    jhj[t_m, f_m, a1_m, d, 0] += (j00*w0*jh00 + j01*w3*jh10)
+                    jhj[t_m, f_m, a1_m, d, 1] += (j00*w0*jh01 + j01*w3*jh11)
+                    jhj[t_m, f_m, a1_m, d, 2] += (j10*w0*jh00 + j11*w3*jh10)
+                    jhj[t_m, f_m, a1_m, d, 3] += (j10*w0*jh01 + j11*w3*jh11)
 
-                    jhj_vec[0] += jhj00
-                    jhj_vec[1] += jhj01
-                    jhj_vec[2] += jhj10
-                    jhj_vec[3] += jhj11
+                    jh00 = tmp_jh_q[d, 0]
+                    jh01 = tmp_jh_q[d, 1]
+                    jh10 = tmp_jh_q[d, 2]
+                    jh11 = tmp_jh_q[d, 3]
 
-                    jhq = tmp_jh_q[d]
+                    j00 = jh00.conjugate()
+                    j01 = jh10.conjugate()
+                    j10 = jh01.conjugate()
+                    j11 = jh11.conjugate()
 
-                    jhj00, jhj01, jhj10, jhj11 = _v1ct_wmul_v2(jhq, jhq, w)
-
-                    jhj_vec = jhj[t_m, f_m, a2_m, d]
-
-                    jhj_vec[0] += jhj00
-                    jhj_vec[1] += jhj01
-                    jhj_vec[2] += jhj10
-                    jhj_vec[3] += jhj11
+                    jhj[t_m, f_m, a2_m, d, 0] += (j00*w0*jh00 + j01*w3*jh10)
+                    jhj[t_m, f_m, a2_m, d, 1] += (j00*w0*jh01 + j01*w3*jh11)
+                    jhj[t_m, f_m, a2_m, d, 2] += (j10*w0*jh00 + j11*w3*jh10)
+                    jhj[t_m, f_m, a2_m, d, 3] += (j10*w0*jh01 + j11*w3*jh11)
 
     return
 
