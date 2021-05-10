@@ -2,17 +2,13 @@ from collections import namedtuple
 from quartical.kernels.complex import complex_solver
 from quartical.kernels.phase import phase_solver
 from quartical.kernels.delay import delay_solver
-from quartical.kernels.kalman import kalman_solver
-from quartical.kernels.generated import generated_solver
 import numpy as np
 import xarray
 
 
 term_solvers = {"complex": complex_solver,
                 "phase": phase_solver,
-                "delay": delay_solver,
-                "kalman": kalman_solver,
-                "generated": generated_solver}
+                "delay": delay_solver}
 
 gain_spec_tup = namedtuple("gain_spec_tup",
                            "tchunk fchunk achunk dchunk cchunk")
@@ -172,6 +168,4 @@ class Delay(Gain):
 
 term_types = {"complex": Complex,
               "phase": Phase,
-              "kalman": Complex,
-              "delay": Delay,
-              "generated": Complex}
+              "delay": Delay}

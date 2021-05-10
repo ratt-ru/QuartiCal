@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import prange, literally, generated_jit, types
-from numba.extending import register_jitable
 from quartical.kernels.generics import (invert_gains,
                                         compute_residual,
                                         compute_convergence)
 from quartical.kernels.convenience import (get_row,
-                                           old_mul_rweight as mul_rweight)
+                                           get_chan_extents,
+                                           get_row_extents)
+import quartical.kernels.factories as factories
 from collections import namedtuple
 
 
@@ -21,7 +22,7 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
 def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                 d_map_arr, corr_mode, active_term, inverse_gain_list,
+                 d_map_arr, corr_mode, active_term, inverse_gains,
                  gains, flags, params, chan_freqs, row_map, row_weights,
                  t_bin_arr):
     """Solve for a delay.
@@ -32,24 +33,19 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
     if not isinstance(corr_mode, types.Literal):
         return lambda model, data, a1, a2, weights, t_map_arr, f_map_arr, \
-                      d_map_arr, corr_mode, active_term, inverse_gain_list, \
+                      d_map_arr, corr_mode, active_term, inverse_gains, \
                       gains, flags, params, chan_freqs, row_map, row_weights, \
                       t_bin_arr: literally(corr_mode)
 
-    if corr_mode.literal_value == "diag":
-        compute_jhj_jhr = jhj_jhr_diag
-        compute_update = update_diag
-        finalize_update = finalize_diag
-    else:
-        raise NotImplementedError("Delays only supported in diagonal chains.")
+    def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
+             corr_mode, active_term, inverse_gains, gains, flags, params,
+             chan_freqs, row_map, row_weights, t_bin_arr):
 
-    def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-             d_map_arr, corr_mode, active_term, inverse_gain_list, gains,
-             flags, params, chan_freqs, row_map, row_weights, t_bin_arr):
+        param_shape = params.shape
+        n_tint, n_fint, n_ant, n_dir, n_param, n_corr = param_shape
+        n_ppa = 4  # This is always the case.
 
-        n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
-
-        invert_gains(gains, inverse_gain_list, corr_mode)
+        invert_gains(gains, inverse_gains, corr_mode)
 
         dd_term = n_dir > 1
 
@@ -59,16 +55,11 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
         real_dtype = gains[active_term].real.dtype
 
-        param_shape = (n_tint, n_fint, n_ant, n_dir, n_param, n_corr)
-
-        jhr = np.empty(param_shape, dtype=real_dtype)
-        update = np.empty(param_shape, dtype=real_dtype)
-
-        # This n_param**2 component can be optimised but that may introduce
-        # unecessary complexity.
-        jhj_shape = (n_tint, n_fint, n_ant, n_dir, n_param, n_param, n_corr)
-
+        jhj_shape = (n_tint, n_fint, n_ant, n_dir, n_ppa, n_ppa)
         jhj = np.empty(jhj_shape, dtype=real_dtype)
+        jhr_shape = (n_tint, n_fint, n_ant, n_dir, n_ppa)
+        jhr = np.empty(jhr_shape, dtype=real_dtype)
+        update = np.empty(jhr_shape, dtype=real_dtype)
 
         for i in range(20):
 
@@ -84,7 +75,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             jhr,
                             model,
                             gains,
-                            inverse_gain_list,
+                            inverse_gains,
                             chan_freqs,
                             residual,
                             a1,
@@ -130,281 +121,445 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     return impl
 
 
-@register_jitable
-def jhj_jhr_diag(jhj, jhr, model, gains, inverse_gain_list, chan_freqs,
-                 residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
-                 row_map, row_weights, active_term, corr_mode):
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
+def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
+                    residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
+                    row_map, row_weights, active_term, corr_mode):
+
+    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
+    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
+    v1ct_imul_v2 = factories.v1ct_imul_v2_factory(corr_mode)
+    iunpack = factories.iunpack_factory(corr_mode)
+    iunpackct = factories.iunpackct_factory(corr_mode)
+    iwmul = factories.iwmul_factory(corr_mode)
+    valloc = factories.valloc_factory(corr_mode)
+    make_loop_vars = factories.loop_var_factory(corr_mode)
+    set_identity = factories.set_identity_factory(corr_mode)
+    accumulate_jhr = accumulate_jhr_factory(corr_mode)
+    compute_jh = compute_jh_factory(corr_mode)
+    compute_jhwj = compute_jhwj_factory(corr_mode)
 
-    _, n_chan, n_dir, n_corr = model.shape
-    n_out_dir = gains[active_term].shape[3]
+    def impl(jhj, jhr, model, gains, inverse_gains, chan_freqs,
+             residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
+             row_map, row_weights, active_term, corr_mode):
+        _, n_chan, n_dir, n_corr = model.shape
 
-    jhj[:] = 0
-    jhr[:] = 0
+        jhj[:] = 0
+        jhr[:] = 0
 
-    n_tint, n_fint, n_ant, n_gdir, _ = gains[active_term].shape
+        n_tint, n_fint, n_ant, n_gdir, n_ppa = jhr.shape
+        n_int = n_tint*n_fint
 
-    cmplx_dtype = gains[active_term].dtype
+        complex_dtype = gains[active_term].dtype
 
-    n_gains = len(gains)
+        n_gains = len(gains)
 
-    inactive_terms = list(range(n_gains))
-    inactive_terms.pop(active_term)
+        # Determine the starts and stops of the rows and channels associated
+        # with each solution interval. This could even be moved out for speed.
+        row_starts, row_stops = get_row_extents(t_map_arr,
+                                                active_term,
+                                                n_tint)
 
-    for ti in prange(n_tint):
-        row_sel = np.where(t_map_arr[:, active_term] == ti)[0]
+        chan_starts, chan_stops = get_chan_extents(f_map_arr,
+                                                   active_term,
+                                                   n_fint,
+                                                   n_chan)
 
-        # Two here is the number of parameters. TODO: Flexible?
-        tmp_jh_p = np.zeros((n_out_dir, n_corr), dtype=cmplx_dtype)
-        tmp_jh_q = np.zeros((n_out_dir, n_corr), dtype=cmplx_dtype)
+        # Determine loop variables based on where we are in the chain.
+        # gt means greater than (n>j) and lt means less than (n<j).
+        all_terms, gt_active, lt_active = make_loop_vars(n_gains, active_term)
 
-        for row_ind in row_sel:
+        # Parallel over all solution intervals.
+        for i in prange(n_int):
 
-            row = get_row(row_ind, row_map)
-            a1_m, a2_m = a1[row], a2[row]
+            ti = i//n_fint
+            fi = i - ti*n_fint
 
-            for f in range(n_chan):
+            rs = row_starts[ti]
+            re = row_stops[ti]
+            fs = chan_starts[fi]
+            fe = chan_stops[fi]
 
-                r = residual[row, f]
-                w = weights[row, f]  # Consider a map?
+            rop_pq = valloc(complex_dtype)  # Right-multiply operator for pq.
+            rop_qp = valloc(complex_dtype)  # Right-multiply operator for qp.
+            lop_pq = valloc(complex_dtype)  # Left-multiply operator for pq.
+            lop_qp = valloc(complex_dtype)  # Left-multiply operator for qp.
+            r_pq = valloc(complex_dtype)
+            r_qp = valloc(complex_dtype)
 
-                w00 = w[0]
-                w11 = w[1]
+            gains_p = valloc(complex_dtype, leading_dims=(n_gains,))
+            gains_q = valloc(complex_dtype, leading_dims=(n_gains,))
 
-                tmp_jh_p[:, :] = 0
-                tmp_jh_q[:, :] = 0
+            tmp_jh_p = np.empty((n_gdir, n_ppa, n_corr), dtype=complex_dtype)
+            tmp_jh_q = np.empty((n_gdir, n_ppa, n_corr), dtype=complex_dtype)
 
-                nu = chan_freqs[f]
+            for row_ind in range(rs, re):
 
-                for d in range(n_dir):
+                row = get_row(row_ind, row_map)
+                a1_m, a2_m = a1[row], a2[row]
 
-                    out_d = d_map_arr[active_term, d]
+                for f in range(fs, fe):
 
-                    r00 = w00*mul_rweight(r[0], row_weights, row_ind)
-                    r11 = w11*mul_rweight(r[1], row_weights, row_ind)
+                    r = residual[row, f]
+                    w = weights[row, f]  # Consider a map?
 
-                    rh00 = r00.conjugate()
-                    rh11 = r11.conjugate()
+                    tmp_jh_p[:, :, :] = 0
+                    tmp_jh_q[:, :, :] = 0
 
-                    m = model[row, f, d]
+                    nu = chan_freqs[f]
 
-                    m00 = mul_rweight(m[0], row_weights, row_ind)
-                    m11 = mul_rweight(m[1], row_weights, row_ind)
+                    for d in range(n_dir):
 
-                    mh00 = m00.conjugate()
-                    mh11 = m11.conjugate()
+                        set_identity(lop_pq)
+                        set_identity(lop_qp)
 
-                    for g in range(n_gains - 1, -1, -1):
+                        # Construct a small contiguous gain array. This makes
+                        # the single term case fractionally slower.
+                        for gi in range(n_gains):
+                            d_m = d_map_arr[gi, d]  # Broadcast dir.
+                            t_m = t_map_arr[row_ind, gi]
+                            f_m = f_map_arr[f, gi]
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        gb = gains[g][t_m, f_m, a2_m, d_m]
+                            gain = gains[gi][t_m, f_m]
 
-                        g00 = gb[0]
-                        g11 = gb[1]
+                            iunpack(gains_p[gi], gain[a1_m, d_m])
+                            iunpack(gains_q[gi], gain[a2_m, d_m])
 
-                        jh00 = (g00*mh00)
-                        jh11 = (g11*mh11)
+                        imul_rweight(r, r_pq, row_weights, row_ind)
+                        iwmul(r_pq, w)
+                        iunpackct(r_qp, r_pq)
 
-                        mh00 = jh00
-                        mh11 = jh11
+                        m = model[row, f, d]
+                        imul_rweight(m, rop_qp, row_weights, row_ind)
+                        iunpackct(rop_pq, rop_qp)
 
-                    for g in inactive_terms:
+                        for g in all_terms:
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        ga = gains[g][t_m, f_m, a1_m, d_m]
+                            g_q = gains_q[g]
+                            v1_imul_v2(g_q, rop_pq, rop_pq)
 
-                        gh00 = ga[0].conjugate()
-                        gh11 = ga[1].conjugate()
+                            g_p = gains_p[g]
+                            v1_imul_v2(g_p, rop_qp, rop_qp)
 
-                        jh00 = (mh00*gh00)
-                        jh11 = (mh11*gh11)
+                        for g in gt_active:
 
-                        mh00 = jh00
-                        mh11 = jh11
+                            g_p = gains_p[g]
+                            v1_imul_v2ct(rop_pq, g_p, rop_pq)
 
-                    t_m = t_map_arr[row_ind, active_term]
-                    f_m = f_map_arr[f, active_term]
+                            g_q = gains_q[g]
+                            v1_imul_v2ct(rop_qp, g_q, rop_qp)
 
-                    ga = gains[active_term][t_m, f_m, a1_m, d_m]
+                        for g in lt_active:
 
-                    ga00 = -1j*ga[0].conjugate()
-                    ga11 = -1j*ga[1].conjugate()
+                            g_p = gains_p[g]
+                            v1ct_imul_v2(g_p, lop_pq, lop_pq)
 
-                    upd00 = (ga00*r00*jh00).real
-                    upd11 = (ga11*r11*jh11).real
+                            g_q = gains_q[g]
+                            v1ct_imul_v2(g_q, lop_qp, lop_qp)
 
-                    jhr[t_m, f_m, a1_m, out_d, 0, 0] += upd00
-                    jhr[t_m, f_m, a1_m, out_d, 0, 1] += upd11
+                        t_m = t_map_arr[row_ind, active_term]
+                        f_m = f_map_arr[f, active_term]
+                        out_d = d_map_arr[active_term, d]
 
-                    jhr[t_m, f_m, a1_m, out_d, 1, 0] += nu*upd00
-                    jhr[t_m, f_m, a1_m, out_d, 1, 1] += nu*upd11
+                        g_p = gains_p[active_term]
+                        accumulate_jhr(g_p, r_pq, rop_pq, lop_pq,
+                                       jhr[t_m, f_m, a1_m, out_d], nu)
 
-                    tmp_jh_p[out_d, 0] += jh00
-                    tmp_jh_p[out_d, 1] += jh11
+                        compute_jh(lop_pq, rop_pq, g_p, nu, tmp_jh_p[out_d])
 
-                    for g in range(n_gains-1, -1, -1):
+                        g_q = gains_q[active_term]
+                        accumulate_jhr(g_q, r_qp, rop_qp, lop_qp,
+                                       jhr[t_m, f_m, a2_m, out_d], nu)
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        ga = gains[g][t_m, f_m, a1_m, d_m]
+                        compute_jh(lop_qp, rop_qp, g_q, nu, tmp_jh_q[out_d])
 
-                        g00 = ga[0]
-                        g11 = ga[1]
+                    for d in range(n_gdir):
 
-                        jh00 = (g00*m00)
-                        jh11 = (g11*m11)
+                        jh_p = tmp_jh_p[d]
+                        jhj_p = jhj[t_m, f_m, a1_m, d]
+                        compute_jhwj(jh_p, w, jhj_p)
 
-                        m00 = jh00
-                        m11 = jh11
+                        jh_q = tmp_jh_q[d]
+                        jhj_q = jhj[t_m, f_m, a2_m, d]
+                        compute_jhwj(jh_q, w, jhj_q)
+        return
+    return impl
 
-                    for g in inactive_terms:
 
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        gb = gains[g][t_m, f_m, a2_m, d_m]
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
+def compute_update(update, jhj, jhr, corr_mode):
 
-                        gh00 = gb[0].conjugate()
-                        gh11 = gb[1].conjugate()
+    if corr_mode.literal_value in ["full", "mixed"]:
+        def impl(update, jhj, jhr, corr_mode):
+            n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
 
-                        jh00 = (m00*gh00)
-                        jh11 = (m11*gh11)
+            ident = np.eye(4)
 
-                        m00 = jh00
-                        m11 = jh11
+            for t in range(n_tint):
+                for f in range(n_fint):
+                    for a in range(n_ant):
+                        for d in range(n_dir):
 
-                    t_m = t_map_arr[row_ind, active_term]
-                    f_m = f_map_arr[f, active_term]
+                            jhj_sel = jhj[t, f, a, d]
 
-                    gb = gains[active_term][t_m, f_m, a2_m, d_m]
+                            det = np.linalg.det(jhj_sel)
 
-                    gb00 = -1j*gb[0].conjugate()
-                    gb11 = -1j*gb[1].conjugate()
+                            if det.real < 1e-6 or ~np.isfinite(det):
+                                jhj_inv = np.zeros_like(jhj_sel)
+                            else:
+                                jhj_inv = np.linalg.solve(jhj_sel, ident)
 
-                    upd00 = (gb00*rh00*jh00).real
-                    upd11 = (gb11*rh11*jh11).real
+                            # TODO: This complains as linalg.solve produces
+                            # F_CONTIGUOUS output.
+                            update[t, f, a, d] = jhj_inv.dot(jhr[t, f, a, d])
+    else:
+        def impl(update, jhj, jhr, corr_mode):
 
-                    jhr[t_m, f_m, a2_m, out_d, 0, 0] += upd00
-                    jhr[t_m, f_m, a2_m, out_d, 0, 1] += upd11
+            n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
 
-                    jhr[t_m, f_m, a2_m, out_d, 1, 0] += nu*upd00
-                    jhr[t_m, f_m, a2_m, out_d, 1, 1] += nu*upd11
+            for t in range(n_tint):
+                for f in range(n_fint):
+                    for a in range(n_ant):
+                        for d in range(n_dir):
+                            for sl in (slice(0, 2), slice(2, 4)):
 
-                    tmp_jh_q[out_d, 0] += jh00
-                    tmp_jh_q[out_d, 1] += jh11
+                                jhj_sel = jhj[t, f, a, d, sl, sl]
 
-                for d in range(n_out_dir):
+                                jhj00 = jhj_sel[0, 0]
+                                jhj01 = jhj_sel[0, 1]
+                                jhj10 = jhj_sel[1, 0]
+                                jhj11 = jhj_sel[1, 1]
 
-                    jh00 = tmp_jh_p[d, 0]
-                    jh11 = tmp_jh_p[d, 1]
+                                det = (jhj00*jhj11 - jhj01*jhj10)
 
-                    j00 = jh00.conjugate()
-                    j11 = jh11.conjugate()
+                                if det.real < 1e-6:
+                                    jhjinv00 = 0
+                                    jhjinv01 = 0
+                                    jhjinv10 = 0
+                                    jhjinv11 = 0
+                                else:
+                                    jhjinv00 = jhj11/det
+                                    jhjinv01 = -jhj01/det
+                                    jhjinv10 = -jhj10/det
+                                    jhjinv11 = jhj00/det
 
-                    jhj00 = j00*w00*jh00
-                    jhj11 = j11*w11*jh11
+                                jhr_sel = jhr[t, f, a, d, sl]
 
-                    jhj[t_m, f_m, a1_m, d, 0, 0, 0] += (jhj00).real
-                    jhj[t_m, f_m, a1_m, d, 0, 1, 0] += (jhj00*nu).real
-                    jhj[t_m, f_m, a1_m, d, 1, 0, 0] += (jhj00*nu).real
-                    jhj[t_m, f_m, a1_m, d, 1, 1, 0] += (jhj00*nu*nu).real
+                                jhr_0 = jhr_sel[0]
+                                jhr_1 = jhr_sel[1]
 
-                    jhj[t_m, f_m, a1_m, d, 0, 0, 1] += (jhj11).real
-                    jhj[t_m, f_m, a1_m, d, 0, 1, 1] += (jhj11*nu).real
-                    jhj[t_m, f_m, a1_m, d, 1, 0, 1] += (jhj11*nu).real
-                    jhj[t_m, f_m, a1_m, d, 1, 1, 1] += (jhj11*nu*nu).real
+                                upd_sel = update[t, f, a, d, sl]
 
-                    jh00 = tmp_jh_q[d, 0]
-                    jh11 = tmp_jh_q[d, 1]
+                                upd_sel[0] = jhjinv00*jhr_0 + jhjinv01*jhr_1
+                                upd_sel[1] = jhjinv10*jhr_0 + jhjinv11*jhr_1
+    return impl
 
-                    j00 = jh00.conjugate()
-                    j11 = jh11.conjugate()
 
-                    jhj00 = j00*w00*jh00
-                    jhj11 = j11*w11*jh11
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
+def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
+                    d_map_arr, dd_term, corr_mode, active_term):
 
-                    jhj[t_m, f_m, a2_m, d, 0, 0, 0] += (jhj00).real
-                    jhj[t_m, f_m, a2_m, d, 0, 1, 0] += (jhj00*nu).real
-                    jhj[t_m, f_m, a2_m, d, 1, 0, 0] += (jhj00*nu).real
-                    jhj[t_m, f_m, a2_m, d, 1, 1, 0] += (jhj00*nu*nu).real
+    def impl(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
+             d_map_arr, dd_term, corr_mode, active_term):
+        params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]/2
+        params[:, :, :, :, 0, -1] += update[:, :, :, :, 2]/2
+        params[:, :, :, :, 1, 0] += update[:, :, :, :, 1]/2
+        params[:, :, :, :, 1, -1] += update[:, :, :, :, 3]/2
 
-                    jhj[t_m, f_m, a2_m, d, 0, 0, 1] += (jhj11).real
-                    jhj[t_m, f_m, a2_m, d, 0, 1, 1] += (jhj11*nu).real
-                    jhj[t_m, f_m, a2_m, d, 1, 0, 1] += (jhj11*nu).real
-                    jhj[t_m, f_m, a2_m, d, 1, 1, 1] += (jhj11*nu*nu).real
+        n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
 
-    return
+        n_time, n_freq, _, _, _ = gain.shape
 
+        for t in range(n_time):
+            for f in range(n_freq):
+                for a in range(n_ant):
+                    for d in range(n_dir):
 
-@register_jitable
-def update_diag(update, jhj, jhr, corr_mode):
+                        t_m = t_bin_arr[t, active_term]
+                        f_m = f_map_arr[f, active_term]
+                        d_m = d_map_arr[d, active_term]
 
-    n_tint, n_fint, n_ant, n_dir, n_param, _, n_corr = jhj.shape
+                        inter0 = params[t_m, f_m, a, d_m, 0, 0]
+                        inter1 = params[t_m, f_m, a, d_m, 0, -1]
+                        delay0 = params[t_m, f_m, a, d_m, 1, 0]
+                        delay1 = params[t_m, f_m, a, d_m, 1, -1]
 
-    for t in range(n_tint):
-        for f in range(n_fint):
-            for a in range(n_ant):
-                for d in range(n_dir):
-                    for c in range(n_corr):
+                        cf = chan_freqs[f]
 
-                        jhj00 = jhj[t, f, a, d, 0, 0, c]
-                        jhj01 = jhj[t, f, a, d, 0, 1, c]
-                        jhj10 = jhj[t, f, a, d, 1, 0, c]
-                        jhj11 = jhj[t, f, a, d, 1, 1, c]
+                        gain[t, f, a, d, 0] = np.exp(1j*(cf*delay0 + inter0))
+                        gain[t, f, a, d, -1] = np.exp(1j*(cf*delay1 + inter1))
+    return impl
 
-                        det = (jhj00*jhj11 - jhj01*jhj10)
 
-                        if det.real < 1e-6:
-                            jhjinv00 = 0
-                            jhjinv01 = 0
-                            jhjinv10 = 0
-                            jhjinv11 = 0
-                        else:
-                            jhjinv00 = jhj11/det
-                            jhjinv01 = -jhj01/det
-                            jhjinv10 = -jhj10/det
-                            jhjinv11 = jhj00/det
+def accumulate_jhr_factory(mode):
 
-                        jhr_0 = jhr[t, f, a, d, 0, c]
-                        jhr_1 = jhr[t, f, a, d, 1, c]
+    unpack = factories.unpack_factory(mode)
+    unpackct = factories.unpackct_factory(mode)
+    v1_imul_v2 = factories.v1_imul_v2_factory(mode)
 
-                        update[t, f, a, d, 0, c] = \
-                            jhjinv00*jhr_0 + jhjinv01*jhr_1
-                        update[t, f, a, d, 1, c] = \
-                            jhjinv10*jhr_0 + jhjinv11*jhr_1
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(gain, res, rop, lop, jhr, nu):
 
-    return
+            v1_imul_v2(res, rop, res)
+            v1_imul_v2(lop, res, res)
 
+            g_00, g_01, g_10, g_11 = unpackct(gain)
+            v_00, v_01, v_10, v_11 = unpack(res)
 
-@register_jitable
-def finalize_diag(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
-                  d_map_arr, dd_term, corr_mode, active_term):
+            upd_00 = (-1j*g_00*v_00).real
+            upd_11 = (-1j*g_11*v_11).real
 
-    params[:] = params[:] + update/2
+            jhr[0] += upd_00
+            jhr[1] += nu*upd_00
+            jhr[2] += upd_11
+            jhr[3] += nu*upd_11
+    else:
+        def impl(gain, res, rop, lop, jhr, nu):
 
-    n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
+            v1_imul_v2(res, rop, res)
 
-    n_time, n_freq, _, _, _ = gain.shape
+            g_00, g_11 = unpackct(gain)
+            v_00, v_11 = unpack(res)
 
-    for t in range(n_time):
-        for f in range(n_freq):
-            for a in range(n_ant):
-                for d in range(n_dir):
+            upd_00 = (-1j*g_00*v_00).real
+            upd_11 = (-1j*g_11*v_11).real
 
-                    t_m = t_bin_arr[t, active_term]
-                    f_m = f_map_arr[f, active_term]
-                    d_m = d_map_arr[d, active_term]
+            jhr[0] += upd_00
+            jhr[1] += nu*upd_00
+            jhr[2] += upd_11
+            jhr[3] += nu*upd_11
+    return factories.qcjit(impl)
 
-                    inter0 = params[t_m, f_m, a, d_m, 0, 0]
-                    delay0 = params[t_m, f_m, a, d_m, 1, 0]
-                    inter1 = params[t_m, f_m, a, d_m, 0, 1]
-                    delay1 = params[t_m, f_m, a, d_m, 1, 1]
 
-                    cf = chan_freqs[f]
+def compute_jh_factory(mode):
 
-                    gain[t, f, a, d, 0] = np.exp(1j*(cf*delay0 + inter0))
-                    gain[t, f, a, d, 1] = np.exp(1j*(cf*delay1 + inter1))
+    unpack = factories.unpack_factory(mode)
+    unpackct = factories.unpackct_factory(mode)
+
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(lop, rop, gain, nu, jh):
+            l_00, l_01, l_10, l_11 = unpack(lop)
+            r_00, r_10, r_01, r_11 = unpack(rop)  # Note the "transpose".
+            g_00, g_01, g_10, g_11 = unpackct(gain)
+
+            # This implements a special kronecker product which simultaneously
+            # multiplies in derivative terms. This doesn't generalize to all
+            # terms.
+
+            # Top row.
+            rkl_00 = r_00*l_00
+            rkl_01 = r_00*l_01
+            rkl_02 = r_01*l_00
+            rkl_03 = r_01*l_01
+            # Bottom row.
+            rkl_30 = r_10*l_10
+            rkl_31 = r_10*l_11
+            rkl_32 = r_11*l_10
+            rkl_33 = r_11*l_11
+
+            # Coefficients generated by the derivative.
+            drv_00 = -1j*g_00
+            drv_10 = drv_00*nu
+            drv_23 = -1j*g_11
+            drv_33 = drv_23*nu
+
+            # (param_per_antenna, 4) result of special kronecker product.
+            jh[0, 0] += rkl_00*drv_00
+            jh[0, 1] += rkl_01*drv_00
+            jh[0, 2] += rkl_02*drv_00
+            jh[0, 3] += rkl_03*drv_00
+            jh[1, 0] += rkl_00*drv_10
+            jh[1, 1] += rkl_01*drv_10
+            jh[1, 2] += rkl_02*drv_10
+            jh[1, 3] += rkl_03*drv_10
+            jh[2, 0] += rkl_30*drv_23
+            jh[2, 1] += rkl_31*drv_23
+            jh[2, 2] += rkl_32*drv_23
+            jh[2, 3] += rkl_33*drv_23
+            jh[3, 0] += rkl_30*drv_33
+            jh[3, 1] += rkl_31*drv_33
+            jh[3, 2] += rkl_32*drv_33
+            jh[3, 3] += rkl_33*drv_33
+    else:
+        def impl(lop, rop, gain, nu, jh):
+            r_00, r_11 = unpack(rop)
+            g_00, g_11 = unpackct(gain)
+
+            # This implements a special kronecker product which simultaneously
+            # multiplies in derivative terms. This doesn't generalize to all
+            # terms.
+
+            # Coefficients generated by the derivative.
+            drv_00 = -1j*g_00
+            drv_10 = drv_00*nu
+            drv_23 = -1j*g_11
+            drv_33 = drv_23*nu
+
+            # (param_per_antenna, 4) result of special kronecker product.
+            jh[0, 0] += r_00*drv_00
+            jh[1, 0] += r_00*drv_10
+            jh[2, 1] += r_11*drv_23
+            jh[3, 1] += r_11*drv_33
+    return factories.qcjit(impl)
+
+
+def compute_jhwj_factory(mode):
+
+    unpack = factories.unpack_factory(mode)
+    unpackct = factories.unpackct_factory(mode)
+
+    if mode.literal_value == "full" or mode.literal_value == "mixed":
+        def impl(jh, w, jhj):
+            w1_00, w1_01, w1_10, w1_11 = unpack(w)
+
+            n_ppa, n_corr = jh.shape
+
+            for i in range(n_ppa):
+                jh_0, jh_1, jh_2, jh_3 = unpack(jh[i])
+                jhw_0 = jh_0*w1_00
+                jhw_1 = jh_1*w1_00
+                jhw_2 = jh_2*w1_11
+                jhw_3 = jh_3*w1_11
+                for j in range(n_ppa):
+                    # Note "transpose" as I am abusing unpack.
+                    j_0, j_2, j_1, j_3 = unpackct(jh[j])
+
+                    jhj[i, j] += (jhw_0*j_0 +
+                                  jhw_1*j_1 +
+                                  jhw_2*j_2 +
+                                  jhw_3*j_3).real
+    else:
+        def impl(jh, w, jhj):
+            w1_00, w1_11 = unpack(w)
+
+            jh_00 = jh[0, 0]
+            jh_10 = jh[1, 0]
+            jh_21 = jh[2, 1]
+            jh_31 = jh[3, 1]
+
+            # Conjugate transpose terms.
+            j_00 = jh_00.conjugate()
+            j_01 = jh_10.conjugate()
+            j_12 = jh_21.conjugate()
+            j_13 = jh_31.conjugate()
+
+            # Multiply in the weights.
+            jh_00 *= w1_00
+            jh_10 *= w1_00
+            jh_21 *= w1_11
+            jh_31 *= w1_11
+
+            jhj[0, 0] += (jh_00*j_00).real
+            jhj[0, 1] += (jh_00*j_01).real
+            jhj[1, 0] += (jh_10*j_00).real
+            jhj[1, 1] += (jh_10*j_01).real
+
+            jhj[2, 2] += (jh_21*j_12).real
+            jhj[2, 3] += (jh_21*j_13).real
+            jhj[3, 2] += (jh_31*j_12).real
+            jhj[3, 3] += (jh_31*j_13).real
+    return factories.qcjit(impl)
