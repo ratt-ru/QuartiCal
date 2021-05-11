@@ -61,7 +61,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         jhr = np.empty(jhr_shape, dtype=real_dtype)
         update = np.empty(jhr_shape, dtype=real_dtype)
 
-        for i in range(20):
+        for i in range(50):
 
             if dd_term:
                 residual = compute_residual(data, model, gains, a1, a2,
@@ -381,7 +381,7 @@ def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
 
                         t_m = t_bin_arr[t, active_term]
                         f_m = f_map_arr[f, active_term]
-                        d_m = d_map_arr[d, active_term]
+                        d_m = d_map_arr[active_term, d]
 
                         inter0 = params[t_m, f_m, a, d_m, 0, 0]
                         inter1 = params[t_m, f_m, a, d_m, 0, -1]
