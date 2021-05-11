@@ -91,7 +91,8 @@ def create_command_line_parser():
     )
 
     with open(path_to_default, 'r') as stream:
-        defaults_dict = ruamel.yaml.safe_load(stream)
+        yaml = ruamel.yaml.YAML(typ='safe', pure=True)
+        defaults_dict = yaml.load(stream)
 
     build_args(parser, defaults_dict)
 
@@ -113,7 +114,8 @@ def create_and_merge_gain_parsers(args, remaining_args):
     """
 
     with open(path_to_default, 'r') as stream:
-        gain_defaults = ruamel.yaml.safe_load(stream)["(gain)"]
+        yaml = ruamel.yaml.YAML(typ='safe', pure=True)
+        gain_defaults = yaml.load(stream)["(gain)"]
 
     argdict = vars(args)
 
@@ -169,7 +171,8 @@ def create_user_config():
     logger.info("Output config file path: {}", config_file_path)
 
     with open(path_to_default, 'r') as stream:
-        defaults_dict = ruamel.yaml.safe_load(stream)
+        yaml = ruamel.yaml.YAML(typ='safe', pure=True)
+        defaults_dict = yaml.load(stream)
 
     strip_dict(defaults_dict)
 
@@ -295,7 +298,8 @@ def parse_inputs(bypass_sysargv=None):
     if config_file_name:
 
         with open(config_file_name, 'r') as stream:
-            cf_args = argdict_to_arglist(ruamel.yaml.safe_load(stream))
+            yaml = ruamel.yaml.YAML(typ='safe', pure=True)
+            cf_args = argdict_to_arglist(yaml.load(stream))
 
         cf_args.extend(remaining_args)
 
