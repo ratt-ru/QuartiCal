@@ -100,6 +100,23 @@ class AutoRestrictor(SchedulerPlugin):
 
 COLOUR = "__quartical_colour__"
 
+
+class Dummy:
+    def __init__(self, name):
+        self.__name__ = name
+
+    def __call__(self, *args, **kwargs):
+        pass
+
+    def __reduce__(self):
+        return (Dummy, (self.__name__,))
+
+    def __repr__(self):
+        return self.__name__
+
+    __str__ = __repr__
+
+
 class BreadthFirstSearch:
     def __init__(self, roots, colour):
         if not isinstance(roots, (tuple, list)):
@@ -141,7 +158,9 @@ class BreadthFirstSearch:
 
             child._annotations[COLOUR] = colour
             self.frontier.append(child)
-            self.dsk[child.key] = (add, *node.dependencies)
+
+        from dask.utils import key_split
+        self.dsk[node.key] = (Dummy(key_split(node.key)), *(cd.key for cd in node.dependencies))
 
         self.n += 1
         return node
@@ -223,6 +242,8 @@ class ColouringPlugin(SchedulerPlugin):
         for s, bfs in enumerate(searches):
             w = {workers[int(n_workers * s / len(searches))]}
 
+            # order = {}
+
             for k, p in bfs.order.items():
                 priority = float(1 + s)*10.0 + p / 1000.0
                 # priority = float(1 + s)*10.0
@@ -232,6 +253,12 @@ class ColouringPlugin(SchedulerPlugin):
                 t._loose_restrictions = False
 
                 colours[k] = priority
+                # order[k] = priority
+
+            # if s == 1:
+            #     from pprint import pprint
+            #     dask.visualize(bfs.dsk, filename="order.pdf", color="order")
+            #     pprint(bfs.dsk)
 
         if False:
             # Graph visualization and debugging
@@ -254,6 +281,7 @@ class ColouringPlugin(SchedulerPlugin):
         log.info("Plugin done")
 
 def install_plugin(dask_scheduler=None, **kwargs):
+    # dask_scheduler.add_plugin(AutoRestrictor(**kwargs), idempotent=True)
     dask_scheduler.add_plugin(ColouringPlugin(**kwargs), idempotent=True)
 
 
