@@ -220,7 +220,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                         for gi in range(n_gains):
                             d_m = d_map_arr[gi, d]  # Broadcast dir.
                             t_m = t_map_arr[row_ind, gi]
-                            f_m = f_map_arr[f, gi]
+                            f_m = f  # This is where the problem lies!
 
                             gain = gains[gi][t_m, f_m]
 

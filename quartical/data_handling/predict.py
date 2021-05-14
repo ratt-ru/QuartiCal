@@ -727,6 +727,11 @@ def predict(data_xds_list, opts):
                 if vis.ndim == 4:
                     vis = vis.reshape(vis.shape[:-2] + (4,))
 
+                # TODO: This was a bit of a shortcut - might need revision.
+                if opts.input_ms_correlation_mode == "diag":
+                    if vis.shape[-1] == 4:
+                        vis = vis[..., ::3]
+
                 # Append group_vis to the appropriate list.
                 model_vis[model_name].append(vis)
 
