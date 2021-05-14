@@ -51,8 +51,9 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
             term_type = getattr(opts, "{}_type".format(term_name))
 
             term_coords = coords_per_xds[xds_ind]
+
             term_t_chunks = tipc_list[xds_ind][:, term_ind]
-            term_f_chunks = fipc_list[xds_ind][:, term_ind]
+            term_f_chunks = fipc_list[xds_ind][:, :, term_ind]
 
             term_obj = term_types[term_type](term_name,
                                              data_xds,
@@ -96,10 +97,11 @@ def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
                                       chunks=((1,)*t_map_arr.numblocks[0],
                                               t_map_arr.chunks[1]))
 
-        fipc_per_term = da.map_blocks(lambda arr: arr[-1:, :] + 1,
+        fipc_per_term = da.map_blocks(lambda arr: arr[:, -1:, :] + 1,
                                       f_map_arr,
-                                      chunks=((1,)*f_map_arr.numblocks[0],
-                                              f_map_arr.chunks[1]))
+                                      chunks=((2,),
+                                              (1,)*f_map_arr.numblocks[1],
+                                              f_map_arr.chunks[2]))
 
         tipc_list.append(tipc_per_term)
         fipc_list.append(fipc_per_term)
@@ -146,9 +148,9 @@ def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
 
             # This indexing corresponds to grabbing the info per xds, per term.
             tipc = tipc_list[xds_ind][:, term_ind]
-            fipc = fipc_list[xds_ind][:, term_ind]
+            fipc = fipc_list[xds_ind][:, :, term_ind]
             term_t_bins = t_bin_list[xds_ind][:, term_ind]
-            term_f_map = f_map_list[xds_ind][:, term_ind]
+            term_f_map = f_map_list[xds_ind][:, :, term_ind]
 
             mean_times = da.map_blocks(mean_for_index,
                                        unique_times,
@@ -156,14 +158,21 @@ def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
                                        dtype=unique_times.dtype,
                                        chunks=(tuple(map(int, tipc)),))
 
-            mean_freqs = da.map_blocks(mean_for_index,
-                                       unique_freqs,
-                                       term_f_map,
-                                       dtype=unique_freqs.dtype,
-                                       chunks=(tuple(map(int, fipc)),))
+            mean_gfreqs = da.map_blocks(mean_for_index,
+                                        unique_freqs,
+                                        term_f_map[0],
+                                        dtype=unique_freqs.dtype,
+                                        chunks=(tuple(map(int, fipc[0])),))
+
+            mean_pfreqs = da.map_blocks(mean_for_index,
+                                        unique_freqs,
+                                        term_f_map[1],
+                                        dtype=unique_freqs.dtype,
+                                        chunks=(tuple(map(int, fipc[1])),))
 
             coord_dict[f"{term_name}_mean_time"] = mean_times
-            coord_dict[f"{term_name}_mean_freq"] = mean_freqs
+            coord_dict[f"{term_name}_mean_gfreqs"] = mean_gfreqs
+            coord_dict[f"{term_name}_mean_pfreqs"] = mean_pfreqs
 
         coords_per_xds.append(coord_dict)
 

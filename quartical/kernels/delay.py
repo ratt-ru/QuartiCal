@@ -45,6 +45,8 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         n_tint, n_fint, n_ant, n_dir, n_param, n_corr = param_shape
         n_ppa = 4  # This is always the case.
 
+        gf_map_arr = f_map_arr[0]  # Gain mappings.
+        pf_map_arr = f_map_arr[1]  # Parameter mappings.
         invert_gains(gains, inverse_gains, corr_mode)
 
         dd_term = n_dir > 1
@@ -61,11 +63,11 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         jhr = np.empty(jhr_shape, dtype=real_dtype)
         update = np.empty(jhr_shape, dtype=real_dtype)
 
-        for i in range(50):
+        for i in range(20):
 
             if dd_term:
                 residual = compute_residual(data, model, gains, a1, a2,
-                                            t_map_arr, f_map_arr, d_map_arr,
+                                            t_map_arr, gf_map_arr, d_map_arr,
                                             row_map, row_weights,
                                             corr_mode)
             else:
@@ -82,7 +84,8 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             a2,
                             weights,
                             t_map_arr,
-                            f_map_arr,
+                            gf_map_arr,
+                            pf_map_arr,
                             d_map_arr,
                             row_map,
                             row_weights,
@@ -99,7 +102,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             gains[active_term],
                             chan_freqs,
                             t_bin_arr,
-                            f_map_arr,
+                            pf_map_arr,
                             d_map_arr,
                             dd_term,
                             corr_mode,
@@ -124,8 +127,9 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
-                    residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
-                    row_map, row_weights, active_term, corr_mode):
+                    residual, a1, a2, weights, t_map_arr, gf_map_arr,
+                    pf_map_arr, d_map_arr, row_map, row_weights, active_term,
+                    corr_mode):
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -142,8 +146,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
     compute_jhwj = compute_jhwj_factory(corr_mode)
 
     def impl(jhj, jhr, model, gains, inverse_gains, chan_freqs,
-             residual, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
-             row_map, row_weights, active_term, corr_mode):
+             residual, a1, a2, weights, t_map_arr, gf_map_arr, pf_map_arr,
+             d_map_arr, row_map, row_weights, active_term, corr_mode):
         _, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
@@ -162,7 +166,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                                                 active_term,
                                                 n_tint)
 
-        chan_starts, chan_stops = get_chan_extents(f_map_arr,
+        chan_starts, chan_stops = get_chan_extents(pf_map_arr,
                                                    active_term,
                                                    n_fint,
                                                    n_chan)
@@ -220,7 +224,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                         for gi in range(n_gains):
                             d_m = d_map_arr[gi, d]  # Broadcast dir.
                             t_m = t_map_arr[row_ind, gi]
-                            f_m = f  # This is where the problem lies!
+                            f_m = gf_map_arr[f, gi]
 
                             gain = gains[gi][t_m, f_m]
 
@@ -260,7 +264,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                             v1ct_imul_v2(g_q, lop_qp, lop_qp)
 
                         t_m = t_map_arr[row_ind, active_term]
-                        f_m = f_map_arr[f, active_term]
+                        f_m = pf_map_arr[f, active_term]
                         out_d = d_map_arr[active_term, d]
 
                         g_p = gains_p[active_term]
@@ -360,10 +364,10 @@ def compute_update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
+def finalize_update(update, params, gain, chan_freqs, t_bin_arr, pf_map_arr,
                     d_map_arr, dd_term, corr_mode, active_term):
 
-    def impl(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
+    def impl(update, params, gain, chan_freqs, t_bin_arr, pf_map_arr,
              d_map_arr, dd_term, corr_mode, active_term):
         params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]/2
         params[:, :, :, :, 0, -1] += update[:, :, :, :, 2]/2
@@ -380,7 +384,7 @@ def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr,
                     for d in range(n_dir):
 
                         t_m = t_bin_arr[t, active_term]
-                        f_m = f_map_arr[f, active_term]
+                        f_m = pf_map_arr[f, active_term]
                         d_m = d_map_arr[active_term, d]
 
                         inter0 = params[t_m, f_m, a, d_m, 0, 0]

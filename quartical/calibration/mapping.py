@@ -2,6 +2,7 @@ import dask.array as da
 import numpy as np
 from uuid import uuid4
 from quartical.utils.dask import blockwise_unique
+from quartical.calibration.gain_types import term_types
 
 
 def get_array_items(arr, inds):
@@ -167,46 +168,29 @@ def make_f_mappings(chan_freqs, chan_widths, opts):
     n_term = len(terms)
     n_chan = chan_freqs.size
 
-    # Get frequency intervals for all terms. Or handles the zero case.
-    f_ints = \
-        [getattr(opts, term + "_freq_interval") or n_chan for term in terms]
+    term_f_maps = []
 
-    # Generate a mapping between frequency at data resolution and
-    # frequency intervals.
+    for term in terms:
+        # Get frequency intervals. Or handles the zero case.
+        f_int = getattr(opts, term + "_freq_interval") or n_chan
+        term_type = getattr(opts, term + "_type") or n_chan
 
-    f_map_arr = da.map_blocks(
-        _make_f_mappings,
-        chan_freqs,
-        chan_widths,
-        f_ints,
-        chunks=(chan_freqs.chunks[0], (n_term,)),
-        new_axis=1,
-        dtype=np.int32,
-        name="fmaps-" + uuid4().hex)
+        # Generate a mapping between frequency at data resolution and
+        # frequency intervals.
 
-    return f_map_arr
+        term_f_map = da.map_blocks(
+            term_types[term_type].make_f_maps,
+            chan_freqs,
+            chan_widths,
+            f_int,
+            chunks=(2, chan_freqs.chunks[0],),
+            new_axis=0,
+            dtype=np.int32,
+            name="fmaps-" + uuid4().hex)
 
+        term_f_maps.append(term_f_map)
 
-def _make_f_mappings(chan_freqs, chan_widths, f_ints):
-    """Internals of the frequency interval mapper."""
-
-    n_chan = chan_freqs.size
-    n_term = len(f_ints)
-
-    f_map_arr = np.empty((n_chan, n_term), dtype=np.int32)
-
-    for fn, f_int in enumerate(f_ints):
-        if isinstance(f_int, float):
-            net_ivl = 0
-            bin_num = 0
-            for i, ivl in enumerate(chan_widths):
-                f_map_arr[i, fn] = bin_num
-                net_ivl += ivl
-                if net_ivl >= f_int:
-                    net_ivl = 0
-                    bin_num += 1
-        else:
-            f_map_arr[:, fn] = np.arange(n_chan)//f_int
+    f_map_arr = da.stack(term_f_maps, axis=2).rechunk({2: n_term})
 
     return f_map_arr
 

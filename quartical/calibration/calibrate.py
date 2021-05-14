@@ -33,7 +33,7 @@ def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
     """Thin wrapper to handle an unknown number of input gains."""
 
     return compute_residual(data, model, gains, a1, a2, t_map_arr,
-                            f_map_arr, d_map_arr, row_map, row_weights,
+                            f_map_arr[0], d_map_arr, row_map, row_weights,
                             corr_mode)
 
 
@@ -43,7 +43,7 @@ def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
     """Thin wrapper to handle an unknown number of input gains."""
 
     return compute_corrected_residual(residual, gains, a1, a2, t_map_arr,
-                                      f_map_arr, d_map_arr, row_map,
+                                      f_map_arr[0], d_map_arr, row_map,
                                       row_weights, corr_mode)
 
 
@@ -190,7 +190,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             t_map_arr, ("rowlike", "term"),
-            f_map_arr, ("chan", "term"),
+            f_map_arr, ("gp", "chan", "term"),
             d_map_arr, None,
             *((row_map, ("rowlike",)) if is_bda else (None, None)),
             *((row_weights, ("rowlike",)) if is_bda else (None, None)),
@@ -208,7 +208,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             t_map_arr, ("rowlike", "term"),
-            f_map_arr, ("chan", "term"),
+            f_map_arr, ("gp", "chan", "term"),
             d_map_arr, None,
             *((row_map, ("rowlike",)) if is_bda else (None, None)),
             *((row_weights, ("rowlike",)) if is_bda else (None, None)),
@@ -228,7 +228,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             t_map_arr, ("rowlike", "term"),
-            f_map_arr, ("chan", "term"),
+            f_map_arr, ("gp", "chan", "term"),
             d_map_arr, None,
             *((row_map, ("rowlike",)) if is_bda else (None, None)),
             *((row_weights, ("rowlike",)) if is_bda else (None, None)),
