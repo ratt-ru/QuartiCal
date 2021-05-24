@@ -137,7 +137,8 @@ def test_f_mappings(freq_int, freq_chunk, mapping_opts):
     chan_freqs = da.arange(n_freq, chunks=freq_chunk)
     chan_widths = da.ones(n_freq, chunks=freq_chunk)*7
 
-    da_f_maps = make_f_mappings(chan_freqs, chan_widths, opts)
+    # Pull out just the gain mapping, not the parameter mapping.
+    da_f_maps = make_f_mappings(chan_freqs, chan_widths, opts)[0, ...]
 
     # Set up and compute numpy values to test against.
 
