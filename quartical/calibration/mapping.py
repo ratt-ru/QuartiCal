@@ -90,7 +90,7 @@ def make_t_binnings(utime_per_chunk, utime_intervals, opts):
         # time intervals.
 
         term_t_bin = da.map_blocks(
-            _make_t_binnings,  # WRONG! Needs to be term dependent.
+            term_types[term_type].make_t_bins,
             utime_per_chunk,
             utime_intervals,
             t_int,
@@ -104,28 +104,6 @@ def make_t_binnings(utime_per_chunk, utime_intervals, opts):
     t_bin_arr = da.stack(term_t_bins, axis=2).rechunk({2: n_term})
 
     return t_bin_arr
-
-
-def _make_t_binnings(n_utime, utime_intervals, t_int):
-    """Internals of the time binner."""
-
-    tbin_arr = np.empty((2, utime_intervals.size), dtype=np.int32)
-
-    if isinstance(t_int, float):
-        net_ivl = 0
-        bin_num = 0
-        for i, ivl in enumerate(utime_intervals):
-            tbin_arr[:, i] = bin_num
-            net_ivl += ivl
-            if net_ivl >= t_int:
-                net_ivl = 0
-                bin_num += 1
-    else:
-        tbin_arr[:, :] = np.floor_divide(np.arange(n_utime),
-                                         t_int,
-                                         dtype=np.int32)
-
-    return tbin_arr
 
 
 def make_t_mappings(utime_ind, t_bin_arr):

@@ -99,6 +99,28 @@ class Gain:
 
         return f_map_arr
 
+    @staticmethod
+    def make_t_bins(n_utime, utime_intervals, t_int):
+        """Internals of the time binner."""
+
+        tbin_arr = np.empty((2, utime_intervals.size), dtype=np.int32)
+
+        if isinstance(t_int, float):
+            net_ivl = 0
+            bin_num = 0
+            for i, ivl in enumerate(utime_intervals):
+                tbin_arr[:, i] = bin_num
+                net_ivl += ivl
+                if net_ivl >= t_int:
+                    net_ivl = 0
+                    bin_num += 1
+        else:
+            tbin_arr[:, :] = np.floor_divide(np.arange(n_utime),
+                                             t_int,
+                                             dtype=np.int32)
+
+        return tbin_arr
+
 
 class Complex(Gain):
 
