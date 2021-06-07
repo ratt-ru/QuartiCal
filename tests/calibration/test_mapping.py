@@ -60,7 +60,8 @@ def test_t_binnings(time_int, time_chunk, mapping_opts):
         chunks=utime_loc.chunks,
         dtype=np.float64)
 
-    da_t_bins = make_t_binnings(utime_per_chunk, utime_intervals, opts)
+    # TODO: Should also check parameter mappings.
+    da_t_bins = make_t_binnings(utime_per_chunk, utime_intervals, opts)[0, ...]
 
     t_ints = [getattr(opts, t + "_time_interval") or n_time
               for t in opts.solver_gain_terms]
@@ -138,6 +139,7 @@ def test_f_mappings(freq_int, freq_chunk, mapping_opts):
     chan_widths = da.ones(n_freq, chunks=freq_chunk)*7
 
     # Pull out just the gain mapping, not the parameter mapping.
+    # TODO: Should also check parameter mappings.
     da_f_maps = make_f_mappings(chan_freqs, chan_widths, opts)[0, ...]
 
     # Set up and compute numpy values to test against.
