@@ -217,14 +217,14 @@ def test_f_chunking(data_xds, term_xds_list, xds_opts):
 def test_t_ints(data_xds, term_xds_list, expected_t_ints):
     """Check that the time intervals are correct."""
 
-    assert all(int(sum(eti)) == gxds.dims["t_int"]
+    assert all(int(sum(eti)) == gxds.dims["gain_t"]
                for eti, gxds in zip(expected_t_ints, term_xds_list))
 
 
 def test_f_ints(data_xds, term_xds_list, expected_f_ints):
     """Check that the frequency intervals are correct."""
 
-    assert all(int(sum(efi)) == gxds.dims["f_int"]
+    assert all(int(sum(efi)) == gxds.dims["gain_f"]
                for efi, gxds in zip(expected_f_ints, term_xds_list))
 
 

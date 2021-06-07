@@ -129,7 +129,7 @@ def get_row_extents(t_map_arr, active_term, n_tint):
     row_starts[0] = 0
 
     row_stops = np.empty(n_tint, dtype=np.int32)
-    row_stops[-1] = t_map_arr[1:, active_term].size
+    row_stops[-1] = t_map_arr[:, active_term].size
 
     # NOTE: This assumes time ordered data (row runs).
     if n_tint > 1:

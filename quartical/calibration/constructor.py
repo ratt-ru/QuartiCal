@@ -68,7 +68,7 @@ def construct_solver(data_xds_list,
         blocker.add_input("weights", weight_col, "rfc")
         blocker.add_input("t_bin_arr", t_bin_arr, "rj")  # Not always needed.
         blocker.add_input("t_map_arr", t_map_arr, "rj")
-        blocker.add_input("f_map_arr", f_map_arr, "fj")
+        blocker.add_input("f_map_arr", f_map_arr, "pfj")
         blocker.add_input("d_map_arr", d_map_arr)
         blocker.add_input("corr_mode", opts.input_ms_correlation_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")

@@ -37,14 +37,17 @@ class Gain:
         self.n_tipc = tuple(map(int, tipc))
         self.n_tint = np.sum(self.n_tipc)
 
-        self.n_fipc = tuple(map(int, fipc))
-        self.n_fint = np.sum(self.n_fipc)
+        self.n_fipc_g = tuple(map(int, fipc[0]))
+        self.n_fint_g = np.sum(self.n_fipc_g)
+        self.n_fipc_p = tuple(map(int, fipc[1]))
+        self.n_fint_p = np.sum(self.n_fipc_p)
 
         self.unique_times = coords["time"]
         self.unique_freqs = coords["freq"]
 
         self.interval_times = coords[f"{self.name}_mean_time"]
-        self.interval_freqs = coords[f"{self.name}_mean_freq"]
+        self.gain_freqs = coords[f"{self.name}_mean_gfreqs"]
+        self.param_freqs = coords[f"{self.name}_mean_pfreqs"]
 
         self.additional_args = []
 
@@ -60,14 +63,38 @@ class Gain:
                                 np.arange(self.n_t_chunk, dtype=np.int32)),
                     "f_chunk": ("f_chunk",
                                 np.arange(self.n_f_chunk, dtype=np.int32)),
-                    "t_int": ("t_int", self.interval_times),
-                    "f_int": ("f_int", self.interval_freqs)},
+                    "gain_t": ("gain_t", self.interval_times),
+                    "gain_f": ("gain_f", self.gain_freqs)},
             attrs={"NAME": self.name,
                    "TYPE": self.type,
                    "ARGS": self.additional_args,
                    **self.id_fields})
 
         return xds
+
+    @staticmethod
+    def make_f_maps(chan_freqs, chan_widths, f_int):
+        """Internals of the frequency interval mapper."""
+
+        n_chan = chan_freqs.size
+
+        # The leading dimension corresponds (gain, param). For unparameterised
+        # gains, the parameter mapping is irrelevant.
+        f_map_arr = np.empty((2, n_chan,), dtype=np.int32)
+
+        if isinstance(f_int, float):
+            net_ivl = 0
+            bin_num = 0
+            for i, ivl in enumerate(chan_widths):
+                f_map_arr[:, i] = bin_num
+                net_ivl += ivl
+                if net_ivl >= f_int:
+                    net_ivl = 0
+                    bin_num += 1
+        else:
+            f_map_arr[:, :] = np.arange(n_chan)//f_int
+
+        return f_map_arr
 
 
 class Complex(Gain):
@@ -78,11 +105,11 @@ class Complex(Gain):
 
         self.n_ppa = 0
         self.gain_chunk_spec = gain_spec_tup(self.n_tipc,
-                                             self.n_fipc,
+                                             self.n_fipc_g,
                                              (self.n_ant,),
                                              (self.n_dir,),
                                              (self.n_corr,))
-        self.gain_axes = ("t_int", "f_int", "ant", "dir", "corr")
+        self.gain_axes = ("gain_t", "gain_f", "ant", "dir", "corr")
 
     def make_xds(self):
 
@@ -102,25 +129,27 @@ class Phase(Gain):
 
         self.n_ppa = 1
         self.gain_chunk_spec = gain_spec_tup(self.n_tipc,
-                                             self.n_fipc,
+                                             self.n_fipc_g,
                                              (self.n_ant,),
                                              (self.n_dir,),
                                              (self.n_corr,))
         self.param_chunk_spec = param_spec_tup(self.n_tipc,
-                                               self.n_fipc,
+                                               self.n_fipc_g,
                                                (self.n_ant,),
                                                (self.n_dir,),
                                                (self.n_ppa,),
                                                (self.n_corr,))
-        self.gain_axes = ("t_int", "f_int", "ant", "dir", "corr")
+        self.gain_axes = ("gain_t", "gain_f", "ant", "dir", "corr")
         self.param_axes = \
-            ("t_int", "f_int", "ant", "dir", "param", "corr")
+            ("param_t", "param_f", "ant", "dir", "param", "corr")
 
     def make_xds(self):
 
         xds = Gain.make_xds(self)
 
-        xds = xds.assign_coords({"param": np.array(["phase"])})
+        xds = xds.assign_coords({"param": np.array(["phase"]),
+                                 "param_t": self.interval_times,
+                                 "param_f": self.param_freqs})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
                                 "PARAM_SPEC": self.param_chunk_spec,
                                 "GAIN_AXES": self.gain_axes,
@@ -137,33 +166,60 @@ class Delay(Gain):
 
         self.n_ppa = 2
         self.additional_args = ["chan_freqs", "t_bin_arr"]
-        self.gain_chunk_spec = gain_spec_tup(self.utime_chunks,
-                                             self.freq_chunks,
+        self.gain_chunk_spec = gain_spec_tup(self.n_tipc,
+                                             self.n_fipc_g,
                                              (self.n_ant,),
                                              (self.n_dir,),
                                              (self.n_corr,))
         self.param_chunk_spec = param_spec_tup(self.n_tipc,
-                                               self.n_fipc,
+                                               self.n_fipc_p,
                                                (self.n_ant,),
                                                (self.n_dir,),
                                                (self.n_ppa,),
                                                (self.n_corr,))
-        self.gain_axes = ("time", "freq", "ant", "dir", "corr")
-        self.param_axes = ("t_int", "f_int", "ant", "dir", "param", "corr")
+
+        self.gain_axes = ("gain_t", "gain_f", "ant", "dir", "corr")
+        self.param_axes = ("param_t", "param_f", "ant", "dir", "param", "corr")
 
     def make_xds(self):
 
         xds = Gain.make_xds(self)
 
         xds = xds.assign_coords({"param": np.array(["phase_offset", "delay"]),
-                                 "time": ("time", self.unique_times),
-                                 "freq": ("freq", self.unique_freqs)})
+                                 "param_t": self.interval_times,
+                                 "param_f": self.param_freqs})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
                                 "PARAM_SPEC": self.param_chunk_spec,
                                 "GAIN_AXES": self.gain_axes,
                                 "PARAM_AXES": self.param_axes})
 
         return xds
+
+    @staticmethod
+    def make_f_maps(chan_freqs, chan_widths, f_int):
+        """Internals of the frequency interval mapper."""
+
+        n_chan = chan_freqs.size
+
+        # The leading dimension corresponds (gain, param). For unparameterised
+        # gains, the parameter mapping is irrelevant.
+        f_map_arr = np.zeros((2, n_chan,), dtype=np.int32)
+
+        if isinstance(f_int, float):
+            net_ivl = 0
+            bin_num = 0
+            for i, ivl in enumerate(chan_widths):
+                f_map_arr[1, i] = bin_num
+                net_ivl += ivl
+                if net_ivl >= f_int:
+                    net_ivl = 0
+                    bin_num += 1
+        else:
+            f_map_arr[1, :] = np.arange(n_chan)//f_int
+
+        f_map_arr[0, :] = np.arange(n_chan)
+
+        return f_map_arr
 
 
 term_types = {"complex": Complex,
