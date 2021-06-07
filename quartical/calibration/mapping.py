@@ -79,62 +79,81 @@ def make_t_binnings(utime_per_chunk, utime_intervals, opts):
     terms = opts.solver_gain_terms
     n_term = len(terms)
 
-    # Get time intervals for all terms. Or handles the zero case.
-    t_ints = \
-        [getattr(opts, term + "_time_interval") or np.inf for term in terms]
+    term_t_bins = []
 
-    t_bin_arr = da.map_blocks(
-        _make_t_binnings,
-        utime_per_chunk,
-        utime_intervals,
-        t_ints,
-        chunks=(utime_intervals.chunks[0], (n_term,)),
-        new_axis=1,
-        dtype=np.int32,
-        name="tbins-" + uuid4().hex)
+    for term in terms:
+        # Get frequency intervals. Or handles the zero case.
+        t_int = getattr(opts, term + "_time_interval") or np.inf
+        term_type = getattr(opts, term + "_type") or np.inf
+
+        # Generate a mapping between time at data resolution and
+        # time intervals.
+
+        term_t_bin = da.map_blocks(
+            _make_t_binnings,  # WRONG! Needs to be term dependent.
+            utime_per_chunk,
+            utime_intervals,
+            t_int,
+            chunks=(2, utime_intervals.chunks[0]),
+            new_axis=0,
+            dtype=np.int32,
+            name="tbins-" + uuid4().hex)
+
+        term_t_bins.append(term_t_bin)
+
+    t_bin_arr = da.stack(term_t_bins, axis=2).rechunk({2: n_term})
 
     return t_bin_arr
 
 
-def _make_t_binnings(n_utime, utime_intervals, t_ints):
+def _make_t_binnings(n_utime, utime_intervals, t_int):
     """Internals of the time binner."""
 
-    tbins = np.empty((utime_intervals.size, len(t_ints)), dtype=np.int32)
+    tbin_arr = np.empty((2, utime_intervals.size), dtype=np.int32)
 
-    for tn, t_int in enumerate(t_ints):
-        if isinstance(t_int, float):
-            bins = np.empty_like(utime_intervals, dtype=np.int32)
-            net_ivl = 0
-            bin_num = 0
-            for i, ivl in enumerate(utime_intervals):
-                bins[i] = bin_num
-                net_ivl += ivl
-                if net_ivl >= t_int:
-                    net_ivl = 0
-                    bin_num += 1
-            tbins[:, tn] = bins
+    if isinstance(t_int, float):
+        net_ivl = 0
+        bin_num = 0
+        for i, ivl in enumerate(utime_intervals):
+            tbin_arr[:, i] = bin_num
+            net_ivl += ivl
+            if net_ivl >= t_int:
+                net_ivl = 0
+                bin_num += 1
+    else:
+        tbin_arr[:, :] = np.floor_divide(np.arange(n_utime),
+                                         t_int,
+                                         dtype=np.int32)
 
-        else:
-            tbins[:, tn] = np.floor_divide(np.arange(n_utime),
-                                           t_int,
-                                           dtype=np.int32)
-
-    return tbins
+    return tbin_arr
 
 
 def make_t_mappings(utime_ind, t_bin_arr):
     """Convert unique time indices into solution interval mapping."""
 
-    _, n_term = t_bin_arr.shape
+    _, _, n_term = t_bin_arr.shape
 
     t_map_arr = da.blockwise(
-        get_array_items, ("rowlike", "term"),
-        t_bin_arr, ("rowlike", "term"),
+        _make_t_mappings, ("param", "rowlike", "term"),
+        t_bin_arr, ("param", "rowlike", "term"),
         utime_ind, ("rowlike",),
-        adjust_chunks=(utime_ind.chunks[0], (n_term,)),
+        adjust_chunks={"rowlike": utime_ind.chunks[0]},
         dtype=np.int32,
         align_arrays=False,
         name="tmaps-" + uuid4().hex)
+
+    return t_map_arr
+
+
+def _make_t_mappings(t_bin_arr, utime_ind):
+
+    n_map, _, n_term = t_bin_arr.shape
+    n_row = utime_ind.size
+
+    t_map_arr = np.empty((n_map, n_row, n_term), dtype=np.int32)
+
+    for i in range(n_map):
+        t_map_arr[i, :, :] = t_bin_arr[i, utime_ind]
 
     return t_map_arr
 

@@ -39,6 +39,7 @@ def phase_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         n_tint, n_fint, n_ant, n_dir, n_corr = gains[active_term].shape
         n_ppa = 2  # This is always the case.
 
+        t_map_arr = t_map_arr[0]  # We don't need the parameter mappings.
         f_map_arr = f_map_arr[0]  # We don't need the parameter mappings.
 
         invert_gains(gains, inverse_gains, corr_mode)

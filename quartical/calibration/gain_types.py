@@ -34,8 +34,10 @@ class Gain:
         self.n_t_chunk = len(self.utime_chunks)
         self.n_f_chunk = len(self.freq_chunks)
 
-        self.n_tipc = tuple(map(int, tipc))
-        self.n_tint = np.sum(self.n_tipc)
+        self.n_tipc_g = tuple(map(int, tipc[0]))
+        self.n_tint_g = np.sum(self.n_tipc_g)
+        self.n_tipc_p = tuple(map(int, tipc[1]))
+        self.n_tint_p = np.sum(self.n_tipc_p)
 
         self.n_fipc_g = tuple(map(int, fipc[0]))
         self.n_fint_g = np.sum(self.n_fipc_g)
@@ -45,7 +47,8 @@ class Gain:
         self.unique_times = coords["time"]
         self.unique_freqs = coords["freq"]
 
-        self.interval_times = coords[f"{self.name}_mean_time"]
+        self.gain_times = coords[f"{self.name}_mean_gtime"]
+        self.param_times = coords[f"{self.name}_mean_ptime"]
         self.gain_freqs = coords[f"{self.name}_mean_gfreqs"]
         self.param_freqs = coords[f"{self.name}_mean_pfreqs"]
 
@@ -63,7 +66,7 @@ class Gain:
                                 np.arange(self.n_t_chunk, dtype=np.int32)),
                     "f_chunk": ("f_chunk",
                                 np.arange(self.n_f_chunk, dtype=np.int32)),
-                    "gain_t": ("gain_t", self.interval_times),
+                    "gain_t": ("gain_t", self.gain_times),
                     "gain_f": ("gain_f", self.gain_freqs)},
             attrs={"NAME": self.name,
                    "TYPE": self.type,
@@ -104,7 +107,7 @@ class Complex(Gain):
         Gain.__init__(self, term_name, data_xds, coords, tipc, fipc, opts)
 
         self.n_ppa = 0
-        self.gain_chunk_spec = gain_spec_tup(self.n_tipc,
+        self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
                                              self.n_fipc_g,
                                              (self.n_ant,),
                                              (self.n_dir,),
@@ -128,27 +131,26 @@ class Phase(Gain):
         Gain.__init__(self, term_name, data_xds, coords, tipc, fipc, opts)
 
         self.n_ppa = 1
-        self.gain_chunk_spec = gain_spec_tup(self.n_tipc,
+        self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
                                              self.n_fipc_g,
                                              (self.n_ant,),
                                              (self.n_dir,),
                                              (self.n_corr,))
-        self.param_chunk_spec = param_spec_tup(self.n_tipc,
+        self.param_chunk_spec = param_spec_tup(self.n_tipc_g,
                                                self.n_fipc_g,
                                                (self.n_ant,),
                                                (self.n_dir,),
                                                (self.n_ppa,),
                                                (self.n_corr,))
         self.gain_axes = ("gain_t", "gain_f", "ant", "dir", "corr")
-        self.param_axes = \
-            ("param_t", "param_f", "ant", "dir", "param", "corr")
+        self.param_axes = ("param_t", "param_f", "ant", "dir", "param", "corr")
 
     def make_xds(self):
 
         xds = Gain.make_xds(self)
 
         xds = xds.assign_coords({"param": np.array(["phase"]),
-                                 "param_t": self.interval_times,
+                                 "param_t": self.param_times,
                                  "param_f": self.param_freqs})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
                                 "PARAM_SPEC": self.param_chunk_spec,
@@ -166,12 +168,12 @@ class Delay(Gain):
 
         self.n_ppa = 2
         self.additional_args = ["chan_freqs", "t_bin_arr"]
-        self.gain_chunk_spec = gain_spec_tup(self.n_tipc,
+        self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
                                              self.n_fipc_g,
                                              (self.n_ant,),
                                              (self.n_dir,),
                                              (self.n_corr,))
-        self.param_chunk_spec = param_spec_tup(self.n_tipc,
+        self.param_chunk_spec = param_spec_tup(self.n_tipc_g,  # Check!
                                                self.n_fipc_p,
                                                (self.n_ant,),
                                                (self.n_dir,),
@@ -186,7 +188,7 @@ class Delay(Gain):
         xds = Gain.make_xds(self)
 
         xds = xds.assign_coords({"param": np.array(["phase_offset", "delay"]),
-                                 "param_t": self.interval_times,
+                                 "param_t": self.gain_times,
                                  "param_f": self.param_freqs})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
                                 "PARAM_SPEC": self.param_chunk_spec,

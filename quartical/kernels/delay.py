@@ -45,6 +45,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         n_tint, n_fint, n_ant, n_dir, n_param, n_corr = param_shape
         n_ppa = 4  # This is always the case.
 
+        t_map_arr = t_map_arr[0]  # We don't need the time paramter mappings.
         gf_map_arr = f_map_arr[0]  # Gain mappings.
         pf_map_arr = f_map_arr[1]  # Parameter mappings.
         invert_gains(gains, inverse_gains, corr_mode)
