@@ -1,5 +1,6 @@
 from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
 from quartical.gains.phase.kernel import phase_solver
+import numpy as np
 
 
 class Phase(Gain):
