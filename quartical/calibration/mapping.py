@@ -2,7 +2,7 @@ import dask.array as da
 import numpy as np
 from uuid import uuid4
 from quartical.utils.dask import blockwise_unique
-from quartical.calibration.gain_types import term_types
+from quartical.gains import term_types
 
 
 def get_array_items(arr, inds):

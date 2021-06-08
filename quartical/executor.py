@@ -16,7 +16,7 @@ from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
-from quartical.calibration.gain_datasets import write_gain_datasets
+from quartical.gains.datasets import write_gain_datasets
 
 
 @logger.catch
