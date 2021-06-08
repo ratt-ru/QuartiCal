@@ -4,7 +4,7 @@ import dask.array as da
 import pathlib
 import shutil
 from daskms.experimental.zarr import xds_to_zarr
-from quartical.calibration.gain_types import term_types
+from quartical.gains import term_types
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
 

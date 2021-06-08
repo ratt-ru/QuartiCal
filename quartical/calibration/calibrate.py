@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
-from quartical.kernels.generics import (compute_residual,
-                                        compute_corrected_residual)
+from quartical.gains.general.generics import (compute_residual,
+                                              compute_corrected_residual)
 from quartical.statistics.statistics import (assign_interval_stats,
                                              assign_post_solve_chisq,
                                              assign_presolve_data_stats,)
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
-from quartical.calibration.gain_datasets import make_gain_xds_list
+from quartical.gains.datasets import make_gain_xds_list
 from quartical.interpolation.interpolate import load_and_interpolate_gains
 from loguru import logger  # noqa
 from collections import namedtuple

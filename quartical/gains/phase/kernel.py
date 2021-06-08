@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import prange, literally, generated_jit, types
-from quartical.kernels.generics import (invert_gains,
-                                        compute_residual,
-                                        compute_convergence)
-from quartical.kernels.convenience import (get_row,
-                                           get_chan_extents,
-                                           get_row_extents)
-import quartical.kernels.factories as factories
+from quartical.gains.general.generics import (invert_gains,
+                                              compute_residual,
+                                              compute_convergence)
+from quartical.gains.general.convenience import (get_row,
+                                                 get_chan_extents,
+                                                 get_row_extents)
+import quartical.gains.general.factories as factories
 from collections import namedtuple
 
 
@@ -21,34 +21,27 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
+def phase_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                  d_map_arr, corr_mode, active_term, inverse_gains,
-                 gains, flags, params, chan_freqs, row_map, row_weights,
-                 t_bin_arr):
-    """Solve for a delay.
-
-    Note that the paramter vector is ordered as [offset slope].
-
-    """
+                 gains, flags, params, row_map, row_weights):
+    """Solve for a phase-only gain."""
 
     if not isinstance(corr_mode, types.Literal):
         return lambda model, data, a1, a2, weights, t_map_arr, f_map_arr, \
                       d_map_arr, corr_mode, active_term, inverse_gains, \
-                      gains, flags, params, chan_freqs, row_map, row_weights, \
-                      t_bin_arr: literally(corr_mode)
+                      gains, flags, params, row_map, row_weights: \
+                      literally(corr_mode)
 
-    def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
-             corr_mode, active_term, inverse_gains, gains, flags, params,
-             chan_freqs, row_map, row_weights, t_bin_arr):
+    def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
+             d_map_arr, corr_mode, active_term, inverse_gains,
+             gains, flags, params, row_map, row_weights):
 
-        param_shape = params.shape
-        n_tint, n_fint, n_ant, n_dir, n_param, n_corr = param_shape
-        n_ppa = 4  # This is always the case.
+        n_tint, n_fint, n_ant, n_dir, n_corr = gains[active_term].shape
+        n_ppa = 2  # This is always the case.
 
-        t_map_arr = t_map_arr[0]  # We don't need the time parameter mappings.
-        t_bin_arr = t_bin_arr[0]  # We don't need the time parameter mappings.
-        gf_map_arr = f_map_arr[0]  # Gain mappings.
-        pf_map_arr = f_map_arr[1]  # Parameter mappings.
+        t_map_arr = t_map_arr[0]  # We don't need the parameter mappings.
+        f_map_arr = f_map_arr[0]  # We don't need the parameter mappings.
+
         invert_gains(gains, inverse_gains, corr_mode)
 
         dd_term = n_dir > 1
@@ -69,7 +62,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
             if dd_term:
                 residual = compute_residual(data, model, gains, a1, a2,
-                                            t_map_arr, gf_map_arr, d_map_arr,
+                                            t_map_arr, f_map_arr, d_map_arr,
                                             row_map, row_weights,
                                             corr_mode)
             else:
@@ -80,14 +73,12 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             model,
                             gains,
                             inverse_gains,
-                            chan_freqs,
                             residual,
                             a1,
                             a2,
                             weights,
                             t_map_arr,
-                            gf_map_arr,
-                            pf_map_arr,
+                            f_map_arr,
                             d_map_arr,
                             row_map,
                             row_weights,
@@ -102,13 +93,9 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             finalize_update(update,
                             params,
                             gains[active_term],
-                            chan_freqs,
-                            t_bin_arr,
-                            pf_map_arr,
-                            d_map_arr,
+                            i,
                             dd_term,
-                            corr_mode,
-                            active_term)
+                            corr_mode)
 
             # Check for gain convergence. TODO: This can be affected by the
             # weights. Currently unsure how or why, but using unity weights
@@ -128,10 +115,9 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
-                    residual, a1, a2, weights, t_map_arr, gf_map_arr,
-                    pf_map_arr, d_map_arr, row_map, row_weights, active_term,
-                    corr_mode):
+def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
+                    a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
+                    row_weights, active_term, corr_mode):
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -147,9 +133,9 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
     compute_jh = compute_jh_factory(corr_mode)
     compute_jhwj = compute_jhwj_factory(corr_mode)
 
-    def impl(jhj, jhr, model, gains, inverse_gains, chan_freqs,
-             residual, a1, a2, weights, t_map_arr, gf_map_arr, pf_map_arr,
-             d_map_arr, row_map, row_weights, active_term, corr_mode):
+    def impl(jhj, jhr, model, gains, inverse_gains, residual, a1, a2, weights,
+             t_map_arr, f_map_arr, d_map_arr, row_map, row_weights,
+             active_term, corr_mode):
         _, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
@@ -168,7 +154,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                                                 active_term,
                                                 n_tint)
 
-        chan_starts, chan_stops = get_chan_extents(pf_map_arr,
+        chan_starts, chan_stops = get_chan_extents(f_map_arr,
                                                    active_term,
                                                    n_fint,
                                                    n_chan)
@@ -214,8 +200,6 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                     tmp_jh_p[:, :, :] = 0
                     tmp_jh_q[:, :, :] = 0
 
-                    nu = chan_freqs[f]
-
                     for d in range(n_dir):
 
                         set_identity(lop_pq)
@@ -226,7 +210,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                         for gi in range(n_gains):
                             d_m = d_map_arr[gi, d]  # Broadcast dir.
                             t_m = t_map_arr[row_ind, gi]
-                            f_m = gf_map_arr[f, gi]
+                            f_m = f_map_arr[f, gi]
 
                             gain = gains[gi][t_m, f_m]
 
@@ -266,20 +250,20 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                             v1ct_imul_v2(g_q, lop_qp, lop_qp)
 
                         t_m = t_map_arr[row_ind, active_term]
-                        f_m = pf_map_arr[f, active_term]
+                        f_m = f_map_arr[f, active_term]
                         out_d = d_map_arr[active_term, d]
 
                         g_p = gains_p[active_term]
                         accumulate_jhr(g_p, r_pq, rop_pq, lop_pq,
-                                       jhr[t_m, f_m, a1_m, out_d], nu)
+                                       jhr[t_m, f_m, a1_m, out_d])
 
-                        compute_jh(lop_pq, rop_pq, g_p, nu, tmp_jh_p[out_d])
+                        compute_jh(lop_pq, rop_pq, g_p, tmp_jh_p[out_d])
 
                         g_q = gains_q[active_term]
                         accumulate_jhr(g_q, r_qp, rop_qp, lop_qp,
-                                       jhr[t_m, f_m, a2_m, out_d], nu)
+                                       jhr[t_m, f_m, a2_m, out_d])
 
-                        compute_jh(lop_qp, rop_qp, g_q, nu, tmp_jh_q[out_d])
+                        compute_jh(lop_qp, rop_qp, g_q, tmp_jh_q[out_d])
 
                     for d in range(n_gdir):
 
@@ -302,7 +286,7 @@ def compute_update(update, jhj, jhr, corr_mode):
         def impl(update, jhj, jhr, corr_mode):
             n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
 
-            ident = np.eye(4)
+            ident = np.eye(2)
 
             for t in range(n_tint):
                 for f in range(n_fint):
@@ -323,81 +307,57 @@ def compute_update(update, jhj, jhr, corr_mode):
                             update[t, f, a, d] = jhj_inv.dot(jhr[t, f, a, d])
     else:
         def impl(update, jhj, jhr, corr_mode):
-
             n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
 
             for t in range(n_tint):
                 for f in range(n_fint):
                     for a in range(n_ant):
                         for d in range(n_dir):
-                            for sl in (slice(0, 2), slice(2, 4)):
+                            jhj_sel = jhj[t, f, a, d]
 
-                                jhj_sel = jhj[t, f, a, d, sl, sl]
+                            jhj00 = jhj_sel[0, 0]
+                            jhj11 = jhj_sel[1, 1]
 
-                                jhj00 = jhj_sel[0, 0]
-                                jhj01 = jhj_sel[0, 1]
-                                jhj10 = jhj_sel[1, 0]
-                                jhj11 = jhj_sel[1, 1]
+                            det = jhj00*jhj11
 
-                                det = (jhj00*jhj11 - jhj01*jhj10)
+                            if det.real < 1e-6:
+                                jhjinv00 = 0
+                                jhjinv11 = 0
+                            else:
+                                jhjinv00 = 1/jhj00
+                                jhjinv11 = 1/jhj11
 
-                                if det.real < 1e-6:
-                                    jhjinv00 = 0
-                                    jhjinv01 = 0
-                                    jhjinv10 = 0
-                                    jhjinv11 = 0
-                                else:
-                                    jhjinv00 = jhj11/det
-                                    jhjinv01 = -jhj01/det
-                                    jhjinv10 = -jhj10/det
-                                    jhjinv11 = jhj00/det
+                            jhr_sel = jhr[t, f, a, d]
 
-                                jhr_sel = jhr[t, f, a, d, sl]
+                            jhr_0 = jhr_sel[0]
+                            jhr_1 = jhr_sel[1]
 
-                                jhr_0 = jhr_sel[0]
-                                jhr_1 = jhr_sel[1]
+                            upd_sel = update[t, f, a, d]
 
-                                upd_sel = update[t, f, a, d, sl]
-
-                                upd_sel[0] = jhjinv00*jhr_0 + jhjinv01*jhr_1
-                                upd_sel[1] = jhjinv10*jhr_0 + jhjinv11*jhr_1
+                            upd_sel[0] = jhjinv00*jhr_0
+                            upd_sel[1] = jhjinv11*jhr_1
     return impl
 
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, params, gain, chan_freqs, t_bin_arr, pf_map_arr,
-                    d_map_arr, dd_term, corr_mode, active_term):
+def finalize_update(update, params, gain, i_num, dd_term, corr_mode):
 
-    def impl(update, params, gain, chan_freqs, t_bin_arr, pf_map_arr,
-             d_map_arr, dd_term, corr_mode, active_term):
+    def impl(update, params, gain, i_num, dd_term, corr_mode):
         params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]/2
-        params[:, :, :, :, 0, -1] += update[:, :, :, :, 2]/2
-        params[:, :, :, :, 1, 0] += update[:, :, :, :, 1]/2
-        params[:, :, :, :, 1, -1] += update[:, :, :, :, 3]/2
+        params[:, :, :, :, 0, -1] += update[:, :, :, :, 1]/2
 
         n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
 
-        n_time, n_freq, _, _, _ = gain.shape
-
-        for t in range(n_time):
-            for f in range(n_freq):
+        for t in range(n_tint):
+            for f in range(n_fint):
                 for a in range(n_ant):
                     for d in range(n_dir):
+                        phase0 = params[t, f, a, d, 0, 0]
+                        phase1 = params[t, f, a, d, 0, -1]
 
-                        t_m = t_bin_arr[t, active_term]
-                        f_m = pf_map_arr[f, active_term]
-                        d_m = d_map_arr[active_term, d]
-
-                        inter0 = params[t_m, f_m, a, d_m, 0, 0]
-                        inter1 = params[t_m, f_m, a, d_m, 0, -1]
-                        delay0 = params[t_m, f_m, a, d_m, 1, 0]
-                        delay1 = params[t_m, f_m, a, d_m, 1, -1]
-
-                        cf = chan_freqs[f]
-
-                        gain[t, f, a, d, 0] = np.exp(1j*(cf*delay0 + inter0))
-                        gain[t, f, a, d, -1] = np.exp(1j*(cf*delay1 + inter1))
+                        gain[t, f, a, d, 0] = np.exp(1j*phase0)
+                        gain[t, f, a, d, -1] = np.exp(1j*phase1)
     return impl
 
 
@@ -408,7 +368,7 @@ def accumulate_jhr_factory(mode):
     v1_imul_v2 = factories.v1_imul_v2_factory(mode)
 
     if mode.literal_value == "full" or mode.literal_value == "mixed":
-        def impl(gain, res, rop, lop, jhr, nu):
+        def impl(gain, res, rop, lop, jhr):
 
             v1_imul_v2(res, rop, res)
             v1_imul_v2(lop, res, res)
@@ -420,11 +380,9 @@ def accumulate_jhr_factory(mode):
             upd_11 = (-1j*g_11*v_11).real
 
             jhr[0] += upd_00
-            jhr[1] += nu*upd_00
-            jhr[2] += upd_11
-            jhr[3] += nu*upd_11
+            jhr[1] += upd_11
     else:
-        def impl(gain, res, rop, lop, jhr, nu):
+        def impl(gain, res, rop, lop, jhr):
 
             v1_imul_v2(res, rop, res)
 
@@ -435,9 +393,7 @@ def accumulate_jhr_factory(mode):
             upd_11 = (-1j*g_11*v_11).real
 
             jhr[0] += upd_00
-            jhr[1] += nu*upd_00
-            jhr[2] += upd_11
-            jhr[3] += nu*upd_11
+            jhr[1] += upd_11
     return factories.qcjit(impl)
 
 
@@ -447,7 +403,7 @@ def compute_jh_factory(mode):
     unpackct = factories.unpackct_factory(mode)
 
     if mode.literal_value == "full" or mode.literal_value == "mixed":
-        def impl(lop, rop, gain, nu, jh):
+        def impl(lop, rop, gain, jh):
             l_00, l_01, l_10, l_11 = unpack(lop)
             r_00, r_10, r_01, r_11 = unpack(rop)  # Note the "transpose".
             g_00, g_01, g_10, g_11 = unpackct(gain)
@@ -469,29 +425,19 @@ def compute_jh_factory(mode):
 
             # Coefficients generated by the derivative.
             drv_00 = -1j*g_00
-            drv_10 = drv_00*nu
-            drv_23 = -1j*g_11
-            drv_33 = drv_23*nu
+            drv_13 = -1j*g_11
 
             # (param_per_antenna, 4) result of special kronecker product.
             jh[0, 0] += rkl_00*drv_00
             jh[0, 1] += rkl_01*drv_00
             jh[0, 2] += rkl_02*drv_00
             jh[0, 3] += rkl_03*drv_00
-            jh[1, 0] += rkl_00*drv_10
-            jh[1, 1] += rkl_01*drv_10
-            jh[1, 2] += rkl_02*drv_10
-            jh[1, 3] += rkl_03*drv_10
-            jh[2, 0] += rkl_30*drv_23
-            jh[2, 1] += rkl_31*drv_23
-            jh[2, 2] += rkl_32*drv_23
-            jh[2, 3] += rkl_33*drv_23
-            jh[3, 0] += rkl_30*drv_33
-            jh[3, 1] += rkl_31*drv_33
-            jh[3, 2] += rkl_32*drv_33
-            jh[3, 3] += rkl_33*drv_33
+            jh[1, 0] += rkl_30*drv_13
+            jh[1, 1] += rkl_31*drv_13
+            jh[1, 2] += rkl_32*drv_13
+            jh[1, 3] += rkl_33*drv_13
     else:
-        def impl(lop, rop, gain, nu, jh):
+        def impl(lop, rop, gain, jh):
             r_00, r_11 = unpack(rop)
             g_00, g_11 = unpackct(gain)
 
@@ -501,15 +447,11 @@ def compute_jh_factory(mode):
 
             # Coefficients generated by the derivative.
             drv_00 = -1j*g_00
-            drv_10 = drv_00*nu
-            drv_23 = -1j*g_11
-            drv_33 = drv_23*nu
+            drv_13 = -1j*g_11
 
             # (param_per_antenna, 4) result of special kronecker product.
             jh[0, 0] += r_00*drv_00
-            jh[1, 0] += r_00*drv_10
-            jh[2, 1] += r_11*drv_23
-            jh[3, 1] += r_11*drv_33
+            jh[1, 1] += r_11*drv_13
     return factories.qcjit(impl)
 
 
@@ -543,29 +485,12 @@ def compute_jhwj_factory(mode):
             w1_00, w1_11 = unpack(w)
 
             jh_00 = jh[0, 0]
-            jh_10 = jh[1, 0]
-            jh_21 = jh[2, 1]
-            jh_31 = jh[3, 1]
+            jh_11 = jh[1, 1]
 
             # Conjugate transpose terms.
             j_00 = jh_00.conjugate()
-            j_01 = jh_10.conjugate()
-            j_12 = jh_21.conjugate()
-            j_13 = jh_31.conjugate()
+            j_11 = jh_11.conjugate()
 
-            # Multiply in the weights.
-            jh_00 *= w1_00
-            jh_10 *= w1_00
-            jh_21 *= w1_11
-            jh_31 *= w1_11
-
-            jhj[0, 0] += (jh_00*j_00).real
-            jhj[0, 1] += (jh_00*j_01).real
-            jhj[1, 0] += (jh_10*j_00).real
-            jhj[1, 1] += (jh_10*j_01).real
-
-            jhj[2, 2] += (jh_21*j_12).real
-            jhj[2, 3] += (jh_21*j_13).real
-            jhj[3, 2] += (jh_31*j_12).real
-            jhj[3, 3] += (jh_31*j_13).real
+            jhj[0, 0] += (jh_00*w1_00*j_00).real
+            jhj[1, 1] += (jh_11*w1_11*j_11).real
     return factories.qcjit(impl)

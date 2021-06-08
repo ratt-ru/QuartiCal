@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import prange, literally, generated_jit, types
-from quartical.kernels.generics import (invert_gains,
-                                        compute_residual,
-                                        compute_convergence)
-from quartical.kernels.convenience import (get_row,
-                                           get_chan_extents,
-                                           get_row_extents)
-import quartical.kernels.factories as factories
+from quartical.gains.general.generics import (invert_gains,
+                                              compute_residual,
+                                              compute_convergence)
+from quartical.gains.general.convenience import (get_row,
+                                                 get_chan_extents,
+                                                 get_row_extents)
+import quartical.gains.general.factories as factories
 from collections import namedtuple
 
 
