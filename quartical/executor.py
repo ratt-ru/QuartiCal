@@ -55,8 +55,6 @@ def _execute(exitstack):
         # is the standard but less convenient pattern
         client.run_on_scheduler(install_plugin)
 
-        dask.config.set({'optimization.fuse.active': False})
-
         logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
@@ -93,11 +91,6 @@ def _execute(exitstack):
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
-    if opts.parallel_scheduler == "distributed":
-        # TODO: Dirty hack to coerce coordinate writes into graph. This should
-        # should probably be handled by daskms.
-        gain_writes = [dask.delayed(bool)(gw) for gw in gain_writes]
-
     t0 = time.time()
 
     with ProgressBar():
@@ -109,12 +102,12 @@ def _execute(exitstack):
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
-    # dask.visualize(writes[:2], gain_writes[:2],
+    # dask.visualize(*writes[:1], *gain_writes[:1],
     #                color='order', cmap='autumn',
     #                filename='order.pdf', node_attr={'penwidth': '10'},
     #                optimize_graph=True)
 
-    # dask.visualize(writes[:2], gain_writes[:2],
+    # dask.visualize(*writes[:1], *gain_writes[:1],
     #                filename='graph.pdf',
     #                optimize_graph=True)
 
