@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
+from xarray import DataArray
 from quartical.data_handling.predict import predict
 from loguru import logger  # noqa
 
@@ -100,14 +101,9 @@ def add_model_graph(ms_xds, opts):
         # rechunking is necessary to ensure the solver gets appropriate blocks.
         model = da.stack(model, axis=2).rechunk({2: n_dir})
 
-        # This pulls out just the diagonal terms in the case that we are doing
-        # diagonal only calibration. TODO: This is easy but needlessly
-        # predicts all correlations.
-        if opts.input_ms_correlation_mode == "diag" and model.shape[-1] == 4:
-            model = model[..., ::3]
-
-        modified_xds = xds.assign({"MODEL_DATA":
-                                  (("row", "chan", "dir", "corr"), model)})
+        modified_xds = xds.assign(
+            {"MODEL_DATA": (("row", "chan", "dir", "corr"), model)}
+        )
 
         model_xds_list.append(modified_xds)
 
