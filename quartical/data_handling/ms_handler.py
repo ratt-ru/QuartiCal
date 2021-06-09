@@ -162,7 +162,7 @@ def read_xds_list(opts):
 
     for xds in data_xds_list:
         chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
-        chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
+        chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
         tmp_xds_list.append(xds.assign(
             {"CHAN_FREQ": (("chan",), chan_freqs[0]),
              "CHAN_WIDTH": (("chan",), chan_widths[0]),
