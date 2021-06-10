@@ -48,6 +48,8 @@ def construct_solver(data_xds_list,
         f_map_arr = f_map_list[xds_ind]
         d_map_arr = d_map_list[xds_ind]
         gain_terms = gain_xds_list[xds_ind]
+        n_corr = data_xds.dims["corr"]
+        corr_mode = "diag" if n_corr == 2 else "full"  # TODO: Use int.
 
         # Grab the number of input chunks - doing this on the data should be
         # safe.
@@ -70,7 +72,7 @@ def construct_solver(data_xds_list,
         blocker.add_input("t_map_arr", t_map_arr, "prj")
         blocker.add_input("f_map_arr", f_map_arr, "pfj")
         blocker.add_input("d_map_arr", d_map_arr)
-        blocker.add_input("corr_mode", opts.input_ms_correlation_mode)
+        blocker.add_input("corr_mode", corr_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
         blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
 

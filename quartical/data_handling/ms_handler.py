@@ -162,7 +162,7 @@ def read_xds_list(opts):
 
     for xds in data_xds_list:
         chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
-        chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
+        chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
         tmp_xds_list.append(xds.assign(
             {"CHAN_FREQ": (("chan",), chan_freqs[0]),
              "CHAN_WIDTH": (("chan",), chan_widths[0]),
@@ -182,15 +182,17 @@ def read_xds_list(opts):
          for xds_ind, xds in enumerate(data_xds_list)]
 
     # We may only want to use some of the input correlation values. xarray
-    # has a neat syntax for this. #TODO: This needs to depend on the number of
-    # correlations actually present in the MS/on the xds.
+    # has a neat syntax for this.
 
-    if opts.input_ms_correlation_mode == "diag" and opts._ms_ncorr == 4:
-        data_xds_list = [xds.sel(corr=[0, 3]) for xds in data_xds_list]
-    elif opts.input_ms_correlation_mode == "full" and opts._ms_ncorr != 4:
-        raise ValueError(f"--input-ms-correlation-mode was set to full, "
-                         f"but the measurement set only contains "
-                         f"{opts._ms_ncorr} correlations")
+    if opts.input_ms_select_corr:
+        try:
+            data_xds_list = [xds.sel(corr=opts.input_ms_select_corr)
+                             for xds in data_xds_list]
+        except KeyError:
+            raise KeyError(f"--input-ms-select-corr attempted to select "
+                           f"correlations not present in the data - this MS "
+                           f"contains {opts._ms_ncorr} correlations. User "
+                           f"attempted to select {opts.input_ms_select_corr}.")
 
     return data_xds_list, ref_xds_list
 

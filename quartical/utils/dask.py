@@ -163,7 +163,7 @@ class Blocker:
                 output_graph[(output_layer_name, *k)] = \
                     (getitem, input_keys[i], o.name)
 
-            layers.update({output_layer_name: output_graph})
+            layers.update({output_layer_name: MaterializedLayer(output_graph)})
             deps.update({output_layer_name: {layer_name}})
 
         hlg = HighLevelGraph(layers, deps)

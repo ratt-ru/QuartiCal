@@ -5,6 +5,7 @@ import weakref
 from astropy.io import fits
 import dask.array as da
 import dask
+from xarray import DataArray
 from dask.graph_manipulation import clone
 from daskms import xds_from_table
 from loguru import logger
@@ -727,13 +728,13 @@ def predict(data_xds_list, opts):
                 if vis.ndim == 4:
                     vis = vis.reshape(vis.shape[:-2] + (4,))
 
-                # TODO: This was a bit of a shortcut - might need revision.
-                if opts.input_ms_correlation_mode == "diag":
-                    if vis.shape[-1] == 4:
-                        vis = vis[..., ::3]
+                vis = DataArray(vis, dims=["row", "chan", "corr"])
+
+                if opts.input_ms_select_corr:
+                    vis = vis.sel(corr=opts.input_ms_select_corr)
 
                 # Append group_vis to the appropriate list.
-                model_vis[model_name].append(vis)
+                model_vis[model_name].append(vis.data)
 
         predict_list.append(freeze_default_dict(model_vis))
 

@@ -82,6 +82,14 @@ input-ms:
     #           (exclusive range), "10:" (from 10 to last), ":10:2" (0 to 9
     #           inclusive, stepped by 2).
     #     default: None
+    select-corr:
+        nargs: +
+        type: int
+        help: Select correlations from the input data. These are specified as 
+              integer values e.g. to select the first and last correlations in
+              a measurement set with four correlations use 
+              '--input-ms-select-corr 0 3'.
+        default: None
     correlation-mode:
         type: str
         choices:
@@ -341,7 +349,6 @@ parallel:
         choices:
             - complex
             - phase
-            - kalman
             - delay
         default: complex
     # parametrisation:

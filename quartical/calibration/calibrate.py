@@ -159,7 +159,6 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
 
     """
 
-    corr_mode = opts.input_ms_correlation_mode
     is_bda = opts.input_ms_is_bda
     post_solve_data_xds_list = []
 
@@ -172,6 +171,8 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
         t_map_arr = t_map_list[xds_ind]
         f_map_arr = f_map_list[xds_ind]
         d_map_arr = d_map_list[xds_ind]
+        n_corr = data_xds.dims["corr"]
+        corr_mode = "diag" if n_corr == 2 else "full"  # TODO: Use int.
 
         row_map = data_xds.ROW_MAP.data if is_bda else None
         row_weights = data_xds.ROW_WEIGHTS.data if is_bda else None
