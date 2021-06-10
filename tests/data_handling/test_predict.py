@@ -39,7 +39,6 @@ def opts(base_opts, freq_chunk, time_chunk, model_recipe, beam_name):
 
     options.input_ms_freq_chunk = freq_chunk
     options.input_ms_time_chunk = time_chunk
-    options.input_ms_correlation_mode = "full"
     options.input_model_recipe = model_recipe
     options.input_model_beam = \
         beam_name + "/JVLA-L-centred-$(corr)_$(reim).fits"

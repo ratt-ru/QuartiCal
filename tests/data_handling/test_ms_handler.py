@@ -5,7 +5,7 @@ import numpy as np
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, weight_column, freq_chunk, time_chunk, correlation_mode):
+def opts(base_opts, weight_column, freq_chunk, time_chunk, select_corr):
 
     # Don't overwrite base config - instead create a new Namespace and update.
 
@@ -14,7 +14,7 @@ def opts(base_opts, weight_column, freq_chunk, time_chunk, correlation_mode):
     options.input_ms_weight_column = weight_column
     options.input_ms_freq_chunk = freq_chunk
     options.input_ms_time_chunk = time_chunk
-    options.input_ms_correlation_mode = correlation_mode
+    options.input_ms_select_corr = select_corr
     options._model_columns = ["MODEL_DATA"]
 
     return options
