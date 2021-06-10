@@ -13,7 +13,11 @@ input-ms:
     field: 0
     ddid:
     chan:
-    correlation-mode: full
+    select-corr:
+        - 0
+        - 1
+        - 2
+        - 3
 input-model:
     _description: Arguments pertaining to input model parameters.
     recipe: MODEL_DATA

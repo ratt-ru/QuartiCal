@@ -45,7 +45,6 @@ def opts(base_opts, freq_chunk, time_chunk, model_recipe):
 
     options.input_ms_freq_chunk = freq_chunk
     options.input_ms_time_chunk = time_chunk
-    options.input_ms_correlation_mode = "full"
     options.input_model_recipe = model_recipe
 
     interpret_model(options)

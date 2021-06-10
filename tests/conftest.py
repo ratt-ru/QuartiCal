@@ -96,8 +96,8 @@ def time_chunk(request):
     return request.param
 
 
-@pytest.fixture(params=["full", "diag"], scope="module")
-def correlation_mode(request):
+@pytest.fixture(params=[[0, 1, 2, 3], [0, 3]], scope="module")
+def select_corr(request):
     return request.param
 
 

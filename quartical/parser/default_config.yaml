@@ -89,15 +89,11 @@ input-ms:
               integer values e.g. to select the first and last correlations in
               a measurement set with four correlations use 
               '--input-ms-select-corr 0 3'.
-        default: None
-    correlation-mode:
-        type: str
-        choices:
-            - diag
-            - full
-        help: Determines whether we perform calibration using all the
-              correlations or only the diagonal terms.
-        default: diag
+        default:
+            - 0
+            - 1
+            - 2
+            - 3
 
 input-model:
     _description: Arguments pertaining to input model parameters.
