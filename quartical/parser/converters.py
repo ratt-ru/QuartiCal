@@ -3,21 +3,8 @@ from argparse import ArgumentTypeError
 from loguru import logger
 import re
 
-custom_types = {}
 
-
-def custom_type(fn):
-    """Adds decorated function to the custom type dictionary."""
-
-    logger.trace("Registering custom type {}", fn.__name__)
-
-    custom_types[fn.__name__] = fn
-
-    return fn
-
-
-@custom_type
-def TIME(arg):
+def as_time(arg):
     """Defines the custom argument type TIME.
 
     Converts its input into an integer if it lacks a unit suffix, otherwise a
@@ -55,8 +42,7 @@ def TIME(arg):
     return arg
 
 
-@custom_type
-def FREQ(arg):
+def as_freq(arg):
     """Defines the custom argument type FREQ.
 
     Converts its input into an integer if it lacks a unit suffix, otherwise a
@@ -105,19 +91,19 @@ def FREQ(arg):
     return arg
 
 
-@custom_type
-def DDID(arg):
-    logger.critical("Custom type DDID not implemented.")
-    return str(arg)
+# @custom_type
+# def DDID(arg):
+#     logger.critical("Custom type DDID not implemented.")
+#     return str(arg)
 
 
-@custom_type
-def CHAN(arg):
-    logger.critical("Custom type CHAN not implemented.")
-    return str(arg)
+# @custom_type
+# def CHAN(arg):
+#     logger.critical("Custom type CHAN not implemented.")
+#     return str(arg)
 
 
-@custom_type
-def DIRECTIONS(arg):
-    logger.critical("Custom type DIRECTIONS not implemented.")
-    return str(arg)
+# @custom_type
+# def DIRECTIONS(arg):
+#     logger.critical("Custom type DIRECTIONS not implemented.")
+#     return str(arg)
