@@ -8,10 +8,10 @@ help = oc.load("helpstrings.yaml")
 
 @dataclass
 class MSInputs:
-    path: str
+    path: str = "???"
     column: str = "DATA"
     weight_column: str = "WEIGHT_SPECTRUM"
-    time_chunk: str = 0
+    time_chunk: str = "0"
     freq_chunk: int = 0
     is_bda: bool = False
     group_by: Optional[List[str]] = field(
@@ -25,7 +25,7 @@ class MSInputs:
 
 @dataclass
 class ModelInputs:
-    recipe: str
+    recipe: str = "???"
     beam: Optional[str] = None
     beam_l_axis: str = "X"
     beam_m_axis: str = "Y"
@@ -66,7 +66,7 @@ class MadFlags:
 
 @dataclass
 class Solver:
-    gain_terms: List[str]
+    gain_terms: List[str] = "???"
 
 
 @dataclass
@@ -104,9 +104,9 @@ class __gain__:
 
 @dataclass
 class QCConfig:
-    input_ms: MSInputs
-    input_model: ModelInputs
-    solver: Solver
+    input_ms: MSInputs = MSInputs()
+    input_model: ModelInputs = ModelInputs()
+    solver: Solver = Solver()
     output: Outputs = Outputs()
     mad_flags: MadFlags = MadFlags()
     parallel: Parallel = Parallel()
@@ -115,10 +115,11 @@ class QCConfig:
 if __name__ == "__main__":
 
     sconf = oc.structured(QCConfig)
-    # import pdb; pdb.set_trace()
+    import pdb; pdb.set_trace()
     blah = oc.merge(sconf,
                     oc.from_dotlist(["input_ms.path=foo",
                                      "input_model.recipe=bar",
-                                     "solver.gain_terms=[G]"]))
+                                     "solver.gain_terms=[G]"
+                                     ]))
     oconf = oc.to_object(blah)
     import ipdb; ipdb.set_trace()
