@@ -112,9 +112,19 @@ class QCConfig:
     parallel: Parallel = Parallel()
 
 
+def helper(config_obj, helpstr):
+    help = {}
+    helpstr = raw_help[obj.__class__.__name__]
+    for k in obj.__dict__.keys():
+        help[k] = helpstr[k] + str(getattr(obj.__class__, k))
+    return help
+
+
 if __name__ == "__main__":
 
     sconf = oc.structured(QCConfig)
+    helpobj = oc.to_container(sconf)
+
     import ipdb; ipdb.set_trace()
     blah = oc.merge(sconf,
                     oc.from_dotlist(["input_ms.path=foo",
