@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, make_dataclass
 from omegaconf import OmegaConf as oc
 from typing import List, Optional
 from quartical.parser.converters import as_time, as_freq
@@ -83,8 +83,8 @@ class Parallel:
 class __gain__:
     type: str = "complex"
     direction_dependent: bool = False
-    time_interval: str = 1
-    freq_interval: str = 1
+    time_interval: str = "1"
+    freq_interval: str = "1"
     load_from: Optional[str] = None
     interp_mode: str = "reim"
     interp_method: str = "2dlinear"
@@ -101,7 +101,7 @@ class __gain__:
 
 
 @dataclass
-class QCConfig:
+class BaseConfig:
     input_ms: MSInputs = MSInputs()
     input_model: ModelInputs = ModelInputs()
     solver: Solver = Solver()
@@ -110,16 +110,31 @@ class QCConfig:
     parallel: Parallel = Parallel()
 
 
+def make_final_config(additional_config):
+
+    for cfg in additional_config[::-1]:
+        gain_terms = oc.select(cfg, "solver.gain_terms")
+        if gain_terms is not None:
+            break
+
+    FinalConfig = make_dataclass(
+        "FinalConfig",
+        [(gt, __gain__, __gain__()) for gt in gain_terms],
+        bases=(BaseConfig,)
+    )
+
+    return oc.structured(FinalConfig)
+
+
 if __name__ == "__main__":
 
     from quartical.parser.help import help_str, populate_help, print_help
 
-    qcconf = oc.structured(QCConfig)
+    qcconf = oc.structured(BaseConfig)
     help_obj = oc.to_container(qcconf)
     populate_help(help_obj, help_str)
     print_help(help_obj)
 
-    import pdb ; pdb.set_trace()
     blah = oc.merge(qcconf,
                     oc.from_dotlist(["input_ms.path=foo",
                                      "input_model.recipe=bar",
