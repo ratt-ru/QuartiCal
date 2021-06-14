@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from omegaconf import OmegaConf as oc
 from typing import List, Dict, Any, Optional
 from quartical.parser.converters import as_time, as_freq
@@ -113,6 +113,10 @@ class QCConfig:
 
 
 def helper(config_obj, helpstr):
+    
+    try fields(config_obj):
+        
+    print(fields(config_obj))
     help = {}
     helpstr = raw_help[obj.__class__.__name__]
     for k in obj.__dict__.keys():
@@ -124,6 +128,7 @@ if __name__ == "__main__":
 
     sconf = oc.structured(QCConfig)
     helpobj = oc.to_container(sconf)
+    helper(QCConfig, helpstr)
 
     import ipdb; ipdb.set_trace()
     blah = oc.merge(sconf,
