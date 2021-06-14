@@ -3,7 +3,7 @@ from omegaconf import OmegaConf as oc
 from typing import List, Dict, Any, Optional
 from quartical.parser.converters import as_time, as_freq
 
-help = oc.load("helpstrings.yaml")
+helpstr = oc.load("helpstrings.yaml")
 
 
 @dataclass
@@ -48,7 +48,7 @@ class Outputs:
 
     def __post_init__(self):
         assert not(bool(self.products) ^ bool(self.columns)), \
-               "Neither or both of products and columns must be specified."
+            "Neither or both of products and columns must be specified."
         if self.products:
             choices = ["corrected_data", "corrected_residual", "residual"]
             assert all((i in choices) for i in self.products), \
@@ -115,7 +115,7 @@ class QCConfig:
 if __name__ == "__main__":
 
     sconf = oc.structured(QCConfig)
-    import pdb; pdb.set_trace()
+    import ipdb; ipdb.set_trace()
     blah = oc.merge(sconf,
                     oc.from_dotlist(["input_ms.path=foo",
                                      "input_model.recipe=bar",
