@@ -1,9 +1,16 @@
 from dataclasses import dataclass, field, fields
+from pathlib import Path
 from omegaconf import OmegaConf as oc
 from typing import List, Dict, Any, Optional
 from quartical.parser.converters import as_time, as_freq
+import sys
+import os
+import textwrap
+from loguru import logger
 
-helpstr = oc.load("helpstrings.yaml")
+
+path_to_help_str = Path(__file__).parent.joinpath("helpstrings.yaml")
+help_str = oc.load(path_to_help_str)
 
 
 @dataclass
@@ -112,29 +119,78 @@ class QCConfig:
     parallel: Parallel = Parallel()
 
 
-def helper(config_obj, helpstr):
-    
-    try fields(config_obj):
-        
-    print(fields(config_obj))
-    help = {}
-    helpstr = raw_help[obj.__class__.__name__]
-    for k in obj.__dict__.keys():
-        help[k] = helpstr[k] + str(getattr(obj.__class__, k))
-    return help
+def populate_help(help_obj, help_str):
+
+    for k, v in help_obj.items():
+        if isinstance(v, dict):
+            populate_help(v, help_str[k])
+        else:
+            help_obj[k] = str(help_str[k]) + f" Default: {v}."
+
+    return help_obj
+
+
+def print_help(help_obj, selection=None):
+    """Logs the final state of the args Namespace.
+
+    Given the overlapping nature of the various configuration options, this
+    produces a pretty log message describing the final configuration state
+    of the args Namespace.
+
+    Args:
+        args: A Namespace object.
+    """
+
+    printable = {}
+
+    selection = (selection,) if selection else help_obj.keys()
+
+    for g in selection:
+        v = help_obj[g]
+        printable.update({".".join([g, kk]): v[kk] for kk in v.keys()})
+
+    # This guards against attempting to get the terminal size when the output
+    # is being piped/redirected.
+    if sys.stdout.isatty():
+        columns, _ = os.get_terminal_size(0)
+    else:
+        columns = 80  # Fall over to some sensible default.
+
+    log_message = ""
+
+    section = None
+
+    for key, value in printable.items():
+        current_section = key.split('.')[0]
+
+        if current_section != section:
+            log_message += "" if section is None \
+                else "<blue>{0:-^{1}}</blue>\n".format("", columns)
+            log_message += "\n<blue>{0:-^{1}}</blue>\n".format(
+                current_section, columns)
+            section = current_section
+
+        log_message += f"<red>{key:<}</red>\n"
+        txt = textwrap.fill(value,
+                            width=columns,
+                            initial_indent="    ",
+                            subsequent_indent="    ")
+        log_message += f"{txt:<{columns}}\n"
+
+    log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
+
+    logger.opt(ansi=True).info(log_message)
+
 
 
 if __name__ == "__main__":
 
-    sconf = oc.structured(QCConfig)
-    helpobj = oc.to_container(sconf)
-    helper(QCConfig, helpstr)
-
-    import ipdb; ipdb.set_trace()
-    blah = oc.merge(sconf,
+    qcconf = oc.structured(QCConfig)
+    help_obj = oc.to_container(qcconf)
+    populate_help(help_obj, help_str)
+    print_help(help_obj)
+    blah = oc.merge(qcconf,
                     oc.from_dotlist(["input_ms.path=foo",
                                      "input_model.recipe=bar",
-                                     "solver.gain_terms=[G]"
-                                     ]))
+                                     "solver.gain_terms=[G]"]))
     oconf = oc.to_object(blah)
-    import ipdb; ipdb.set_trace()

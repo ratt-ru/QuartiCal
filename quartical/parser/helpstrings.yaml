@@ -52,9 +52,9 @@ input_model:
     Path to beams. Apply beams during predict if specified eg. 
     'beam_$(corr)_$(reim).fits' or 'beam_$(CORR)_$(REIM).fits'.
   beam_l_axis: 
-    Determines the orientation of the beam l-axis. Choose from "X", "~X", "Y", 
-    "~Y", "L", "~L", "M", "~M" where ~ indicates flipping the orientation of 
-    the axis. 
+    Determines the orientation of the beam l-axis. Choose from [X, ~X, 
+    Y, ~Y, L, ~L, M, ~M] where ~ indicates flipping the 
+    orientation of the axis. 
   beam_m_axis: 
     Determines the orientation of the beam m-axis. See beam_l_axis.
   invert_uvw:
@@ -149,10 +149,10 @@ solver:
   #   SOLVER_GAIN_TERMS once.
     
 parallel:
-  nthread:
+  n_thread:
     Number of threads to use in the dask scheduler. Setting to zero (the 
     default) will use all available resources.
-  nworker:
+  n_worker:
     Number of workers to use in the dask distributed scheduler. Advanced users 
     only.
   address:
