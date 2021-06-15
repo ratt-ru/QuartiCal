@@ -27,7 +27,7 @@ def initialize_weights(xds, data_col, opts):
                              dtype=np.float32)
 
     else:
-        weight_col = xds[opts.input_ms_weight_column].data
+        weight_col = xds[opts.input_ms.weight_column].data
 
     # The following handles the fact that the chosen weight column might
     # not have a frequency axis.

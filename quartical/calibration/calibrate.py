@@ -159,7 +159,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
 
     """
 
-    is_bda = opts.input_ms_is_bda
+    is_bda = opts.input_ms.is_bda
     post_solve_data_xds_list = []
 
     for xds_ind, data_xds in enumerate(data_xds_list):

@@ -83,7 +83,7 @@ def test_interpret_model_valid(opts, monkeypatch):
     interpret_model(opts)
 
     # Check that the opts has been updated with the correct internal recipe.
-    assert opts._internal_recipe == valid_recipes[opts.input_model_recipe]
+    assert opts._internal_recipe == valid_recipes[opts.input_model.recipe]
 
 
 @pytest.mark.preprocess
@@ -91,5 +91,5 @@ def test_interpret_model_invalid(bad_opts):
 
     # This verifies that an appropriate error is raised for obvious bad input.
 
-    with pytest.raises(invalid_recipes[bad_opts.input_model_recipe]):
+    with pytest.raises(invalid_recipes[bad_opts.input_model.recipe]):
         interpret_model(bad_opts)

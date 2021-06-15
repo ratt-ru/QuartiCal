@@ -62,7 +62,7 @@ def expected_t_ints(data_xds, xds_opts):
 
     n_row = data_xds.dims["row"]
     t_ints = [getattr(xds_opts, term + "_time_interval") or n_row
-              for term in xds_opts.solver_gain_terms]
+              for term in xds_opts.solver.gain_terms]
 
     expected_t_ints = []
 
@@ -101,7 +101,7 @@ def expected_f_ints(data_xds, xds_opts):
 
     n_chan = data_xds.dims["chan"]
     f_ints = [getattr(xds_opts, term + "_freq_interval") or n_chan
-              for term in xds_opts.solver_gain_terms]
+              for term in xds_opts.solver.gain_terms]
 
     expected_f_ints = []
 
@@ -187,7 +187,7 @@ def post_cal_data_xds_list(_add_calibration_graph):
 def test_nterm(gain_xds_list, xds_opts):
     """Each gain term should produce a gain xds."""
 
-    assert len(xds_opts.solver_gain_terms) == len(gain_xds_list)
+    assert len(xds_opts.solver.gain_terms) == len(gain_xds_list)
 
 
 def test_data_coords(data_xds, term_xds_list):
@@ -257,7 +257,7 @@ def test_chunk_spec(data_xds, term_xds_list, expected_t_ints, expected_f_ints,
 def test_ngains(solved_gain_xds_list, xds_opts):
     """Check that calibration produces one xds per gain per input xds."""
 
-    assert all([len(term_xds_list) == len(xds_opts.solver_gain_terms)
+    assert all([len(term_xds_list) == len(xds_opts.solver.gain_terms)
                 for term_xds_list in solved_gain_xds_list])
 
 

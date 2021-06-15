@@ -175,7 +175,7 @@ def daskify_sky_model_dict(sky_model_dict, opts):
     # This single line can have a large impact on memory/performance. Sets
     # the source chunking strategy for the predict.
 
-    chunks = opts.input_model_source_chunks
+    chunks = opts.input_model.source_chunks
 
     Point = namedtuple("Point", ["radec", "stokes", "spi", "ref_freq"])
     Gauss = namedtuple("Gauss", ["radec", "stokes", "spi", "ref_freq",
@@ -339,7 +339,7 @@ def get_support_tables(opts):
         lazy_tables: Dictionary of support table datasets.
     """
 
-    n = {k: '::'.join((opts.input_ms_name, k)) for k
+    n = {k: '::'.join((opts.input_ms.path, k)) for k
          in ("ANTENNA", "DATA_DESCRIPTION", "FIELD",
              "SPECTRAL_WINDOW", "POLARIZATION", "FEED")}
 
@@ -480,7 +480,7 @@ def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
     die_jones = None
 
     # If the beam is enabled, P-Jones has to be applied before the beam.
-    if opts.input_model_apply_p_jones and not opts.input_model_beam:
+    if opts.input_model.apply_p_jones and not opts.input_model.beam:
 
         ant_pos = clone(ant_xds["POSITION"].data)
         parallactic_angles = compute_parallactic_angles(utime_val,
@@ -537,7 +537,7 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
         Dask array containing the result of multiplying the
             direction-dependent Jones terms together.
     """
-    if opts.input_model_beam is None:
+    if opts.input_model.beam is None:
         return None
 
     # Beam is requested
@@ -571,10 +571,10 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
                        dtype=dtype)
 
     # Load the beam information
-    beam, lm_ext, freq_map = load_beams(opts.input_model_beam,
+    beam, lm_ext, freq_map = load_beams(opts.input_model.beam,
                                         corr_type,
-                                        opts.input_model_beam_l_axis,
-                                        opts.input_model_beam_m_axis)
+                                        opts.input_model.beam_l_axis,
+                                        opts.input_model.beam_m_axis)
 
     # Introduce the correlation axis
     beam = beam.reshape(beam.shape[:3] + (2, 2))
@@ -622,7 +622,7 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
 
     lm = radec_to_lm(sources.radec, phase_dir)
     # This likely shouldn't be exposed. TODO: Disable this switch?
-    uvw = -ms.UVW.data if opts.input_model_invert_uvw else ms.UVW.data
+    uvw = -ms.UVW.data if opts.input_model.invert_uvw else ms.UVW.data
 
     # Generate per-source K-Jones (source, row, frequency).
     phase = compute_phase_delay(lm, uvw, frequency)
@@ -730,8 +730,8 @@ def predict(data_xds_list, opts):
 
                 vis = DataArray(vis, dims=["row", "chan", "corr"])
 
-                if opts.input_ms_select_corr:
-                    vis = vis.sel(corr=opts.input_ms_select_corr)
+                if opts.input_ms.select_corr:
+                    vis = vis.sel(corr=opts.input_ms.select_corr)
 
                 # Append group_vis to the appropriate list.
                 model_vis[model_name].append(vis.data)

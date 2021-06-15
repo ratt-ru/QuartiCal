@@ -64,7 +64,7 @@ def test_t_binnings(time_int, time_chunk, mapping_opts):
     da_t_bins = make_t_binnings(utime_per_chunk, utime_intervals, opts)[0, ...]
 
     t_ints = [getattr(opts, t + "_time_interval") or n_time
-              for t in opts.solver_gain_terms]
+              for t in opts.solver.gain_terms]
 
     for block_ind in range(da_t_bins.npartitions):
         binning = da_t_bins.blocks[block_ind].compute()
@@ -115,7 +115,7 @@ def test_t_binnings(time_int, time_chunk, mapping_opts):
 #     # Set up and compute numpy values to test against.
 
 #     t_ints = [getattr(opts, t + "_time_interval") or n_time
-#               for t in opts.solver_gain_terms]
+#               for t in opts.solver.gain_terms]
 
 #     np_t_maps = np.array(list(map(lambda ti: utime_ind//ti, t_ints))).T
 
@@ -145,7 +145,7 @@ def test_f_mappings(freq_int, freq_chunk, mapping_opts):
     # Set up and compute numpy values to test against.
 
     f_ints = [getattr(opts, t + "_freq_interval") or n_freq
-              for t in opts.solver_gain_terms]
+              for t in opts.solver.gain_terms]
 
     for block_ind in range(da_f_maps.npartitions):
         f_map = da_f_maps.blocks[block_ind].compute()
@@ -176,7 +176,7 @@ def test_d_mappings(n_dir, has_dd_term, mapping_opts):
     # Set up and compute numpy values to test against.
 
     dd_terms = [getattr(opts, t + "_direction_dependent")
-                for t in opts.solver_gain_terms]
+                for t in opts.solver.gain_terms]
 
     np_d_maps = np.array(list(map(lambda dd: np.arange(n_dir)*dd, dd_terms)))
 

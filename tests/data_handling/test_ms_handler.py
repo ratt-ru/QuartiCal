@@ -61,7 +61,7 @@ def test_read_ms_time_chunks(_read_xds_list, opts):
     ms_xds_list, _ = _read_xds_list
 
     # Check that the time axis is correctly chunked.
-    expected_t_dim = opts.input_ms_time_chunk or np.inf  # or handles 0.
+    expected_t_dim = opts.input_ms.time_chunk or np.inf  # or handles 0.
 
     assert np.all([c <= expected_t_dim
                    for xds in ms_xds_list
@@ -74,7 +74,7 @@ def test_read_ms_freq_chunks(_read_xds_list, opts):
     ms_xds_list, _ = _read_xds_list
 
     # Check that the frequency axis is correctly chunked.
-    expected_f_dim = opts.input_ms_freq_chunk or np.inf  # or handles 0.
+    expected_f_dim = opts.input_ms.freq_chunk or np.inf  # or handles 0.
 
     assert np.all([c <= expected_f_dim
                    for xds in ms_xds_list

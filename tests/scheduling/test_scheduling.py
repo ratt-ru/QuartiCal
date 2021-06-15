@@ -90,7 +90,7 @@
 #         client = stack.enter_context(Client(cluster))
 #         scheduler = cluster.scheduler
 
-#         opts.input_ms_time_chunk = 4
+#         opts.input_ms.time_chunk = 4
 #         opts.parallel = Namespace(scheduler='distributed',
 #                                   address=scheduler.address)
 

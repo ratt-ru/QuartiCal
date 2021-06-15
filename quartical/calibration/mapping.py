@@ -26,7 +26,7 @@ def make_t_maps(data_xds_list, opts):
 
     for xds in data_xds_list:
 
-        if opts.input_ms_is_bda:
+        if opts.input_ms.is_bda:
             time_col = xds.UPSAMPLED_TIME.data
             interval_col = xds.UPSAMPLED_INTERVAL.data
         else:
@@ -76,15 +76,15 @@ def make_t_binnings(utime_per_chunk, utime_intervals, opts):
         t_bin_arr: A dask.Array of binnings per gain term.
     """
 
-    terms = opts.solver_gain_terms
+    terms = opts.solver.gain_terms
     n_term = len(terms)
 
     term_t_bins = []
 
     for term in terms:
         # Get frequency intervals. Or handles the zero case.
-        t_int = getattr(opts, term + "_time_interval") or np.inf
-        term_type = getattr(opts, term + "_type") or np.inf
+        t_int = getattr(opts, term).time_interval or np.inf
+        term_type = getattr(opts, term).type
 
         # Generate a mapping between time at data resolution and
         # time intervals.
@@ -161,7 +161,7 @@ def make_f_maps(data_xds_list, opts):
 def make_f_mappings(chan_freqs, chan_widths, opts):
     """Generate channel to solution interval mapping."""
 
-    terms = opts.solver_gain_terms
+    terms = opts.solver.gain_terms
     n_term = len(terms)
     n_chan = chan_freqs.size
 
@@ -169,8 +169,8 @@ def make_f_mappings(chan_freqs, chan_widths, opts):
 
     for term in terms:
         # Get frequency intervals. Or handles the zero case.
-        f_int = getattr(opts, term + "_freq_interval") or n_chan
-        term_type = getattr(opts, term + "_type") or n_chan
+        f_int = getattr(opts, term).freq_interval or n_chan
+        term_type = getattr(opts, term).type
 
         # Generate a mapping between frequency at data resolution and
         # frequency intervals.
@@ -217,10 +217,10 @@ def make_d_maps(data_xds_list, opts):
 def make_d_mappings(n_dir, opts):
     """Generate direction to solution interval mapping."""
 
-    terms = opts.solver_gain_terms
+    terms = opts.solver.gain_terms
 
     # Get direction dependence for all terms. Or handles the zero case.
-    dd_terms = [getattr(opts, term + "_direction_dependent") for term in terms]
+    dd_terms = [getattr(opts, term).direction_dependent for term in terms]
 
     # Generate a mapping between model directions gain directions.
 
