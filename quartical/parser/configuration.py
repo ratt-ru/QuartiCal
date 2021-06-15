@@ -80,7 +80,7 @@ class Parallel:
 
 
 @dataclass
-class __gain__:
+class Gain:
     type: str = "complex"
     direction_dependent: bool = False
     time_interval: str = "1"
@@ -110,7 +110,7 @@ class BaseConfig:
     parallel: Parallel = Parallel()
 
 
-def make_final_config(additional_config):
+def finalize_structure(additional_config):
 
     for cfg in additional_config[::-1]:
         gain_terms = oc.select(cfg, "solver.gain_terms")
@@ -119,7 +119,7 @@ def make_final_config(additional_config):
 
     FinalConfig = make_dataclass(
         "FinalConfig",
-        [(gt, __gain__, __gain__()) for gt in gain_terms],
+        [(gt, Gain, Gain()) for gt in gain_terms],
         bases=(BaseConfig,)
     )
 
