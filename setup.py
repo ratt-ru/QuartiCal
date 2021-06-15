@@ -61,7 +61,7 @@ else:
                     "distributed",
                     "requests",
                     "pytest",
-                    "csaps"
+                    "csaps",
                     "omegaconf"]
 
 setup(name='quartical',
