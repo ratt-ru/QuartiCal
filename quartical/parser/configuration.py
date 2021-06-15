@@ -124,19 +124,3 @@ def finalize_structure(additional_config):
     )
 
     return oc.structured(FinalConfig)
-
-
-if __name__ == "__main__":
-
-    from quartical.parser.help import help_str, populate_help, print_help
-
-    qcconf = oc.structured(BaseConfig)
-    help_obj = oc.to_container(qcconf)
-    populate_help(help_obj, help_str)
-    print_help(help_obj)
-
-    blah = oc.merge(qcconf,
-                    oc.from_dotlist(["input_ms.path=foo",
-                                     "input_model.recipe=bar",
-                                     "solver.gain_terms=[G]"]))
-    oconf = oc.to_object(blah)

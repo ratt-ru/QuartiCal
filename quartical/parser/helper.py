@@ -51,12 +51,6 @@ def help():
     else:
         return
 
-    printable = {}
-
-    for g in selection:
-        v = help_obj[g]
-        printable.update({".".join([g, kk]): v[kk] for kk in v.keys()})
-
     # This guards against attempting to get the terminal size when the output
     # is being piped/redirected.
     if sys.stdout.isatty():
@@ -66,24 +60,28 @@ def help():
 
     log_message = ""
 
-    section = None
+    current_section = None
 
-    for key, value in printable.items():
-        current_section = key.split('.')[0]
+    for section, options in help_obj.items():
+
+        if section not in selection:
+            continue
 
         if current_section != section:
-            log_message += "" if section is None \
+            log_message += "" if current_section is None \
                 else "<blue>{0:-^{1}}</blue>\n".format("", columns)
             log_message += "\n<blue>{0:-^{1}}</blue>\n".format(
-                current_section, columns)
-            section = current_section
+                section, columns)
+            current_section = section
 
-        log_message += f"<red>{key:<}</red>\n"
-        txt = textwrap.fill(value,
-                            width=columns,
-                            initial_indent="    ",
-                            subsequent_indent="    ")
-        log_message += f"{txt:<{columns}}\n"
+        for key, value in options.items():
+            option = f"{section}.{key}"
+            log_message += f"<red>{option:<}</red>\n"
+            txt = textwrap.fill(value,
+                                width=columns,
+                                initial_indent=" "*4,
+                                subsequent_indent=" "*4)
+            log_message += f"{txt:<{columns}}\n"
 
     log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
 

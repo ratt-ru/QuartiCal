@@ -28,7 +28,7 @@ def execute():
 def _execute(exitstack):
     """Runs the application."""
 
-    helper.help()
+    helper.help()  # Check to see if the user asked for help.
     opts = parser.parse_inputs()
 
     # TODO: This check needs to be fleshed out substantially.
