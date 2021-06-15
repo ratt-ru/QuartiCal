@@ -7,7 +7,7 @@ import dask
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 import time
-from quartical.parser import parser, preprocess
+from quartical.parser import parser, preprocess, helper
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
                                                 preprocess_xds_list)
@@ -28,6 +28,7 @@ def execute():
 def _execute(exitstack):
     """Runs the application."""
 
+    helper.help()
     opts = parser.parse_inputs()
 
     # TODO: This check needs to be fleshed out substantially.

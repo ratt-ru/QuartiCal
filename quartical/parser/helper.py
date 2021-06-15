@@ -4,37 +4,54 @@ import textwrap
 from pathlib import Path
 from loguru import logger
 from omegaconf import OmegaConf as oc
+from quartical.parser.configuration import finalize_structure
 
 
 path_to_helpstrings = Path(__file__).parent.joinpath("helpstrings.yaml")
-help_str = oc.load(path_to_helpstrings)
+HELPSTRINGS = oc.load(path_to_helpstrings)
 
 
-def populate_help(help_obj, help_str):
-
+def populate(help_obj, help_str):
     for k, v in help_obj.items():
         if isinstance(v, dict):
-            populate_help(v, help_str[k])
+            populate(v, help_str[k])
         else:
             help_obj[k] = str(help_str[k]) + f" Default: {v}."
+
+
+def make_help_obj():
+
+    # We add this so that the help object incudes a generic gain field.
+    additional_config = [oc.from_dotlist(["solver.gain_terms=['gain']"])]
+
+    config = finalize_structure(additional_config)
+    config = oc.merge(config, *additional_config)
+
+    help_obj = oc.to_container(config)
+
+    populate(help_obj, HELPSTRINGS)
 
     return help_obj
 
 
-def print_help(help_obj, selection=None):
-    """Logs the final state of the args Namespace.
+def help():
+    """Prints the help."""
 
-    Given the overlapping nature of the various configuration options, this
-    produces a pretty log message describing the final configuration state
-    of the args Namespace.
+    help_args = [arg for arg in sys.argv if arg.startswith('help')]
 
-    Args:
-        args: A Namespace object.
-    """
+    # Always take the last specified help request.
+    help_arg = help_args.pop() if help_args else help_args
+
+    if len(sys.argv) == 1 or help_arg == "help":
+        help_obj = make_help_obj()
+        selection = help_obj.keys()
+    elif help_arg:
+        help_obj = make_help_obj()
+        selection = help_arg.split("=")[-1].strip("[]").split(",")
+    else:
+        return
 
     printable = {}
-
-    selection = (selection,) if selection else help_obj.keys()
 
     for g in selection:
         v = help_obj[g]
@@ -71,3 +88,5 @@ def print_help(help_obj, selection=None):
     log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
 
     logger.opt(ansi=True).info(log_message)
+
+    sys.exit()
