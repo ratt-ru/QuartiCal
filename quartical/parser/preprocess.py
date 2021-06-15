@@ -108,7 +108,7 @@ def check_opts(opts):
     # of operation. The idea is that all our configuration state lives in this
     # options dictionary. Down with OOP!
 
-    if opts.input_ms_is_bda:
+    if opts.input_ms.is_bda:
         logger.warning("BDA data is only partially supported. Please report "
                        "problems via the issue tracker.")
 

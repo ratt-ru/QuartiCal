@@ -34,22 +34,7 @@ def make_help_obj():
     return help_obj
 
 
-def help():
-    """Prints the help."""
-
-    help_args = [arg for arg in sys.argv if arg.startswith('help')]
-
-    # Always take the last specified help request.
-    help_arg = help_args.pop() if help_args else help_args
-
-    if len(sys.argv) == 1 or help_arg == "help":
-        help_obj = make_help_obj()
-        selection = help_obj.keys()
-    elif help_arg:
-        help_obj = make_help_obj()
-        selection = help_arg.split("=")[-1].strip("[]").split(",")
-    else:
-        return
+def print_help(help_obj, selection):
 
     # This guards against attempting to get the terminal size when the output
     # is being piped/redirected.
@@ -86,5 +71,25 @@ def help():
     log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
 
     logger.opt(ansi=True).info(log_message)
+
+
+def help():
+    """Prints the help."""
+
+    help_args = [arg for arg in sys.argv if arg.startswith('help')]
+
+    # Always take the last specified help request.
+    help_arg = help_args.pop() if help_args else help_args
+
+    if len(sys.argv) == 1 or help_arg == "help":
+        help_obj = make_help_obj()
+        selection = help_obj.keys()
+    elif help_arg:
+        help_obj = make_help_obj()
+        selection = help_arg.split("=")[-1].strip("[]").split(",")
+    else:
+        return
+
+    print_help(help_obj, selection)
 
     sys.exit()
