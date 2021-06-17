@@ -20,7 +20,8 @@ def create_user_config():
     # We add this so that the user config comes out with a gain field.
     additional_config = [oc.from_dotlist(["solver.gain_terms=['G']"])]
 
-    config = finalize_structure(additional_config)
+    FinalConfig = finalize_structure(additional_config)
+    config = oc.structured(FinalConfig)
     config = oc.merge(config, *additional_config)
 
     with open(config_file_path, 'w') as outfile:
@@ -105,7 +106,8 @@ def parse_inputs(bypass_sysargv=None):
     additional_config = [*yml_config, *cli_config]
 
     # Merge all configuration - priority is file1 < file2 < ... < cli.
-    config = finalize_structure(additional_config)
+    FinalConfig = finalize_structure(additional_config)
+    config = oc.structured(FinalConfig)
     config = oc.merge(config, *additional_config)
 
     # Log the final state of the configuration object so that users are aware

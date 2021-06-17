@@ -6,7 +6,7 @@ from quartical.parser.converters import as_time, as_freq
 
 class Input:
 
-    def check_choice_fields(self):
+    def validate_choice_fields(self):
         choice_fields = {f.name: f.metadata["choices"]
                          for f in fields(self) if "choices" in f.metadata}
         for field_name, field_choices in choice_fields.items():
@@ -42,7 +42,7 @@ class MSInputs(Input):
     )
 
     def __post_init__(self):
-        self.check_choice_fields()
+        self.validate_choice_fields()
         self.time_chunk = as_time(self.time_chunk)
 
 
@@ -63,7 +63,7 @@ class ModelInputs(Input):
     apply_p_jones: bool = True
 
     def __post_init__(self):
-        self.check_choice_fields()
+        self.validate_choice_fields()
 
 
 @dataclass
@@ -78,7 +78,7 @@ class Outputs(Input):
     columns: Optional[List[str]] = None
 
     def __post_init__(self):
-        self.check_choice_fields()
+        self.validate_choice_fields()
         assert not(bool(self.products) ^ bool(self.columns)), \
             "Neither or both of products and columns must be specified."
         if self.products:
@@ -93,7 +93,7 @@ class MadFlags(Input):
     threshold_global: int = 12
 
     def __post_init__(self):
-        self.check_choice_fields()
+        self.validate_choice_fields()
 
 
 @dataclass
@@ -101,7 +101,7 @@ class Solver(Input):
     gain_terms: List[str] = field(default_factory=lambda: ["G"])
 
     def __post_init__(self):
-        self.check_choice_fields()
+        self.validate_choice_fields()
 
 
 @dataclass
@@ -117,7 +117,7 @@ class Parallel(Input):
     )
 
     def __post_init__(self):
-        self.check_choice_fields()
+        self.validate_choice_fields()
 
 
 @dataclass
@@ -145,7 +145,7 @@ class Gain(Input):
     )
 
     def __post_init__(self):
-        self.check_choice_fields()
+        self.validate_choice_fields()
         self.time_interval = as_time(self.time_interval)
         self.freq_interval = as_freq(self.freq_interval)
 
@@ -175,4 +175,4 @@ def finalize_structure(additional_config):
         bases=(BaseConfig,)
     )
 
-    return oc.structured(FinalConfig)
+    return FinalConfig

@@ -5,17 +5,18 @@ import re
 from pathlib import Path
 from loguru import logger
 from omegaconf import OmegaConf as oc
+from dataclasses import fields, MISSING
 from quartical.parser.configuration import finalize_structure
 
 
 path_to_helpstrings = Path(__file__).parent.joinpath("helpstrings.yaml")
 HELPSTRINGS = oc.load(path_to_helpstrings)
 
-GAIN_MSG = f"Gains make use of a special configuration " \
-           f"mechanism. Use 'solver.gain_terms' to specify the name of " \
-           f"each gain term, e.g. 'solver.gain_terms=[G,B]'. Each gain " \
-           f"can then be configured using its name and any gain option, " \
-           f"e.g. 'G.type=complex' or 'B.direction_dependent=True'."
+GAIN_MSG = "Gains make use of a special configuration " \
+           "mechanism. Use 'solver.gain_terms' to specify the name of " \
+           "each gain term, e.g. 'solver.gain_terms=[G,B]'. Each gain " \
+           "can then be configured using its name and any gain option, " \
+           "e.g. 'G.type=complex' or 'B.direction_dependent=True'."
 
 HELP_MSG = f"For full help, use 'goquartical help'. For help with a " \
            f"specific section, use e.g. 'goquartical help='[section1," \
@@ -23,30 +24,52 @@ HELP_MSG = f"For full help, use 'goquartical help'. For help with a " \
            f"[{', '.join(HELPSTRINGS.keys())}]."
 
 
-def populate(help_obj, help_str):
-    for k, v in help_obj.items():
-        if isinstance(v, dict):
-            populate(v, help_str[k])
-        else:
-            help_obj[k] = str(help_str[k]) + f" Default: {v}."
+def populate(typ, help_str, help_dict=None):
+
+    if help_dict is None:
+        help_dict = {}
+
+    try:
+        flds = fields(typ)
+    except TypeError:
+        return False
+
+    field_types = {f.name: f.type for f in flds}
+    field_defaults = {f.name: f.default for f in flds}
+    field_choices = {f.name: f.metadata.get("choices", "") for f in flds}
+    field_factories = {f.name: f.default_factory for f in flds}
+
+    for k, v in field_types.items():
+        help_dict[k] = {}
+        again = populate(v, help_str[k], help_dict[k])
+        if not again:
+            msg = f"{help_str[k]} "
+            if isinstance(field_defaults[k], type(MISSING)):
+                field_defaults[k] = field_factories[k]()
+            if field_defaults[k] == "???":
+                msg += "<magenta>MANDATORY</magenta>. "
+            else:
+                msg += f"Default: {field_defaults[k]}. "
+            if field_choices[k]:
+                msg += f"Choices: {field_choices[k]}"
+            help_dict[k] = msg
+
+    return help_dict
 
 
-def make_help_obj():
+def make_help_dict():
 
     # We add this so that the help object incudes a generic gain field.
     additional_config = [oc.from_dotlist(["solver.gain_terms=['gain']"])]
 
-    config = finalize_structure(additional_config)
-    config = oc.merge(config, *additional_config)
+    FinalConfig = finalize_structure(additional_config)
 
-    help_obj = oc.to_container(config)
+    help_dict = populate(FinalConfig, HELPSTRINGS)
 
-    populate(help_obj, HELPSTRINGS)
-
-    return help_obj
+    return help_dict
 
 
-def print_help(help_obj, selection):
+def print_help(help_dict, selection):
 
     # This guards against attempting to get the terminal size when the output
     # is being piped/redirected.
@@ -59,7 +82,7 @@ def print_help(help_obj, selection):
 
     current_section = None
 
-    for section, options in help_obj.items():
+    for section, options in help_dict.items():
 
         if section not in selection:
             continue
@@ -104,14 +127,16 @@ def help():
     help_arg = help_args.pop() if help_args else help_args
 
     if len(sys.argv) == 1 or help_arg == "help":
-        help_obj = make_help_obj()
-        selection = help_obj.keys()
+        help_dict = make_help_dict()
+        selection = help_dict.keys()
     elif help_arg:
-        help_obj = make_help_obj()
-        selection = re.sub('[\[\] ]', "", help_arg.split("=")[-1]).split(",")
+        help_dict = make_help_dict()
+        selection = help_arg.split("=")[-1]
+        selection = re.sub('[\[\] ]', "", selection)  # noqa
+        selection = selection.split(",")
     else:
         return
 
-    print_help(help_obj, selection)
+    print_help(help_dict, selection)
 
     sys.exit()
