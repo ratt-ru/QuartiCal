@@ -162,12 +162,15 @@ class BaseConfig:
 
 def finalize_structure(additional_config):
 
-    gain_terms = Solver().gain_terms  # Use the default if nothing overrides.
+    gain_terms = None
 
     for cfg in additional_config[::-1]:
         gain_terms = oc.select(cfg, "solver.gain_terms")
         if gain_terms is not None:
             break
+
+    # Use the default gain_terms if no alternative is specified.
+    gain_terms = gain_terms or Solver().gain_terms
 
     FinalConfig = make_dataclass(
         "FinalConfig",
