@@ -2,7 +2,7 @@ import pytest
 from quartical.data_handling.ms_handler import read_xds_list
 from quartical.parser.preprocess import interpret_model
 from quartical.data_handling.model_handler import add_model_graph
-from argparse import Namespace
+from copy import deepcopy
 
 
 recipes = {"{col1}:{sky_model}@dE": 9,
@@ -13,8 +13,9 @@ recipes = {"{col1}:{sky_model}@dE": 9,
            "{col1}+{sky_model}@dE:{col2}": 9}
 
 
-@pytest.fixture(params=zip(recipes.keys(), recipes.values()), scope="module",
-                ids=list(recipes.keys()))
+@pytest.fixture(params=recipes.items(),
+                scope="module",
+                ids=recipes.keys())
 def model_expectations(request, lsm_name):
 
     recipe = request.param[0].format(sky_model=lsm_name,
@@ -39,17 +40,15 @@ def expected_ndir(model_expectations):
 @pytest.fixture(scope="module")
 def opts(base_opts, freq_chunk, time_chunk, model_recipe):
 
-    # Don't overwrite base config - instead create a new Namespace and update.
+    _opts = deepcopy(base_opts)
 
-    options = Namespace(**vars(base_opts))
+    _opts.input_ms.freq_chunk = freq_chunk
+    _opts.input_ms.time_chunk = time_chunk
+    _opts.input_model.recipe = model_recipe
 
-    options.input_ms_freq_chunk = freq_chunk
-    options.input_ms_time_chunk = time_chunk
-    options.input_model_recipe = model_recipe
+    interpret_model(_opts)
 
-    interpret_model(options)
-
-    return options
+    return _opts
 
 
 @pytest.fixture(scope="module")

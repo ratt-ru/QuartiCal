@@ -1,109 +1,55 @@
-input-ms:
-    _description: Arguments pertaining to the input measurement
-        set.
-    name: C147_subset.MS
-    column: DATA
-    weight-column: UNITY
-    time-chunk: 0
-    freq-chunk: 0
-    rebin-time: '1'
-    rebin-freq: '1'
-    chunk-on: SCAN_NUMBER
-    chunk-jump: 1
-    field: 0
-    ddid:
-    chan:
-    select-corr:
-        - 0
-        - 1
-        - 2
-        - 3
-input-model:
-    _description: Arguments pertaining to input model parameters.
-    recipe: MODEL_DATA
-    beam:
-    beam-l-axis: "X"
-    beam-m-axis: "Y"
-    invert-uvw: true
-    source-chunks: 10
-    apply-p-jones: true
-output:
-    _description: Arguments pertaining to output products.
-    directory: quartical
-    file-name: cc
-    overwrite: false
-    backup: true
-    solver-mode: solve
-    visibility-product: residual
-    solver-flags: false
-    column: TEST_RESIDUALS
-    model-column:
-    weight-column:
-    subtract-model: 0
-    subtract-directions: 0
-    plots: false
-    casa-tables: false
-flags:
-    _description: Arguments pertaining to flagging behaviour.
-    mad-enable: false
-    bl-mad-threshold: 10
-    global-mad-threshold: 12
+input_ms:
+  path: C147_subset.MS
+  column: DATA
+  weight_column: UNITY
+  time_chunk: '0'
+  freq_chunk: 0
+  is_bda: false
+  group_by:
+  - SCAN_NUMBER
+  - FIELD_ID
+  - DATA_DESC_ID
+  select_corr:
+input_model:
+  recipe: MODEL_DATA
+  beam:
+  beam_l_axis: X
+  beam_m_axis: Y
+  invert_uvw: true
+  source_chunks: 10
+  apply_p_jones: true
 solver:
-    _description: Arguments pertaining to solver behaviour.
-    gain-terms: 
-        - G 
-        - B
-    mode: full-full
-    precision: single
-    chisq-interval: 5
-    stall-fraction: 0.99
-    iteration-recipe:
+  gain_terms:
+  - G
+  - B
+output:
+  gain_dir: gains.qc
+  products:
+  - residual
+  columns:
+  - TEST_RESIDUALS
+mad_flags:
+  enable: false
+  threshold_bl: 10
+  threshold_global: 12
 parallel:
-    _description: Arguments pertaining to parallelism and distribution.
-    nthread: 0
-    nworker: 1
-    scheduler: threads
+  n_thread: 0
+  n_worker: 1
+  address:
+  scheduler: threads
 G:
-    _description: Arguments pertaining to a labelled (gain). (gain)
-        MUST be replaced with the labels specified by SOLVER_GAIN_TERMS.
-        This config section can be replicated for each gain term.
-    type: complex
-    parametrisation: f-slope
-    restrict-update: default
-    direction-dependent: false
-    exclude-directions: -1
-    time-interval: 1
-    freq-interval: 1
-    delta-threshold: 1e-06
-    chisq-threshold: 1e-06
-    conv-fraction: 0.99
-    reference-antenna: -1
-    upper-clip: 0
-    lower-clip: 0
-    clip-interval: 5
-    precomputed: false
-    load-from:
-    xfer-from:
-    save-to:
+  type: complex
+  direction_dependent: false
+  time_interval: '1'
+  freq_interval: '1'
+  load_from:
+  interp_mode: reim
+  interp_method: 2dlinear
 B:
-    _description: Arguments pertaining to a labelled (gain). (gain)
-        MUST be replaced with the labels specified by SOLVER_GAIN_TERMS.
-        This config section can be replicated for each gain term.
-    type: complex
-    parametrisation: f-slope
-    restrict-update: default
-    direction-dependent: false
-    exclude-directions: -1
-    time-interval: 1
-    freq-interval: 1
-    delta-threshold: 1e-06
-    chisq-threshold: 1e-06
-    conv-fraction: 0.99
-    reference-antenna: -1
-    upper-clip: 0
-    lower-clip: 0
-    clip-interval: 5
-    precomputed: false
-    load-from:
-    xfer-from:
-    save-to:
+  type: complex
+  direction_dependent: false
+  time_interval: '1'
+  freq_interval: '1'
+  load_from:
+  interp_mode: reim
+  interp_method: 2dlinear

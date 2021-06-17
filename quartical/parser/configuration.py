@@ -64,7 +64,7 @@ class MadFlags:
 
 @dataclass
 class Solver:
-    gain_terms: List[str] = "???"
+    gain_terms: List[str] = field(default_factory=lambda: ["G"])
 
 
 @dataclass

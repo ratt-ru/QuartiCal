@@ -122,12 +122,12 @@ def model_recipe(request):
     return request.param
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def base_opts(ms_name):
     """Get basic config from .yaml file."""
 
     # We use bypass_sysargv to avoid mucking with the CLI.
     options = parse_inputs(bypass_sysargv=['goquartical', str(conf_path)])
-    options.input_ms_name = ms_name  # Ensure the ms path is correct.
+    options.input_ms.path = ms_name  # Ensure the ms path is correct.
 
     return options

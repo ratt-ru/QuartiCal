@@ -80,7 +80,7 @@ def log_final_config(config):
 
 
 def parse_inputs(bypass_sysargv=None):
-    """Combines command line and config files to produce a cofig object."""
+    """Combines command line and config files to produce a config object."""
 
     # Determine if we have a user defined config files. Scan sys.argv for
     # appropriate extensions.
@@ -97,12 +97,12 @@ def parse_inputs(bypass_sysargv=None):
             logger.info("User defined config file: {}", arg)
 
     for file in config_files:
-        sys.argv.remove(file)  # Remove config files from sys.argv.
+        (bypass_sysargv or sys.argv).remove(file)  # Remove config files.
 
     # Get all specified configuration - multiple yaml files and cli.
     yml_config = [oc.load(file) for file in config_files]
-    cli_config = oc.from_cli()
-    additional_config = [*yml_config, cli_config]
+    cli_config = [] if bypass_sysargv else [oc.from_cli()]
+    additional_config = [*yml_config, *cli_config]
 
     # Merge all configuration - priority is file1 < file2 < ... < cli.
     config = finalize_structure(additional_config)

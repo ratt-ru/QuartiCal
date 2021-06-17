@@ -1,3 +1,5 @@
+from copy import deepcopy
+from dask import base
 import pytest
 import dask.array as da
 import numpy as np
@@ -11,13 +13,11 @@ from quartical.calibration.mapping import (make_t_binnings,
 @pytest.fixture(scope="module")
 def mapping_opts(base_opts):
 
-    # Don't overwrite base config - instead create a new Namespace and update.
+    _opts = deepcopy(base_opts)
 
-    options = Namespace(**vars(base_opts))
+    _opts._model_columns = ["MODEL_DATA"]
 
-    options._model_columns = ["MODEL_DATA"]
-
-    return options
+    return _opts
 
 # ------------------------------make_t_binnings--------------------------------
 
@@ -27,8 +27,8 @@ def test_t_binnings(time_int, time_chunk, mapping_opts):
     """Test construction of time mappings for different chunks/intervals."""
 
     opts = mapping_opts
-    opts.G_time_interval = time_int  # Setting time interval on first gain.
-    opts.B_time_interval = time_int*2  # Setting time interval on second gain.
+    opts.G.time_interval = time_int  # Setting time interval on first gain.
+    opts.B.time_interval = time_int*2  # Setting time interval on second gain.
 
     n_time = 100  # Total number of unique times to consider.
     n_bl = 351  # 27 antenna array - VLA-like.
@@ -63,7 +63,7 @@ def test_t_binnings(time_int, time_chunk, mapping_opts):
     # TODO: Should also check parameter mappings.
     da_t_bins = make_t_binnings(utime_per_chunk, utime_intervals, opts)[0, ...]
 
-    t_ints = [getattr(opts, t + "_time_interval") or n_time
+    t_ints = [getattr(opts, t).time_interval or n_time
               for t in opts.solver.gain_terms]
 
     for block_ind in range(da_t_bins.npartitions):
@@ -130,8 +130,8 @@ def test_f_mappings(freq_int, freq_chunk, mapping_opts):
     """Test construction of freq mappings for different chunks/intervals."""
 
     opts = mapping_opts
-    opts.G_freq_interval = freq_int  # Setting freq interval on first gain.
-    opts.B_freq_interval = freq_int*2  # Setting freq interval on second gain.
+    opts.G.freq_interval = freq_int  # Setting freq interval on first gain.
+    opts.B.freq_interval = freq_int*2  # Setting freq interval on second gain.
 
     n_freq = 64  # Total number of channels to consider.
 
@@ -144,7 +144,7 @@ def test_f_mappings(freq_int, freq_chunk, mapping_opts):
 
     # Set up and compute numpy values to test against.
 
-    f_ints = [getattr(opts, t + "_freq_interval") or n_freq
+    f_ints = [getattr(opts, t).freq_interval or n_freq
               for t in opts.solver.gain_terms]
 
     for block_ind in range(da_f_maps.npartitions):
@@ -169,13 +169,13 @@ def test_d_mappings(n_dir, has_dd_term, mapping_opts):
     """Test construction of direction mappings for different n_dir."""
 
     opts = mapping_opts
-    opts.B_direction_dependent = has_dd_term
+    opts.B.direction_dependent = has_dd_term
 
     d_maps = make_d_mappings(n_dir, opts)  # Not a dask array.
 
     # Set up and compute numpy values to test against.
 
-    dd_terms = [getattr(opts, t + "_direction_dependent")
+    dd_terms = [getattr(opts, t).direction_dependent
                 for t in opts.solver.gain_terms]
 
     np_d_maps = np.array(list(map(lambda dd: np.arange(n_dir)*dd, dd_terms)))

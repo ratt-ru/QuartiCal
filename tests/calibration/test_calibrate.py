@@ -9,6 +9,7 @@ from quartical.calibration.mapping import (make_t_maps,
                                            make_f_maps)
 from argparse import Namespace
 import numpy as np
+from copy import deepcopy
 
 
 @pytest.fixture(scope="module")
@@ -16,18 +17,18 @@ def xds_opts(base_opts, time_chunk, freq_chunk, time_int, freq_int):
 
     # Don't overwrite base config - instead create a new Namespace and update.
 
-    options = Namespace(**vars(base_opts))
+    _opts = deepcopy(base_opts)
 
-    options._model_columns = ["MODEL_DATA"]
-    options.input_ms_time_chunk = time_chunk
-    options.input_ms_freq_chunk = freq_chunk
-    options.G_time_interval = time_int
-    options.B_time_interval = 2*time_int
-    options.G_freq_interval = freq_int
-    options.B_freq_interval = 2*freq_int
-    options.flags_mad_enable = True
+    _opts._model_columns = ["MODEL_DATA"]
+    _opts.input_ms.time_chunk = time_chunk
+    _opts.input_ms.freq_chunk = freq_chunk
+    _opts.G.time_interval = time_int
+    _opts.B.time_interval = 2*time_int
+    _opts.G.freq_interval = freq_int
+    _opts.B.freq_interval = 2*freq_int
+    _opts.mad_flags.enable = True
 
-    return options
+    return _opts
 
 
 @pytest.fixture(scope="module")
@@ -61,7 +62,7 @@ def data_xds(data_xds_list):
 def expected_t_ints(data_xds, xds_opts):
 
     n_row = data_xds.dims["row"]
-    t_ints = [getattr(xds_opts, term + "_time_interval") or n_row
+    t_ints = [getattr(xds_opts, term).time_interval or n_row
               for term in xds_opts.solver.gain_terms]
 
     expected_t_ints = []
@@ -100,7 +101,7 @@ def expected_t_ints(data_xds, xds_opts):
 def expected_f_ints(data_xds, xds_opts):
 
     n_chan = data_xds.dims["chan"]
-    f_ints = [getattr(xds_opts, term + "_freq_interval") or n_chan
+    f_ints = [getattr(xds_opts, term).freq_interval or n_chan
               for term in xds_opts.solver.gain_terms]
 
     expected_f_ints = []
