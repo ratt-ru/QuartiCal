@@ -112,6 +112,8 @@ class BaseConfig:
 
 def finalize_structure(additional_config):
 
+    gain_terms = Solver().gain_terms  # Use the default if nothing overrides.
+
     for cfg in additional_config[::-1]:
         gain_terms = oc.select(cfg, "solver.gain_terms")
         if gain_terms is not None:

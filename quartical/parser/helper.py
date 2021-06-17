@@ -1,6 +1,7 @@
 import sys
 import os
 import textwrap
+import re
 from pathlib import Path
 from loguru import logger
 from omegaconf import OmegaConf as oc
@@ -9,6 +10,17 @@ from quartical.parser.configuration import finalize_structure
 
 path_to_helpstrings = Path(__file__).parent.joinpath("helpstrings.yaml")
 HELPSTRINGS = oc.load(path_to_helpstrings)
+
+GAIN_MSG = f"Gains make use of a special configuration " \
+           f"mechanism. Use 'solver.gain_terms' to specify the name of " \
+           f"each gain term, e.g. 'solver.gain_terms=[G,B]'. Each gain " \
+           f"can then be configured using its name and any gain option, " \
+           f"e.g. 'G.type=complex' or 'B.direction_dependent=True'."
+
+HELP_MSG = f"For full help, use 'goquartical help'. For help with a " \
+           f"specific section, use e.g. 'goquartical help='[section1," \
+           f"section2]''. Help is available for " \
+           f"[{', '.join(HELPSTRINGS.keys())}]."
 
 
 def populate(help_obj, help_str):
@@ -59,6 +71,10 @@ def print_help(help_obj, selection):
                 section, columns)
             current_section = section
 
+        if section == "gain":
+            txt = textwrap.fill(GAIN_MSG, width=columns)
+            log_message += "<green>{0:-^{1}}</green>\n".format(txt, columns)
+
         for key, value in options.items():
             option = f"{section}.{key}"
             log_message += f"<red>{option:<}</red>\n"
@@ -67,6 +83,12 @@ def print_help(help_obj, selection):
                                 initial_indent=" "*4,
                                 subsequent_indent=" "*4)
             log_message += f"{txt:<{columns}}\n"
+
+    log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
+
+    txt = textwrap.fill(HELP_MSG, width=columns)
+
+    log_message += "<green>{0:-^{1}}</green>\n".format(txt, columns)
 
     log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
 
@@ -86,7 +108,7 @@ def help():
         selection = help_obj.keys()
     elif help_arg:
         help_obj = make_help_obj()
-        selection = help_arg.split("=")[-1].strip("[]").split(",")
+        selection = re.sub('[\[\] ]', "", help_arg.split("=")[-1]).split(",")
     else:
         return
 
