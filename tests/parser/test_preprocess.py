@@ -1,8 +1,8 @@
 import pytest
 from quartical.parser.preprocess import interpret_model, sm_tup
 import dask.array as da
-from argparse import Namespace
 import os.path
+from copy import deepcopy
 
 
 # A dictionary mapping valid recipe inputs to expected outputs.
@@ -58,9 +58,12 @@ def valid_recipe(request):
 
 
 @pytest.fixture
-def opts(valid_recipe):
+def opts(base_opts, valid_recipe):
 
-    return Namespace(**{"input_model_recipe": valid_recipe})
+    _opts = deepcopy(base_opts)
+    _opts.input_model.recipe = valid_recipe
+
+    return _opts
 
 
 @pytest.fixture(params=invalid_recipes.keys())
@@ -69,9 +72,12 @@ def invalid_recipe(request):
 
 
 @pytest.fixture
-def bad_opts(invalid_recipe):
+def bad_opts(base_opts, invalid_recipe):
 
-    return Namespace(**{"input_model_recipe": invalid_recipe})
+    _opts = deepcopy(base_opts)
+    _opts.input_model.recipe = invalid_recipe
+
+    return _opts
 
 
 @pytest.mark.preprocess
@@ -83,7 +89,7 @@ def test_interpret_model_valid(opts, monkeypatch):
     interpret_model(opts)
 
     # Check that the opts has been updated with the correct internal recipe.
-    assert opts._internal_recipe == valid_recipes[opts.input_model_recipe]
+    assert opts._internal_recipe == valid_recipes[opts.input_model.recipe]
 
 
 @pytest.mark.preprocess
@@ -91,5 +97,5 @@ def test_interpret_model_invalid(bad_opts):
 
     # This verifies that an appropriate error is raised for obvious bad input.
 
-    with pytest.raises(invalid_recipes[bad_opts.input_model_recipe]):
+    with pytest.raises(invalid_recipes[bad_opts.input_model.recipe]):
         interpret_model(bad_opts)

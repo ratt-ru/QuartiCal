@@ -27,11 +27,11 @@ def load_and_interpolate_gains(gain_xds_list, opts):
 
     interp_xds_lol = []
 
-    for term_ind, term in enumerate(opts.solver_gain_terms):
+    for term_ind, term in enumerate(opts.solver.gain_terms):
 
-        gain_path = getattr(opts, f"{term}_load_from", None)
-        interp_mode = getattr(opts, f"{term}_interp_mode", None)
-        interp_method = getattr(opts, f"{term}_interp_method", None)
+        gain_path = getattr(opts, term).load_from
+        interp_mode = getattr(opts, term).interp_mode
+        interp_method = getattr(opts, term).interp_method
 
         # Pull out all the datasets for the current term into a flat list.
         term_xds_list = [tlist[term_ind] for tlist in gain_xds_list]

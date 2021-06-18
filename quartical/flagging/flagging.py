@@ -121,8 +121,8 @@ def valid_median(arr):
 
 def add_mad_graph(data_xds_list, opts):
 
-    bl_thresh = opts.flags_bl_mad_threshold
-    gbl_thresh = opts.flags_global_mad_threshold
+    bl_thresh = opts.mad_flags.threshold_bl
+    gbl_thresh = opts.mad_flags.threshold_global
 
     flagged_data_xds_list = []
 

@@ -83,7 +83,7 @@ def construct_solver(data_xds_list,
                 blocker.add_input(f"{t.NAME}_initial_gain",
                                   t.gains.data, "rfadc")
 
-        if opts.input_ms_is_bda:
+        if opts.input_ms.is_bda:
             blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")
             blocker.add_input("row_weights", data_xds.ROW_WEIGHTS.data, "r")
         else:
@@ -91,7 +91,7 @@ def construct_solver(data_xds_list,
             blocker.add_input("row_weights", None)
 
         # Add relevant outputs to blocker object.
-        for gi, gn in enumerate(opts.solver_gain_terms):
+        for gi, gn in enumerate(opts.solver.gain_terms):
 
             chunks = gain_terms[gi].GAIN_SPEC
             blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)

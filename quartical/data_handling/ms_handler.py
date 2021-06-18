@@ -28,10 +28,10 @@ def read_xds_list(opts):
 
     logger.debug("Setting up indexing xarray dataset.")
 
-    indexing_xds_list = xds_from_ms(opts.input_ms_name,
+    indexing_xds_list = xds_from_ms(opts.input_ms.path,
                                     columns=("TIME", "INTERVAL"),
                                     index_cols=("TIME",),
-                                    group_cols=opts.input_ms_group_by,
+                                    group_cols=opts.input_ms.group_by,
                                     taql_where="ANTENNA1 != ANTENNA2",
                                     chunks={"row": -1})
 
@@ -39,7 +39,7 @@ def read_xds_list(opts):
     # namespace/dictionary. Leading underscore indiciates that this option is
     # private and added internally.
 
-    antenna_xds = xds_from_table(opts.input_ms_name + "::ANTENNA")[0]
+    antenna_xds = xds_from_table(opts.input_ms.path + "::ANTENNA")[0]
 
     n_ant = antenna_xds.dims["row"]
 
@@ -48,7 +48,7 @@ def read_xds_list(opts):
 
     # Determine the number of correlations present in the measurement set.
 
-    polarization_xds = xds_from_table(opts.input_ms_name + "::POLARIZATION")[0]
+    polarization_xds = xds_from_table(opts.input_ms.path + "::POLARIZATION")[0]
 
     opts._ms_ncorr = polarization_xds.dims["corr"]
 
@@ -61,7 +61,7 @@ def read_xds_list(opts):
 
     # Determine the feed types present in the measurement set.
 
-    feed_xds = xds_from_table(opts.input_ms_name + "::FEED")[0]
+    feed_xds = xds_from_table(opts.input_ms.path + "::FEED")[0]
 
     feeds = feed_xds.POLARIZATION_TYPE.data.compute()
     unique_feeds = np.unique(feeds)
@@ -80,7 +80,7 @@ def read_xds_list(opts):
     # probably need to be done on a per xds basis. Can probably be accomplished
     # by merging the field xds grouped by DDID into data grouped by DDID.
 
-    field_xds = xds_from_table(opts.input_ms_name + "::FIELD")[0]
+    field_xds = xds_from_table(opts.input_ms.path + "::FIELD")[0]
     opts._phase_dir = np.squeeze(field_xds.PHASE_DIR.data.compute())
 
     logger.info("Field table indicates phase centre is at ({} {}).",
@@ -90,12 +90,12 @@ def read_xds_list(opts):
     # and fall back to unity weights. TODO: Figure out how to prevent this
     # thowing a message wall.
 
-    opts._unity_weights = opts.input_ms_weight_column.lower() == "unity"
+    opts._unity_weights = opts.input_ms.weight_column.lower() == "unity"
 
     if not opts._unity_weights:
-        col_names = list(xds_from_ms(opts.input_ms_name)[0].keys())
-        if opts.input_ms_weight_column in col_names:
-            logger.info(f"Using {opts.input_ms_weight_column} for weights.")
+        col_names = list(xds_from_ms(opts.input_ms.path)[0].keys())
+        if opts.input_ms.weight_column in col_names:
+            logger.info(f"Using {opts.input_ms.weight_column} for weights.")
         else:
             logger.warning("Specified weight column was not present. "
                            "Falling back to unity weights.")
@@ -105,10 +105,10 @@ def read_xds_list(opts):
     # TODO: Handle multiple SPWs and specification in bandwidth.
 
     spw_xds_list = xds_from_table(
-        opts.input_ms_name + "::SPECTRAL_WINDOW",
+        opts.input_ms.path + "::SPECTRAL_WINDOW",
         group_cols=["__row__"],
         columns=["CHAN_FREQ", "CHAN_WIDTH"],
-        chunks={"row": 1, "chan": opts.input_ms_freq_chunk or -1})
+        chunks={"row": 1, "chan": opts.input_ms.freq_chunk or -1})
 
     # The spectral window xds should be correctly chunked in frequency.
 
@@ -121,7 +121,7 @@ def read_xds_list(opts):
 
     extra_columns = tuple(opts._model_columns)
     if not opts._unity_weights:
-        extra_columns += (opts.input_ms_weight_column,)
+        extra_columns += (opts.input_ms.weight_column,)
 
     data_columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "DATA", "FLAG",
                     "FLAG_ROW", "UVW") + extra_columns
@@ -130,10 +130,10 @@ def read_xds_list(opts):
                     for cn in opts._model_columns}
 
     data_xds_list = xds_from_ms(
-        opts.input_ms_name,
+        opts.input_ms.path,
         columns=data_columns,
         index_cols=("TIME",),
-        group_cols=opts.input_ms_group_by,
+        group_cols=opts.input_ms.group_by,
         taql_where="ANTENNA1 != ANTENNA2",
         chunks=chunking_per_xds,
         table_schema=["MS", {**extra_schema}])
@@ -143,7 +143,7 @@ def read_xds_list(opts):
     ref_xds_list = data_xds_list
 
     # BDA data needs to be processed into something more manageable.
-    if opts.input_ms_is_bda:
+    if opts.input_ms.is_bda:
         data_xds_list, utime_chunking_per_xds = \
             process_bda_input(data_xds_list, spw_xds_list, opts)
 
@@ -184,15 +184,15 @@ def read_xds_list(opts):
     # We may only want to use some of the input correlation values. xarray
     # has a neat syntax for this.
 
-    if opts.input_ms_select_corr:
+    if opts.input_ms.select_corr:
         try:
-            data_xds_list = [xds.sel(corr=opts.input_ms_select_corr)
+            data_xds_list = [xds.sel(corr=opts.input_ms.select_corr)
                              for xds in data_xds_list]
         except KeyError:
             raise KeyError(f"--input-ms-select-corr attempted to select "
                            f"correlations not present in the data - this MS "
                            f"contains {opts._ms_ncorr} correlations. User "
-                           f"attempted to select {opts.input_ms_select_corr}.")
+                           f"attempted to select {opts.input_ms.select_corr}.")
 
     return data_xds_list, ref_xds_list
 
@@ -222,26 +222,26 @@ def write_xds_list(xds_list, ref_xds_list, opts):
 
     output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
 
-    if opts.output_visibility_product:
+    if opts.output.products:
         # Drop variables from columns we intend to overwrite.
-        xds_list = [xds.drop_vars(opts.output_column, errors="ignore")
+        xds_list = [xds.drop_vars(opts.output.columns, errors="ignore")
                     for xds in xds_list]
 
         vis_prod_map = {"residual": "_RESIDUAL",
                         "corrected_residual": "_CORRECTED_RESIDUAL",
                         "corrected_data": "_CORRECTED_DATA"}
-        n_vis_prod = len(opts.output_visibility_product)
+        n_vis_prod = len(opts.output.products)
 
         # Rename QuartiCal's underscore prefixed results so that they will be
         # written to the appropriate column.
         xds_list = \
-            [xds.rename({vis_prod_map[prod]: opts.output_column[ind]
-             for ind, prod in enumerate(opts.output_visibility_product)})
+            [xds.rename({vis_prod_map[prod]: opts.output.columns[ind]
+             for ind, prod in enumerate(opts.output.products)})
              for xds in xds_list]
 
-        output_cols += tuple(opts.output_column[:n_vis_prod])
+        output_cols += tuple(opts.output.columns[:n_vis_prod])
 
-    if opts.input_ms_is_bda:
+    if opts.input_ms.is_bda:
         xds_list = process_bda_output(xds_list, ref_xds_list, output_cols,
                                       opts)
 
@@ -253,7 +253,7 @@ def write_xds_list(xds_list, ref_xds_list, opts):
                               errors='ignore')
                 for xds in xds_list]
 
-    write_xds_list = xds_to_table(xds_list, opts.input_ms_name,
+    write_xds_list = xds_to_table(xds_list, opts.input_ms.path,
                                   columns=output_cols)
 
     return write_xds_list
@@ -348,7 +348,7 @@ def compute_chunking(indexing_xds_list, spw_xds_list, opts, compute=True):
         # TODO: BDA will assume no chunking, and in general we can skip this
         # bit if the row axis is unchunked.
 
-        if isinstance(opts.input_ms_time_chunk, float):
+        if isinstance(opts.input_ms.time_chunk, float):
 
             def interval_chunking(time_col, interval_col, time_chunk):
 
@@ -371,7 +371,7 @@ def compute_chunking(indexing_xds_list, spw_xds_list, opts, compute=True):
             chunking = da.map_blocks(interval_chunking,
                                      xds.TIME.data,
                                      xds.INTERVAL.data,
-                                     opts.input_ms_time_chunk,
+                                     opts.input_ms.time_chunk,
                                      chunks=((2,), (np.nan,)),
                                      dtype=np.int32)
 
@@ -397,7 +397,7 @@ def compute_chunking(indexing_xds_list, spw_xds_list, opts, compute=True):
 
             chunking = da.map_blocks(integer_chunking,
                                      xds.TIME.data,
-                                     opts.input_ms_time_chunk,
+                                     opts.input_ms.time_chunk,
                                      chunks=((2,), (np.nan,)),
                                      dtype=np.int32)
 

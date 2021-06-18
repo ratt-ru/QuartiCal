@@ -1,6 +1,6 @@
+from copy import deepcopy
 import pytest
 from quartical.data_handling.ms_handler import read_xds_list, write_xds_list
-from argparse import Namespace
 import numpy as np
 
 
@@ -9,15 +9,15 @@ def opts(base_opts, weight_column, freq_chunk, time_chunk, select_corr):
 
     # Don't overwrite base config - instead create a new Namespace and update.
 
-    options = Namespace(**vars(base_opts))
+    _opts = deepcopy(base_opts)
 
-    options.input_ms_weight_column = weight_column
-    options.input_ms_freq_chunk = freq_chunk
-    options.input_ms_time_chunk = time_chunk
-    options.input_ms_select_corr = select_corr
-    options._model_columns = ["MODEL_DATA"]
+    _opts.input_ms.weight_column = weight_column
+    _opts.input_ms.freq_chunk = freq_chunk
+    _opts.input_ms.time_chunk = time_chunk
+    _opts.input_ms.select_corr = select_corr
+    _opts._model_columns = ["MODEL_DATA"]
 
-    return options
+    return _opts
 
 
 @pytest.fixture(scope="module")
@@ -61,7 +61,7 @@ def test_read_ms_time_chunks(_read_xds_list, opts):
     ms_xds_list, _ = _read_xds_list
 
     # Check that the time axis is correctly chunked.
-    expected_t_dim = opts.input_ms_time_chunk or np.inf  # or handles 0.
+    expected_t_dim = opts.input_ms.time_chunk or np.inf  # or handles 0.
 
     assert np.all([c <= expected_t_dim
                    for xds in ms_xds_list
@@ -74,7 +74,7 @@ def test_read_ms_freq_chunks(_read_xds_list, opts):
     ms_xds_list, _ = _read_xds_list
 
     # Check that the frequency axis is correctly chunked.
-    expected_f_dim = opts.input_ms_freq_chunk or np.inf  # or handles 0.
+    expected_f_dim = opts.input_ms.freq_chunk or np.inf  # or handles 0.
 
     assert np.all([c <= expected_f_dim
                    for xds in ms_xds_list

@@ -28,7 +28,7 @@ def interpret_model(opts):
     internal_recipe = {}
 
     # Strip accidental whitepsace from input recipe and splits on ":".
-    input_recipes = opts.input_model_recipe.replace(" ", "").split(":")
+    input_recipes = opts.input_model.recipe.replace(" ", "").split(":")
 
     if input_recipes == ['']:
         raise ValueError("No model recipe was specified. Please set/check "
@@ -108,7 +108,7 @@ def check_opts(opts):
     # of operation. The idea is that all our configuration state lives in this
     # options dictionary. Down with OOP!
 
-    if opts.input_ms_is_bda:
+    if opts.input_ms.is_bda:
         logger.warning("BDA data is only partially supported. Please report "
                        "problems via the issue tracker.")
 

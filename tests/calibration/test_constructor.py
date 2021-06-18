@@ -1,5 +1,7 @@
 from argparse import Namespace
+from copy import deepcopy
 import pickle
+from dask import base
 
 import pytest
 from quartical.parser import preprocess
@@ -19,13 +21,13 @@ def opts(base_opts, time_chunk, freq_chunk):
 
     # Don't overwrite base config - instead create a new Namespace and update.
 
-    options = Namespace(**vars(base_opts))
+    _opts = deepcopy(base_opts)
 
-    options._model_columns = ["MODEL_DATA"]
-    options.input_ms_time_chunk = time_chunk
-    options.input_ms_freq_chunk = freq_chunk
+    _opts._model_columns = ["MODEL_DATA"]
+    _opts.input_ms.time_chunk = time_chunk
+    _opts.input_ms.freq_chunk = freq_chunk
 
-    return options
+    return _opts
 
 
 @pytest.fixture(scope="module")

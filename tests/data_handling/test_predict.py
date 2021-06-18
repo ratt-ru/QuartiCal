@@ -1,3 +1,4 @@
+from copy import deepcopy
 import pytest
 from quartical.data_handling.ms_handler import read_xds_list
 from quartical.parser.preprocess import interpret_model
@@ -5,23 +6,22 @@ from quartical.data_handling.predict import (predict,
                                              parse_sky_models,
                                              daskify_sky_model_dict,
                                              get_support_tables)
-from argparse import Namespace
 import dask.array as da
 import numpy as np
 from numpy.testing import assert_array_almost_equal
 
 
-expected_clusters = {"DIE": {"n_point": 22, "n_gauss": 24},
-                     "B290": {"n_point": 1, "n_gauss": 2},
-                     "C242": {"n_point": 0, "n_gauss": 1},
-                     "G195": {"n_point": 0, "n_gauss": 1},
-                     "H194": {"n_point": 0, "n_gauss": 2},
-                     "I215": {"n_point": 0, "n_gauss": 1},
-                     #  "K285": {"n_point": 1, "n_gauss": 0},  #noqa
-                     #  "O265": {"n_point": 1, "n_gauss": 0},  #noqa
-                     "R283": {"n_point": 1, "n_gauss": 0},
-                     #  "W317": {"n_point": 1, "n_gauss": 0}}  #noqa
-                     "V317": {"n_point": 0, "n_gauss": 1}}
+expected_clusters = {"DIE": {"point": 22, "gauss": 24},
+                     "B290": {"point": 1, "gauss": 2},
+                     "C242": {"point": 0, "gauss": 1},
+                     "G195": {"point": 0, "gauss": 1},
+                     "H194": {"point": 0, "gauss": 2},
+                     "I215": {"point": 0, "gauss": 1},
+                     #  "K285": {"point": 1, "n_gauss": 0},  #noqa
+                     #  "O265": {"point": 1, "n_gauss": 0},  #noqa
+                     "R283": {"point": 1, "gauss": 0},
+                     #  "W317": {"point": 1, "n_gauss": 0}}  #noqa
+                     "V317": {"point": 0, "gauss": 1}}
 
 
 @pytest.fixture(params=["", "@dE"], ids=["di", "dd"],
@@ -33,21 +33,18 @@ def model_recipe(request, lsm_name):
 @pytest.fixture(scope="module")
 def opts(base_opts, freq_chunk, time_chunk, model_recipe, beam_name):
 
-    # Don't overwrite base config - instead create a new Namespace and update.
+    _opts = deepcopy(base_opts)
 
-    options = Namespace(**vars(base_opts))
+    _opts.input_ms.freq_chunk = freq_chunk
+    _opts.input_ms.time_chunk = time_chunk
+    _opts.input_model.recipe = model_recipe
+    _opts.input_model.beam = beam_name + "/JVLA-L-centred-$(corr)_$(reim).fits"
+    _opts.input_model.beam_l_axis = "-X"
+    _opts.input_model.beam_m_axis = "Y"
 
-    options.input_ms_freq_chunk = freq_chunk
-    options.input_ms_time_chunk = time_chunk
-    options.input_model_recipe = model_recipe
-    options.input_model_beam = \
-        beam_name + "/JVLA-L-centred-$(corr)_$(reim).fits"
-    options.input_model_beam_l_axis = "-X"
-    options.input_model_beam_m_axis = "Y"
+    interpret_model(_opts)
 
-    interpret_model(options)
-
-    return options
+    return _opts
 
 
 @pytest.fixture(scope="module")
@@ -61,42 +58,19 @@ def _predict(opts):
     return predict(ms_xds_list, opts), ms_xds_list
 
 
-@pytest.fixture(scope="module")
-def _di_sky_dict(lsm_name):
+@pytest.fixture(scope="function")
+def _sky_dict(base_opts, model_recipe):
 
-    options = Namespace(**{"input_model_recipe": lsm_name,
-                           "input_model_source_chunks": 10})
+    base_opts.input_model.recipe = model_recipe
+    interpret_model(base_opts)
 
-    interpret_model(options)
-
-    return parse_sky_models(options)
+    return parse_sky_models(base_opts)
 
 
-@pytest.fixture(scope="module")
-def _dd_sky_dict(lsm_name):
+@pytest.fixture(scope="function")
+def _dask_sky_dict(_sky_dict, opts):
 
-    options = Namespace(**{"input_model_recipe": lsm_name + "@dE",
-                           "input_model_source_chunks": 10})
-
-    interpret_model(options)
-
-    return parse_sky_models(options)
-
-
-@pytest.fixture(scope="module")
-def _dask_di_sky_dict(_di_sky_dict):
-
-    options = Namespace(**{"input_model_source_chunks": 10})
-
-    return daskify_sky_model_dict(_di_sky_dict, options)
-
-
-@pytest.fixture(scope="module")
-def _dask_dd_sky_dict(_dd_sky_dict):
-
-    options = Namespace(**{"input_model_source_chunks": 10})
-
-    return daskify_sky_model_dict(_dd_sky_dict, options)
+    return daskify_sky_model_dict(_sky_dict, opts)
 
 
 @pytest.fixture(scope="module")
@@ -109,129 +83,62 @@ def _support_tables(base_opts):
 
 
 @pytest.mark.predict
-@pytest.mark.parametrize("field", ["radec", "stokes", "spi", "ref_freq"])
-def test_expected_fields_points_di(_di_sky_dict, field):
+@pytest.mark.parametrize("source_fields", [
+    ("point", ["radec", "stokes", "spi", "ref_freq"]),
+    ("gauss", ["radec", "stokes", "spi", "ref_freq", "shape"])
+])
+def test_expected_fields(_sky_dict, source_fields):
 
     # Check that we have all the fields we expect.
 
-    model = list(_di_sky_dict.keys())[0]
-
-    assert field in _di_sky_dict[model]["DIE"]["point"]
-
-
-@pytest.mark.predict
-@pytest.mark.parametrize("field", ["radec", "stokes", "spi", "ref_freq",
-                                   "shape"])
-def test_expected_fields_gauss_di(_di_sky_dict, field):
-
-    # Check that we have all the fields we expect.
-
-    model = list(_di_sky_dict.keys())[0]
-
-    assert field in _di_sky_dict[model]["DIE"]["gauss"]
-
-
-@pytest.mark.predict
-def test_npoint_di(_di_sky_dict):
-
-    # Check for the expected number of point sources.
-
-    model = list(_di_sky_dict.keys())[0]
-
-    point = _di_sky_dict[model]["DIE"]["point"]
-
-    expected_n_point = sum([s["n_point"] for s in expected_clusters.values()])
-
-    assert all([len(f) == expected_n_point for f in point.values()])
-
-
-@pytest.mark.predict
-def test_ngauss_di(_di_sky_dict):
-
-    # Check for the expected number of gaussian sources.
-
-    model = list(_di_sky_dict.keys())[0]
-
-    gauss = _di_sky_dict[model]["DIE"]["gauss"]
-
-    expected_n_gauss = sum(s["n_gauss"] for s in expected_clusters.values())
-
-    assert all([len(f) == expected_n_gauss for f in gauss.values()])
-
-
-@pytest.mark.predict
-@pytest.mark.parametrize("field", ["radec", "stokes", "spi", "ref_freq"])
-def test_expected_fields_points_dd(_dd_sky_dict, field):
-
-    # Check that we have all the fields we expect.
-
-    check = all([field in _dd_sky_dict[m][c]["point"]
-                 for m in _dd_sky_dict.keys()
-                 for c in _dd_sky_dict[m].keys()
-                 if "point" in _dd_sky_dict[m][c]])
-
-    assert check is True
-
-
-@pytest.mark.predict
-@pytest.mark.parametrize("field", ["radec", "stokes", "spi", "ref_freq",
-                                   "shape"])
-def test_expected_fields_gauss_dd(_dd_sky_dict, field):
-
-    # Check that we have all the fields we expect.
-
-    check = all([field in _dd_sky_dict[m][c]["gauss"]
-                 for m in _dd_sky_dict.keys()
-                 for c in _dd_sky_dict[m].keys()
-                 if "gauss" in _dd_sky_dict[m][c]])
-
-    assert check is True
-
-
-@pytest.mark.predict
-def test_npoint_dd(_dd_sky_dict):
-
-    # Check for the expected number of point sources.
+    source_type, fields = source_fields
 
     check = True
 
-    for sky_model_name, sky_model in _dd_sky_dict.items():
-        for cluster_name, cluster in sky_model.items():
-            if "point" in cluster:
-                n_point = len(cluster["point"]["stokes"])
-                expected_n_point = expected_clusters[cluster_name]["n_point"]
-                check &= n_point == expected_n_point
+    for clusters in _sky_dict.values():
+        for cluster in clusters.values():
+            for field in fields:
+                if source_type in cluster:
+                    check &= field in cluster[source_type]
 
-    assert check is True
+    assert check
 
 
 @pytest.mark.predict
-def test_ngauss_dd(_dd_sky_dict):
+@pytest.mark.parametrize("source_fields", [
+    ("point", ["radec", "stokes", "spi", "ref_freq"]),
+    ("gauss", ["radec", "stokes", "spi", "ref_freq", "shape"])
+])
+def test_nsource(_sky_dict, source_fields):
 
-    # Check for the expected number of gaussian sources.
+    # Check for the expected number of point sources.
 
-    check = True
+    source_type, fields = source_fields
 
-    for sky_model_name, sky_model in _dd_sky_dict.items():
-        for cluster_name, cluster in sky_model.items():
-            if "gauss" in cluster:
-                n_gauss = len(cluster["gauss"]["stokes"])
-                expected_n_gauss = expected_clusters[cluster_name]["n_gauss"]
-                check &= n_gauss == expected_n_gauss
+    expected_n_source = [s[source_type] for s in expected_clusters.values()]
 
-    assert check is True
+    for field in fields:
+        n_source = [len(cluster.get(source_type, {field: []})[field])
+                    for clusters in _sky_dict.values()
+                    for cluster in clusters.values()]
+
+        if len(n_source) == 1:
+            expected_n_source = [sum(expected_n_source)]
+
+        assert n_source == expected_n_source
+
 
 # -------------------------daskify_sky_model_dict------------------------------
 
 
 @pytest.mark.predict
-def test_chunking_di(_dask_di_sky_dict):
+def test_chunking(_dask_sky_dict):
 
     # Check for consistent chunking.
 
     check = True
 
-    for sky_model_name, sky_model in _dask_di_sky_dict.items():
+    for sky_model_name, sky_model in _dask_sky_dict.items():
         for cluster_name, cluster in sky_model.items():
             for source_type, sources in cluster.items():
                 for arr in sources:
@@ -239,21 +146,6 @@ def test_chunking_di(_dask_di_sky_dict):
 
     assert check is True
 
-
-@pytest.mark.predict
-def test_chunking_dd(_dask_dd_sky_dict):
-
-    # Check for consistent chunking.
-
-    check = True
-
-    for sky_model_name, sky_model in _dask_dd_sky_dict.items():
-        for cluster_name, cluster in sky_model.items():
-            for source_type, sources in cluster.items():
-                for arr in sources:
-                    check &= all([c <= 10 for c in arr.chunks[0]])
-
-    assert check is True
 
 # ----------------------------get_support_tables-------------------------------
 

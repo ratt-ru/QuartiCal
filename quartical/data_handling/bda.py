@@ -43,7 +43,7 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
     """
 
     # If WEIGHT_SPECTRUM is not in use, BDA data makes no sense.
-    if opts.input_ms_weight_column != "WEIGHT_SPECTRUM":
+    if opts.input_ms.weight_column != "WEIGHT_SPECTRUM":
         raise ValueError("--input-ms-weight column must be "
                          "WEIGHT_SPECTRUM for BDA data.")
 

@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 # Sets up logger - hereafter import logger from Loguru.
 from contextlib import ExitStack
-import quartical.logging.init_logger  # noqa
 from loguru import logger
 import dask
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 import time
-from quartical.parser import parser, preprocess
+from quartical.parser import parser, preprocess, helper
+from quartical.logging import configure_loguru
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
                                                 preprocess_xds_list)
@@ -28,6 +28,8 @@ def execute():
 def _execute(exitstack):
     """Runs the application."""
 
+    helper.help()  # Check to see if the user asked for help.
+    configure_loguru()
     opts = parser.parse_inputs()
 
     # TODO: This check needs to be fleshed out substantially.
@@ -35,15 +37,15 @@ def _execute(exitstack):
     preprocess.check_opts(opts)
     preprocess.interpret_model(opts)
 
-    if opts.parallel_scheduler == "distributed":
-        if opts.parallel_address:
+    if opts.parallel.scheduler == "distributed":
+        if opts.parallel.address:
             logger.info("Initializing distributed client.")
-            client = exitstack.enter_context(Client(opts.parallel_address))
+            client = exitstack.enter_context(Client(opts.parallel.address))
         else:
             logger.info("Initializing distributed client using LocalCluster.")
-            cluster = LocalCluster(processes=opts.parallel_nworker > 1,
-                                   n_workers=opts.parallel_nworker,
-                                   threads_per_worker=opts.parallel_nthread,
+            cluster = LocalCluster(processes=opts.parallel.n_worker > 1,
+                                   n_workers=opts.parallel.n_worker,
+                                   threads_per_worker=opts.parallel.n_thread,
                                    memory_limit=0)
             cluster = exitstack.enter_context(cluster)
             client = exitstack.enter_context(Client(cluster))
@@ -80,7 +82,7 @@ def _execute(exitstack):
     gain_xds_lol, data_xds_list = \
         add_calibration_graph(data_xds_list, opts)
 
-    if opts.flags_mad_enable:
+    if opts.mad_flags.enable:
         data_xds_list = add_mad_graph(data_xds_list, opts)
 
     writable_xds = finalise_flags(data_xds_list, opts)
@@ -96,9 +98,9 @@ def _execute(exitstack):
     with ProgressBar():
 
         dask.compute(writes, gain_writes,
-                     num_workers=opts.parallel_nthread,
+                     num_workers=opts.parallel.n_thread,
                      optimize_graph=True,
-                     scheduler=opts.parallel_scheduler)
+                     scheduler=opts.parallel.scheduler)
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 

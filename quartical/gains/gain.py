@@ -14,14 +14,14 @@ class Gain:
     def __init__(self, term_name, data_xds, coords, tipc, fipc, opts):
 
         self.name = term_name
-        self.dd_term = getattr(opts, f"{self.name}_direction_dependent")
-        self.type = getattr(opts, f"{self.name}_type")
+        self.dd_term = getattr(opts, self.name).direction_dependent
+        self.type = getattr(opts, self.name).type
         self.n_chan = data_xds.dims["chan"]
         self.n_ant = data_xds.dims["ant"]
         self.n_dir = data_xds.dims["dir"] if self.dd_term else 1
         self.n_corr = data_xds.dims["corr"]
         self.id_fields = {f: data_xds.attrs[f]
-                          for f in opts.input_ms_group_by}
+                          for f in opts.input_ms.group_by}
         self.utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
         self.freq_chunks = list(map(int, data_xds.chunks["chan"]))
         self.n_t_chunk = len(self.utime_chunks)
