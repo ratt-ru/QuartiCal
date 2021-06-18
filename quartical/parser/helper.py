@@ -5,7 +5,7 @@ import re
 from colorama import Fore, Style
 from pathlib import Path
 from omegaconf import OmegaConf as oc
-from dataclasses import fields, MISSING, is_dataclass
+from dataclasses import fields, _MISSING_TYPE, is_dataclass
 from quartical.parser.configuration import finalize_structure
 
 
@@ -33,25 +33,22 @@ def populate(typ, help_str, help_dict=None):
         return False
 
     flds = fields(typ)
-    field_types = {f.name: f.type for f in flds}
-    field_defaults = {f.name: f.default for f in flds}
-    field_choices = {f.name: f.metadata.get("choices", "") for f in flds}
-    field_factories = {f.name: f.default_factory for f in flds}
 
-    for k, v in field_types.items():
-        help_dict[k] = {}
-        again = populate(v, help_str[k], help_dict[k])
-        if not again:
-            msg = f"{help_str[k]} "
-            if isinstance(field_defaults[k], type(MISSING)):
-                field_defaults[k] = field_factories[k]()
-            if field_defaults[k] == "???":
-                msg += f"{Fore.RED}MANDATORY. "
+    for fld in flds:
+        fld_name, fld_type = fld.name, fld.type
+        help_dict[fld_name] = {}
+        nested = populate(fld_type, help_str[fld_name], help_dict[fld_name])
+        if not nested:
+            msg = f"{help_str[fld_name]} "
+            if isinstance(fld.default, _MISSING_TYPE):
+                default = fld.default_factory()
             else:
-                msg += f"Default: {field_defaults[k]}. "
-            if field_choices[k]:
-                msg += f"Choices: {field_choices[k]}"
-            help_dict[k] = msg
+                default = fld.default
+            if default == "???":
+                msg += f"{Fore.RED}MANDATORY. "
+            if fld.metadata.get("choices", None):
+                msg += f"Choices: {fld.metadata['choices']}"
+            help_dict[fld_name] = msg
 
     return help_dict
 
