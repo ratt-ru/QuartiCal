@@ -2,10 +2,10 @@ import sys
 import os
 import textwrap
 import re
+from colorama import Fore, Style
 from pathlib import Path
-from loguru import logger
 from omegaconf import OmegaConf as oc
-from dataclasses import fields, MISSING
+from dataclasses import fields, MISSING, is_dataclass
 from quartical.parser.configuration import finalize_structure
 
 
@@ -29,11 +29,10 @@ def populate(typ, help_str, help_dict=None):
     if help_dict is None:
         help_dict = {}
 
-    try:
-        flds = fields(typ)
-    except TypeError:
+    if not is_dataclass(typ):
         return False
 
+    flds = fields(typ)
     field_types = {f.name: f.type for f in flds}
     field_defaults = {f.name: f.default for f in flds}
     field_choices = {f.name: f.metadata.get("choices", "") for f in flds}
@@ -47,7 +46,7 @@ def populate(typ, help_str, help_dict=None):
             if isinstance(field_defaults[k], type(MISSING)):
                 field_defaults[k] = field_factories[k]()
             if field_defaults[k] == "???":
-                msg += "<magenta>MANDATORY</magenta>. "
+                msg += f"{Fore.RED}MANDATORY. "
             else:
                 msg += f"Default: {field_defaults[k]}. "
             if field_choices[k]:
@@ -78,7 +77,7 @@ def print_help(help_dict, selection):
     else:
         columns = 80  # Fall over to some sensible default.
 
-    log_message = ""
+    help_message = f"{Style.BRIGHT}"
 
     current_section = None
 
@@ -88,34 +87,33 @@ def print_help(help_dict, selection):
             continue
 
         if current_section != section:
-            log_message += "" if current_section is None \
-                else "<blue>{0:-^{1}}</blue>\n".format("", columns)
-            log_message += "\n<blue>{0:-^{1}}</blue>\n".format(
-                section, columns)
+            help_message += "" if current_section is None \
+                else f"{Fore.CYAN}{'':-^{columns}}\n"
+            help_message += f"\n{Fore.CYAN}{section:-^{columns}}\n"
             current_section = section
 
         if section == "gain":
             txt = textwrap.fill(GAIN_MSG, width=columns)
-            log_message += "<green>{0:-^{1}}</green>\n".format(txt, columns)
+            help_message += f"{Fore.GREEN}{txt:-^{columns}}\n"
 
         for key, value in options.items():
             option = f"{section}.{key}"
-            log_message += f"<red>{option:<}</red>\n"
+            help_message += f"{Fore.MAGENTA}{option:<}\n"
             txt = textwrap.fill(value,
                                 width=columns,
                                 initial_indent=" "*4,
                                 subsequent_indent=" "*4)
-            log_message += f"{txt:<{columns}}\n"
+            help_message += f"{Fore.WHITE}{txt:<{columns}}\n"
 
-    log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
+    help_message += f"{Fore.CYAN}{'':-^{columns}}"
 
     txt = textwrap.fill(HELP_MSG, width=columns)
 
-    log_message += "<green>{0:-^{1}}</green>\n".format(txt, columns)
+    help_message += f"{Fore.GREEN}{txt:-^{columns}}\n"
 
-    log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
+    help_message += f"{Fore.CYAN}{'':-^{columns}}{Style.RESET_ALL}"
 
-    logger.opt(ansi=True).info(log_message)
+    print(help_message)
 
 
 def help():
