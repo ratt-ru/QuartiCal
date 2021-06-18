@@ -6,7 +6,7 @@ from colorama import Fore, Style
 from pathlib import Path
 from omegaconf import OmegaConf as oc
 from dataclasses import fields, _MISSING_TYPE, is_dataclass
-from quartical.parser.configuration import finalize_structure
+from quartical.config.external import finalize_structure
 
 
 path_to_helpstrings = Path(__file__).parent.joinpath("helpstrings.yaml")

@@ -4,7 +4,7 @@ import os
 from loguru import logger
 from ruamel.yaml import round_trip_dump
 from omegaconf import OmegaConf as oc
-from quartical.parser.configuration import finalize_structure
+from quartical.config.external import finalize_structure
 
 
 def create_user_config():

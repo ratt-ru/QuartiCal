@@ -6,7 +6,7 @@ import dask
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 import time
-from quartical.parser import parser, preprocess, helper
+from quartical.config import parser, preprocess, helper
 from quartical.logging import configure_loguru
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,

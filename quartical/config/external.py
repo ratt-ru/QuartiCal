@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field, make_dataclass, fields
 from omegaconf import OmegaConf as oc
 from typing import List, Optional
-from quartical.parser.converters import as_time, as_freq
+from quartical.config.converters import as_time, as_freq
 
 
 class Input:

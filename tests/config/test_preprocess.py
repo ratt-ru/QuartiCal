@@ -1,5 +1,5 @@
 import pytest
-from quartical.parser.preprocess import interpret_model, sm_tup
+from quartical.config.preprocess import interpret_model, sm_tup
 import dask.array as da
 import os.path
 from copy import deepcopy
