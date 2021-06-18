@@ -40,6 +40,8 @@ def populate(typ, help_str, help_dict=None):
         nested = populate(fld_type, help_str[fld_name], help_dict[fld_name])
         if not nested:
             msg = f"{help_str[fld_name]} "
+            if fld.metadata.get("choices", None):
+                msg += f"Choices: {fld.metadata['choices']}. "
             if isinstance(fld.default, _MISSING_TYPE):
                 default = fld.default_factory()
             else:
@@ -48,8 +50,6 @@ def populate(typ, help_str, help_dict=None):
                 msg += f"{Fore.RED}MANDATORY. "
             else:
                 msg += f"Default: {default}. "
-            if fld.metadata.get("choices", None):
-                msg += f"Choices: {fld.metadata['choices']}"
             help_dict[fld_name] = msg
 
     return help_dict
