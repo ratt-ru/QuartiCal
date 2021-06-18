@@ -50,14 +50,14 @@ def read_xds_list(opts):
 
     polarization_xds = xds_from_table(opts.input_ms.path + "::POLARIZATION")[0]
 
-    opts._ms_ncorr = polarization_xds.dims["corr"]
+    ms_ncorr = polarization_xds.dims["corr"]
 
-    if opts._ms_ncorr not in (1, 2, 4):
+    if ms_ncorr not in (1, 2, 4):
         raise ValueError("Measurement set contains {} correlations - this "
-                         "is not supported.".format(opts._ms_ncorr))
+                         "is not supported.".format(ms_ncorr))
 
     logger.info("Polarization table indicates {} correlations are present in "
-                "the measurement set.", opts._ms_ncorr)
+                "the measurement set.", ms_ncorr)
 
     # Determine the feed types present in the measurement set.
 
@@ -187,7 +187,7 @@ def read_xds_list(opts):
         except KeyError:
             raise KeyError(f"--input-ms-select-corr attempted to select "
                            f"correlations not present in the data - this MS "
-                           f"contains {opts._ms_ncorr} correlations. User "
+                           f"contains {ms_ncorr} correlations. User "
                            f"attempted to select {opts.input_ms.select_corr}.")
 
     return data_xds_list, ref_xds_list
@@ -211,10 +211,12 @@ def write_xds_list(xds_list, ref_xds_list, opts):
     # dask-ms handle this. This also might need some further consideration,
     # as the fill_value might cause problems.
 
-    if opts._ms_ncorr != xds_list[0].corr.size:
-        xds_list = \
-            [xds.reindex({"corr": np.arange(opts._ms_ncorr)}, fill_value=0)
-             for xds in xds_list]
+    polarization_xds = xds_from_table(opts.input_ms.path + "::POLARIZATION")[0]
+    ms_ncorr = polarization_xds.dims["corr"]
+
+    if ms_ncorr != xds_list[0].corr.size:
+        xds_list = [xds.reindex({"corr": np.arange(ms_ncorr)}, fill_value=0)
+                    for xds in xds_list]
 
     output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
 
