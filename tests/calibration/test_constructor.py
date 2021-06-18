@@ -4,7 +4,7 @@ import pickle
 from dask import base
 
 import pytest
-from quartical.parser import preprocess
+from quartical.config import preprocess
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph

@@ -1,6 +1,6 @@
 import pytest
 from quartical.data_handling.ms_handler import read_xds_list
-from quartical.parser.preprocess import interpret_model
+from quartical.config.preprocess import interpret_model
 from quartical.data_handling.model_handler import add_model_graph
 from copy import deepcopy
 
