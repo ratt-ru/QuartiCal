@@ -46,6 +46,8 @@ def populate(typ, help_str, help_dict=None):
                 default = fld.default
             if default == "???":
                 msg += f"{Fore.RED}MANDATORY. "
+            else:
+                msg += f"Default: {default}. "
             if fld.metadata.get("choices", None):
                 msg += f"Choices: {fld.metadata['choices']}"
             help_dict[fld_name] = msg
