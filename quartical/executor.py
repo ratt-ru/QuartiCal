@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 # Sets up logger - hereafter import logger from Loguru.
 from contextlib import ExitStack
-import quartical.logging.init_logger  # noqa
 from loguru import logger
 import dask
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 import time
 from quartical.parser import parser, preprocess, helper
+from quartical.logging import configure_loguru
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
                                                 preprocess_xds_list)
@@ -29,6 +29,7 @@ def _execute(exitstack):
     """Runs the application."""
 
     helper.help()  # Check to see if the user asked for help.
+    configure_loguru()
     opts = parser.parse_inputs()
 
     # TODO: This check needs to be fleshed out substantially.

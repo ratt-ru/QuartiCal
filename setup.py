@@ -62,7 +62,8 @@ else:
                     "requests",
                     "pytest",
                     "csaps",
-                    "omegaconf"]
+                    "omegaconf",
+                    "colorama"]
 
 setup(name='quartical',
       version=quartical.__version__,
