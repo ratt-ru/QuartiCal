@@ -9,3 +9,4 @@ user_config.yaml
 tests/test_data/beams
 *.log
 .tdl.conf
+dask-worker-space
