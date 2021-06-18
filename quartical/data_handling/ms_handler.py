@@ -86,20 +86,18 @@ def read_xds_list(opts):
     logger.info("Field table indicates phase centre is at ({} {}).",
                 opts._phase_dir[0], opts._phase_dir[1])
 
-    # Check whether the specified weight column exists. If not, log a warning
-    # and fall back to unity weights. TODO: Figure out how to prevent this
-    # thowing a message wall.
+    # Check whether the specified weight column exists.
 
-    opts._unity_weights = opts.input_ms.weight_column.lower() == "unity"
+    extra_columns = ()
 
-    if not opts._unity_weights:
+    if opts.input_ms.weight_column:
         col_names = list(xds_from_ms(opts.input_ms.path)[0].keys())
         if opts.input_ms.weight_column in col_names:
+            extra_columns += (opts.input_ms.weight_column,)
             logger.info(f"Using {opts.input_ms.weight_column} for weights.")
         else:
-            logger.warning("Specified weight column was not present. "
-                           "Falling back to unity weights.")
-            opts._unity_weights = True
+            raise ValueError(f"Weight column {opts.input_ms.weight_column} "
+                             f"does not exist.")
 
     # Determine the channels in the measurement set. Or handles unchunked case.
     # TODO: Handle multiple SPWs and specification in bandwidth.
@@ -119,9 +117,7 @@ def read_xds_list(opts):
     # up an xarray data set for the data. Note that we will reload certain
     # indexing columns so that they are consistent with the chunking strategy.
 
-    extra_columns = tuple(opts._model_columns)
-    if not opts._unity_weights:
-        extra_columns += (opts.input_ms.weight_column,)
+    extra_columns += tuple(opts._model_columns)
 
     data_columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "DATA", "FLAG",
                     "FLAG_ROW", "UVW") + extra_columns

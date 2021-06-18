@@ -29,7 +29,7 @@ class Input:
 class MSInputs(Input):
     path: str = "???"
     column: str = "DATA"
-    weight_column: str = "WEIGHT_SPECTRUM"
+    weight_column: Optional[str] = "WEIGHT_SPECTRUM"
     time_chunk: str = "0"
     freq_chunk: int = 0
     is_bda: bool = False

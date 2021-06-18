@@ -4,8 +4,8 @@ input_ms:
   column:
     Name of input measurement set column.
   weight_column: 
-    Column to read weights from. Weights are applied by default. Specify UNITY 
-    to disable.
+    Column to read weights from. Weights are applied by default. An empty 
+    string will result in all weights being treated as unity.
   time_chunk: 
     Chunk data up by this number of timeslots. This limits the amount of data 
     processed at once. Smaller chunks allow for a smaller RAM footprint and 
