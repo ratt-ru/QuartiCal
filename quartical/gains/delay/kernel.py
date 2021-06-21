@@ -44,6 +44,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         param_shape = params.shape
         n_tint, n_fint, n_ant, n_dir, n_param, n_corr = param_shape
         n_ppa = 4  # This is always the case.
+        n_term = len(gains)
 
         t_map_arr = t_map_arr[0]  # We don't need the time parameter mappings.
         t_bin_arr = t_bin_arr[0]  # We don't need the time parameter mappings.
@@ -67,7 +68,7 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
         for i in range(20):
 
-            if dd_term:
+            if dd_term or n_term > 1:
                 residual = compute_residual(data, model, gains, a1, a2,
                                             t_map_arr, gf_map_arr, d_map_arr,
                                             row_map, row_weights,
