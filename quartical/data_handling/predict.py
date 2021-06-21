@@ -449,14 +449,31 @@ def compute_p_jones(parallactic_angles, feed_xds, opts):
 
     receptor_angles = clone(feed_xds.RECEPTOR_ANGLE.data)
 
+    # Determine the feed types present in the measurement set. TODO: This will
+    # the POLARIZATION_TYPE to be read many times. Think about improving when
+    # I tidy up the predict.
+
+    feeds = feed_xds.POLARIZATION_TYPE.values
+    unique_feeds = np.unique(feeds)
+
+    if np.all([feed in "XxYy" for feed in unique_feeds]):
+        feed_type = "linear"
+    elif np.all([feed in "LlRr" for feed in unique_feeds]):
+        feed_type = "circular"
+    else:
+        raise ValueError("Unsupported feed type/configuration.")
+
+    logger.debug("Feed table indicates {} ({}) feeds are present in the "
+                 "measurement set.", unique_feeds, feed_type)
+
     if not da.all(receptor_angles[:, 0] == receptor_angles[:, 1]):
         logger.warning("RECEPTOR_ANGLE indicates non-orthoganal "
                        "receptors. Currently, P-Jones cannot account "
                        "for non-uniform offsets. Using 0.")
-        return compute_feed_rotation(parallactic_angles, opts._feed_type)
+        return compute_feed_rotation(parallactic_angles, feed_type)
     else:
         return compute_feed_rotation(
-            parallactic_angles + receptor_angles[None, :, 0], opts._feed_type)
+            parallactic_angles + receptor_angles[None, :, 0], feed_type)
 
 
 def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):

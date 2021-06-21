@@ -59,32 +59,15 @@ def read_xds_list(opts):
     logger.info("Polarization table indicates {} correlations are present in "
                 "the measurement set.", ms_ncorr)
 
-    # Determine the feed types present in the measurement set.
-
-    feed_xds = xds_from_table(opts.input_ms.path + "::FEED")[0]
-
-    feeds = feed_xds.POLARIZATION_TYPE.data.compute()
-    unique_feeds = np.unique(feeds)
-
-    if np.all([feed in "XxYy" for feed in unique_feeds]):
-        opts._feed_type = "linear"
-    elif np.all([feed in "LlRr" for feed in unique_feeds]):
-        opts._feed_type = "circular"
-    else:
-        raise ValueError("Unsupported feed type/configuration.")
-
-    logger.info("Feed table indicates {} ({}) feeds are present in the "
-                "measurement set.", unique_feeds, opts._feed_type)
-
     # Determine the phase direction from the measurement set. TODO: This will
     # probably need to be done on a per xds basis. Can probably be accomplished
     # by merging the field xds grouped by DDID into data grouped by DDID.
 
     field_xds = xds_from_table(opts.input_ms.path + "::FIELD")[0]
-    opts._phase_dir = np.squeeze(field_xds.PHASE_DIR.data.compute())
+    phase_dir = np.squeeze(field_xds.PHASE_DIR.data.compute())
 
     logger.info("Field table indicates phase centre is at ({} {}).",
-                opts._phase_dir[0], opts._phase_dir[1])
+                phase_dir[0], phase_dir[1])
 
     # Check whether the specified weight column exists.
 
