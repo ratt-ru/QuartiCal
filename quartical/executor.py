@@ -6,7 +6,7 @@ import dask
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 import time
-from quartical.parser import parser, preprocess, helper
+from quartical.config import parser, preprocess, helper
 from quartical.logging import configure_loguru
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
@@ -35,7 +35,7 @@ def _execute(exitstack):
     # TODO: This check needs to be fleshed out substantially.
 
     preprocess.check_opts(opts)
-    preprocess.interpret_model(opts)
+    model_vis_recipe = preprocess.transcribe_recipe(opts)
 
     if opts.parallel.scheduler == "distributed":
         if opts.parallel.address:
@@ -62,7 +62,8 @@ def _execute(exitstack):
     t0 = time.time()
 
     # Reads the measurement set using the relavant configuration from opts.
-    data_xds_list, ref_xds_list = read_xds_list(opts)
+    data_xds_list, ref_xds_list = \
+        read_xds_list(model_vis_recipe.ingredients.model_columns, opts)
 
     # logger.info("Reading data from zms.")
     # data_xds_list = xds_from_zarr("/home/jonathan/3C147_tests/3C147_daskms.zms")
@@ -76,7 +77,7 @@ def _execute(exitstack):
 
     # Model xds is a list of xdss onto which appropriate model data has been
     # assigned.
-    data_xds_list = add_model_graph(data_xds_list, opts)
+    data_xds_list = add_model_graph(data_xds_list, model_vis_recipe, opts)
 
     # Adds the dask graph describing the calibration of the data.
     gain_xds_lol, data_xds_list = \

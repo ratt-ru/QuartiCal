@@ -4,28 +4,40 @@ import re
 import dask.array as da
 from collections import namedtuple
 import os.path
+from dataclasses import dataclass
+from typing import List, Dict, Set, Any
+
+_sky_model = namedtuple("_sky_model", ("name", "tags"))
 
 
-sm_tup = namedtuple("sky_model", ("name", "tags"))
+@dataclass
+class Ingredients:
+    model_columns: Set[Any]
+    sky_models: Set[_sky_model]
 
 
-def interpret_model(opts):
+@dataclass
+class Recipe:
+    ingredients: Ingredients
+    instructions: Dict[int, List[Any]]
+
+
+def transcribe_recipe(opts):
     """Interpret the model recipe string.
 
-    Given a namespace/dictionary of options, read and interpret the model
-    recipe. Results are added to the options namepsace with leading
-    leading underscores to indicate that they are set internally.
+    Given the config object, create an internal recipe implementing the user
+    specified recipe.
 
     Args:
         opts: A namepsace/dictionary of options.
 
     Returns:
-        Namespace: An updated namespace object.
+        model_Recipe: A Recipe object.
     """
 
     model_columns = set()
     sky_models = set()
-    internal_recipe = {}
+    instructions = {}
 
     # Strip accidental whitepsace from input recipe and splits on ":".
     input_recipes = opts.input_model.recipe.replace(" ", "").split(":")
@@ -36,7 +48,7 @@ def interpret_model(opts):
 
     for recipe_index, recipe in enumerate(input_recipes):
 
-        internal_recipe[recipe_index] = []
+        instructions[recipe_index] = []
 
         # A raw string is required to avoid insane escape characters. Splits
         # on understood operators, ~ for subtract, + for add.
@@ -54,7 +66,7 @@ def interpret_model(opts):
             if ingredient in "~+" and ingredient != "":
 
                 operation = da.add if ingredient == "+" else da.subtract
-                internal_recipe[recipe_index].append(operation)
+                instructions[recipe_index].append(operation)
 
             elif ".lsm.html" in ingredient:
 
@@ -64,16 +76,16 @@ def interpret_model(opts):
                 if not os.path.isfile(filename):
                     raise FileNotFoundError("{} not found.".format(filename))
 
-                sky_model = sm_tup(filename, tags)
+                sky_model = _sky_model(filename, tags)
                 sky_models.add(sky_model)
-                internal_recipe[recipe_index].append(sky_model)
+                instructions[recipe_index].append(sky_model)
 
             elif ingredient != "":
                 model_columns.add(ingredient)
-                internal_recipe[recipe_index].append(ingredient)
+                instructions[recipe_index].append(ingredient)
 
             else:
-                internal_recipe[recipe_index].append(ingredient)
+                instructions[recipe_index].append(ingredient)
 
     logger.info("The following model sources were obtained from "
                 "--input-model-recipe: \n"
@@ -82,15 +94,15 @@ def interpret_model(opts):
                 model_columns or 'None',
                 {sm.name for sm in sky_models} or 'None')
 
-    # Add processed recipe components to opts Namespace.
+    # Generate a named tuple containing all the information required to
+    # build the model visibilities.
 
-    opts._model_columns = model_columns
-    opts._sky_models = sky_models
-    opts._internal_recipe = internal_recipe
-    opts._predict = True if sky_models else False
+    model_recipe = Recipe(Ingredients(model_columns, sky_models), instructions)
 
-    if opts._predict:
+    if model_recipe.ingredients.sky_models:
         logger.info("Recipe contains sky models - enabling prediction step.")
+
+    return model_recipe
 
 
 def check_opts(opts):

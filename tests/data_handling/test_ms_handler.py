@@ -1,6 +1,7 @@
 from copy import deepcopy
 import pytest
 from quartical.data_handling.ms_handler import read_xds_list, write_xds_list
+from quartical.config.preprocess import transcribe_recipe
 import numpy as np
 
 
@@ -15,7 +16,7 @@ def opts(base_opts, weight_column, freq_chunk, time_chunk, select_corr):
     _opts.input_ms.freq_chunk = freq_chunk
     _opts.input_ms.time_chunk = time_chunk
     _opts.input_ms.select_corr = select_corr
-    _opts._model_columns = ["MODEL_DATA"]
+    _opts.input_model.recipe = "MODEL_DATA"
 
     return _opts
 
@@ -23,7 +24,9 @@ def opts(base_opts, weight_column, freq_chunk, time_chunk, select_corr):
 @pytest.fixture(scope="module")
 def _read_xds_list(opts):
 
-    return read_xds_list(opts)
+    recipe = transcribe_recipe(opts)
+
+    return read_xds_list(recipe.ingredients.model_columns, opts)
 
 
 @pytest.mark.data_handling

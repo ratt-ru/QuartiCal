@@ -1,7 +1,7 @@
 from copy import deepcopy
 import pytest
 from quartical.data_handling.ms_handler import read_xds_list
-from quartical.parser.preprocess import interpret_model
+from quartical.config.preprocess import transcribe_recipe
 from quartical.data_handling.predict import (predict,
                                              parse_sky_models,
                                              daskify_sky_model_dict,
@@ -42,29 +42,39 @@ def opts(base_opts, freq_chunk, time_chunk, model_recipe, beam_name):
     _opts.input_model.beam_l_axis = "-X"
     _opts.input_model.beam_m_axis = "Y"
 
-    interpret_model(_opts)
-
     return _opts
 
 
 @pytest.fixture(scope="module")
-def _predict(opts):
+def _transcribe_recipe(opts):
+    recipe = transcribe_recipe(opts)
 
     # Forcefully add this to ensure that the comparison data is read.
-    opts._model_columns = ["MODEL_DATA"]
+    recipe.ingredients.model_columns = {"MODEL_DATA"}
 
-    ms_xds_list, _ = read_xds_list(opts)
+    return recipe
 
-    return predict(ms_xds_list, opts), ms_xds_list
+
+@pytest.fixture(scope="module")
+def _predict(_transcribe_recipe, opts):
+
+    model_columns = _transcribe_recipe.ingredients.model_columns
+
+    ms_xds_list, _ = read_xds_list(model_columns, opts)
+
+    return predict(ms_xds_list, _transcribe_recipe, opts), ms_xds_list
 
 
 @pytest.fixture(scope="function")
 def _sky_dict(base_opts, model_recipe):
 
-    base_opts.input_model.recipe = model_recipe
-    interpret_model(base_opts)
+    _opts = deepcopy(base_opts)
 
-    return parse_sky_models(base_opts)
+    _opts.input_model.recipe = model_recipe
+
+    recipe = transcribe_recipe(_opts)
+
+    return parse_sky_models(recipe.ingredients.sky_models)
 
 
 @pytest.fixture(scope="function")

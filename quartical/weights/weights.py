@@ -18,9 +18,8 @@ def initialize_weights(xds, data_col, opts):
         weight_col: A chunked dask.array containing the weights.
     """
 
-    if opts._unity_weights:
+    if not opts.input_ms.weight_column:
         n_row, n_chan, n_corr = data_col.shape
-        row_chunks, chan_chunks, corr_chunks = data_col.chunks
         weight_col = da.ones((n_row, n_chan, n_corr),
                              chunks=data_col.chunks,
                              name="weights-" + uuid.uuid4().hex,

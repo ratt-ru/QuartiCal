@@ -1,5 +1,5 @@
 # import pytest
-# import quartical.parser.parser as parser
+# import quartical.config.parser as parser
 
 # def test_parser():
 

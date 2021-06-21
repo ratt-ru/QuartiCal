@@ -10,7 +10,7 @@ from dask.graph_manipulation import clone
 from loguru import logger
 
 
-def read_xds_list(opts):
+def read_xds_list(model_columns, opts):
     """Reads a measurement set and generates a list of xarray data sets.
 
     Args:
@@ -50,56 +50,37 @@ def read_xds_list(opts):
 
     polarization_xds = xds_from_table(opts.input_ms.path + "::POLARIZATION")[0]
 
-    opts._ms_ncorr = polarization_xds.dims["corr"]
+    ms_ncorr = polarization_xds.dims["corr"]
 
-    if opts._ms_ncorr not in (1, 2, 4):
+    if ms_ncorr not in (1, 2, 4):
         raise ValueError("Measurement set contains {} correlations - this "
-                         "is not supported.".format(opts._ms_ncorr))
+                         "is not supported.".format(ms_ncorr))
 
     logger.info("Polarization table indicates {} correlations are present in "
-                "the measurement set.", opts._ms_ncorr)
-
-    # Determine the feed types present in the measurement set.
-
-    feed_xds = xds_from_table(opts.input_ms.path + "::FEED")[0]
-
-    feeds = feed_xds.POLARIZATION_TYPE.data.compute()
-    unique_feeds = np.unique(feeds)
-
-    if np.all([feed in "XxYy" for feed in unique_feeds]):
-        opts._feed_type = "linear"
-    elif np.all([feed in "LlRr" for feed in unique_feeds]):
-        opts._feed_type = "circular"
-    else:
-        raise ValueError("Unsupported feed type/configuration.")
-
-    logger.info("Feed table indicates {} ({}) feeds are present in the "
-                "measurement set.", unique_feeds, opts._feed_type)
+                "the measurement set.", ms_ncorr)
 
     # Determine the phase direction from the measurement set. TODO: This will
     # probably need to be done on a per xds basis. Can probably be accomplished
     # by merging the field xds grouped by DDID into data grouped by DDID.
 
     field_xds = xds_from_table(opts.input_ms.path + "::FIELD")[0]
-    opts._phase_dir = np.squeeze(field_xds.PHASE_DIR.data.compute())
+    phase_dir = np.squeeze(field_xds.PHASE_DIR.data.compute())
 
     logger.info("Field table indicates phase centre is at ({} {}).",
-                opts._phase_dir[0], opts._phase_dir[1])
+                phase_dir[0], phase_dir[1])
 
-    # Check whether the specified weight column exists. If not, log a warning
-    # and fall back to unity weights. TODO: Figure out how to prevent this
-    # thowing a message wall.
+    # Check whether the specified weight column exists.
 
-    opts._unity_weights = opts.input_ms.weight_column.lower() == "unity"
+    extra_columns = ()
 
-    if not opts._unity_weights:
+    if opts.input_ms.weight_column:
         col_names = list(xds_from_ms(opts.input_ms.path)[0].keys())
         if opts.input_ms.weight_column in col_names:
+            extra_columns += (opts.input_ms.weight_column,)
             logger.info(f"Using {opts.input_ms.weight_column} for weights.")
         else:
-            logger.warning("Specified weight column was not present. "
-                           "Falling back to unity weights.")
-            opts._unity_weights = True
+            raise ValueError(f"Weight column {opts.input_ms.weight_column} "
+                             f"does not exist.")
 
     # Determine the channels in the measurement set. Or handles unchunked case.
     # TODO: Handle multiple SPWs and specification in bandwidth.
@@ -119,15 +100,12 @@ def read_xds_list(opts):
     # up an xarray data set for the data. Note that we will reload certain
     # indexing columns so that they are consistent with the chunking strategy.
 
-    extra_columns = tuple(opts._model_columns)
-    if not opts._unity_weights:
-        extra_columns += (opts.input_ms.weight_column,)
+    extra_columns += tuple(model_columns)
 
     data_columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "DATA", "FLAG",
                     "FLAG_ROW", "UVW") + extra_columns
 
-    extra_schema = {cn: {'dims': ('chan', 'corr')}
-                    for cn in opts._model_columns}
+    extra_schema = {cn: {'dims': ('chan', 'corr')} for cn in model_columns}
 
     data_xds_list = xds_from_ms(
         opts.input_ms.path,
@@ -191,7 +169,7 @@ def read_xds_list(opts):
         except KeyError:
             raise KeyError(f"--input-ms-select-corr attempted to select "
                            f"correlations not present in the data - this MS "
-                           f"contains {opts._ms_ncorr} correlations. User "
+                           f"contains {ms_ncorr} correlations. User "
                            f"attempted to select {opts.input_ms.select_corr}.")
 
     return data_xds_list, ref_xds_list
@@ -215,10 +193,12 @@ def write_xds_list(xds_list, ref_xds_list, opts):
     # dask-ms handle this. This also might need some further consideration,
     # as the fill_value might cause problems.
 
-    if opts._ms_ncorr != xds_list[0].corr.size:
-        xds_list = \
-            [xds.reindex({"corr": np.arange(opts._ms_ncorr)}, fill_value=0)
-             for xds in xds_list]
+    polarization_xds = xds_from_table(opts.input_ms.path + "::POLARIZATION")[0]
+    ms_ncorr = polarization_xds.dims["corr"]
+
+    if ms_ncorr != xds_list[0].corr.size:
+        xds_list = [xds.reindex({"corr": np.arange(ms_ncorr)}, fill_value=0)
+                    for xds in xds_list]
 
     output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
 

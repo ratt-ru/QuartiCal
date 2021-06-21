@@ -1,5 +1,5 @@
 import pytest
-from quartical.parser.preprocess import interpret_model, sm_tup
+from quartical.config.preprocess import transcribe_recipe, _sky_model
 import dask.array as da
 import os.path
 from copy import deepcopy
@@ -13,34 +13,39 @@ valid_recipes = {
     "~COL1":
         {0: ['', da.subtract, 'COL1']},
     "MODEL.lsm.html":
-        {0: [sm_tup('MODEL.lsm.html', ())]},
+        {0: [_sky_model('MODEL.lsm.html', ())]},
     "~MODEL.lsm.html":
-        {0: ['', da.subtract, sm_tup('MODEL.lsm.html', ())]},
+        {0: ['', da.subtract, _sky_model('MODEL.lsm.html', ())]},
     "MODEL.lsm.html@dE":
-        {0: [sm_tup('MODEL.lsm.html', ('dE',))]},
+        {0: [_sky_model('MODEL.lsm.html', ('dE',))]},
     "MODEL.lsm.html@dE,dG":
-        {0: [sm_tup('MODEL.lsm.html', ('dE', 'dG'))]},
+        {0: [_sky_model('MODEL.lsm.html', ('dE', 'dG'))]},
     "COL1:COL2":
-        {0: ['COL1'], 1: ['COL2']},
+        {0: ['COL1'],
+         1: ['COL2']},
     "COL1:MODEL.lsm.html":
-        {0: ['COL1'], 1: [sm_tup('MODEL.lsm.html', ())]},
+        {0: ['COL1'],
+         1: [_sky_model('MODEL.lsm.html', ())]},
     "COL1:MODEL.lsm.html@dE":
-        {0: ['COL1'], 1: [sm_tup('MODEL.lsm.html', ('dE',))]},
+        {0: ['COL1'],
+         1: [_sky_model('MODEL.lsm.html', ('dE',))]},
     "MODEL.lsm.html:MODEL.lsm.html@dE":
-        {0: [sm_tup('MODEL.lsm.html', ())],
-         1: [sm_tup('MODEL.lsm.html', ('dE',))]},
+        {0: [_sky_model('MODEL.lsm.html', ())],
+         1: [_sky_model('MODEL.lsm.html', ('dE',))]},
     "COL1~COL2":
         {0: ['COL1', da.subtract, 'COL2']},
     "COL1+COL2":
         {0: ['COL1', da.add, 'COL2']},
     "COL1~MODEL.lsm.html":
-        {0: ['COL1', da.subtract, sm_tup('MODEL.lsm.html', ())]},
+        {0: ['COL1', da.subtract, _sky_model('MODEL.lsm.html', ())]},
     "COL1+MODEL.lsm.html":
-        {0: ['COL1', da.add, sm_tup('MODEL.lsm.html', ())]},
+        {0: ['COL1', da.add, _sky_model('MODEL.lsm.html', ())]},
     "COL1~MODEL.lsm.html:COL2":
-        {0: ['COL1', da.subtract, sm_tup('MODEL.lsm.html', ())], 1: ['COL2']},
+        {0: ['COL1', da.subtract, _sky_model('MODEL.lsm.html', ())],
+         1: ['COL2']},
     "COL1+MODEL.lsm.html:COL2":
-        {0: ['COL1', da.add, sm_tup('MODEL.lsm.html', ())], 1: ['COL2']}
+        {0: ['COL1', da.add, _sky_model('MODEL.lsm.html', ())],
+         1: ['COL2']}
 }
 
 # A dictionary mapping invalid inputs to their expected errors. Currently
@@ -81,21 +86,21 @@ def bad_opts(base_opts, invalid_recipe):
 
 
 @pytest.mark.preprocess
-def test_interpret_model_valid(opts, monkeypatch):
+def test_transcribe_recipe_valid(opts, monkeypatch):
 
     # Patch isfile functionality to allow use of ficticious files.
     monkeypatch.setattr(os.path, "isfile", lambda filename: True)
 
-    interpret_model(opts)
+    recipe = transcribe_recipe(opts)
 
     # Check that the opts has been updated with the correct internal recipe.
-    assert opts._internal_recipe == valid_recipes[opts.input_model.recipe]
+    assert recipe.instructions == valid_recipes[opts.input_model.recipe]
 
 
 @pytest.mark.preprocess
-def test_interpret_model_invalid(bad_opts):
+def test_transcribe_recipe_invalid(bad_opts):
 
     # This verifies that an appropriate error is raised for obvious bad input.
 
     with pytest.raises(invalid_recipes[bad_opts.input_model.recipe]):
-        interpret_model(bad_opts)
+        transcribe_recipe(bad_opts)

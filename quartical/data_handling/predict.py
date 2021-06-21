@@ -66,7 +66,7 @@ _rime_term_map = {
 }
 
 
-def parse_sky_models(opts):
+def parse_sky_models(sky_models):
     """Parses a Tigger sky model.
 
     Args:
@@ -77,7 +77,7 @@ def parse_sky_models(opts):
 
     sky_model_dict = {}
 
-    for sky_model_tuple in opts._sky_models:
+    for sky_model_tuple in sky_models:
 
         sky_model_name, sky_model_tags = sky_model_tuple
 
@@ -449,14 +449,31 @@ def compute_p_jones(parallactic_angles, feed_xds, opts):
 
     receptor_angles = clone(feed_xds.RECEPTOR_ANGLE.data)
 
+    # Determine the feed types present in the measurement set. TODO: This will
+    # cause the POLARIZATION_TYPE to be read many times. Think about improving
+    # when I tidy up the predict.
+
+    feeds = feed_xds.POLARIZATION_TYPE.values
+    unique_feeds = np.unique(feeds)
+
+    if np.all([feed in "XxYy" for feed in unique_feeds]):
+        feed_type = "linear"
+    elif np.all([feed in "LlRr" for feed in unique_feeds]):
+        feed_type = "circular"
+    else:
+        raise ValueError("Unsupported feed type/configuration.")
+
+    logger.debug("Feed table indicates {} ({}) feeds are present in the "
+                 "measurement set.", unique_feeds, feed_type)
+
     if not da.all(receptor_angles[:, 0] == receptor_angles[:, 1]):
         logger.warning("RECEPTOR_ANGLE indicates non-orthoganal "
                        "receptors. Currently, P-Jones cannot account "
                        "for non-uniform offsets. Using 0.")
-        return compute_feed_rotation(parallactic_angles, opts._feed_type)
+        return compute_feed_rotation(parallactic_angles, feed_type)
     else:
         return compute_feed_rotation(
-            parallactic_angles + receptor_angles[None, :, 0], opts._feed_type)
+            parallactic_angles + receptor_angles[None, :, 0], feed_type)
 
 
 def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
@@ -661,7 +678,7 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
                        dde, jones, dde, die, None, die)
 
 
-def predict(data_xds_list, opts):
+def predict(data_xds_list, model_vis_recipe, opts):
     """Produces graphs describing predict operations.
 
     Adapted from https://github.com/ska-sa/codex-africanus.
@@ -679,7 +696,7 @@ def predict(data_xds_list, opts):
     # Read in a Tigger .lsm.html and produce a dictionary of sources per
     # unique sky model and tag combination. Tags determine clustering.
 
-    sky_model_dict = parse_sky_models(opts)
+    sky_model_dict = parse_sky_models(model_vis_recipe.ingredients.sky_models)
 
     # Convert sky model dictionary into a dictionary of per-model dask arrays.
 

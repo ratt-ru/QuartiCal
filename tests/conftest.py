@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from quartical.parser.parser import parse_inputs
+from quartical.config.parser import parse_inputs
 import requests
 import tarfile
 from shutil import rmtree
@@ -79,7 +79,7 @@ def beam_name():
     return str(beam_path)
 
 
-@pytest.fixture(params=["UNITY", "WEIGHT", "WEIGHT_SPECTRUM"], scope="module")
+@pytest.fixture(params=["", "WEIGHT", "WEIGHT_SPECTRUM"], scope="module")
 def weight_column(request):
     return request.param
 

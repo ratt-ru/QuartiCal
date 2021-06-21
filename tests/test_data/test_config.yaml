@@ -1,7 +1,7 @@
 input_ms:
   path: C147_subset.MS
   column: DATA
-  weight_column: UNITY
+  weight_column:
   time_chunk: '0'
   freq_chunk: 0
   is_bda: false
