@@ -1,6 +1,6 @@
 import pytest
 from quartical.data_handling.ms_handler import read_xds_list
-from quartical.config.preprocess import interpret_model
+from quartical.config.preprocess import transcribe_recipe
 from quartical.data_handling.model_handler import add_model_graph
 from copy import deepcopy
 
@@ -46,17 +46,22 @@ def opts(base_opts, freq_chunk, time_chunk, model_recipe):
     _opts.input_ms.time_chunk = time_chunk
     _opts.input_model.recipe = model_recipe
 
-    interpret_model(_opts)
-
     return _opts
 
 
 @pytest.fixture(scope="module")
-def _add_model_graph(opts):
+def _transcribe_recipe(opts):
+    return transcribe_recipe(opts)
 
-    ms_xds_list, _ = read_xds_list(opts)
 
-    return add_model_graph(ms_xds_list, opts)
+@pytest.fixture(scope="module")
+def _add_model_graph(_transcribe_recipe, opts):
+
+    model_columns = _transcribe_recipe.ingredients.model_columns
+
+    ms_xds_list, _ = read_xds_list(model_columns, opts)
+
+    return add_model_graph(ms_xds_list, _transcribe_recipe, opts)
 
 
 # ------------------------------add_model_graph--------------------------------

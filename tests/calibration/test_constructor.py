@@ -1,10 +1,8 @@
-from argparse import Namespace
 from copy import deepcopy
 import pickle
-from dask import base
 
 import pytest
-from quartical.config import preprocess
+from quartical.config.preprocess import transcribe_recipe
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
@@ -23,7 +21,7 @@ def opts(base_opts, time_chunk, freq_chunk):
 
     _opts = deepcopy(base_opts)
 
-    _opts._model_columns = ["MODEL_DATA"]
+    _opts.input_model.recipe = "MODEL_DATA"
     _opts.input_ms.time_chunk = time_chunk
     _opts.input_ms.freq_chunk = freq_chunk
 
@@ -31,15 +29,20 @@ def opts(base_opts, time_chunk, freq_chunk):
 
 
 @pytest.fixture(scope="module")
-def _read_xds_list(opts):
-
-    preprocess.interpret_model(opts)
-
-    return read_xds_list(opts)
+def _transcribe_recipe(opts):
+    return transcribe_recipe(opts)
 
 
 @pytest.fixture(scope="module")
-def data_xds_list(_read_xds_list, opts):
+def _read_xds_list(_transcribe_recipe, opts):
+
+    model_columns = _transcribe_recipe.ingredients.model_columns
+
+    return read_xds_list(model_columns, opts)
+
+
+@pytest.fixture(scope="module")
+def data_xds_list(_read_xds_list, _transcribe_recipe, opts):
 
     ms_xds_list, _ = _read_xds_list
 
@@ -48,7 +51,9 @@ def data_xds_list(_read_xds_list, opts):
 
     preprocessed_xds_list = preprocess_xds_list(ms_xds_list, opts)
 
-    data_xds_list = add_model_graph(preprocessed_xds_list, opts)
+    data_xds_list = add_model_graph(preprocessed_xds_list,
+                                    _transcribe_recipe,
+                                    opts)
 
     return data_xds_list[:1]
 
