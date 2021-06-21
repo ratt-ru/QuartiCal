@@ -66,7 +66,7 @@ _rime_term_map = {
 }
 
 
-def parse_sky_models(opts):
+def parse_sky_models(sky_models):
     """Parses a Tigger sky model.
 
     Args:
@@ -77,7 +77,7 @@ def parse_sky_models(opts):
 
     sky_model_dict = {}
 
-    for sky_model_tuple in opts._sky_models:
+    for sky_model_tuple in sky_models:
 
         sky_model_name, sky_model_tags = sky_model_tuple
 
@@ -450,8 +450,8 @@ def compute_p_jones(parallactic_angles, feed_xds, opts):
     receptor_angles = clone(feed_xds.RECEPTOR_ANGLE.data)
 
     # Determine the feed types present in the measurement set. TODO: This will
-    # the POLARIZATION_TYPE to be read many times. Think about improving when
-    # I tidy up the predict.
+    # cause the POLARIZATION_TYPE to be read many times. Think about improving
+    # when I tidy up the predict.
 
     feeds = feed_xds.POLARIZATION_TYPE.values
     unique_feeds = np.unique(feeds)
@@ -678,7 +678,7 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
                        dde, jones, dde, die, None, die)
 
 
-def predict(data_xds_list, opts):
+def predict(data_xds_list, model_vis_recipe, opts):
     """Produces graphs describing predict operations.
 
     Adapted from https://github.com/ska-sa/codex-africanus.
@@ -696,7 +696,7 @@ def predict(data_xds_list, opts):
     # Read in a Tigger .lsm.html and produce a dictionary of sources per
     # unique sky model and tag combination. Tags determine clustering.
 
-    sky_model_dict = parse_sky_models(opts)
+    sky_model_dict = parse_sky_models(model_vis_recipe.ingredients.sky_models)
 
     # Convert sky model dictionary into a dictionary of per-model dask arrays.
 

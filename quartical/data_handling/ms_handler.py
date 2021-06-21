@@ -10,7 +10,7 @@ from dask.graph_manipulation import clone
 from loguru import logger
 
 
-def read_xds_list(opts):
+def read_xds_list(model_columns, opts):
     """Reads a measurement set and generates a list of xarray data sets.
 
     Args:
@@ -100,13 +100,12 @@ def read_xds_list(opts):
     # up an xarray data set for the data. Note that we will reload certain
     # indexing columns so that they are consistent with the chunking strategy.
 
-    extra_columns += tuple(opts._model_columns)
+    extra_columns += tuple(model_columns)
 
     data_columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "DATA", "FLAG",
                     "FLAG_ROW", "UVW") + extra_columns
 
-    extra_schema = {cn: {'dims': ('chan', 'corr')}
-                    for cn in opts._model_columns}
+    extra_schema = {cn: {'dims': ('chan', 'corr')} for cn in model_columns}
 
     data_xds_list = xds_from_ms(
         opts.input_ms.path,
