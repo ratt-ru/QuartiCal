@@ -21,10 +21,7 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                 d_map_arr, corr_mode, active_term, inverse_gains,
-                 gains, flags, params, chan_freqs, row_map, row_weights,
-                 t_bin_arr):
+def delay_solver(base_args, term_args, active_term, corr_mode):
     """Solve for a delay.
 
     Note that the paramter vector is ordered as [offset slope].
@@ -32,14 +29,28 @@ def delay_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     """
 
     if not isinstance(corr_mode, types.Literal):
-        return lambda model, data, a1, a2, weights, t_map_arr, f_map_arr, \
-                      d_map_arr, corr_mode, active_term, inverse_gains, \
-                      gains, flags, params, chan_freqs, row_map, row_weights, \
-                      t_bin_arr: literally(corr_mode)
+        return lambda base_args, term_args, active_term, corr_mode: \
+            literally(corr_mode)
 
-    def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr, d_map_arr,
-             corr_mode, active_term, inverse_gains, gains, flags, params,
-             chan_freqs, row_map, row_weights, t_bin_arr):
+    def impl(base_args, term_args, active_term, corr_mode):
+
+        model = base_args.model
+        data = base_args.data
+        a1 = base_args.a1
+        a2 = base_args.a2
+        weights = base_args.weights
+        t_map_arr = base_args.t_map_arr
+        f_map_arr = base_args.f_map_arr
+        d_map_arr = base_args.d_map_arr
+        inverse_gains = base_args.inverse_gains
+        gains = base_args.gains
+        flags = base_args.flags
+        row_map = base_args.row_map
+        row_weights = base_args.row_weights
+
+        params = term_args.params
+        t_bin_arr = term_args.t_bin_arr
+        chan_freqs = term_args.chan_freqs
 
         param_shape = params.shape
         n_tint, n_fint, n_ant, n_dir, n_param, n_corr = param_shape

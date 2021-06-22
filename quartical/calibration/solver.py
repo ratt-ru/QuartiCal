@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from quartical.gains import term_solvers
+from quartical.gains import term_types
 import gc
 
 
-def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, term_spec_list, *args, **kwargs):
+def solver_wrapper(**kwargs):
 
     # This is rudimentary - it practice we may have more initialisation code
     # here for setting up parameters etc. TODO: Init actually needs to depend
@@ -15,6 +14,8 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
     gain_tup = ()
     additional_args = []
     results_dict = {}
+
+    term_spec_list = kwargs["term_spec_list"]
 
     for term_ind, term_spec in enumerate(term_spec_list):
         gain = np.zeros(term_spec.shape, dtype=np.complex128)
@@ -29,14 +30,6 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         gain_tup += (gain,)
 
         additional_args.append(dict())
-
-        # These are cludges for the BDA case. Might be possible to make this
-        # a litte more elegant.
-        if "row_map" in kwargs:
-            additional_args[term_ind]["row_map"] = kwargs["row_map"]
-
-        if "row_weights" in kwargs:
-            additional_args[term_ind]["row_weights"] = kwargs["row_weights"]
 
         # If the pshape (parameter shape) is defined, we want to initialise it.
         if term_spec.pshape:
@@ -55,17 +48,29 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         results_dict[term_spec.name + "-conviter"] = 0
         results_dict[term_spec.name + "-convperc"] = 0
 
-    flag_tup = tuple([np.zeros_like(g, dtype=np.uint8) for g in gain_tup])
-    inverse_gain_tup = tuple([np.empty_like(g) for g in gain_tup])
+    kwargs["gains"] = gain_tup
+    kwargs["flags"] = tuple([np.zeros_like(g, dtype=np.uint8)
+                             for g in gain_tup])
+    kwargs["inverse_gains"] = tuple([np.empty_like(g)
+                                     for g in gain_tup])
 
     for gain_ind, term_spec in enumerate(term_spec_list):
 
-        solver = term_solvers[term_spec.type]
+        term_type = term_types[term_spec.type]
 
-        info_tup = \
-            solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, gain_ind, inverse_gain_tup,
-                   gain_tup, flag_tup, **additional_args[gain_ind])
+        solver = term_type.solver
+        term_args = term_type.args
+        base_args = term_type.base_args
+
+        _base_args = base_args(**{k: kwargs[k] for k in base_args._fields})
+        _term_args = term_args(**{k: kwargs[k] for k in term_args._fields})
+
+        import pdb; pdb.set_trace()
+
+        info_tup = solver(_base_args,
+                          _term_args,
+                          gain_ind,
+                          kwargs["corr_mode"])
 
         results_dict[term_spec.name + "-conviter"] += \
             np.atleast_2d(info_tup.conv_iters)

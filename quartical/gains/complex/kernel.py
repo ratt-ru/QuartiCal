@@ -21,18 +21,27 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, active_term, inverse_gains,
-                   gains, flags, row_map, row_weights):
+def complex_solver(base_args, term_args, active_term, corr_mode):
 
     if not isinstance(corr_mode, types.Literal):
-        return lambda model, data, a1, a2, weights, t_map_arr, f_map_arr, \
-                   d_map_arr, corr_mode, active_term, inverse_gains, \
-                   gains, flags, row_map, row_weights: literally(corr_mode)
+        return lambda base_args, term_args, active_term, corr_mode: \
+            literally(corr_mode)
 
-    def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-             d_map_arr, corr_mode, active_term, inverse_gains,
-             gains, flags, row_map, row_weights):
+    def impl(base_args, term_args, active_term, corr_mode):
+
+        model = base_args.model
+        data = base_args.data
+        a1 = base_args.a1
+        a2 = base_args.a2
+        weights = base_args.weights
+        t_map_arr = base_args.t_map_arr
+        f_map_arr = base_args.f_map_arr
+        d_map_arr = base_args.d_map_arr
+        inverse_gains = base_args.inverse_gains
+        gains = base_args.gains
+        flags = base_args.flags
+        row_map = base_args.row_map
+        row_weights = base_args.row_weights
 
         n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 

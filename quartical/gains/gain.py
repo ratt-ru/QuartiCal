@@ -3,13 +3,52 @@ import numpy as np
 import xarray
 
 
-gain_spec_tup = namedtuple("gain_spec_tup",
-                           "tchunk fchunk achunk dchunk cchunk")
-param_spec_tup = namedtuple("param_spec_tup",
-                            "tchunk fchunk achunk dchunk pchunk cchunk")
+gain_spec_tup = namedtuple(
+    "gain_spec_tup",
+    (
+        "tchunk",
+        "fchunk",
+        "achunk",
+        "dchunk",
+        "cchunk"
+    )
+)
+
+param_spec_tup = namedtuple(
+    "param_spec_tup",
+    (
+        "tchunk",
+        "fchunk",
+        "achunk",
+        "dchunk",
+        "pchunk",
+        "cchunk"
+    )
+)
+
+base_args = namedtuple(
+    "base_args",
+    (
+        "model",
+        "data",
+        "a1",
+        "a2",
+        "weights",
+        "t_map_arr",
+        "f_map_arr",
+        "d_map_arr",
+        "inverse_gains",
+        "gains",
+        "flags",
+        "row_map",
+        "row_weights"
+    )
+)
 
 
 class Gain:
+
+    base_args = base_args
 
     def __init__(self, term_name, data_xds, coords, tipc, fipc, opts):
 
