@@ -179,7 +179,7 @@ def expand_specs(gain_terms):
 
                     parm_shape = (tc_p, fc_p, ac, dc, pc, cc)
                 else:
-                    parm_shape = ()
+                    parm_shape = (0,) * 6  # Used for creating a dummy array.
 
                 term_list.append(term_spec_tup(term_name,
                                                term_type,
