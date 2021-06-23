@@ -4,7 +4,7 @@ from quartical.utils.dask import Blocker
 from collections import namedtuple
 
 
-term_spec_tup = namedtuple("term_spec_tup", "name type args shape pshape")
+term_spec_tup = namedtuple("term_spec_tup", "name type shape pshape")
 
 
 def construct_solver(data_xds_list,
@@ -159,7 +159,6 @@ def expand_specs(gain_terms):
 
                 term_name = gxds.NAME
                 term_type = gxds.TYPE
-                term_args = gxds.ARGS
                 gain_chunk_spec = gxds.GAIN_SPEC
 
                 tc = gain_chunk_spec.tchunk[tc_ind]
@@ -184,7 +183,6 @@ def expand_specs(gain_terms):
 
                 term_list.append(term_spec_tup(term_name,
                                                term_type,
-                                               term_args,
                                                term_shape,
                                                parm_shape))
 

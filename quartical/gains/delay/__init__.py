@@ -1,30 +1,18 @@
 from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
-from quartical.gains.delay.kernel import delay_solver
+from quartical.gains.delay.kernel import delay_solver, delay_args
 import numpy as np
-from collections import namedtuple
-
-
-args = namedtuple(
-    "args",
-    (
-        "params",
-        "chan_freqs",
-        "t_bin_arr"
-    )
-)
 
 
 class Delay(Gain):
 
     solver = delay_solver
-    args = args
+    term_args = delay_args
 
     def __init__(self, term_name, data_xds, coords, tipc, fipc, opts):
 
         Gain.__init__(self, term_name, data_xds, coords, tipc, fipc, opts)
 
         self.n_ppa = 2
-        self.additional_args = ["chan_freqs", "t_bin_arr"]
         self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
                                              self.n_fipc_g,
                                              (self.n_ant,),

@@ -18,6 +18,8 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
+complex_args = namedtuple("complex_args", ())
+
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)

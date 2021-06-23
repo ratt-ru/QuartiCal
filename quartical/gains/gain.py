@@ -84,8 +84,6 @@ class Gain:
         self.gain_freqs = coords[f"{self.name}_mean_gfreqs"]
         self.param_freqs = coords[f"{self.name}_mean_pfreqs"]
 
-        self.additional_args = []
-
     def make_xds(self):
 
         # Set up an xarray.Dataset describing the gain term.
@@ -102,7 +100,6 @@ class Gain:
                     "gain_f": ("gain_f", self.gain_freqs)},
             attrs={"NAME": self.name,
                    "TYPE": self.type,
-                   "ARGS": self.additional_args,
                    **self.id_fields})
 
         return xds

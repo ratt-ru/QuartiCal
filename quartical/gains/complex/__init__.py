@@ -1,15 +1,11 @@
 from quartical.gains.gain import Gain, gain_spec_tup
-from quartical.gains.complex.kernel import complex_solver
-from collections import namedtuple
-
-
-args = namedtuple("args", ())
+from quartical.gains.complex.kernel import complex_solver, complex_args
 
 
 class Complex(Gain):
 
     solver = complex_solver
-    args = args
+    term_args = complex_args
 
     def __init__(self, term_name, data_xds, coords, tipc, fipc, opts):
 

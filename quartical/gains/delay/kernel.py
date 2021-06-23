@@ -18,6 +18,15 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
+delay_args = namedtuple(
+    "delay_args",
+    (
+        "params",
+        "chan_freqs",
+        "t_bin_arr"
+    )
+)
+
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
@@ -48,7 +57,7 @@ def delay_solver(base_args, term_args, active_term, corr_mode):
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
-        params = term_args.params
+        params = term_args.params[active_term]  # Params for this term.
         t_bin_arr = term_args.t_bin_arr
         chan_freqs = term_args.chan_freqs
 
