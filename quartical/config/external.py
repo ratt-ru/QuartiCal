@@ -98,10 +98,13 @@ class MadFlags(Input):
 
 @dataclass
 class Solver(Input):
-    gain_terms: List[str] = field(default_factory=lambda: ["G"])
+    terms: List[str] = field(default_factory=lambda: ["G"])
+    iter_recipe: List[int] = field(default_factory=lambda: [25])
 
     def __post_init__(self):
         self.validate_choice_fields()
+        assert len(self.iter_recipe) >= len(self.terms), \
+               "User has specified solver.iter_recipe with too few elements."
 
 
 @dataclass
@@ -162,19 +165,19 @@ class BaseConfig:
 
 def finalize_structure(additional_config):
 
-    gain_terms = None
+    terms = None
 
     for cfg in additional_config[::-1]:
-        gain_terms = oc.select(cfg, "solver.gain_terms")
-        if gain_terms is not None:
+        terms = oc.select(cfg, "solver.terms")
+        if terms is not None:
             break
 
-    # Use the default gain_terms if no alternative is specified.
-    gain_terms = gain_terms or Solver().gain_terms
+    # Use the default terms if no alternative is specified.
+    terms = terms or Solver().terms
 
     FinalConfig = make_dataclass(
         "FinalConfig",
-        [(gt, Gain, Gain()) for gt in gain_terms],
+        [(t, Gain, Gain()) for t in terms],
         bases=(BaseConfig,)
     )
 

@@ -18,7 +18,7 @@ def create_user_config():
     logger.info("Output config file path: {}", config_file_path)
 
     # We add this so that the user config comes out with a gain field.
-    additional_config = [oc.from_dotlist(["solver.gain_terms=['G']"])]
+    additional_config = [oc.from_dotlist(["solver.terms=['G']"])]
 
     FinalConfig = finalize_structure(additional_config)
     config = oc.structured(FinalConfig)

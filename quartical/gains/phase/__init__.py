@@ -1,11 +1,12 @@
 from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
-from quartical.gains.phase.kernel import phase_solver
+from quartical.gains.phase.kernel import phase_solver, phase_args
 import numpy as np
 
 
 class Phase(Gain):
 
     solver = phase_solver
+    term_args = phase_args
 
     def __init__(self, term_name, data_xds, coords, tipc, fipc, opts):
 

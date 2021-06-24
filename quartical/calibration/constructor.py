@@ -4,7 +4,7 @@ from quartical.utils.dask import Blocker
 from collections import namedtuple
 
 
-term_spec_tup = namedtuple("term_spec_tup", "name type args shape pshape")
+term_spec_tup = namedtuple("term_spec_tup", "name type shape pshape")
 
 
 def construct_solver(data_xds_list,
@@ -34,6 +34,9 @@ def construct_solver(data_xds_list,
     """
 
     solved_gain_xds_list = []
+
+    solver_opts = opts.solver
+    gain_opts = {gn: getattr(opts, gn) for gn in opts.solver.terms}
 
     for xds_ind, data_xds in enumerate(data_xds_list):
 
@@ -75,6 +78,8 @@ def construct_solver(data_xds_list,
         blocker.add_input("corr_mode", corr_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
         blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
+        blocker.add_input("solver_opts", solver_opts)
+        blocker.add_input("gain_opts", gain_opts)
 
         # TODO: Mildly hacky? If the gain dataset already has a gain variable,
         # we want to pass it in.
@@ -91,7 +96,7 @@ def construct_solver(data_xds_list,
             blocker.add_input("row_weights", None)
 
         # Add relevant outputs to blocker object.
-        for gi, gn in enumerate(opts.solver.gain_terms):
+        for gi, gn in enumerate(opts.solver.terms):
 
             chunks = gain_terms[gi].GAIN_SPEC
             blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)
@@ -159,7 +164,6 @@ def expand_specs(gain_terms):
 
                 term_name = gxds.NAME
                 term_type = gxds.TYPE
-                term_args = gxds.ARGS
                 gain_chunk_spec = gxds.GAIN_SPEC
 
                 tc = gain_chunk_spec.tchunk[tc_ind]
@@ -180,11 +184,10 @@ def expand_specs(gain_terms):
 
                     parm_shape = (tc_p, fc_p, ac, dc, pc, cc)
                 else:
-                    parm_shape = ()
+                    parm_shape = (0,) * 6  # Used for creating a dummy array.
 
                 term_list.append(term_spec_tup(term_name,
                                                term_type,
-                                               term_args,
                                                term_shape,
                                                parm_shape))
 

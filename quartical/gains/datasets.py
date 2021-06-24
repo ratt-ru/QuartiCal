@@ -46,7 +46,7 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
 
         term_xds_list = []
 
-        for term_ind, term_name in enumerate(opts.solver.gain_terms):
+        for term_ind, term_name in enumerate(opts.solver.terms):
 
             term_type = getattr(opts, term_name).type
 
@@ -145,7 +145,7 @@ def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
         coord_dict = {"time": unique_times,  # Doesn't vary with term.
                       "freq": unique_freqs}  # Doesn't vary with term.
 
-        for term_ind, term_name in enumerate(opts.solver.gain_terms):
+        for term_ind, term_name in enumerate(opts.solver.terms):
 
             # This indexing corresponds to grabbing the info per xds, per term.
             tipc = tipc_list[xds_ind][:, :, term_ind]
@@ -197,7 +197,7 @@ def write_gain_datasets(gain_xds_lol, opts):
 
     # If the directory in which we intend to store a gain already exists, we
     # remove it to make sure that we don't end up with a mix of old and new.
-    for term_name in opts.solver.gain_terms:
+    for term_name in opts.solver.terms:
         term_path = gain_path.joinpath(term_name)
         if term_path.is_dir():
             logger.info(f"Removing preexisting gain folder {term_path}.")
@@ -208,7 +208,7 @@ def write_gain_datasets(gain_xds_lol, opts):
 
     gain_writes = []
 
-    for ti, term_name in enumerate(opts.solver.gain_terms):
+    for ti, term_name in enumerate(opts.solver.terms):
 
         term_xds_list = [tl[ti].chunk({dim: -1 for dim in tl[ti].dims})
                          for tl in gain_xds_lol]

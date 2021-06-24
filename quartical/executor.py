@@ -96,12 +96,12 @@ def _execute(exitstack):
 
     t0 = time.time()
 
-    with ProgressBar():
+    # with ProgressBar():
 
-        dask.compute(writes, gain_writes,
-                     num_workers=opts.parallel.n_thread,
-                     optimize_graph=True,
-                     scheduler=opts.parallel.scheduler)
+    dask.compute(writes, gain_writes,
+                    num_workers=opts.parallel.n_thread,
+                    optimize_graph=True,
+                    scheduler=opts.parallel.scheduler)
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 

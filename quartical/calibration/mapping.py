@@ -76,7 +76,7 @@ def make_t_binnings(utime_per_chunk, utime_intervals, opts):
         t_bin_arr: A dask.Array of binnings per gain term.
     """
 
-    terms = opts.solver.gain_terms
+    terms = opts.solver.terms
     n_term = len(terms)
 
     term_t_bins = []
@@ -161,7 +161,7 @@ def make_f_maps(data_xds_list, opts):
 def make_f_mappings(chan_freqs, chan_widths, opts):
     """Generate channel to solution interval mapping."""
 
-    terms = opts.solver.gain_terms
+    terms = opts.solver.terms
     n_term = len(terms)
     n_chan = chan_freqs.size
 
@@ -217,7 +217,7 @@ def make_d_maps(data_xds_list, opts):
 def make_d_mappings(n_dir, opts):
     """Generate direction to solution interval mapping."""
 
-    terms = opts.solver.gain_terms
+    terms = opts.solver.terms
 
     # Get direction dependence for all terms. Or handles the zero case.
     dd_terms = [getattr(opts, term).direction_dependent for term in terms]

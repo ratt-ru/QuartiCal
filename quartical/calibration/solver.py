@@ -1,24 +1,36 @@
 # -*- coding: utf-8 -*-
-import numpy as np
-from quartical.gains import term_solvers
 import gc
+import numpy as np
+from collections import namedtuple
+from itertools import cycle
+from quartical.gains import term_types
 
 
-def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, term_spec_list, *args, **kwargs):
+meta_args_nt = namedtuple("meta_args_nt", ("iters", "active_term"))
 
-    # This is rudimentary - it practice we may have more initialisation code
-    # here for setting up parameters etc. TODO: Init actually needs to depend
-    # on the term type. We also probably need to consider how to parse
-    # **kwargs into the solver for terms requiring ancilliary info.
+
+def solver_wrapper(term_spec_list, solver_opts, gain_opts, **kwargs):
+    """A Python wrapper for the solvers written in Numba.
+
+    This wrapper facilitates getting values in and out of the Numba code and
+    creates a dictionary of results which can be understood by the calling
+    Dask code.
+
+    Args:
+        **kwargs: A dictionary of keyword arguments. All arguments are given
+                  as key: value pairs to handle variable input.
+
+    Returns:
+        results_dict: A dictionary containing the results of the solvers.
+    """
 
     gain_tup = ()
-    additional_args = []
+    param_tup = ()
+    flag_tup = ()
     results_dict = {}
 
-    for term_ind, term_spec in enumerate(term_spec_list):
-        gain = np.zeros(term_spec.shape, dtype=np.complex128)
-        term_name = term_spec.name
+    for (term_name, term_type, term_shape, term_pshape) in term_spec_list:
+        gain = np.zeros(term_shape, dtype=np.complex128)
 
         # Check for initialisation data.
         if f"{term_name}_initial_gain" in kwargs:
@@ -26,50 +38,55 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         else:
             gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
 
+        flag = np.zeros(term_shape, dtype=np.uint8)
+        param = np.zeros(term_pshape, dtype=gain.real.dtype)
+
         gain_tup += (gain,)
+        flag_tup += (flag,)
+        param_tup += (param,)
 
-        additional_args.append(dict())
+        results_dict[f"{term_name}-gain"] = gain
+        results_dict[f"{term_name}-flag"] = flag
+        results_dict[f"{term_name}-param"] = param
+        results_dict[f"{term_name}-conviter"] = 0
+        results_dict[f"{term_name}-convperc"] = 0
 
-        # These are cludges for the BDA case. Might be possible to make this
-        # a litte more elegant.
-        if "row_map" in kwargs:
-            additional_args[term_ind]["row_map"] = kwargs["row_map"]
+    kwargs["gains"] = gain_tup
+    kwargs["flags"] = flag_tup
+    kwargs["inverse_gains"] = tuple([np.empty_like(g) for g in gain_tup])
+    kwargs["params"] = param_tup
 
-        if "row_weights" in kwargs:
-            additional_args[term_ind]["row_weights"] = kwargs["row_weights"]
+    terms = solver_opts.terms
+    iter_recipe = solver_opts.iter_recipe
 
-        # If the pshape (parameter shape) is defined, we want to initialise it.
-        if term_spec.pshape:
-            additional_args[term_ind]["params"] = \
-                np.zeros(term_spec.pshape, dtype=gain.real.dtype)
+    for term, iters in zip(cycle(terms), iter_recipe):
 
-            results_dict[term_spec.name + "-param"] = \
-                additional_args[term_ind]["params"]
+        if iters == 0:
+            continue
 
-        # Each solver may have additional args living in the kwargs dict. This
-        # will associate them with the relevant term.
-        for arg in term_spec.args:
-            additional_args[term_ind][arg] = kwargs[arg]
+        active_term = terms.index(term)
+        term_name, term_type, _, _ = term_spec_list[active_term]
 
-        results_dict[term_spec.name + "-gain"] = gain
-        results_dict[term_spec.name + "-conviter"] = 0
-        results_dict[term_spec.name + "-convperc"] = 0
+        term_type_cls = term_types[term_type]
 
-    flag_tup = tuple([np.zeros_like(g, dtype=np.uint8) for g in gain_tup])
-    inverse_gain_tup = tuple([np.empty_like(g) for g in gain_tup])
+        solver = term_type_cls.solver
+        base_args_tup = term_type_cls.base_args
+        term_args_tup = term_type_cls.term_args
 
-    for gain_ind, term_spec in enumerate(term_spec_list):
+        base_args = \
+            base_args_tup(**{k: kwargs[k] for k in base_args_tup._fields})
+        term_args = \
+            term_args_tup(**{k: kwargs[k] for k in term_args_tup._fields})
+        meta_args = meta_args_nt(iters, active_term)
 
-        solver = term_solvers[term_spec.type]
+        info_tup = solver(base_args,
+                          term_args,
+                          meta_args,
+                          kwargs["corr_mode"])
 
-        info_tup = \
-            solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, gain_ind, inverse_gain_tup,
-                   gain_tup, flag_tup, **additional_args[gain_ind])
-
-        results_dict[term_spec.name + "-conviter"] += \
+        results_dict[f"{term_name}-conviter"] += \
             np.atleast_2d(info_tup.conv_iters)
-        results_dict[term_spec.name + "-convperc"] += \
+        results_dict[f"{term_name}-convperc"] += \
             np.atleast_2d(info_tup.conv_perc)
 
     gc.collect()
