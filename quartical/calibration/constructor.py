@@ -1,5 +1,4 @@
 import numpy as np
-from quartical.config.internal import solver_nt, gain_nt
 from quartical.calibration.solver import solver_wrapper
 from quartical.utils.dask import Blocker
 from collections import namedtuple
@@ -36,15 +35,8 @@ def construct_solver(data_xds_list,
 
     solved_gain_xds_list = []
 
-    solver_opts = \
-        solver_nt(**{k: getattr(opts.solver, k) for k in solver_nt._fields})
-
-    gain_opts = {}
-
-    for term in opts.solver.gain_terms:
-        term_opts = getattr(opts, term)
-        gain_opts[term] = \
-            gain_nt(**{k: getattr(term_opts, k) for k in gain_nt._fields})
+    solver_opts = opts.solver
+    gain_opts = {gn: getattr(opts, gn) for gn in opts.solver.gain_terms}
 
     for xds_ind, data_xds in enumerate(data_xds_list):
 

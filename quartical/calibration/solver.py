@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
-import numpy as np
-from quartical.gains import term_types
 import gc
+import numpy as np
+from collections import namedtuple
+from itertools import cycle
+from quartical.gains import term_types
 
 
-def solver_wrapper(**kwargs):
+meta_args_nt = namedtuple("meta_args_nt", "iters")
+
+
+def solver_wrapper(solver_opts, gain_opts, **kwargs):
     """A Python wrapper for the solvers written in Numba.
 
     This wrapper facilitates getting values in and out of the Numba code and
@@ -53,7 +58,13 @@ def solver_wrapper(**kwargs):
     kwargs["inverse_gains"] = tuple([np.empty_like(g) for g in gain_tup])
     kwargs["params"] = param_tup
 
-    for gain_ind, (term_name, term_type, _, _) in enumerate(term_spec_list):
+    gain_terms = solver_opts.gain_terms
+    iter_recipe = solver_opts.iter_recipe
+
+    for term, iters in zip(cycle(gain_terms), iter_recipe):
+
+        gain_ind = gain_terms.index(term)
+        term_name, term_type, _, _ = term_spec_list[gain_ind]
 
         term_type_cls = term_types[term_type]
 
@@ -65,6 +76,7 @@ def solver_wrapper(**kwargs):
             base_args_tup(**{k: kwargs[k] for k in base_args_tup._fields})
         term_args = \
             term_args_tup(**{k: kwargs[k] for k in term_args_tup._fields})
+        meta_args = meta_args_nt(iters)
 
         info_tup = solver(base_args,
                           term_args,

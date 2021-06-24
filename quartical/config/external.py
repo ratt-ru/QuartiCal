@@ -99,10 +99,7 @@ class MadFlags(Input):
 @dataclass
 class Solver(Input):
     gain_terms: List[str] = field(default_factory=lambda: ["G"])
-    iter_recipe: List[int] = field(
-        default_factory=lambda: [25],
-        metadata=dict(numba_arg=True)
-    )
+    iter_recipe: List[int] = field(default_factory=lambda: [25])
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -148,10 +145,6 @@ class Gain(Input):
         metadata=dict(choices=["2dlinear",
                                "2dspline",
                                "smoothingspline"])
-    )
-    robust: bool = field(
-        default=False,
-        metadata=dict(numba_arg=True)
     )
 
     def __post_init__(self):
