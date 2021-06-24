@@ -30,7 +30,7 @@ delay_args = namedtuple(
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def delay_solver(base_args, term_args, active_term, corr_mode):
+def delay_solver(base_args, term_args, meta_args, corr_mode):
     """Solve for a delay.
 
     Note that the paramter vector is ordered as [offset slope].
@@ -38,10 +38,10 @@ def delay_solver(base_args, term_args, active_term, corr_mode):
     """
 
     if not isinstance(corr_mode, types.Literal):
-        return lambda base_args, term_args, active_term, corr_mode: \
+        return lambda base_args, term_args, meta_args, corr_mode: \
             literally(corr_mode)
 
-    def impl(base_args, term_args, active_term, corr_mode):
+    def impl(base_args, term_args, meta_args, corr_mode):
 
         model = base_args.model
         data = base_args.data
@@ -56,6 +56,8 @@ def delay_solver(base_args, term_args, active_term, corr_mode):
         flags = base_args.flags
         row_map = base_args.row_map
         row_weights = base_args.row_weights
+
+        active_term = meta_args.active_term
 
         params = term_args.params[active_term]  # Params for this term.
         t_bin_arr = term_args.t_bin_arr
@@ -86,7 +88,7 @@ def delay_solver(base_args, term_args, active_term, corr_mode):
         jhr = np.empty(jhr_shape, dtype=real_dtype)
         update = np.empty(jhr_shape, dtype=real_dtype)
 
-        for i in range(20):
+        for i in range(meta_args.iters):
 
             if dd_term or n_term > 1:
                 residual = compute_residual(data, model, gains, a1, a2,
@@ -142,7 +144,7 @@ def delay_solver(base_args, term_args, active_term, corr_mode):
             if cnv_perc > 0.99:
                 break
 
-        return term_conv_info(i, cnv_perc)
+        return term_conv_info(i + 1, cnv_perc)
 
     return impl
 

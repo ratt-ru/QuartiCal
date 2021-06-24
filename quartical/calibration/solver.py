@@ -6,7 +6,7 @@ from itertools import cycle
 from quartical.gains import term_types
 
 
-meta_args_nt = namedtuple("meta_args_nt", "iters")
+meta_args_nt = namedtuple("meta_args_nt", ("iters", "active_term"))
 
 
 def solver_wrapper(solver_opts, gain_opts, **kwargs):
@@ -63,8 +63,11 @@ def solver_wrapper(solver_opts, gain_opts, **kwargs):
 
     for term, iters in zip(cycle(terms), iter_recipe):
 
-        gain_ind = terms.index(term)
-        term_name, term_type, _, _ = term_spec_list[gain_ind]
+        if iters == 0:
+            continue
+
+        active_term = terms.index(term)
+        term_name, term_type, _, _ = term_spec_list[active_term]
 
         term_type_cls = term_types[term_type]
 
@@ -76,11 +79,11 @@ def solver_wrapper(solver_opts, gain_opts, **kwargs):
             base_args_tup(**{k: kwargs[k] for k in base_args_tup._fields})
         term_args = \
             term_args_tup(**{k: kwargs[k] for k in term_args_tup._fields})
-        meta_args = meta_args_nt(iters)
+        meta_args = meta_args_nt(iters, active_term)
 
         info_tup = solver(base_args,
                           term_args,
-                          gain_ind,
+                          meta_args,
                           kwargs["corr_mode"])
 
         results_dict[f"{term_name}-conviter"] += \
