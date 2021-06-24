@@ -13,8 +13,8 @@ path_to_helpstrings = Path(__file__).parent.joinpath("helpstrings.yaml")
 HELPSTRINGS = oc.load(path_to_helpstrings)
 
 GAIN_MSG = "Gains make use of a special configuration " \
-           "mechanism. Use 'solver.gain_terms' to specify the name of " \
-           "each gain term, e.g. 'solver.gain_terms=[G,B]'. Each gain " \
+           "mechanism. Use 'solver.terms' to specify the name of " \
+           "each gain term, e.g. 'solver.terms=[G,B]'. Each gain " \
            "can then be configured using its name and any gain option, " \
            "e.g. 'G.type=complex' or 'B.direction_dependent=True'."
 
@@ -58,7 +58,7 @@ def populate(typ, help_str, help_dict=None):
 def make_help_dict():
 
     # We add this so that the help object incudes a generic gain field.
-    additional_config = [oc.from_dotlist(["solver.gain_terms=['gain']"])]
+    additional_config = [oc.from_dotlist(["solver.terms=['gain']"])]
 
     FinalConfig = finalize_structure(additional_config)
 

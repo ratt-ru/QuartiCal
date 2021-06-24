@@ -36,7 +36,7 @@ def construct_solver(data_xds_list,
     solved_gain_xds_list = []
 
     solver_opts = opts.solver
-    gain_opts = {gn: getattr(opts, gn) for gn in opts.solver.gain_terms}
+    gain_opts = {gn: getattr(opts, gn) for gn in opts.solver.terms}
 
     for xds_ind, data_xds in enumerate(data_xds_list):
 
@@ -96,7 +96,7 @@ def construct_solver(data_xds_list,
             blocker.add_input("row_weights", None)
 
         # Add relevant outputs to blocker object.
-        for gi, gn in enumerate(opts.solver.gain_terms):
+        for gi, gn in enumerate(opts.solver.terms):
 
             chunks = gain_terms[gi].GAIN_SPEC
             blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)

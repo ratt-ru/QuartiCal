@@ -19,9 +19,12 @@ input_model:
   source_chunks: 10
   apply_p_jones: true
 solver:
-  gain_terms:
+  terms:
   - G
   - B
+  iter_recipe:
+  - 25
+  - 25
 output:
   gain_dir: gains.qc
   products:

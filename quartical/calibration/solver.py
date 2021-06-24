@@ -58,12 +58,12 @@ def solver_wrapper(solver_opts, gain_opts, **kwargs):
     kwargs["inverse_gains"] = tuple([np.empty_like(g) for g in gain_tup])
     kwargs["params"] = param_tup
 
-    gain_terms = solver_opts.gain_terms
+    terms = solver_opts.terms
     iter_recipe = solver_opts.iter_recipe
 
-    for term, iters in zip(cycle(gain_terms), iter_recipe):
+    for term, iters in zip(cycle(terms), iter_recipe):
 
-        gain_ind = gain_terms.index(term)
+        gain_ind = terms.index(term)
         term_name, term_type, _, _ = term_spec_list[gain_ind]
 
         term_type_cls = term_types[term_type]

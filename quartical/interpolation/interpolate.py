@@ -27,7 +27,7 @@ def load_and_interpolate_gains(gain_xds_list, opts):
 
     interp_xds_lol = []
 
-    for term_ind, term in enumerate(opts.solver.gain_terms):
+    for term_ind, term in enumerate(opts.solver.terms):
 
         gain_path = getattr(opts, term).load_from
         interp_mode = getattr(opts, term).interp_mode

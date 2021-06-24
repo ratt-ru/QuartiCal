@@ -120,19 +120,19 @@ mad_flags:
     chunk. These values are flagged.
 
 solver:
-  gain_terms:
+  terms:
     Gain terms for which we are solving. Multiple terms can be specified as 
     a list e.g. [G, B, dE]. Each term specified here has its own set of 
     arguments which can be specified as (gain).(option). e.g. G.time_interval.
   iter_recipe:
     Specifies the iterations to be performed per gain term. This argument
-    expects a list as long or longer than solver.gain_terms. If 
-    solver.gain_terms was given as [K, G, B], an iteration recipe of [20, 10, 
-    5] would do 20 iterations for K, 10 for G and 5 for B. To loop over the 
-    gains multiple times, use a longer list e.g. [20, 10, 5, 15, 5, 0] would
-    do the same as the first example but then do an additional 15 iterations
-    for K, 5 for G and skip B. Setting to zero effectively disables solving
-    for that term and can be used in conjunction with iterpolation. 
+    expects a list as long or longer than solver.terms. If solver.terms 
+    was given as [K, G, B], an iteration recipe of [20, 10, 5] would do 20 
+    iterations for K, 10 for G and 5 for B. To loop over the gains multiple 
+    times, use a longer list e.g. [20, 10, 5, 15, 5, 0] would do the same as 
+    the first example but then do an additional 15 iterations for K, 5 for G 
+    and skip B. Setting to zero effectively disables solving for that term 
+    and can be used in conjunction with iterpolation. 
   # mode:
   #   The mode in which the solver should operate. This is assumed to be the 
   #   same for all terms specified by --solver-gain-terms. The first part of 
