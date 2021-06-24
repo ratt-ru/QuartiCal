@@ -1,4 +1,5 @@
 import numpy as np
+from quartical.config.internal import solver_nt, gain_nt
 from quartical.calibration.solver import solver_wrapper
 from quartical.utils.dask import Blocker
 from collections import namedtuple
@@ -34,6 +35,16 @@ def construct_solver(data_xds_list,
     """
 
     solved_gain_xds_list = []
+
+    solver_opts = \
+        solver_nt(**{k: getattr(opts.solver, k) for k in solver_nt._fields})
+
+    gain_opts = {}
+
+    for term in opts.solver.gain_terms:
+        term_opts = getattr(opts, term)
+        gain_opts[term] = \
+            gain_nt(**{k: getattr(term_opts, k) for k in gain_nt._fields})
 
     for xds_ind, data_xds in enumerate(data_xds_list):
 
@@ -75,6 +86,8 @@ def construct_solver(data_xds_list,
         blocker.add_input("corr_mode", corr_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
         blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
+        blocker.add_input("solver_opts", solver_opts)
+        blocker.add_input("gain_opts", gain_opts)
 
         # TODO: Mildly hacky? If the gain dataset already has a gain variable,
         # we want to pass it in.
