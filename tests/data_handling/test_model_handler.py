@@ -38,48 +38,50 @@ def expected_ndir(model_expectations):
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, freq_chunk, time_chunk, model_recipe):
+def model_opts(base_opts, model_recipe):
+    model_opts = deepcopy(base_opts.input_model)
 
-    _opts = deepcopy(base_opts)
+    model_opts.recipe = model_recipe
 
-    _opts.input_ms.freq_chunk = freq_chunk
-    _opts.input_ms.time_chunk = time_chunk
-    _opts.input_model.recipe = model_recipe
-
-    return _opts
+    return model_opts
 
 
 @pytest.fixture(scope="module")
-def _transcribe_recipe(opts):
-    return transcribe_recipe(opts)
+def ms_opts(base_opts, freq_chunk, time_chunk):
+
+    ms_opts = deepcopy(base_opts.input_ms)
+
+    ms_opts.freq_chunk = freq_chunk
+    ms_opts.time_chunk = time_chunk
+
+    return ms_opts
 
 
 @pytest.fixture(scope="module")
-def _add_model_graph(_transcribe_recipe, opts):
+def recipe(model_opts):
+    return transcribe_recipe(model_opts.recipe)
 
-    model_columns = _transcribe_recipe.ingredients.model_columns
 
-    ms_xds_list, _ = read_xds_list(model_columns, opts)
+@pytest.fixture(scope="module")
+def xds_list(recipe, ms_opts):
+    xds_list, _ = read_xds_list(recipe.ingredients.model_columns, ms_opts)
+    return xds_list
 
-    return add_model_graph(ms_xds_list, _transcribe_recipe, opts)
 
+@pytest.fixture(scope="module")
+def predicted_xds_list(xds_list, recipe, ms_name, model_opts):
+    return add_model_graph(xds_list, recipe, ms_name, model_opts)
 
 # ------------------------------add_model_graph--------------------------------
 
 
 @pytest.mark.model_handler
-def test_assigned_model(_add_model_graph):
-
-    model_xds_list = _add_model_graph
-
-    assert all(hasattr(xds, "MODEL_DATA") for xds in model_xds_list)
+def test_assigned_model(predicted_xds_list):
+    assert all(hasattr(xds, "MODEL_DATA") for xds in predicted_xds_list)
 
 
 @pytest.mark.model_handler
-def test_model_shape(_add_model_graph, expected_ndir):
-
-    model_xds_list = _add_model_graph
-
-    assert all(xds.sizes["dir"] == expected_ndir for xds in model_xds_list)
+def test_model_shape(predicted_xds_list, expected_ndir):
+    assert all(xds.sizes["dir"] == expected_ndir for xds in predicted_xds_list)
 
 # -----------------------------------------------------------------------------

@@ -18,7 +18,6 @@ def opts(base_opts, time_chunk, freq_chunk, time_int, freq_int):
 
     _opts = deepcopy(base_opts)
 
-    _opts.input_model.recipe = "MODEL_DATA"
     _opts.input_ms.time_chunk = time_chunk
     _opts.input_ms.freq_chunk = freq_chunk
     _opts.G.time_interval = time_int
@@ -31,30 +30,47 @@ def opts(base_opts, time_chunk, freq_chunk, time_int, freq_int):
 
 
 @pytest.fixture(scope="module")
-def _recipe(opts):
-    return preprocess.transcribe_recipe(opts)
+def model_opts(opts):
+    return opts.input_model
 
 
 @pytest.fixture(scope="module")
-def _read_xds_list(opts, _recipe):
-    return read_xds_list(_recipe.ingredients.model_columns, opts)
+def ms_opts(opts):
+    return opts.input_ms
 
 
 @pytest.fixture(scope="module")
-def data_xds_list(_read_xds_list, _recipe, opts):
+def mad_opts(opts):
+    return opts.mad_flags
 
-    ms_xds_list, _ = _read_xds_list
 
-    preprocessed_xds_list = preprocess_xds_list(ms_xds_list, opts)
+@pytest.fixture(scope="module")
+def recipe():
+    return preprocess.transcribe_recipe("MODEL_DATA")
 
-    data_xds_list = add_model_graph(preprocessed_xds_list, _recipe, opts)
 
-    return data_xds_list
+@pytest.fixture(scope="module")
+def _read_xds_list(ms_opts, recipe):
+    return read_xds_list(recipe.ingredients.model_columns, ms_opts)
+
+
+@pytest.fixture(scope="module")
+def xds_list(_read_xds_list):
+    return _read_xds_list[0]
+
+
+@pytest.fixture(scope="module")
+def preprocessed_xds_list(xds_list, ms_opts):
+    return preprocess_xds_list(xds_list, ms_opts.weight_column)
+
+
+@pytest.fixture(scope="module")
+def data_xds_list(preprocessed_xds_list, recipe, ms_name, model_opts):
+    return add_model_graph(preprocessed_xds_list, recipe, ms_name, model_opts)
 
 
 @pytest.fixture(scope="module")
 def data_xds(data_xds_list):
-
     return data_xds_list[0]  # We only need to test on one.
 
 

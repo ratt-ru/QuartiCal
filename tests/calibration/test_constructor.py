@@ -29,33 +29,30 @@ def opts(base_opts, time_chunk, freq_chunk):
 
 
 @pytest.fixture(scope="module")
-def _transcribe_recipe(opts):
-    return transcribe_recipe(opts)
+def recipe(opts):
+    return transcribe_recipe(opts.input_model.recipe)
 
 
 @pytest.fixture(scope="module")
-def _read_xds_list(_transcribe_recipe, opts):
-
-    model_columns = _transcribe_recipe.ingredients.model_columns
-
-    return read_xds_list(model_columns, opts)
+def xds_list(recipe, opts):
+    model_columns = recipe.ingredients.model_columns
+    # We only need to test on one for these tests.
+    return read_xds_list(model_columns, opts.input_ms)[0][:1]
 
 
 @pytest.fixture(scope="module")
-def data_xds_list(_read_xds_list, _transcribe_recipe, opts):
+def data_xds_list(xds_list, recipe, ms_name, opts):
 
-    ms_xds_list, _ = _read_xds_list
+    weight_col_name = opts.input_ms.weight_column
 
-    # We only need to test on one.
-    ms_xds_list = ms_xds_list[:1]
-
-    preprocessed_xds_list = preprocess_xds_list(ms_xds_list, opts)
+    preprocessed_xds_list = preprocess_xds_list(xds_list, weight_col_name)
 
     data_xds_list = add_model_graph(preprocessed_xds_list,
-                                    _transcribe_recipe,
+                                    recipe,
+                                    ms_name,
                                     opts)
 
-    return data_xds_list[:1]
+    return data_xds_list
 
 
 @pytest.fixture(scope="module")
@@ -85,42 +82,43 @@ def gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list, opts):
 
 
 @pytest.fixture(scope="module")
-def _construct_solver(data_xds_list, gain_xds_list, t_bin_list, t_map_list,
-                      f_map_list, d_map_list, opts):
+def solver_xds_list(data_xds_list, gain_xds_list, t_bin_list, t_map_list,
+                    f_map_list, d_map_list, opts):
 
     # Call the construct solver function with the relevant inputs.
-    solved_gain_xds_list = construct_solver(data_xds_list,
-                                            gain_xds_list,
-                                            t_bin_list,
-                                            t_map_list,
-                                            f_map_list,
-                                            d_map_list,
-                                            opts)
+    solver_xds_list = construct_solver(data_xds_list,
+                                       gain_xds_list,
+                                       t_bin_list,
+                                       t_map_list,
+                                       f_map_list,
+                                       d_map_list,
+                                       opts)
 
-    return solved_gain_xds_list
+    return solver_xds_list
 
 
 @pytest.fixture(scope="module")
-def _expand_specs(_construct_solver):
+def expanded_specs(solver_xds_list):
 
-    term_xds_list = _construct_solver[0]
+    term_xds_list = solver_xds_list[0]
 
     return expand_specs(term_xds_list)
 
 
-# -----------------------------pickling--------------------------------
-def test_pickling(_construct_solver, opts):
-    data = _construct_solver
-    assert pickle.loads(pickle.dumps(data)) == data
+# ---------------------------------pickling------------------------------------
+
+
+def test_pickling(solver_xds_list):
+    assert pickle.loads(pickle.dumps(solver_xds_list)) == solver_xds_list
 
 
 # -----------------------------construct_solver--------------------------------
 
 
-def test_fields(_construct_solver, opts):
+def test_fields(solver_xds_list):
     """Check that the expected output fields have been added to the xds."""
 
-    term_xds_list = _construct_solver[0]
+    term_xds_list = solver_xds_list[0]
 
     fields = ["gains", "conv_perc", "conv_iter"]
 
@@ -129,10 +127,10 @@ def test_fields(_construct_solver, opts):
                for field in fields])
 
 
-def test_t_chunks(_construct_solver, data_xds_list):
+def test_t_chunks(solver_xds_list, data_xds_list):
     """Check that the time chunking on the gain xdss is what we expect."""
 
-    term_xds_list = _construct_solver[0]
+    term_xds_list = solver_xds_list[0]
 
     expected_t_chunks = data_xds_list[0].DATA.data.numblocks[0]
 
@@ -140,10 +138,10 @@ def test_t_chunks(_construct_solver, data_xds_list):
                for gxds in term_xds_list])
 
 
-def test_f_chunks(_construct_solver, data_xds_list):
+def test_f_chunks(solver_xds_list, data_xds_list):
     """Check that the freq chunking on the gain xdss is what we expect."""
 
-    term_xds_list = _construct_solver[0]
+    term_xds_list = solver_xds_list[0]
 
     expected_f_chunks = data_xds_list[0].DATA.data.numblocks[1]
 
@@ -153,21 +151,21 @@ def test_f_chunks(_construct_solver, data_xds_list):
 # -------------------------------expand_specs----------------------------------
 
 
-def test_nchunk(_expand_specs, data_xds_list):
+def test_nchunk(expanded_specs, data_xds_list):
     """Test that the expanded GAIN_SPEC has the correct number of chunks."""
 
-    spec_list = _expand_specs
+    spec_list = expanded_specs
 
     expected_nchunk = data_xds_list[0].DATA.data.npartitions
 
     assert len(spec_list) * len(spec_list[0]) == expected_nchunk
 
 
-def test_shapes(_expand_specs, _construct_solver):
+def test_shapes(expanded_specs, solver_xds_list):
     """Test that the expanded GAIN_SPEC has the correct shapes."""
 
-    term_xds_list = _construct_solver[0]
-    spec_list = _expand_specs
+    term_xds_list = solver_xds_list[0]
+    spec_list = expanded_specs
 
     # Flattens out the nested spec list to make comparison easier.
     expanded_shapes = \
