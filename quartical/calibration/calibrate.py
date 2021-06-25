@@ -2,9 +2,9 @@
 import dask.array as da
 from quartical.gains.general.generics import (compute_residual,
                                               compute_corrected_residual)
-from quartical.statistics.statistics import (assign_interval_stats,
-                                             assign_post_solve_chisq,
-                                             assign_presolve_data_stats,)
+# from quartical.statistics.statistics import (assign_interval_stats,
+#                                              assign_post_solve_chisq,
+#                                              assign_presolve_data_stats,)
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
 from quartical.gains.datasets import make_gain_xds_list
@@ -99,39 +99,39 @@ def add_calibration_graph(data_xds_list, opts):
 
     # for xds_ind, xds in enumerate(data_xds_list):
 
-        # Create and populate xds for statisics at data resolution. Returns
-        # some useful arrays required for future computations. TODO: I really
-        # dislike this layer. Consider revising.
+    #     Create and populate xds for statisics at data resolution. Returns
+    #     some useful arrays required for future computations. TODO: I really
+    #     dislike this layer. Consider revising.
 
-        # data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
-        #     assign_presolve_data_stats(xds, utime_ind, utime_per_chunk)
+    #     data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
+    #         assign_presolve_data_stats(xds, utime_ind, utime_per_chunk)
 
-        # Update the gain xds with relevant interval statistics. Used to be
-        # very expensive - has been improved. TODO: Broken by massive changes
-        # calibration graph code. Needs to be revisited.
+    #     Update the gain xds with relevant interval statistics. Used to be
+    #     very expensive - has been improved. TODO: Broken by massive changes
+    #     calibration graph code. Needs to be revisited.
 
-        # gain_xds_list, empty_intervals = \
-        #     assign_interval_stats(gain_xds_list,
-        #                           data_stats_xds,
-        #                           unflagged_tfac,
-        #                           avg_abs_sqrd_model,
-        #                           utime_per_chunk,
-        #                           t_bin_arr,
-        #                           f_map_arr,
-        #                           opts)
+    #     gain_xds_list, empty_intervals = \
+    #         assign_interval_stats(gain_xds_list,
+    #                               data_stats_xds,
+    #                               unflagged_tfac,
+    #                               avg_abs_sqrd_model,
+    #                               utime_per_chunk,
+    #                               t_bin_arr,
+    #                               f_map_arr,
+    #                               opts)
 
-        # ---------------------------------------------------------------------
+    #     ---------------------------------------------------------------------
 
-        # data_stats_xds = assign_post_solve_chisq(data_stats_xds,
-        #                                          residuals,
-        #                                          weight_col,
-        #                                          ant1_col,
-        #                                          ant2_col,
-        #                                          utime_ind,
-        #                                          utime_per_chunk,
-        #                                          utime_chunks)
+    #     data_stats_xds = assign_post_solve_chisq(data_stats_xds,
+    #                                              residuals,
+    #                                              weight_col,
+    #                                              ant1_col,
+    #                                              ant2_col,
+    #                                              utime_ind,
+    #                                              utime_per_chunk,
+    #                                              utime_chunks)
 
-        # data_stats_xds_list.append(data_stats_xds)
+    #     data_stats_xds_list.append(data_stats_xds)
 
     # Return the resulting graphs for the gains and updated xds.
     return solved_gain_xds_list, post_solve_data_xds_list
