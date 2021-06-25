@@ -30,12 +30,10 @@ def _execute(exitstack):
 
     helper.help()  # Check to see if the user asked for help.
     configure_loguru()
+
     opts = parser.parse_inputs()
 
-    # TODO: This check needs to be fleshed out substantially.
-
-    preprocess.check_opts(opts)
-    model_vis_recipe = preprocess.transcribe_recipe(opts.input_model)
+    model_vis_recipe = preprocess.transcribe_recipe(opts.input_model.recipe)
 
     if opts.parallel.scheduler == "distributed":
         if opts.parallel.address:

@@ -7,13 +7,13 @@ import os.path
 from dataclasses import dataclass
 from typing import List, Dict, Set, Any
 
-_sky_model = namedtuple("_sky_model", ("name", "tags"))
+sky_model_nt = namedtuple("sky_model_nt", ("name", "tags"))
 
 
 @dataclass
 class Ingredients:
     model_columns: Set[Any]
-    sky_models: Set[_sky_model]
+    sky_models: Set[sky_model_nt]
 
 
 @dataclass
@@ -22,7 +22,7 @@ class Recipe:
     instructions: Dict[int, List[Any]]
 
 
-def transcribe_recipe(model_opts):
+def transcribe_recipe(user_recipe):
     """Interpret the model recipe string.
 
     Given the config object, create an internal recipe implementing the user
@@ -40,7 +40,7 @@ def transcribe_recipe(model_opts):
     instructions = {}
 
     # Strip accidental whitepsace from input recipe and splits on ":".
-    input_recipes = model_opts.recipe.replace(" ", "").split(":")
+    input_recipes = user_recipe.replace(" ", "").split(":")
 
     if input_recipes == ['']:
         raise ValueError("No model recipe was specified. Please set/check "
@@ -76,7 +76,7 @@ def transcribe_recipe(model_opts):
                 if not os.path.isfile(filename):
                     raise FileNotFoundError("{} not found.".format(filename))
 
-                sky_model = _sky_model(filename, tags)
+                sky_model = sky_model_nt(filename, tags)
                 sky_models.add(sky_model)
                 instructions[recipe_index].append(sky_model)
 
@@ -103,25 +103,3 @@ def transcribe_recipe(model_opts):
         logger.info("Recipe contains sky models - enabling prediction step.")
 
     return model_recipe
-
-
-def check_opts(opts):
-    """Check that there is nothing untoward in the options namespace.
-
-    Given a namespace/dictionary of options, check options which may trip
-    users up or cause failures. Log warnings about experimental modes.
-
-    Args:
-        opts: A namepsace/dictionary of options.
-    """
-
-    # TODO: Add this functionality - should check opts for problems in addition
-    # to interpreting weird options. Can also raise flags for different modes
-    # of operation. The idea is that all our configuration state lives in this
-    # options dictionary. Down with OOP!
-
-    if opts.input_ms.is_bda:
-        logger.warning("BDA data is only partially supported. Please report "
-                       "problems via the issue tracker.")
-
-    return
