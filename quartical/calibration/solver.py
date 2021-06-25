@@ -70,13 +70,13 @@ def solver_wrapper(term_spec_list, solver_opts, gain_opts, **kwargs):
         term_type_cls = term_types[term_type]
 
         solver = term_type_cls.solver
-        base_args_tup = term_type_cls.base_args
-        term_args_tup = term_type_cls.term_args
+        base_args_nt = term_type_cls.base_args
+        term_args_nt = term_type_cls.term_args
 
         base_args = \
-            base_args_tup(**{k: kwargs[k] for k in base_args_tup._fields})
+            base_args_nt(**{k: kwargs[k] for k in base_args_nt._fields})
         term_args = \
-            term_args_tup(**{k: kwargs[k] for k in term_args_tup._fields})
+            term_args_nt(**{k: kwargs[k] for k in term_args_nt._fields})
         meta_args = meta_args_nt(iters, active_term)
 
         info_tup = solver(base_args,

@@ -5,7 +5,7 @@ from loguru import logger  # noqa
 from quartical.flagging.flagging_kernels import madmax, threshold
 
 
-def finalise_flags(xds_list, opts):
+def finalise_flags(xds_list):
     """Finishes processing flags to produce writable flag data.
 
     Given a list of xarray.Dataset objects, uses the updated flag column to
@@ -13,7 +13,6 @@ def finalise_flags(xds_list, opts):
 
     Args:
         xds_list: A list of xarray datasets.
-        opts: The options Namespace.
 
     Returns:
         writable_xds: A list of xarray datasets.
@@ -119,10 +118,10 @@ def valid_median(arr):
     return np.median(arr[np.isfinite(arr) & (arr > 0)], keepdims=True)
 
 
-def add_mad_graph(data_xds_list, opts):
+def add_mad_graph(data_xds_list, mad_opts):
 
-    bl_thresh = opts.mad_flags.threshold_bl
-    gbl_thresh = opts.mad_flags.threshold_global
+    bl_thresh = mad_opts.threshold_bl
+    gbl_thresh = mad_opts.threshold_global
 
     flagged_data_xds_list = []
 

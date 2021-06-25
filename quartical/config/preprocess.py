@@ -22,14 +22,14 @@ class Recipe:
     instructions: Dict[int, List[Any]]
 
 
-def transcribe_recipe(opts):
+def transcribe_recipe(model_opts):
     """Interpret the model recipe string.
 
     Given the config object, create an internal recipe implementing the user
     specified recipe.
 
     Args:
-        opts: A namepsace/dictionary of options.
+        model_opts: An ModelInputs configuration object.
 
     Returns:
         model_Recipe: A Recipe object.
@@ -40,7 +40,7 @@ def transcribe_recipe(opts):
     instructions = {}
 
     # Strip accidental whitepsace from input recipe and splits on ":".
-    input_recipes = opts.input_model.recipe.replace(" ", "").split(":")
+    input_recipes = model_opts.recipe.replace(" ", "").split(":")
 
     if input_recipes == ['']:
         raise ValueError("No model recipe was specified. Please set/check "

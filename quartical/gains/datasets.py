@@ -189,15 +189,15 @@ def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
     return da.compute(coords_per_xds)[0]
 
 
-def write_gain_datasets(gain_xds_lol, opts):
+def write_gain_datasets(gain_xds_lol, solver_terms, output_opts):
     """Write the contents of gain_xds_lol to zarr in accordance with opts."""
 
     root_path = pathlib.Path().absolute()  # Wherever the script is being run.
-    gain_path = root_path.joinpath(opts.output.gain_dir)
+    gain_path = root_path.joinpath(output_opts.gain_dir)
 
     # If the directory in which we intend to store a gain already exists, we
     # remove it to make sure that we don't end up with a mix of old and new.
-    for term_name in opts.solver.terms:
+    for term_name in solver_terms:
         term_path = gain_path.joinpath(term_name)
         if term_path.is_dir():
             logger.info(f"Removing preexisting gain folder {term_path}.")
@@ -208,7 +208,7 @@ def write_gain_datasets(gain_xds_lol, opts):
 
     gain_writes = []
 
-    for ti, term_name in enumerate(opts.solver.terms):
+    for ti, term_name in enumerate(solver_terms):
 
         term_xds_list = [tl[ti].chunk({dim: -1 for dim in tl[ti].dims})
                          for tl in gain_xds_lol]

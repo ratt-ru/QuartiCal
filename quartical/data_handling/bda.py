@@ -24,7 +24,7 @@ def time_resampler(tcol, icol, reps, gcd, resample_size):
     return np.sort(resampled_time)
 
 
-def process_bda_input(data_xds_list, spw_xds_list, opts):
+def process_bda_input(data_xds_list, spw_xds_list, ms_opts):
     """Processes BDA xarray.Dataset objects into something more regular.
 
     Given a list of xarray.Dataset objects, upsamples and merges those which
@@ -34,7 +34,7 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
     Args:
         data_xds_list: List of xarray.Datasets containing input BDA data.
         spw_xds_list: List of xarray.Datasets contataining SPW data.
-        opts: A Namespace of global options.
+        ms_opts: A MSInputs configuration object.
 
     Returns:
         bda_xds_list: List of xarray.Dataset objects which contains upsampled
@@ -43,7 +43,7 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
     """
 
     # If WEIGHT_SPECTRUM is not in use, BDA data makes no sense.
-    if opts.input_ms.weight_column != "WEIGHT_SPECTRUM":
+    if ms_opts.weight_column != "WEIGHT_SPECTRUM":
         raise ValueError("--input-ms-weight column must be "
                          "WEIGHT_SPECTRUM for BDA data.")
 

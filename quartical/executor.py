@@ -15,8 +15,8 @@ from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
-from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 from quartical.gains.datasets import write_gain_datasets
+# from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 
 
 @logger.catch
@@ -35,7 +35,7 @@ def _execute(exitstack):
     # TODO: This check needs to be fleshed out substantially.
 
     preprocess.check_opts(opts)
-    model_vis_recipe = preprocess.transcribe_recipe(opts)
+    model_vis_recipe = preprocess.transcribe_recipe(opts.input_model)
 
     if opts.parallel.scheduler == "distributed":
         if opts.parallel.address:
@@ -62,46 +62,57 @@ def _execute(exitstack):
     t0 = time.time()
 
     # Reads the measurement set using the relavant configuration from opts.
-    data_xds_list, ref_xds_list = \
-        read_xds_list(model_vis_recipe.ingredients.model_columns, opts)
+    model_columns = model_vis_recipe.ingredients.model_columns
+    data_xds_list, ref_xds_list = read_xds_list(model_columns, opts.input_ms)
 
     # logger.info("Reading data from zms.")
-    # data_xds_list = xds_from_zarr("/home/jonathan/3C147_tests/3C147_daskms.zms")
+    # data_xds_list = xds_from_zarr(
+    #     "/home/jonathan/3C147_tests/3C147_daskms.zms"
+    # )
 
-    # writes = xds_to_zarr(data_xds_list, "/home/jonathan/3C147_tests/3C147_daskms.zms")
+    # writes = xds_to_zarr(
+    #     data_xds_list,
+    #     "/home/jonathan/3C147_tests/3C147_daskms.zms"
+    # )
     # dask.compute(writes)
     # return
 
     # Preprocess the xds_list - initialise some values and fix bad data.
-    data_xds_list = preprocess_xds_list(data_xds_list, opts)
+    data_xds_list = preprocess_xds_list(data_xds_list, opts.input_ms)
 
-    # Model xds is a list of xdss onto which appropriate model data has been
-    # assigned.
-    data_xds_list = add_model_graph(data_xds_list, model_vis_recipe, opts)
+    # A list of xdss onto which appropriate model data has been assigned.
+    data_xds_list = add_model_graph(data_xds_list,
+                                    model_vis_recipe,
+                                    opts.input_ms.path,
+                                    opts.input_model)
 
     # Adds the dask graph describing the calibration of the data.
-    gain_xds_lol, data_xds_list = \
-        add_calibration_graph(data_xds_list, opts)
+    gain_xds_lol, data_xds_list = add_calibration_graph(data_xds_list, opts)
 
     if opts.mad_flags.enable:
-        data_xds_list = add_mad_graph(data_xds_list, opts)
+        data_xds_list = add_mad_graph(data_xds_list, opts.mad_flags)
 
-    writable_xds = finalise_flags(data_xds_list, opts)
+    writable_xds = finalise_flags(data_xds_list)
 
-    writes = write_xds_list(writable_xds, ref_xds_list, opts)
+    writes = write_xds_list(writable_xds,
+                            ref_xds_list,
+                            opts.input_ms,
+                            opts.output)
 
-    gain_writes = write_gain_datasets(gain_xds_lol, opts)
+    gain_writes = write_gain_datasets(gain_xds_lol,
+                                      opts.solver.terms,
+                                      opts.output)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     t0 = time.time()
 
-    # with ProgressBar():
+    with ProgressBar():
 
-    dask.compute(writes, gain_writes,
-                    num_workers=opts.parallel.n_thread,
-                    optimize_graph=True,
-                    scheduler=opts.parallel.scheduler)
+        dask.compute(writes, gain_writes,
+                     num_workers=opts.parallel.n_thread,
+                     optimize_graph=True,
+                     scheduler=opts.parallel.scheduler)
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
