@@ -93,8 +93,11 @@ def read_xds_list(model_columns, ms_opts):
 
     # The spectral window xds should be correctly chunked in frequency.
 
-    utime_chunking_per_xds, chunking_per_xds = \
-        compute_chunking(indexing_xds_list, spw_xds_list, ms_opts)
+    utime_chunking_per_xds, chunking_per_xds = compute_chunking(
+        indexing_xds_list,
+        spw_xds_list,
+        ms_opts.time_chunk,
+    )
 
     # Once we have determined the row chunks from the indexing columns, we set
     # up an xarray data set for the data. Note that we will reload certain
@@ -122,8 +125,11 @@ def read_xds_list(model_columns, ms_opts):
 
     # BDA data needs to be processed into something more manageable.
     if ms_opts.is_bda:
-        data_xds_list, utime_chunking_per_xds = \
-            process_bda_input(data_xds_list, spw_xds_list, ms_opts)
+        data_xds_list, utime_chunking_per_xds = process_bda_input(
+            data_xds_list,
+            spw_xds_list,
+            ms_opts.weight_column
+        )
 
     # Add coordinates to the xarray datasets - this becomes immensely useful
     # down the line.
@@ -294,7 +300,7 @@ def preprocess_xds_list(xds_list, ms_opts):
 
 def compute_chunking(indexing_xds_list,
                      spw_xds_list,
-                     ms_opts,
+                     time_chunk,
                      compute=True):
     """Compute time and frequency chunks for the input data.
 
@@ -306,7 +312,7 @@ def compute_chunking(indexing_xds_list,
             information.
         spw_xds_list: List of xarray.dataset objects containing spectral window
             information.
-        ms_opts: A MSInputs configuration object.
+        time_chunk: Int or float specifying chunking.
         compute: Boolean indicating whether or not to compute the result.
 
     Returns:
@@ -332,7 +338,7 @@ def compute_chunking(indexing_xds_list,
         # TODO: BDA will assume no chunking, and in general we can skip this
         # bit if the row axis is unchunked.
 
-        if isinstance(ms_opts.time_chunk, float):
+        if isinstance(time_chunk, float):
 
             def interval_chunking(time_col, interval_col, time_chunk):
 
@@ -355,7 +361,7 @@ def compute_chunking(indexing_xds_list,
             chunking = da.map_blocks(interval_chunking,
                                      xds.TIME.data,
                                      xds.INTERVAL.data,
-                                     ms_opts.time_chunk,
+                                     time_chunk,
                                      chunks=((2,), (np.nan,)),
                                      dtype=np.int32)
 
@@ -381,7 +387,7 @@ def compute_chunking(indexing_xds_list,
 
             chunking = da.map_blocks(integer_chunking,
                                      xds.TIME.data,
-                                     ms_opts.time_chunk,
+                                     time_chunk,
                                      chunks=((2,), (np.nan,)),
                                      dtype=np.int32)
 
