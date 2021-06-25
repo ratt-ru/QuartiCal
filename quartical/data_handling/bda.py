@@ -156,7 +156,7 @@ def process_bda_input(data_xds_list, spw_xds_list, weight_column):
     return bda_xds_list, utime_per_xds
 
 
-def process_bda_output(xds_list, ref_xds_list, output_cols, opts):
+def process_bda_output(xds_list, ref_xds_list, output_cols):
     """Processes xarray.Dataset objects back into BDA format.
 
     Given a list of xarray.Dataset objects, samples and splits into separate
@@ -166,7 +166,6 @@ def process_bda_output(xds_list, ref_xds_list, output_cols, opts):
         xds_list: List of xarray.Datasets containing post-solve data.
         ref_xds_list: List of xarray.Datasets containing original data.
         output_cols: List of column names we expect to write.
-        opts: A Namespace of global options.
 
     Returns:
         bda_xds_list: List of xarray.Dataset objects which contains BDA data.

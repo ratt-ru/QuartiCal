@@ -76,7 +76,8 @@ def _execute(exitstack):
     # return
 
     # Preprocess the xds_list - initialise some values and fix bad data.
-    data_xds_list = preprocess_xds_list(data_xds_list, opts.input_ms)
+    data_xds_list = preprocess_xds_list(data_xds_list,
+                                        opts.input_ms.weight_column)
 
     # A list of xdss onto which appropriate model data has been assigned.
     data_xds_list = add_model_graph(data_xds_list,
@@ -94,7 +95,7 @@ def _execute(exitstack):
 
     writes = write_xds_list(writable_xds,
                             ref_xds_list,
-                            opts.input_ms,
+                            opts.input_ms.path,
                             opts.output)
 
     gain_writes = write_gain_datasets(gain_xds_lol,

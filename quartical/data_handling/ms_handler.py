@@ -89,7 +89,8 @@ def read_xds_list(model_columns, ms_opts):
         ms_opts.path + "::SPECTRAL_WINDOW",
         group_cols=["__row__"],
         columns=["CHAN_FREQ", "CHAN_WIDTH"],
-        chunks={"row": 1, "chan": ms_opts.freq_chunk or -1})
+        chunks={"row": 1, "chan": ms_opts.freq_chunk or -1}
+    )
 
     # The spectral window xds should be correctly chunked in frequency.
 
@@ -121,7 +122,7 @@ def read_xds_list(model_columns, ms_opts):
 
     # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
     # for undoing BDA.
-    ref_xds_list = data_xds_list
+    ref_xds_list = data_xds_list if ms_opts.is_bda else None
 
     # BDA data needs to be processed into something more manageable.
     if ms_opts.is_bda:
@@ -181,13 +182,13 @@ def read_xds_list(model_columns, ms_opts):
     return data_xds_list, ref_xds_list
 
 
-def write_xds_list(xds_list, ref_xds_list, ms_opts, output_opts):
+def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
     """Writes fields spicified in the WRITE_COLS attribute to the MS.
 
     Args:
         xds_list: A list of xarray datasets.
         ref_xds_list: A list of reference xarray.Dataset objects.
-        ms_opts: A MSInputs configuration object.
+        ms_path: Path to input/output MS.
         output_opts: An Outputs configuration object.
 
     Returns:
@@ -200,7 +201,7 @@ def write_xds_list(xds_list, ref_xds_list, ms_opts, output_opts):
     # dask-ms handle this. This also might need some further consideration,
     # as the fill_value might cause problems.
 
-    polarization_xds = xds_from_table(ms_opts.path + "::POLARIZATION")[0]
+    polarization_xds = xds_from_table(ms_path + "::POLARIZATION")[0]
     ms_ncorr = polarization_xds.dims["corr"]
 
     if ms_ncorr != xds_list[0].corr.size:
@@ -228,25 +229,25 @@ def write_xds_list(xds_list, ref_xds_list, ms_opts, output_opts):
 
         output_cols += tuple(output_opts.columns[:n_vis_prod])
 
-    if ms_opts.is_bda:
-        xds_list = process_bda_output(xds_list, ref_xds_list, output_cols,
-                                      output_opts)
+    # If the referece xds list exists, we are dealing with BDA data.
+    if ref_xds_list:
+        xds_list = process_bda_output(xds_list,
+                                      ref_xds_list,
+                                      output_cols)
 
-    logger.info("Outputs will be written to {}.".format(
-        ", ".join(output_cols)))
+    logger.info("Outputs will be written to {}.", ", ".join(output_cols))
 
     # TODO: Nasty hack due to bug in daskms. Remove ASAP.
     xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ", "CHAN_WIDTH"],
                               errors='ignore')
                 for xds in xds_list]
 
-    write_xds_list = xds_to_table(xds_list, ms_opts.path,
-                                  columns=output_cols)
+    write_xds_list = xds_to_table(xds_list, ms_path, columns=output_cols)
 
     return write_xds_list
 
 
-def preprocess_xds_list(xds_list, ms_opts):
+def preprocess_xds_list(xds_list, weight_col_name):
     """Adds data preprocessing steps - inits flags, weights and fixes bad data.
 
     Given a list of xarray.DataSet objects, initializes the flag data,
@@ -255,7 +256,7 @@ def preprocess_xds_list(xds_list, ms_opts):
 
     Args:
         xds_list: A list of xarray.DataSet objects containing MS data.
-        ms_opts: A MSInputs configuration object.
+        weight_col_name: String containing name of input weight column.
 
     Returns:
         output_xds_list: A list of xarray.DataSet objects containing MS data
@@ -264,7 +265,7 @@ def preprocess_xds_list(xds_list, ms_opts):
 
     output_xds_list = []
 
-    for xds_ind, xds in enumerate(xds_list):
+    for xds in xds_list:
 
         # Unpack the data on the xds into variables with understandable names.
         # We create copies of arrays we intend to mutate as otherwise we end
@@ -278,7 +279,7 @@ def preprocess_xds_list(xds_list, ms_opts):
 
         data_col = da.where(da.isfinite(data_col), data_col, 0)
 
-        weight_col = initialize_weights(xds, data_col, ms_opts)
+        weight_col = initialize_weights(xds, data_col, weight_col_name)
 
         flag_col = initialise_flags(data_col,
                                     weight_col,
