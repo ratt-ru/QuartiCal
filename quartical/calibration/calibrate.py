@@ -63,7 +63,6 @@ def add_calibration_graph(data_xds_list, solver_opts, gain_opts):
     """
     # Figure out all mappings between data and solution intervals.
     t_bin_list, t_map_list = make_t_maps(data_xds_list,
-                                         solver_opts,
                                          gain_opts)
     f_map_list = make_f_maps(data_xds_list,
                              solver_opts,

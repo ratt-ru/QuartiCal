@@ -19,6 +19,11 @@ def convert_gain_config(opts):
     return gains
 
 
-def yield_from(obj, fld):
+def yield_from(obj, flds, name=True):
+    if isinstance(flds, str):
+        flds = (flds,)
     for k in obj.__dataclass_fields__.keys():
-        yield (k, getattr(getattr(obj, k), fld))
+        if name:
+            yield (k, *(getattr(getattr(obj, k), fld) for fld in flds))
+        else:
+            yield (*(getattr(getattr(obj, k), fld) for fld in flds),)

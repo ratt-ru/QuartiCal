@@ -3,18 +3,18 @@ import numpy as np
 from uuid import uuid4
 from quartical.utils.dask import blockwise_unique
 from quartical.gains import TERM_TYPES
+from quartical.config.internal import yield_from
 
 
 def get_array_items(arr, inds):
     return arr[inds]
 
 
-def make_t_maps(data_xds_list, solver_opts, gain_opts):
+def make_t_maps(data_xds_list, gain_opts):
     """Figure out how timeslots map to solution interval bins.
 
     Args:
         data_xds_list: A list of xarray.Dataset objects contatining MS data.
-        solver_opts: A Solver config object.
         gain_opts: A Gains config object.
     Returns:
         t_bin_list: A list of dask.Arrays mapping unique times map to
@@ -60,7 +60,6 @@ def make_t_maps(data_xds_list, solver_opts, gain_opts):
 
         t_bin_arr = make_t_binnings(utime_per_chunk,
                                     utime_intervals,
-                                    solver_opts,
                                     gain_opts)
         t_map_arr = make_t_mappings(utime_ind, t_bin_arr)
         t_bin_list.append(t_bin_arr)
@@ -69,36 +68,26 @@ def make_t_maps(data_xds_list, solver_opts, gain_opts):
     return t_bin_list, t_map_list
 
 
-def make_t_binnings(utime_per_chunk, utime_intervals, solver_opts, gain_opts):
+def make_t_binnings(utime_per_chunk, utime_intervals, gain_opts):
     """Figure out how timeslots map to solution interval bins.
 
     Args:
         utime_per_chunk: dask.Array for number of utimes per chunk.
         utime_intervals: dask.Array of intervals assoscaited with each utime.
-        solver_opts: A Solver config object.
         gain_opts: A Gains config object.
     Returns:
         t_bin_arr: A dask.Array of binnings per gain term.
     """
 
-    terms = solver_opts.terms
-    n_term = len(terms)
-
     term_t_bins = []
 
-    for term in terms:
-        # Get frequency intervals. Or handles the zero case.
-        t_int = getattr(gain_opts, term).time_interval or np.inf
-        term_type = getattr(gain_opts, term).type
-
-        # Generate a mapping between time at data resolution and
-        # time intervals.
+    for _, tt, ti in yield_from(gain_opts, ("type", "time_interval")):
 
         term_t_bin = da.map_blocks(
-            TERM_TYPES[term_type].make_t_bins,
+            TERM_TYPES[tt].make_t_bins,
             utime_per_chunk,
             utime_intervals,
-            t_int,
+            ti or np.inf,  # Or handles zero.
             chunks=(2, utime_intervals.chunks[0]),
             new_axis=0,
             dtype=np.int32,
@@ -106,7 +95,7 @@ def make_t_binnings(utime_per_chunk, utime_intervals, solver_opts, gain_opts):
 
         term_t_bins.append(term_t_bin)
 
-    t_bin_arr = da.stack(term_t_bins, axis=2).rechunk({2: n_term})
+    t_bin_arr = da.stack(term_t_bins, axis=2).rechunk({2: len(term_t_bin)})
 
     return t_bin_arr
 
