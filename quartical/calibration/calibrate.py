@@ -65,8 +65,12 @@ def add_calibration_graph(data_xds_list, solver_opts, gain_opts):
     t_bin_list, t_map_list = make_t_maps(data_xds_list,
                                          solver_opts,
                                          gain_opts)
-    f_map_list = make_f_maps(data_xds_list, opts)
-    d_map_list = make_d_maps(data_xds_list, opts)
+    f_map_list = make_f_maps(data_xds_list,
+                             solver_opts,
+                             gain_opts)
+    d_map_list = make_d_maps(data_xds_list,
+                             solver_opts,
+                             gain_opts)
 
     # Create a list of lists of xarray.Dataset objects which will describe the
     # gains per data xarray.Dataset. This triggers some early compute.
