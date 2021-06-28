@@ -9,7 +9,7 @@ def get_array_items(arr, inds):
     return arr[inds]
 
 
-def make_t_maps(data_xds_list, opts):
+def make_t_maps(data_xds_list, solver_opts, gain_opts):
     """Figure out how timeslots map to solution interval bins.
 
     Args:
@@ -26,7 +26,7 @@ def make_t_maps(data_xds_list, opts):
 
     for xds in data_xds_list:
 
-        if opts.input_ms.is_bda:
+        if hasattr(xds, "UPSAMPLED_TIME"):  # We are dealing with BDA.
             time_col = xds.UPSAMPLED_TIME.data
             interval_col = xds.UPSAMPLED_INTERVAL.data
         else:
@@ -57,7 +57,9 @@ def make_t_maps(data_xds_list, opts):
                                         chunks=(1,),
                                         name="utpc-" + uuid4().hex)
 
-        t_bin_arr = make_t_binnings(utime_per_chunk, utime_intervals, opts)
+        t_bin_arr = make_t_binnings(utime_per_chunk,
+                                    utime_intervals,
+                                    solver_opts)
         t_map_arr = make_t_mappings(utime_ind, t_bin_arr)
         t_bin_list.append(t_bin_arr)
         t_map_list.append(t_map_arr)

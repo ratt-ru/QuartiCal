@@ -4,13 +4,13 @@ import dask.array as da
 import pathlib
 import shutil
 from daskms.experimental.zarr import xds_to_zarr
-from quartical.gains import term_types
+from quartical.gains import TERM_TYPES
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
 
 
 def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
-                       opts):
+                       solver_opts, gain_opts):
     """Returns a list of xarray.Dataset objects describing the gain terms.
 
     For a given input xds containing data, creates an xarray.Dataset object
@@ -38,7 +38,7 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
                                             f_map_list,
                                             tipc_list,
                                             fipc_list,
-                                            opts)
+                                            solver_opts.terms)
 
     gain_xds_list = []
 
@@ -46,16 +46,18 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
 
         term_xds_list = []
 
-        for term_ind, term_name in enumerate(opts.solver.terms):
+        for term_ind, term_name in enumerate(solver_opts.terms):
 
-            term_type = getattr(opts, term_name).type
+            term_type = gain_opts.type[term_ind]
 
             term_coords = coords_per_xds[xds_ind]
 
             term_t_chunks = tipc_list[xds_ind][:, :, term_ind]
             term_f_chunks = fipc_list[xds_ind][:, :, term_ind]
 
-            term_obj = term_types[term_type](term_name,
+            import pdb; pdb.set_trace()
+
+            term_obj = TERM_TYPES[term_type](term_name,
                                              data_xds,
                                              term_coords,
                                              term_t_chunks,
@@ -112,7 +114,7 @@ def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
 
 
 def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
-                           fipc_list, opts):
+                           fipc_list, terms):
     '''Compute the cooridnates for the gain datasets.
 
     Given a list of data xarray.Datasets as well as information about the
@@ -145,7 +147,7 @@ def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
         coord_dict = {"time": unique_times,  # Doesn't vary with term.
                       "freq": unique_freqs}  # Doesn't vary with term.
 
-        for term_ind, term_name in enumerate(opts.solver.terms):
+        for term_ind, term_name in enumerate(terms):
 
             # This indexing corresponds to grabbing the info per xds, per term.
             tipc = tipc_list[xds_ind][:, :, term_ind]

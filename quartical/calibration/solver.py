@@ -3,7 +3,7 @@ import gc
 import numpy as np
 from collections import namedtuple
 from itertools import cycle
-from quartical.gains import term_types
+from quartical.gains import TERM_TYPES
 
 
 meta_args_nt = namedtuple("meta_args_nt", ("iters", "active_term"))
@@ -67,7 +67,7 @@ def solver_wrapper(term_spec_list, solver_opts, gain_opts, **kwargs):
         active_term = terms.index(term)
         term_name, term_type, _, _ = term_spec_list[active_term]
 
-        term_type_cls = term_types[term_type]
+        term_type_cls = TERM_TYPES[term_type]
 
         solver = term_type_cls.solver
         base_args_nt = term_type_cls.base_args

@@ -6,7 +6,7 @@ import dask
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 import time
-from quartical.config import parser, preprocess, helper
+from quartical.config import parser, preprocess, helper, internal
 from quartical.logging import configure_loguru
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
@@ -31,19 +31,29 @@ def _execute(exitstack):
     helper.help()  # Check to see if the user asked for help.
     configure_loguru()
 
+    # Get all the config. This should never be used directly.
     opts = parser.parse_inputs()
 
-    model_vis_recipe = preprocess.transcribe_recipe(opts.input_model.recipe)
+    # Split out all the configuration objects. Mitigates god-object problems.
+    ms_opts = opts.input_ms
+    model_opts = opts.input_model
+    solver_opts = opts.solver
+    output_opts = opts.output
+    mad_flag_opts = opts.mad_flags
+    parallel_opts = opts.parallel
+    gain_opts = internal.convert_gain_config(opts)  # Special handling.
 
-    if opts.parallel.scheduler == "distributed":
-        if opts.parallel.address:
+    model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
+
+    if parallel_opts.scheduler == "distributed":
+        if parallel_opts.address:
             logger.info("Initializing distributed client.")
-            client = exitstack.enter_context(Client(opts.parallel.address))
+            client = exitstack.enter_context(Client(parallel_opts.address))
         else:
             logger.info("Initializing distributed client using LocalCluster.")
-            cluster = LocalCluster(processes=opts.parallel.n_worker > 1,
-                                   n_workers=opts.parallel.n_worker,
-                                   threads_per_worker=opts.parallel.n_thread,
+            cluster = LocalCluster(processes=parallel_opts.n_worker > 1,
+                                   n_workers=parallel_opts.n_worker,
+                                   threads_per_worker=parallel_opts.n_thread,
                                    memory_limit=0)
             cluster = exitstack.enter_context(cluster)
             client = exitstack.enter_context(Client(cluster))
@@ -61,7 +71,7 @@ def _execute(exitstack):
 
     # Reads the measurement set using the relavant configuration from opts.
     model_columns = model_vis_recipe.ingredients.model_columns
-    data_xds_list, ref_xds_list = read_xds_list(model_columns, opts.input_ms)
+    data_xds_list, ref_xds_list = read_xds_list(model_columns, ms_opts)
 
     # logger.info("Reading data from zms.")
     # data_xds_list = xds_from_zarr(
@@ -77,30 +87,32 @@ def _execute(exitstack):
 
     # Preprocess the xds_list - initialise some values and fix bad data.
     data_xds_list = preprocess_xds_list(data_xds_list,
-                                        opts.input_ms.weight_column)
+                                        ms_opts.weight_column)
 
     # A list of xdss onto which appropriate model data has been assigned.
     data_xds_list = add_model_graph(data_xds_list,
                                     model_vis_recipe,
-                                    opts.input_ms.path,
-                                    opts.input_model)
+                                    ms_opts.path,
+                                    model_opts)
 
     # Adds the dask graph describing the calibration of the data.
-    gain_xds_lol, data_xds_list = add_calibration_graph(data_xds_list, opts)
+    gain_xds_lol, data_xds_list = add_calibration_graph(data_xds_list,
+                                                        solver_opts,
+                                                        gain_opts)
 
-    if opts.mad_flags.enable:
-        data_xds_list = add_mad_graph(data_xds_list, opts.mad_flags)
+    if mad_flag_opts.enable:
+        data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
 
     writable_xds = finalise_flags(data_xds_list)
 
     writes = write_xds_list(writable_xds,
                             ref_xds_list,
-                            opts.input_ms.path,
-                            opts.output)
+                            ms_opts.path,
+                            output_opts)
 
     gain_writes = write_gain_datasets(gain_xds_lol,
-                                      opts.solver.terms,
-                                      opts.output)
+                                      solver_opts.terms,
+                                      output_opts)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
@@ -109,9 +121,9 @@ def _execute(exitstack):
     with ProgressBar():
 
         dask.compute(writes, gain_writes,
-                     num_workers=opts.parallel.n_thread,
+                     num_workers=parallel_opts.n_thread,
                      optimize_graph=True,
-                     scheduler=opts.parallel.scheduler)
+                     scheduler=parallel_opts.scheduler)
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
