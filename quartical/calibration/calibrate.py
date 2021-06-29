@@ -76,7 +76,7 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
 
     # If there are gains to be loaded from disk, this will load an interpolate
     # them to be consistent with this calibration run.
-    gain_xds_list = load_and_interpolate_gains(gain_xds_list, opts)
+    gain_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
     solved_gain_xds_list = construct_solver(data_xds_list,
