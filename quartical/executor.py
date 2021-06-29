@@ -103,15 +103,14 @@ def _execute(exitstack):
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
 
-    writable_xds = finalise_flags(data_xds_list)
+    data_xds_list = finalise_flags(data_xds_list)
 
-    writes = write_xds_list(writable_xds,
-                            ref_xds_list,
-                            ms_opts.path,
-                            output_opts)
+    ms_writes = write_xds_list(data_xds_list,
+                               ref_xds_list,
+                               ms_opts.path,
+                               output_opts)
 
     gain_writes = write_gain_datasets(gain_xds_lol,
-                                      solver_opts.terms,
                                       output_opts)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
@@ -120,7 +119,7 @@ def _execute(exitstack):
 
     with ProgressBar():
 
-        dask.compute(writes, gain_writes,
+        dask.compute(ms_writes, gain_writes,
                      num_workers=parallel_opts.n_thread,
                      optimize_graph=True,
                      scheduler=parallel_opts.scheduler)
