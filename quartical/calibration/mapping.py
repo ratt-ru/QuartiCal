@@ -96,7 +96,7 @@ def make_t_binnings(utime_per_chunk, utime_intervals, chain_opts):
 
         term_t_bins.append(term_t_bin)
 
-    t_bin_arr = da.stack(term_t_bins, axis=2).rechunk({2: len(term_t_bin)})
+    t_bin_arr = da.stack(term_t_bins, axis=2).rechunk({2: len(term_t_bins)})
 
     return t_bin_arr
 

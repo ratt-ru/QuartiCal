@@ -9,7 +9,7 @@ from quartical.gains import TERM_TYPES
 meta_args_nt = namedtuple("meta_args_nt", ("iters", "active_term"))
 
 
-def solver_wrapper(term_spec_list, solver_opts, gain_opts, **kwargs):
+def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     """A Python wrapper for the solvers written in Numba.
 
     This wrapper facilitates getting values in and out of the Numba code and
