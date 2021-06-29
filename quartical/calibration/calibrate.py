@@ -72,7 +72,7 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
                                        t_map_list,
                                        t_bin_list,
                                        f_map_list,
-                                       opts)
+                                       chain_opts)
 
     # If there are gains to be loaded from disk, this will load an interpolate
     # them to be consistent with this calibration run.

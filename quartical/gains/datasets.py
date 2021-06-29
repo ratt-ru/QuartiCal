@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from quartical.config.internal import yield_from
 from loguru import logger  # noqa
 import dask.array as da
 import pathlib
@@ -9,8 +10,11 @@ from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
 
 
-def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
-                       solver_opts, gain_opts):
+def make_gain_xds_list(data_xds_list,
+                       t_map_list,
+                       t_bin_list,
+                       f_map_list,
+                       chain_opts):
     """Returns a list of xarray.Dataset objects describing the gain terms.
 
     For a given input xds containing data, creates an xarray.Dataset object
@@ -22,7 +26,7 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
         t_bin_list: List of dask.Array objects containing time binnings.
             Binnings map unique time to solutiion interval, rather than row.
         f_map_list: List of dask.Array objects containing frequency mappings.
-        opts: A Namespace object containing global options.
+        chain_opts: A Chain config object.
 
     Returns:
         gain_xds_list: A list of lists of xarray.Dataset objects describing the
@@ -33,12 +37,13 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
                                                      t_map_list,
                                                      f_map_list)
 
+    terms = list(yield_from(chain_opts))
     coords_per_xds = compute_dataset_coords(data_xds_list,
                                             t_bin_list,
                                             f_map_list,
                                             tipc_list,
                                             fipc_list,
-                                            solver_opts.terms)
+                                            terms)
 
     gain_xds_list = []
 
@@ -46,23 +51,21 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
 
         term_xds_list = []
 
-        for term_ind, term_name in enumerate(solver_opts.terms):
-
-            term_type = gain_opts.type[term_ind]
+        for loop_vars in enumerate(yield_from(chain_opts, "type")):
+            term_ind, (term_name, term_type) = loop_vars
 
             term_coords = coords_per_xds[xds_ind]
 
             term_t_chunks = tipc_list[xds_ind][:, :, term_ind]
             term_f_chunks = fipc_list[xds_ind][:, :, term_ind]
-
-            import pdb; pdb.set_trace()
+            term_opts = getattr(chain_opts, term_name)
 
             term_obj = TERM_TYPES[term_type](term_name,
+                                             term_opts,
                                              data_xds,
                                              term_coords,
                                              term_t_chunks,
-                                             term_f_chunks,
-                                             opts)
+                                             term_f_chunks)
 
             term_xds_list.append(term_obj.make_xds())
 
@@ -113,8 +116,12 @@ def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
     return da.compute(tipc_list, fipc_list)
 
 
-def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
-                           fipc_list, terms):
+def compute_dataset_coords(data_xds_list,
+                           t_bin_list,
+                           f_map_list,
+                           tipc_list,
+                           fipc_list,
+                           terms):
     '''Compute the cooridnates for the gain datasets.
 
     Given a list of data xarray.Datasets as well as information about the
