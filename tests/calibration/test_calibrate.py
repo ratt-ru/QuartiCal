@@ -1,5 +1,6 @@
 import pytest
 from quartical.config import preprocess
+from quartical.config.internal import gains_to_chain, yield_from
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
@@ -45,6 +46,16 @@ def mad_opts(opts):
 
 
 @pytest.fixture(scope="module")
+def solver_opts(opts):
+    return opts.solver
+
+
+@pytest.fixture(scope="module")
+def chain_opts(opts):
+    return gains_to_chain(opts)
+
+
+@pytest.fixture(scope="module")
 def recipe():
     return preprocess.transcribe_recipe("MODEL_DATA")
 
@@ -75,11 +86,11 @@ def data_xds(data_xds_list):
 
 
 @pytest.fixture(scope="module")
-def expected_t_ints(data_xds, opts):
+def expected_t_ints(data_xds, chain_opts):
 
     n_row = data_xds.dims["row"]
-    t_ints = [getattr(opts, term).time_interval or n_row
-              for term in opts.solver.terms]
+    t_ints = [ti or n_row
+              for _, ti in yield_from(chain_opts, "time_interval")]
 
     expected_t_ints = []
 
@@ -114,11 +125,11 @@ def expected_t_ints(data_xds, opts):
 
 
 @pytest.fixture(scope="module")
-def expected_f_ints(data_xds, opts):
+def expected_f_ints(data_xds, chain_opts):
 
     n_chan = data_xds.dims["chan"]
-    f_ints = [getattr(opts, term).freq_interval or n_chan
-              for term in opts.solver.terms]
+    f_ints = [fi or n_chan
+              for _, fi in yield_from(chain_opts, "freq_interval")]
 
     expected_f_ints = []
 
@@ -150,14 +161,13 @@ def expected_f_ints(data_xds, opts):
 
 
 @pytest.fixture(scope="module")
-def _add_calibration_graph(data_xds_list, opts):
-
-    return add_calibration_graph(data_xds_list, opts)
+def _add_calibration_graph(data_xds_list, solver_opts, chain_opts):
+    return add_calibration_graph(data_xds_list, solver_opts, chain_opts)
 
 
 @pytest.fixture(scope="module")
-def tbin_list_tmap_list(data_xds_list, opts):
-    return make_t_maps(data_xds_list, opts)
+def tbin_list_tmap_list(data_xds_list, chain_opts):
+    return make_t_maps(data_xds_list, chain_opts)
 
 
 @pytest.fixture(scope="module")
@@ -171,14 +181,15 @@ def t_bin_list(tbin_list_tmap_list):
 
 
 @pytest.fixture(scope="module")
-def f_map_list(data_xds_list, opts):
-    return make_f_maps(data_xds_list, opts)
+def f_map_list(data_xds_list, chain_opts):
+    return make_f_maps(data_xds_list, chain_opts)
 
 
 @pytest.fixture(scope="module")
-def gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list, opts):
+def gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
+                  chain_opts):
     return make_gain_xds_list(data_xds_list, t_map_list, t_bin_list,
-                              f_map_list, opts)
+                              f_map_list, chain_opts)
 
 
 @pytest.fixture(scope="module")
@@ -188,23 +199,21 @@ def term_xds_list(gain_xds_list):
 
 @pytest.fixture(scope="module")
 def solved_gain_xds_list(_add_calibration_graph):
-
     return _add_calibration_graph[0]
 
 
 @pytest.fixture(scope="module")
 def post_cal_data_xds_list(_add_calibration_graph):
-
     return _add_calibration_graph[1]
 
 
 # ----------------------------make_gain_xds_list-------------------------------
 
 
-def test_nterm(gain_xds_list, opts):
+def test_nterm(gain_xds_list, solver_opts):
     """Each gain term should produce a gain xds."""
 
-    assert len(opts.solver.terms) == len(gain_xds_list)
+    assert len(solver_opts.terms) == len(gain_xds_list)
 
 
 def test_data_coords(data_xds, term_xds_list):
@@ -224,21 +233,21 @@ def test_t_chunking(data_xds, term_xds_list):
                for gxds in term_xds_list)
 
 
-def test_f_chunking(data_xds, term_xds_list, opts):
+def test_f_chunking(data_xds, term_xds_list):
     """Check that frequency chunking of the gain xds list is correct."""
 
     assert all(len(data_xds.chunks["chan"]) == gxds.dims["f_chunk"]
                for gxds in term_xds_list)
 
 
-def test_t_ints(data_xds, term_xds_list, expected_t_ints):
+def test_t_ints(term_xds_list, expected_t_ints):
     """Check that the time intervals are correct."""
 
     assert all(int(sum(eti)) == gxds.dims["gain_t"]
                for eti, gxds in zip(expected_t_ints, term_xds_list))
 
 
-def test_f_ints(data_xds, term_xds_list, expected_f_ints):
+def test_f_ints(term_xds_list, expected_f_ints):
     """Check that the frequency intervals are correct."""
 
     assert all(int(sum(efi)) == gxds.dims["gain_f"]
@@ -255,8 +264,7 @@ def test_attributes(data_xds, term_xds_list):
                for a in data_attributes)
 
 
-def test_chunk_spec(data_xds, term_xds_list, expected_t_ints, expected_f_ints,
-                    opts):
+def test_chunk_spec(data_xds, term_xds_list, expected_t_ints, expected_f_ints):
     """Check that the chunking specs are correct."""
 
     n_row, n_chan, n_ant, n_dir, n_corr = \
@@ -271,10 +279,10 @@ def test_chunk_spec(data_xds, term_xds_list, expected_t_ints, expected_f_ints,
 # ---------------------------add_calibration_graph-----------------------------
 
 
-def test_ngains(solved_gain_xds_list, opts):
+def test_ngains(solved_gain_xds_list, solver_opts):
     """Check that calibration produces one xds per gain per input xds."""
 
-    assert all([len(term_xds_list) == len(opts.solver.terms)
+    assert all([len(term_xds_list) == len(solver_opts.terms)
                 for term_xds_list in solved_gain_xds_list])
 
 

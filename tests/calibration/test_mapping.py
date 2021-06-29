@@ -1,34 +1,41 @@
 from copy import deepcopy
-from dask import base
+from pkg_resources import yield_lines
 import pytest
 import dask.array as da
 import numpy as np
-from argparse import Namespace
 from numpy.testing import assert_array_equal
+from quartical.config.internal import gains_to_chain, yield_from
 from quartical.calibration.mapping import (make_t_binnings,
                                            make_f_mappings,
                                            make_d_mappings)
 
 
 @pytest.fixture(scope="module")
-def mapping_opts(base_opts):
+def opts(base_opts, time_int, freq_int):
+
+    # Don't overwrite base config - instead duplicate and update.
 
     _opts = deepcopy(base_opts)
 
-    _opts._model_columns = ["MODEL_DATA"]
+    _opts.G.time_interval = time_int
+    _opts.B.time_interval = 2*time_int
+    _opts.G.freq_interval = freq_int
+    _opts.B.freq_interval = 2*freq_int
 
     return _opts
+
+
+@pytest.fixture(scope="module")
+def chain_opts(opts):
+    return gains_to_chain(opts)
+
 
 # ------------------------------make_t_binnings--------------------------------
 
 
 @pytest.mark.parametrize("time_chunk", [33, 60])
-def test_t_binnings(time_int, time_chunk, mapping_opts):
+def test_t_binnings(time_chunk, chain_opts):
     """Test construction of time mappings for different chunks/intervals."""
-
-    opts = mapping_opts
-    opts.G.time_interval = time_int  # Setting time interval on first gain.
-    opts.B.time_interval = time_int*2  # Setting time interval on second gain.
 
     n_time = 100  # Total number of unique times to consider.
     n_bl = 351  # 27 antenna array - VLA-like.
@@ -61,10 +68,12 @@ def test_t_binnings(time_int, time_chunk, mapping_opts):
         dtype=np.float64)
 
     # TODO: Should also check parameter mappings.
-    da_t_bins = make_t_binnings(utime_per_chunk, utime_intervals, opts)[0, ...]
+    da_t_bins = make_t_binnings(utime_per_chunk,
+                                utime_intervals,
+                                chain_opts)[0, ...]
 
-    t_ints = [getattr(opts, t).time_interval or n_time
-              for t in opts.solver.terms]
+    t_ints = [ti or n_time
+              for _, ti in yield_from(chain_opts, "time_interval")]
 
     for block_ind in range(da_t_bins.npartitions):
         binning = da_t_bins.blocks[block_ind].compute()
@@ -126,26 +135,22 @@ def test_t_binnings(time_int, time_chunk, mapping_opts):
 
 
 @pytest.mark.parametrize("freq_chunk", [30, 64])
-def test_f_mappings(freq_int, freq_chunk, mapping_opts):
+def test_f_mappings(freq_chunk, chain_opts):
     """Test construction of freq mappings for different chunks/intervals."""
-
-    opts = mapping_opts
-    opts.G.freq_interval = freq_int  # Setting freq interval on first gain.
-    opts.B.freq_interval = freq_int*2  # Setting freq interval on second gain.
 
     n_freq = 64  # Total number of channels to consider.
 
     chan_freqs = da.arange(n_freq, chunks=freq_chunk)
     chan_widths = da.ones(n_freq, chunks=freq_chunk)*7
 
-    # Pull out just the gain mapping, not the parameter mapping.
-    # TODO: Should also check parameter mappings.
-    da_f_maps = make_f_mappings(chan_freqs, chan_widths, opts)[0, ...]
+    # Pull out just the gain mapping, not the parameter mapping. TODO: Should
+    # also check parameter mappings.
+    da_f_maps = make_f_mappings(chan_freqs, chan_widths, chain_opts)[0, ...]
 
     # Set up and compute numpy values to test against.
 
-    f_ints = [getattr(opts, t).freq_interval or n_freq
-              for t in opts.solver.terms]
+    f_ints = [fi or n_freq
+              for _, fi in yield_from(chain_opts, "freq_interval")]
 
     for block_ind in range(da_f_maps.npartitions):
         f_map = da_f_maps.blocks[block_ind].compute()
@@ -165,18 +170,16 @@ def test_f_mappings(freq_int, freq_chunk, mapping_opts):
 
 @pytest.mark.parametrize("n_dir", [2, 10])
 @pytest.mark.parametrize("has_dd_term", [False, True])
-def test_d_mappings(n_dir, has_dd_term, mapping_opts):
+def test_d_mappings(n_dir, has_dd_term, chain_opts):
     """Test construction of direction mappings for different n_dir."""
 
-    opts = mapping_opts
-    opts.B.direction_dependent = has_dd_term
+    chain_opts.B.direction_dependent = has_dd_term
 
-    d_maps = make_d_mappings(n_dir, opts)  # Not a dask array.
+    d_maps = make_d_mappings(n_dir, chain_opts)  # Not a dask array.
 
     # Set up and compute numpy values to test against.
 
-    dd_terms = [getattr(opts, t).direction_dependent
-                for t in opts.solver.terms]
+    dd_terms = [dd for _, dd in yield_from(chain_opts, "direction_dependent")]
 
     np_d_maps = np.array(list(map(lambda dd: np.arange(n_dir)*dd, dd_terms)))
 

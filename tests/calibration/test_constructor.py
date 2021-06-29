@@ -1,8 +1,8 @@
 from copy import deepcopy
 import pickle
-
 import pytest
 from quartical.config.preprocess import transcribe_recipe
+from quartical.config.internal import gains_to_chain, yield_from
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
@@ -29,61 +29,77 @@ def opts(base_opts, time_chunk, freq_chunk):
 
 
 @pytest.fixture(scope="module")
-def recipe(opts):
-    return transcribe_recipe(opts.input_model.recipe)
+def model_opts(opts):
+    return opts.input_model
 
 
 @pytest.fixture(scope="module")
-def xds_list(recipe, opts):
+def ms_opts(opts):
+    return opts.input_ms
+
+
+@pytest.fixture(scope="module")
+def solver_opts(opts):
+    return opts.solver
+
+
+@pytest.fixture(scope="module")
+def chain_opts(opts):
+    return gains_to_chain(opts)
+
+
+@pytest.fixture(scope="module")
+def recipe(model_opts):
+    return transcribe_recipe(model_opts.recipe)
+
+
+@pytest.fixture(scope="module")
+def xds_list(recipe, ms_opts):
     model_columns = recipe.ingredients.model_columns
     # We only need to test on one for these tests.
-    return read_xds_list(model_columns, opts.input_ms)[0][:1]
+    return read_xds_list(model_columns, ms_opts)[0][:1]
 
 
 @pytest.fixture(scope="module")
-def data_xds_list(xds_list, recipe, ms_name, opts):
-
-    weight_col_name = opts.input_ms.weight_column
-
-    preprocessed_xds_list = preprocess_xds_list(xds_list, weight_col_name)
-
-    data_xds_list = add_model_graph(preprocessed_xds_list,
-                                    recipe,
-                                    ms_name,
-                                    opts)
-
-    return data_xds_list
+def preprocessed_xds_list(xds_list, ms_opts):
+    return preprocess_xds_list(xds_list, ms_opts.weight_column)
 
 
 @pytest.fixture(scope="module")
-def t_bin_list(data_xds_list, opts):
-    return make_t_maps(data_xds_list, opts)[0]
+def data_xds_list(preprocessed_xds_list, recipe, ms_name, model_opts):
+    return add_model_graph(preprocessed_xds_list, recipe, ms_name, model_opts)
 
 
 @pytest.fixture(scope="module")
-def t_map_list(data_xds_list, opts):
-    return make_t_maps(data_xds_list, opts)[1]
+def t_bin_list(data_xds_list, chain_opts):
+    return make_t_maps(data_xds_list, chain_opts)[0]
 
 
 @pytest.fixture(scope="module")
-def f_map_list(data_xds_list, opts):
-    return make_f_maps(data_xds_list, opts)
+def t_map_list(data_xds_list, chain_opts):
+    return make_t_maps(data_xds_list, chain_opts)[1]
 
 
 @pytest.fixture(scope="module")
-def d_map_list(data_xds_list, opts):
-    return make_d_maps(data_xds_list, opts)
+def f_map_list(data_xds_list, chain_opts):
+    return make_f_maps(data_xds_list, chain_opts)
 
 
 @pytest.fixture(scope="module")
-def gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list, opts):
+def d_map_list(data_xds_list, chain_opts):
+    return make_d_maps(data_xds_list, chain_opts)
+
+
+@pytest.fixture(scope="module")
+def gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
+                  chain_opts):
     return make_gain_xds_list(data_xds_list, t_map_list, t_bin_list,
-                              f_map_list, opts)
+                              f_map_list, chain_opts)
 
 
 @pytest.fixture(scope="module")
 def solver_xds_list(data_xds_list, gain_xds_list, t_bin_list, t_map_list,
-                    f_map_list, d_map_list, opts):
+                    f_map_list, d_map_list, solver_opts, chain_opts):
 
     # Call the construct solver function with the relevant inputs.
     solver_xds_list = construct_solver(data_xds_list,
@@ -92,7 +108,8 @@ def solver_xds_list(data_xds_list, gain_xds_list, t_bin_list, t_map_list,
                                        t_map_list,
                                        f_map_list,
                                        d_map_list,
-                                       opts)
+                                       solver_opts,
+                                       chain_opts)
 
     return solver_xds_list
 
@@ -108,6 +125,7 @@ def expanded_specs(solver_xds_list):
 # ---------------------------------pickling------------------------------------
 
 
+@pytest.mark.xfail(reason="Dynamic classes cannot be pickled (easily).")
 def test_pickling(solver_xds_list):
     assert pickle.loads(pickle.dumps(solver_xds_list)) == solver_xds_list
 
