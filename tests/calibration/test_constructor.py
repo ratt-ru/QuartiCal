@@ -2,7 +2,7 @@ from copy import deepcopy
 import pickle
 import pytest
 from quartical.config.preprocess import transcribe_recipe
-from quartical.config.internal import gains_to_chain, yield_from
+from quartical.config.internal import gains_to_chain
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
@@ -127,6 +127,8 @@ def expanded_specs(solver_xds_list):
 
 @pytest.mark.xfail(reason="Dynamic classes cannot be pickled (easily).")
 def test_pickling(solver_xds_list):
+    # NOTE: This fails due to the dynamic construction of chain_opts. It does
+    # not seem to break the distributed scheduler, so marking as xfail for now.
     assert pickle.loads(pickle.dumps(solver_xds_list)) == solver_xds_list
 
 

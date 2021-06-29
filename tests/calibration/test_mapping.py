@@ -1,5 +1,4 @@
 from copy import deepcopy
-from pkg_resources import yield_lines
 import pytest
 import dask.array as da
 import numpy as np
