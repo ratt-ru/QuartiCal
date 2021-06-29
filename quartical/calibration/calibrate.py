@@ -94,8 +94,7 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
                                solved_gain_xds_list,
                                t_map_list,
                                f_map_list,
-                               d_map_list,
-                               opts)
+                               d_map_list)
 
     # for xds_ind, xds in enumerate(data_xds_list):
 
@@ -138,7 +137,7 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
 
 
 def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
-                           f_map_list, d_map_list, opts):
+                           f_map_list, d_map_list):
     """Creates dask arrays for possible visibility outputs.
 
     Given and xds containing data and its assosciated gains, produces
@@ -151,7 +150,6 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
         t_map_list: List of dask.Array objects containing time mappings.
         f_map_list: List of dask.Array objects containing frequency mappings.
         d_map_list: List of dask.Array objects containing direction mappings.
-        opts: A Namespace object containing all necessary configuration.
 
     Returns:
         A dictionary of lists containing graphs which prodcuce a gain array
@@ -159,7 +157,6 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
 
     """
 
-    is_bda = opts.input_ms.is_bda
     post_solve_data_xds_list = []
 
     for xds_ind, data_xds in enumerate(data_xds_list):
@@ -174,6 +171,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
         n_corr = data_xds.dims["corr"]
         corr_mode = "diag" if n_corr == 2 else "full"  # TODO: Use int.
 
+        is_bda = hasattr(data_xds, "ROW_MAP")  # We are dealing with BDA.
         row_map = data_xds.ROW_MAP.data if is_bda else None
         row_weights = data_xds.ROW_WEIGHTS.data if is_bda else None
 
