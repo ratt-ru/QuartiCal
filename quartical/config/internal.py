@@ -2,28 +2,31 @@ from dataclasses import make_dataclass
 from quartical.config.external import Gain
 
 
-def convert_gain_config(opts):
+def gains_to_chain(opts):
 
     terms = opts.solver.terms
 
-    Gains = make_dataclass(
-        "Gains",
+    Chain = make_dataclass(
+        "Chain",
         [(t, Gain, Gain()) for t in terms]
     )
 
-    gains = Gains()
+    chain = Chain()
 
     for t in terms:
-        setattr(gains, t, getattr(opts, t))
+        setattr(chain, t, getattr(opts, t))
 
-    return gains
+    return chain
 
 
-def yield_from(obj, flds, name=True):
-    if isinstance(flds, str):
-        flds = (flds,)
+def yield_from(obj, flds=None, name=True):
+
+    flds = (flds,) if isinstance(flds, str) else flds
+
     for k in obj.__dataclass_fields__.keys():
-        if name:
+        if flds is None:
+            yield k
+        elif name:
             yield (k, *(getattr(getattr(obj, k), fld) for fld in flds))
         else:
             yield (*(getattr(getattr(obj, k), fld) for fld in flds),)

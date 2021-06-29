@@ -47,7 +47,7 @@ def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
                                       row_weights, corr_mode)
 
 
-def add_calibration_graph(data_xds_list, solver_opts, gain_opts):
+def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -62,14 +62,9 @@ def add_calibration_graph(data_xds_list, solver_opts, gain_opts):
         per gain term per xarray dataset.
     """
     # Figure out all mappings between data and solution intervals.
-    t_bin_list, t_map_list = make_t_maps(data_xds_list,
-                                         gain_opts)
-    f_map_list = make_f_maps(data_xds_list,
-                             solver_opts,
-                             gain_opts)
-    d_map_list = make_d_maps(data_xds_list,
-                             solver_opts,
-                             gain_opts)
+    t_bin_list, t_map_list = make_t_maps(data_xds_list, chain_opts)
+    f_map_list = make_f_maps(data_xds_list, chain_opts)
+    d_map_list = make_d_maps(data_xds_list, chain_opts)
 
     # Create a list of lists of xarray.Dataset objects which will describe the
     # gains per data xarray.Dataset. This triggers some early compute.

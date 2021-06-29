@@ -41,7 +41,7 @@ def _execute(exitstack):
     output_opts = opts.output
     mad_flag_opts = opts.mad_flags
     parallel_opts = opts.parallel
-    gain_opts = internal.convert_gain_config(opts)  # Special handling.
+    chain_opts = internal.gains_to_chain(opts)  # Special handling.
 
     model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
 
@@ -98,7 +98,7 @@ def _execute(exitstack):
     # Adds the dask graph describing the calibration of the data.
     gain_xds_lol, data_xds_list = add_calibration_graph(data_xds_list,
                                                         solver_opts,
-                                                        gain_opts)
+                                                        chain_opts)
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
