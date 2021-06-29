@@ -50,17 +50,17 @@ class Gain:
 
     base_args = base_args
 
-    def __init__(self, term_name, data_xds, coords, tipc, fipc, opts):
+    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
 
         self.name = term_name
-        self.dd_term = getattr(opts, self.name).direction_dependent
-        self.type = getattr(opts, self.name).type
+        self.dd_term = term_opts.direction_dependent
+        self.type = term_opts.type
         self.n_chan = data_xds.dims["chan"]
         self.n_ant = data_xds.dims["ant"]
         self.n_dir = data_xds.dims["dir"] if self.dd_term else 1
         self.n_corr = data_xds.dims["corr"]
-        self.id_fields = {f: data_xds.attrs[f]
-                          for f in opts.input_ms.group_by}
+        partition_schema = data_xds.__daskms_partition_schema__
+        self.id_fields = {f: data_xds.attrs[f] for f, _ in partition_schema}
         self.utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
         self.freq_chunks = list(map(int, data_xds.chunks["chan"]))
         self.n_t_chunk = len(self.utime_chunks)

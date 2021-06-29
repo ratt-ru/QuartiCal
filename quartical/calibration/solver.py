@@ -3,13 +3,13 @@ import gc
 import numpy as np
 from collections import namedtuple
 from itertools import cycle
-from quartical.gains import term_types
+from quartical.gains import TERM_TYPES
 
 
 meta_args_nt = namedtuple("meta_args_nt", ("iters", "active_term"))
 
 
-def solver_wrapper(term_spec_list, solver_opts, gain_opts, **kwargs):
+def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     """A Python wrapper for the solvers written in Numba.
 
     This wrapper facilitates getting values in and out of the Numba code and
@@ -67,16 +67,16 @@ def solver_wrapper(term_spec_list, solver_opts, gain_opts, **kwargs):
         active_term = terms.index(term)
         term_name, term_type, _, _ = term_spec_list[active_term]
 
-        term_type_cls = term_types[term_type]
+        term_type_cls = TERM_TYPES[term_type]
 
         solver = term_type_cls.solver
-        base_args_tup = term_type_cls.base_args
-        term_args_tup = term_type_cls.term_args
+        base_args_nt = term_type_cls.base_args
+        term_args_nt = term_type_cls.term_args
 
         base_args = \
-            base_args_tup(**{k: kwargs[k] for k in base_args_tup._fields})
+            base_args_nt(**{k: kwargs[k] for k in base_args_nt._fields})
         term_args = \
-            term_args_tup(**{k: kwargs[k] for k in term_args_tup._fields})
+            term_args_nt(**{k: kwargs[k] for k in term_args_nt._fields})
         meta_args = meta_args_nt(iters, active_term)
 
         info_tup = solver(base_args,

@@ -24,7 +24,7 @@ def time_resampler(tcol, icol, reps, gcd, resample_size):
     return np.sort(resampled_time)
 
 
-def process_bda_input(data_xds_list, spw_xds_list, opts):
+def process_bda_input(data_xds_list, spw_xds_list, weight_column):
     """Processes BDA xarray.Dataset objects into something more regular.
 
     Given a list of xarray.Dataset objects, upsamples and merges those which
@@ -34,7 +34,7 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
     Args:
         data_xds_list: List of xarray.Datasets containing input BDA data.
         spw_xds_list: List of xarray.Datasets contataining SPW data.
-        opts: A Namespace of global options.
+        weight_column: String containing the input weight column.
 
     Returns:
         bda_xds_list: List of xarray.Dataset objects which contains upsampled
@@ -42,8 +42,9 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
         utime_per_xds: List of number of unique times per xds.
     """
 
-    # If WEIGHT_SPECTRUM is not in use, BDA data makes no sense.
-    if opts.input_ms.weight_column != "WEIGHT_SPECTRUM":
+    # If WEIGHT_SPECTRUM is not in use, BDA data makes no sense. TODO: This is
+    # not strictly true. Any weight column with a frequency axis is valid.
+    if weight_column != "WEIGHT_SPECTRUM":
         raise ValueError("--input-ms-weight column must be "
                          "WEIGHT_SPECTRUM for BDA data.")
 
@@ -155,7 +156,7 @@ def process_bda_input(data_xds_list, spw_xds_list, opts):
     return bda_xds_list, utime_per_xds
 
 
-def process_bda_output(xds_list, ref_xds_list, output_cols, opts):
+def process_bda_output(xds_list, ref_xds_list, output_cols):
     """Processes xarray.Dataset objects back into BDA format.
 
     Given a list of xarray.Dataset objects, samples and splits into separate
@@ -165,7 +166,6 @@ def process_bda_output(xds_list, ref_xds_list, output_cols, opts):
         xds_list: List of xarray.Datasets containing post-solve data.
         ref_xds_list: List of xarray.Datasets containing original data.
         output_cols: List of column names we expect to write.
-        opts: A Namespace of global options.
 
     Returns:
         bda_xds_list: List of xarray.Dataset objects which contains BDA data.

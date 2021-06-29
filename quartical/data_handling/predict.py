@@ -70,7 +70,7 @@ def parse_sky_models(sky_models):
     """Parses a Tigger sky model.
 
     Args:
-        opts: A Namespace object containing options.
+        sky_models: A list of SkyModel objects.
     Returns:
         sky_model_dict: A dictionary of source data.
     """
@@ -159,23 +159,21 @@ def parse_sky_models(sky_models):
     return sky_model_dict
 
 
-def daskify_sky_model_dict(sky_model_dict, opts):
+def daskify_sky_model_dict(sky_model_dict, chunk_size):
     """Converts source parameter dictionary into a dictionary of dask arrays.
 
     Args:
         sky_model_dict: Dictionary of sources.
-        opts: Namespace object containing options.
+        chunk_size: Interger number of sources in a chunk.
 
     Returns:
-        dask_sky_model_dict: A dicitonary of dask arrays.
+        dask_sky_model_dict: A dictionary of dask arrays.
     """
 
     dask_sky_model_dict = sky_model_dict.copy()  # Avoid mutating input.
 
     # This single line can have a large impact on memory/performance. Sets
     # the source chunking strategy for the predict.
-
-    chunks = opts.input_model.source_chunks
 
     Point = namedtuple("Point", ["radec", "stokes", "spi", "ref_freq"])
     Gauss = namedtuple("Gauss", ["radec", "stokes", "spi", "ref_freq",
@@ -191,13 +189,13 @@ def daskify_sky_model_dict(sky_model_dict, opts):
                 dask_sky_model_dict[model_name][group_name]['point'] = \
                     Point(
                         da.from_array(
-                            point_params["radec"], chunks=(chunks, -1)),
+                            point_params["radec"], chunks=(chunk_size, -1)),
                         da.from_array(
-                            point_params["stokes"], chunks=(chunks, -1)),
+                            point_params["stokes"], chunks=(chunk_size, -1)),
                         da.from_array(
-                            point_params["spi"], chunks=(chunks, 1, -1)),
+                            point_params["spi"], chunks=(chunk_size, 1, -1)),
                         da.from_array(
-                            point_params["ref_freq"], chunks=chunks))
+                            point_params["ref_freq"], chunks=chunk_size))
 
             if "gauss" in group_sources:
 
@@ -206,15 +204,15 @@ def daskify_sky_model_dict(sky_model_dict, opts):
                 dask_sky_model_dict[model_name][group_name]['gauss'] = \
                     Gauss(
                         da.from_array(
-                            gauss_params["radec"], chunks=(chunks, -1)),
+                            gauss_params["radec"], chunks=(chunk_size, -1)),
                         da.from_array(
-                            gauss_params["stokes"], chunks=(chunks, -1)),
+                            gauss_params["stokes"], chunks=(chunk_size, -1)),
                         da.from_array(
-                            gauss_params["spi"], chunks=(chunks, 1, -1)),
+                            gauss_params["spi"], chunks=(chunk_size, 1, -1)),
                         da.from_array(
-                            gauss_params["ref_freq"], chunks=chunks),
+                            gauss_params["ref_freq"], chunks=chunk_size),
                         da.from_array(
-                            gauss_params["shape"], chunks=(chunks, -1)))
+                            gauss_params["shape"], chunks=(chunk_size, -1)))
 
     return dask_sky_model_dict
 
@@ -327,19 +325,19 @@ def load_beams(beam_file_schema, corr_types, beam_l_axis, beam_m_axis):
     return beam, beam_lm_ext, beam_freq_grid
 
 
-def get_support_tables(opts):
+def get_support_tables(ms_path):
     """Get the support tables necessary for the predict.
 
     Adapted from https://github.com/ska-sa/codex-africanus.
 
     Args:
-        opts: A Namespace object of global options.
+        ms_path: Path to the input MS.
 
     Returns:
         lazy_tables: Dictionary of support table datasets.
     """
 
-    n = {k: '::'.join((opts.input_ms.path, k)) for k
+    n = {k: '::'.join((ms_path, k)) for k
          in ("ANTENNA", "DATA_DESCRIPTION", "FIELD",
              "SPECTRAL_WINDOW", "POLARIZATION", "FEED")}
 
@@ -432,13 +430,12 @@ def baseline_jones_multiply(corrs, *args):
     return da.einsum(schema, *arrays, optimize=True)
 
 
-def compute_p_jones(parallactic_angles, feed_xds, opts):
+def compute_p_jones(parallactic_angles, feed_xds):
     """Compte the P-Jones (parallactic angle + receptor angle) matrix.
 
     Args:
         parallactic_angles: Dask array of parallactic angles.
         feed_xds: xarray datset containing feed information.
-        opts: A Namepspace of global options.
 
     Returns:
         A dask array of feed rotations per antenna per time.
@@ -476,7 +473,12 @@ def compute_p_jones(parallactic_angles, feed_xds, opts):
             parallactic_angles + receptor_angles[None, :, 0], feed_type)
 
 
-def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
+def die_factory(utime_val,
+                frequency,
+                ant_xds,
+                feed_xds,
+                phase_dir,
+                model_opts):
     """Produces a net direction-independent matrix per time, channe, antenna.
 
     NOTE: This lacks test coverage.
@@ -487,7 +489,7 @@ def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
         ant_xds: xarray dataset containing antenna information.
         feed_xds: xarray dataset containing feed information.
         phase_dir: The phase direction in radians.
-        opts: A Namepspace of global options.
+        model_opts: A ModelInputs configuration object.
 
     Returns:
         die_jones: A dask array representing the net direction-independent
@@ -497,14 +499,14 @@ def die_factory(utime_val, frequency, ant_xds, feed_xds, phase_dir, opts):
     die_jones = None
 
     # If the beam is enabled, P-Jones has to be applied before the beam.
-    if opts.input_model.apply_p_jones and not opts.input_model.beam:
+    if model_opts.apply_p_jones and not model_opts.beam:
 
         ant_pos = clone(ant_xds["POSITION"].data)
         parallactic_angles = compute_parallactic_angles(utime_val,
                                                         ant_pos,
                                                         phase_dir)
 
-        p_jones = compute_p_jones(parallactic_angles, feed_xds, opts)
+        p_jones = compute_p_jones(parallactic_angles, feed_xds)
 
         # Broadcasts the P-Jones matrix to the expeceted DIE dimensions.
         # TODO: This is only appropriate whilst there are no other DIE terms.
@@ -534,7 +536,7 @@ def _unity_ant_scales(parangles, frequency, dtype_):
     return np.ones((na, nchan, 2), dtype=dtype_)
 
 
-def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
+def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, model_opts):
     """Multiplies per-antenna direction-dependent Jones terms together.
 
     Adapted from https://github.com/ska-sa/codex-africanus.
@@ -548,13 +550,13 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
         field: xarray dataset containing FIELD subtable data.
         pol: xarray dataset containing POLARIZATION subtable data.
         lm: dask array of per-source lm values.
-        opts: A Namespace object containing global options.
+        model_opts: A ModelInputs configuration object.
 
     Returns:
         Dask array containing the result of multiplying the
             direction-dependent Jones terms together.
     """
-    if opts.input_model.beam is None:
+    if model_opts.beam is None:
         return None
 
     # Beam is requested
@@ -567,7 +569,7 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
                                            field.PHASE_DIR.data[0][0])
 
     # Construct feed rotation
-    p_jones = compute_p_jones(parangles, feed, opts)
+    p_jones = compute_p_jones(parangles, feed)
 
     dtype = np.result_type(parangles, frequency)
 
@@ -588,10 +590,10 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
                        dtype=dtype)
 
     # Load the beam information
-    beam, lm_ext, freq_map = load_beams(opts.input_model.beam,
+    beam, lm_ext, freq_map = load_beams(model_opts.beam,
                                         corr_type,
-                                        opts.input_model.beam_l_axis,
-                                        opts.input_model.beam_m_axis)
+                                        model_opts.beam_l_axis,
+                                        model_opts.beam_m_axis)
 
     # Introduce the correlation axis
     beam = beam.reshape(beam.shape[:3] + (2, 2))
@@ -604,13 +606,21 @@ def dde_factory(ms, utime, frequency, ant, feed, field, pol, lm, opts):
     return da.einsum("stafij,tajk->stafik", beam_dde, p_jones)
 
 
-def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
+def vis_factory(model_opts,
+                source_type,
+                sky_model,
+                ms,
+                ant,
+                field,
+                spw,
+                pol,
+                feed):
     """Generates a graph describing the predict for an xds, model and type.
 
     Adapted from https://github.com/ska-sa/codex-africanus.
 
     Args:
-        opts: A Namepspace of global options.
+        model_opts: A ModelInputs configuration object.
         source_type: A string - either "point" or "gauss".
         sky_model: The daskified sky model containing dask arrays of params.
         ms: An xarray.dataset containing a piece of the MS.
@@ -639,7 +649,7 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
 
     lm = radec_to_lm(sources.radec, phase_dir)
     # This likely shouldn't be exposed. TODO: Disable this switch?
-    uvw = -ms.UVW.data if opts.input_model.invert_uvw else ms.UVW.data
+    uvw = -ms.UVW.data if model_opts.invert_uvw else ms.UVW.data
 
     # Generate per-source K-Jones (source, row, frequency).
     phase = compute_phase_delay(lm, uvw, frequency)
@@ -670,15 +680,15 @@ def vis_factory(opts, source_type, sky_model, ms, ant, field, spw, pol, feed):
     jones = baseline_jones_multiply(corrs, *bl_jones_args)
     # DI will include P-jones when there is no other DE term. Otherwise P must
     # be applied before other DD terms.
-    die = die_factory(utime_val, frequency, ant, feed, phase_dir, opts)
+    die = die_factory(utime_val, frequency, ant, feed, phase_dir, model_opts)
     dde = dde_factory(ms, utime_val, frequency, ant, feed, field, pol, lm,
-                      opts)
+                      model_opts)
 
     return predict_vis(utime_ind, ms.ANTENNA1.data, ms.ANTENNA2.data,
                        dde, jones, dde, die, None, die)
 
 
-def predict(data_xds_list, model_vis_recipe, opts):
+def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
     """Produces graphs describing predict operations.
 
     Adapted from https://github.com/ska-sa/codex-africanus.
@@ -686,7 +696,9 @@ def predict(data_xds_list, model_vis_recipe, opts):
     Args:
         data_xds_list: A list of xarray datasets corresponing to the input
             measurement set data.
-        opts: A Namepspace of global options.
+        model_vis_recipe: A Recipe object.
+        ms_path: Path to input MS.
+        model_opts: A ModelInputs configuration object.
 
     Returns:
         predict_list: A list of dictionaries containing dask graphs describing
@@ -700,10 +712,11 @@ def predict(data_xds_list, model_vis_recipe, opts):
 
     # Convert sky model dictionary into a dictionary of per-model dask arrays.
 
-    dask_sky_model_dict = daskify_sky_model_dict(sky_model_dict, opts)
+    dask_sky_model_dict = daskify_sky_model_dict(sky_model_dict,
+                                                 model_opts.source_chunks)
 
     # Get the support tables (as lists), and give them sensible names.
-    tables = get_support_tables(opts)
+    tables = get_support_tables(ms_path)
 
     ant_xds_list = tables["ANTENNA"]
     field_xds_list = tables["FIELD"]
@@ -733,7 +746,7 @@ def predict(data_xds_list, model_vis_recipe, opts):
             for group_name, group_sources in model_group.items():
 
                 # Generate visibilities per source type.
-                source_vis = [vis_factory(opts, stype, group_sources,
+                source_vis = [vis_factory(model_opts, stype, group_sources,
                                           data_xds, ant_xds, field_xds,
                                           spw_xds, pol_xds, feed_xds)
                               for stype in group_sources.keys()]
@@ -747,8 +760,7 @@ def predict(data_xds_list, model_vis_recipe, opts):
 
                 vis = DataArray(vis, dims=["row", "chan", "corr"])
 
-                if opts.input_ms.select_corr:
-                    vis = vis.sel(corr=opts.input_ms.select_corr)
+                vis = vis.sel(corr=data_xds.corr.values)
 
                 # Append group_vis to the appropriate list.
                 model_vis[model_name].append(vis.data)

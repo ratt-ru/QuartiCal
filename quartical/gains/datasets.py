@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
+from quartical.config.internal import yield_from
 from loguru import logger  # noqa
 import dask.array as da
 import pathlib
 import shutil
 from daskms.experimental.zarr import xds_to_zarr
-from quartical.gains import term_types
+from quartical.gains import TERM_TYPES
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
 
 
-def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
-                       opts):
+def make_gain_xds_list(data_xds_list,
+                       t_map_list,
+                       t_bin_list,
+                       f_map_list,
+                       chain_opts):
     """Returns a list of xarray.Dataset objects describing the gain terms.
 
     For a given input xds containing data, creates an xarray.Dataset object
@@ -22,7 +26,7 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
         t_bin_list: List of dask.Array objects containing time binnings.
             Binnings map unique time to solutiion interval, rather than row.
         f_map_list: List of dask.Array objects containing frequency mappings.
-        opts: A Namespace object containing global options.
+        chain_opts: A Chain config object.
 
     Returns:
         gain_xds_list: A list of lists of xarray.Dataset objects describing the
@@ -33,12 +37,13 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
                                                      t_map_list,
                                                      f_map_list)
 
+    terms = list(yield_from(chain_opts))
     coords_per_xds = compute_dataset_coords(data_xds_list,
                                             t_bin_list,
                                             f_map_list,
                                             tipc_list,
                                             fipc_list,
-                                            opts)
+                                            terms)
 
     gain_xds_list = []
 
@@ -46,21 +51,21 @@ def make_gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
 
         term_xds_list = []
 
-        for term_ind, term_name in enumerate(opts.solver.terms):
-
-            term_type = getattr(opts, term_name).type
+        for loop_vars in enumerate(yield_from(chain_opts, "type")):
+            term_ind, (term_name, term_type) = loop_vars
 
             term_coords = coords_per_xds[xds_ind]
 
             term_t_chunks = tipc_list[xds_ind][:, :, term_ind]
             term_f_chunks = fipc_list[xds_ind][:, :, term_ind]
+            term_opts = getattr(chain_opts, term_name)
 
-            term_obj = term_types[term_type](term_name,
+            term_obj = TERM_TYPES[term_type](term_name,
+                                             term_opts,
                                              data_xds,
                                              term_coords,
                                              term_t_chunks,
-                                             term_f_chunks,
-                                             opts)
+                                             term_f_chunks)
 
             term_xds_list.append(term_obj.make_xds())
 
@@ -111,8 +116,12 @@ def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
     return da.compute(tipc_list, fipc_list)
 
 
-def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
-                           fipc_list, opts):
+def compute_dataset_coords(data_xds_list,
+                           t_bin_list,
+                           f_map_list,
+                           tipc_list,
+                           fipc_list,
+                           terms):
     '''Compute the cooridnates for the gain datasets.
 
     Given a list of data xarray.Datasets as well as information about the
@@ -145,7 +154,7 @@ def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
         coord_dict = {"time": unique_times,  # Doesn't vary with term.
                       "freq": unique_freqs}  # Doesn't vary with term.
 
-        for term_ind, term_name in enumerate(opts.solver.terms):
+        for term_ind, term_name in enumerate(terms):
 
             # This indexing corresponds to grabbing the info per xds, per term.
             tipc = tipc_list[xds_ind][:, :, term_ind]
@@ -189,15 +198,17 @@ def compute_dataset_coords(data_xds_list, t_bin_list, f_map_list, tipc_list,
     return da.compute(coords_per_xds)[0]
 
 
-def write_gain_datasets(gain_xds_lol, opts):
+def write_gain_datasets(gain_xds_lol, output_opts):
     """Write the contents of gain_xds_lol to zarr in accordance with opts."""
 
     root_path = pathlib.Path().absolute()  # Wherever the script is being run.
-    gain_path = root_path.joinpath(opts.output.gain_dir)
+    gain_path = root_path.joinpath(output_opts.gain_dir)
+
+    term_names = [xds.NAME for xds in gain_xds_lol[0]]
 
     # If the directory in which we intend to store a gain already exists, we
     # remove it to make sure that we don't end up with a mix of old and new.
-    for term_name in opts.solver.terms:
+    for term_name in term_names:
         term_path = gain_path.joinpath(term_name)
         if term_path.is_dir():
             logger.info(f"Removing preexisting gain folder {term_path}.")
@@ -208,7 +219,7 @@ def write_gain_datasets(gain_xds_lol, opts):
 
     gain_writes = []
 
-    for ti, term_name in enumerate(opts.solver.terms):
+    for ti, term_name in enumerate(term_names):
 
         term_xds_list = [tl[ti].chunk({dim: -1 for dim in tl[ti].dims})
                          for tl in gain_xds_lol]

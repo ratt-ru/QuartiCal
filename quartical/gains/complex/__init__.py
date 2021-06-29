@@ -7,9 +7,9 @@ class Complex(Gain):
     solver = complex_solver
     term_args = complex_args
 
-    def __init__(self, term_name, data_xds, coords, tipc, fipc, opts):
+    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
 
-        Gain.__init__(self, term_name, data_xds, coords, tipc, fipc, opts)
+        Gain.__init__(self, term_name, term_opts, data_xds, coords, tipc, fipc)
 
         self.n_ppa = 0
         self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,

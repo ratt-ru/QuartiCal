@@ -13,7 +13,8 @@ def construct_solver(data_xds_list,
                      t_map_list,
                      f_map_list,
                      d_map_list,
-                     opts):
+                     solver_opts,
+                     chain_opts):
     """Constructs the dask graph for the solver layer.
 
     This constructs a custom dask graph for the solver layer given the slew
@@ -27,16 +28,14 @@ def construct_solver(data_xds_list,
         t_map_list: List of dask.Array objects containing time mappings.
         f_map_list: List of dask.Array objects containing frequency mappings.
         d_map_list: List of dask.Array objects containing direction mappings.
-        opts: A Namespace object containing global options.
+        solver_opts: A Solver config object.
+        chain_opts: A Chain config object.
 
     Returns:
         A list of lists containing xarray.Datasets describing the solved gains.
     """
 
     solved_gain_xds_list = []
-
-    solver_opts = opts.solver
-    gain_opts = {gn: getattr(opts, gn) for gn in opts.solver.terms}
 
     for xds_ind, data_xds in enumerate(data_xds_list):
 
@@ -79,7 +78,7 @@ def construct_solver(data_xds_list,
         blocker.add_input("term_spec_list", spec_list, "rf")
         blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
         blocker.add_input("solver_opts", solver_opts)
-        blocker.add_input("gain_opts", gain_opts)
+        blocker.add_input("chain_opts", chain_opts)
 
         # TODO: Mildly hacky? If the gain dataset already has a gain variable,
         # we want to pass it in.
@@ -88,7 +87,7 @@ def construct_solver(data_xds_list,
                 blocker.add_input(f"{t.NAME}_initial_gain",
                                   t.gains.data, "rfadc")
 
-        if opts.input_ms.is_bda:
+        if hasattr(data_xds, "ROW_MAP"):  # We are dealing with BDA.
             blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")
             blocker.add_input("row_weights", data_xds.ROW_WEIGHTS.data, "r")
         else:
@@ -96,7 +95,7 @@ def construct_solver(data_xds_list,
             blocker.add_input("row_weights", None)
 
         # Add relevant outputs to blocker object.
-        for gi, gn in enumerate(opts.solver.terms):
+        for gi, gn in enumerate(solver_opts.terms):
 
             chunks = gain_terms[gi].GAIN_SPEC
             blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)
