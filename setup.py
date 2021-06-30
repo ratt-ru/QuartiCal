@@ -63,7 +63,8 @@ else:
                     "pytest",
                     "csaps",
                     "omegaconf",
-                    "colorama"]
+                    "colorama",
+                    "moz-sql-parser"]
 
 setup(name='quartical',
       version=quartical.__version__,
