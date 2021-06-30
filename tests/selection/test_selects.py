@@ -109,24 +109,21 @@ def baselines(na, auto_corr):
 def index(ddid, field, time, interval, baselines):
     ant1, ant2 = baselines
 
-    ddid, field, time, interval, ant1, ant2 = np.broadcast_arrays(
-        ddid[:, None, None, None],
-        field[None, :, None, None],
-        time[None, None, :, None],
-        interval[None, None, :, None],
-        ant1[None, None, None, :],
-        ant2[None, None, None, :])
+    # Setup to broadcast arrays against each other
+    # (DDID, FIELD, TIME, BASELINE)
+    d = {
+        "DATA_DESC_ID": ddid[:, None, None, None],
+        "FIELD_ID": field[None, :, None, None],
+        "TIME": time[None, None, :, None],
+        "INTERVAL": interval[None, None, :, None],
+        "ANTENNA1": ant1[None, None, None, :],
+        "ANTENNA2": ant2[None, None, None, :]
 
-
-    return {
-        "ANTENNA1": ant1.ravel(),
-        "ANTENNA2": ant2.ravel(),
-        "TIME": time.ravel(),
-        "INTERVAL": interval.ravel(),
-        "DATA_DESC_ID": ddid.ravel(),
-        "FIELD_ID": field.ravel(),
     }
 
+    # Broadcast, ravel and create a dict
+    arrays = (a.ravel() for a in np.broadcast_arrays(*d.values()))
+    return dict(zip(d.keys(), arrays))
 
 @pytest.mark.parametrize("statement", [
     "SELECT * FROM DATA WHERE (ANTENNA1 != ANTENNA2 AND DATA_DESC_ID = 0) OR FIELD_ID = 1",
