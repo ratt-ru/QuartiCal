@@ -9,6 +9,8 @@ import pytest
 
 from moz_sql_parser import parse
 
+class VisitError(ValueError):
+    pass
 
 # Temporary Implementation starts here
 class SqlVisitor:
@@ -29,12 +31,15 @@ class SqlVisitor:
         self.structure = parse(statement)
 
     def _visit_operator(self, node):
+        if len(node) != 1:
+            raise VisitError(f"{node} has multiple entries")
+
         op, operands = next(iter(node.items()))
 
         try:
             op = self.op_map[op]
         except KeyError as e:
-            raise ValueError(f"{op} is not a recognised operator. "
+            raise VisitError(f"{op} is not a recognised operator. "
                              f"{self.op_map.keys()}")
 
         return op(*(self._visit(o) for o in operands))
@@ -48,10 +53,10 @@ class SqlVisitor:
         try:
             return literal_eval(node)
         except Exception as e:
-            raise ValueError(f"{node} is not an index array or a literal")
+            raise VisitError(f"{node} is not an index array or a literal")
 
     def _visit(self, node):
-        if isinstance(node, dict) and len(node) == 1:
+        if isinstance(node, dict):
             return self._visit_operator(node)
         elif isinstance(node, list):
             return [self._visit(o) for o in node]
@@ -60,14 +65,14 @@ class SqlVisitor:
         elif isinstance(node, Number):
             return node
         else:
-            raise TypeError(f"Unhandled {node} with type {type(node)}")
+            raise VisitError(f"Unhandled {node} with type {type(node)}")
 
 
     def visit(self):
         try:
             where = self.structure["where"]
         except KeyError:
-            raise ValueError(f"{self.structure} doesn't contain a where clause")
+            raise VisitError(f"{self.structure} doesn't contain a where clause")
 
         return self._visit(where)
 
