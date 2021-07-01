@@ -1,43 +1,26 @@
 # -*- coding: utf-8 -*-
-import dask
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-from quartical.weights.weights import initialize_weights
-from quartical.flagging.flagging import initialise_flags
-from quartical.data_handling.bda import process_bda_input, process_bda_output
 from dask.graph_manipulation import clone
 from loguru import logger
+from quartical.weights.weights import initialize_weights
+from quartical.flagging.flagging import initialise_flags
+from quartical.data_handling.chunking import compute_chunking
+from quartical.data_handling.bda import process_bda_input, process_bda_output
 
 
 def read_xds_list(model_columns, ms_opts):
     """Reads a measurement set and generates a list of xarray data sets.
 
     Args:
+        model_columns: A list of strings containing additional model columns to
+            be read.
         ms_opts: A MSInputs configuration object.
 
     Returns:
         data_xds_list: A list of appropriately chunked xarray datasets.
     """
-
-    # Create an xarray data set containing indexing columns. This is
-    # necessary to determine initial chunking over row. TODO: Add blocking
-    # based on arbitrary columns/jumps. Figure out behaviour on multi-SPW/field
-    # data. Figure out chunking based on a memory budget rather than as an
-    # option.
-
-    logger.debug("Setting up indexing xarray dataset.")
-
-    indexing_xds_list = xds_from_ms(ms_opts.path,
-                                    columns=("TIME", "INTERVAL"),
-                                    index_cols=("TIME",),
-                                    group_cols=ms_opts.group_by,
-                                    taql_where="ANTENNA1 != ANTENNA2",
-                                    chunks={"row": -1})
-
-    # Read the antenna table and add the number of antennas to the options
-    # namespace/dictionary. Leading underscore indiciates that this option is
-    # private and added internally.
 
     antenna_xds = xds_from_table(ms_opts.path + "::ANTENNA")[0]
 
@@ -69,6 +52,8 @@ def read_xds_list(model_columns, ms_opts):
     logger.info("Field table indicates phase centre is at ({} {}).",
                 phase_dir[0], phase_dir[1])
 
+    utime_chunking_per_xds, chunking_per_xds = compute_chunking(ms_opts)
+
     # Check whether the specified weight column exists.
 
     extra_columns = ()
@@ -81,24 +66,6 @@ def read_xds_list(model_columns, ms_opts):
         else:
             raise ValueError(f"Weight column {ms_opts.weight_column} "
                              f"does not exist.")
-
-    # Determine the channels in the measurement set. Or handles unchunked case.
-    # TODO: Handle multiple SPWs and specification in bandwidth.
-
-    spw_xds_list = xds_from_table(
-        ms_opts.path + "::SPECTRAL_WINDOW",
-        group_cols=["__row__"],
-        columns=["CHAN_FREQ", "CHAN_WIDTH"],
-        chunks={"row": 1, "chan": ms_opts.freq_chunk or -1}
-    )
-
-    # The spectral window xds should be correctly chunked in frequency.
-
-    utime_chunking_per_xds, chunking_per_xds = compute_chunking(
-        indexing_xds_list,
-        spw_xds_list,
-        ms_opts.time_chunk,
-    )
 
     # Once we have determined the row chunks from the indexing columns, we set
     # up an xarray data set for the data. Note that we will reload certain
@@ -299,108 +266,3 @@ def preprocess_xds_list(xds_list, weight_col_name):
     return output_xds_list
 
 
-def compute_chunking(indexing_xds_list,
-                     spw_xds_list,
-                     time_chunk,
-                     compute=True):
-    """Compute time and frequency chunks for the input data.
-
-    Given a list of indexing xds's, and a list of spw xds's, determines how to
-    chunk the data given the chunking parameters.
-
-    Args:
-        indexing_xds_list: List of xarray.dataset objects contatining indexing
-            information.
-        spw_xds_list: List of xarray.dataset objects containing spectral window
-            information.
-        time_chunk: Int or float specifying chunking.
-        compute: Boolean indicating whether or not to compute the result.
-
-    Returns:
-        A tuple of utime_chunking_per_xds and chunking_per_xds which describe
-        the chunking of the data.
-    """
-
-    chan_chunks = {i: xds.chunks["chan"] for i, xds in enumerate(spw_xds_list)}
-
-    # row_chunks is a list of dictionaries containing row chunks per data set.
-
-    chunking_per_xds = []
-
-    utime_chunking_per_xds = []
-
-    for xds in indexing_xds_list:
-
-        # If the chunking interval is a float after preprocessing, we are
-        # dealing with a duration rather than a number of intervals. TODO:
-        # Need to take resulting chunks and reprocess them based on chunk-on
-        # columns and jumps.
-
-        # TODO: BDA will assume no chunking, and in general we can skip this
-        # bit if the row axis is unchunked.
-
-        if isinstance(time_chunk, float):
-
-            def interval_chunking(time_col, interval_col, time_chunk):
-
-                utimes, uinds, ucounts = \
-                    np.unique(time_col, return_counts=True, return_index=True)
-                cumulative_interval = np.cumsum(interval_col[uinds])
-                cumulative_interval -= cumulative_interval[0]
-                chunk_map = \
-                    (cumulative_interval // time_chunk).astype(np.int32)
-
-                _, utime_chunks = np.unique(chunk_map, return_counts=True)
-
-                chunk_starts = np.zeros(utime_chunks.size, dtype=np.int32)
-                chunk_starts[1:] = np.cumsum(utime_chunks)[:-1]
-
-                row_chunks = np.add.reduceat(ucounts, chunk_starts)
-
-                return np.vstack((utime_chunks, row_chunks))
-
-            chunking = da.map_blocks(interval_chunking,
-                                     xds.TIME.data,
-                                     xds.INTERVAL.data,
-                                     time_chunk,
-                                     chunks=((2,), (np.nan,)),
-                                     dtype=np.int32)
-
-        else:
-
-            def integer_chunking(time_col, time_chunk):
-
-                utimes, ucounts = np.unique(time_col, return_counts=True)
-                n_utime = utimes.size
-                time_chunk = time_chunk or n_utime  # Catch time_chunk == 0.
-
-                utime_chunks = [time_chunk] * (n_utime // time_chunk)
-                last_chunk = n_utime % time_chunk
-
-                utime_chunks += [last_chunk] if last_chunk else []
-                utime_chunks = np.array(utime_chunks)
-
-                chunk_starts = np.arange(0, n_utime, time_chunk)
-
-                row_chunks = np.add.reduceat(ucounts, chunk_starts)
-
-                return np.vstack((utime_chunks, row_chunks))
-
-            chunking = da.map_blocks(integer_chunking,
-                                     xds.TIME.data,
-                                     time_chunk,
-                                     chunks=((2,), (np.nan,)),
-                                     dtype=np.int32)
-
-        utime_per_chunk = dask.delayed(tuple)(chunking[0, :])
-        row_chunks = dask.delayed(tuple)(chunking[1, :])
-
-        utime_chunking_per_xds.append(utime_per_chunk)
-
-        chunking_per_xds.append({"row": row_chunks,
-                                 "chan": chan_chunks[xds.DATA_DESC_ID]})
-
-    if compute:
-        return da.compute(utime_chunking_per_xds, chunking_per_xds)
-    else:
-        return utime_chunking_per_xds, chunking_per_xds
