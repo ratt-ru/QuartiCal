@@ -86,8 +86,7 @@ def _execute(exitstack):
     # return
 
     # Preprocess the xds_list - initialise some values and fix bad data.
-    data_xds_list = preprocess_xds_list(data_xds_list,
-                                        ms_opts.weight_column)
+    data_xds_list = preprocess_xds_list(data_xds_list, ms_opts)
 
     # A list of xdss onto which appropriate model data has been assigned.
     data_xds_list = add_model_graph(data_xds_list,

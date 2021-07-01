@@ -65,9 +65,8 @@ def read_xds_list(model_columns, ms_opts):
     # indexing columns so that they are consistent with the chunking strategy.
 
     columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2",
-               "FLAG", "FLAG_ROW", "UVW", "DATA")
-    # TODO: Currently data is assumed to be the DATA column. Fix this!
-    # columns += (ms_opts.data_column,)
+               "FLAG", "FLAG_ROW", "UVW")
+    columns += (ms_opts.data_column,)
     columns += (ms_opts.weight_column,) if ms_opts.weight_column else ()
     columns += (*model_columns,)
 
@@ -224,7 +223,7 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
     return write_xds_list
 
 
-def preprocess_xds_list(xds_list, weight_col_name):
+def preprocess_xds_list(xds_list, ms_opts):
     """Adds data preprocessing steps - inits flags, weights and fixes bad data.
 
     Given a list of xarray.DataSet objects, initializes the flag data,
@@ -233,7 +232,7 @@ def preprocess_xds_list(xds_list, weight_col_name):
 
     Args:
         xds_list: A list of xarray.DataSet objects containing MS data.
-        weight_col_name: String containing name of input weight column.
+        ms_opts: An InputMS config object.
 
     Returns:
         output_xds_list: A list of xarray.DataSet objects containing MS data
@@ -247,16 +246,16 @@ def preprocess_xds_list(xds_list, weight_col_name):
         # Unpack the data on the xds into variables with understandable names.
         # We create copies of arrays we intend to mutate as otherwise we end
         # up implicitly updating the xds.
-        data_col = xds.DATA.data
+        data_col = xds[ms_opts.data_column].data
         flag_col = xds.FLAG.data
         flag_row_col = xds.FLAG_ROW.data
 
         # Anywhere we have a broken datapoint, zero it. These points will
-        # be flagged below.
+        # be flagged below. TODO: This can be optimized.
 
         data_col = da.where(da.isfinite(data_col), data_col, 0)
 
-        weight_col = initialize_weights(xds, data_col, weight_col_name)
+        weight_col = initialize_weights(xds, data_col, ms_opts.weight_column)
 
         flag_col = initialise_flags(data_col,
                                     weight_col,
@@ -266,7 +265,16 @@ def preprocess_xds_list(xds_list, weight_col_name):
         # Anywhere we have a flag, we set the weight to 0.
         weight_col = da.where(flag_col, 0, weight_col)
 
-        output_xds = xds.assign(
+        # Drop the variables which held the original weights and data -
+        # hereafter there are always in DATA and WEIGHT.
+        output_xds = xds.drop_vars((ms_opts.data_column,
+                                    ms_opts.weight_column),
+                                   errors="ignore")
+
+        # Hereafter, DATA is whatever the user specified with data_column.
+        # Hereafter, WEIGHT is is whatever the user spcified with
+        # weight_column.
+        output_xds = output_xds.assign(
             {"DATA": (("row", "chan", "corr"), data_col),
              "WEIGHT": (("row", "chan", "corr"), weight_col),
              "FLAG": (("row", "chan", "corr"), flag_col)})
