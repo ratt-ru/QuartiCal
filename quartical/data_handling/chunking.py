@@ -2,7 +2,6 @@ import dask.delayed as dd
 import numpy as np
 import dask.array as da
 from daskms import xds_from_ms, xds_from_table
-from quartical.data_handling.selection import filter_xds_list
 
 
 def compute_chunking(ms_opts, compute=True):
@@ -18,12 +17,6 @@ def compute_chunking(ms_opts, compute=True):
         group_cols=ms_opts.group_by,
         taql_where="ANTENNA1 != ANTENNA2",
         chunks={"row": -1}
-    )
-
-    indexing_xds_list = filter_xds_list(
-        indexing_xds_list,
-        ms_opts.select_fields,
-        ms_opts.select_ddids
     )
 
     utime_chunking_per_xds, row_chunking_per_xds = row_chunking(

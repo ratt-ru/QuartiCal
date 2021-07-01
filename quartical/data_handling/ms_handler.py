@@ -8,6 +8,7 @@ from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import initialise_flags
 from quartical.data_handling.chunking import compute_chunking
 from quartical.data_handling.bda import process_bda_input, process_bda_output
+from quartical.data_handling.selection import filter_xds_list
 
 
 def read_xds_list(model_columns, ms_opts):
@@ -138,9 +139,12 @@ def read_xds_list(model_columns, ms_opts):
 
     data_xds_list = _data_xds_list
 
-    # We may only want to use some of the input correlation values. xarray
-    # has a neat syntax for this. TODO: Does this type of selection belong
-    # here?
+    # Filter out fields/ddids which we are not interested in. Also select out
+    # correlations. TODO: Does this type of selection/filtering belong here?
+
+    data_xds_list = filter_xds_list(data_xds_list,
+                                    ms_opts.select_fields,
+                                    ms_opts.select_ddids)
 
     if ms_opts.select_corr:
         try:
