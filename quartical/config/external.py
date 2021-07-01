@@ -28,10 +28,10 @@ class Input:
 @dataclass
 class MSInputs(Input):
     path: str = "???"
-    column: str = "DATA"
+    data_column: str = "DATA"
     weight_column: Optional[str] = "???"
     time_chunk: str = "0"
-    freq_chunk: int = 0
+    freq_chunk: str = "0"
     is_bda: bool = False
     group_by: Optional[List[str]] = field(
         default_factory=lambda: ["SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID"]
@@ -40,10 +40,17 @@ class MSInputs(Input):
         default=None,
         metadata=dict(choices=[0, 1, 2, 3])
     )
+    select_fields: List[int] = field(
+        default_factory=lambda: []
+    )
+    select_ddids: List[int] = field(
+        default_factory=lambda: []
+    )
 
     def __post_init__(self):
         self.validate_choice_fields()
         self.time_chunk = as_time(self.time_chunk)
+        self.freq_chunk = as_freq(self.freq_chunk)
 
 
 @dataclass
