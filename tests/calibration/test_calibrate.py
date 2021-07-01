@@ -72,7 +72,7 @@ def xds_list(_read_xds_list):
 
 @pytest.fixture(scope="module")
 def preprocessed_xds_list(xds_list, ms_opts):
-    return preprocess_xds_list(xds_list, ms_opts.weight_column)
+    return preprocess_xds_list(xds_list, ms_opts)
 
 
 @pytest.fixture(scope="module")
