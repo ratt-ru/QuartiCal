@@ -49,17 +49,17 @@ def compute_chunking(ms_opts, compute=True):
                              for xds in indexing_xds_list]
 
     zipper = zip(row_chunking_per_xds, chan_chunking_per_xds)
-    chunking_per_xds = [{"row": r, "chan": c} for r, c in zipper]
+    chunking_per_data_xds = [{"row": r, "chan": c} for r, c in zipper]
 
     chunking_per_spw_xds = \
         [{"__row__": 1, "chan": c} for c in chan_chunking_per_spw.values()]
 
     if compute:
         return da.compute(utime_chunking_per_xds,
-                          chunking_per_xds,
+                          chunking_per_data_xds,
                           chunking_per_spw_xds)
     else:
-        utime_chunking_per_xds, chunking_per_xds, chunking_per_spw_xds
+        utime_chunking_per_xds, chunking_per_data_xds, chunking_per_spw_xds
 
 
 def chan_chunking(spw_xds_list,

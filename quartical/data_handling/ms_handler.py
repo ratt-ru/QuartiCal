@@ -105,43 +105,42 @@ def read_xds_list(model_columns, ms_opts):
             ms_opts.weight_column
         )
 
-    # Add coordinates to the xarray datasets - this becomes immensely useful
-    # down the line.
-    data_xds_list = [xds.assign_coords({"corr": np.arange(xds.dims["corr"]),
-                                        "chan": np.arange(xds.dims["chan"]),
-                                        "ant": np.arange(n_ant)})
-                     for xds in data_xds_list]
+    _data_xds_list = []
 
-    # Add the actual channel frequecies to the xds - this is in preparation
-    # for solvers which require this information. Also adds the antenna names
-    # which will be useful when reference antennas are required.
+    for xds_ind, xds in enumerate(data_xds_list):
+        # Add coordinates to the xarray datasets.
+        _xds = xds.assign_coords({"corr": np.arange(xds.dims["corr"]),
+                                  "chan": np.arange(xds.dims["chan"]),
+                                  "ant": np.arange(n_ant)})
 
-    tmp_xds_list = []
+        # Add the actual channel frequecies to the xds - this is in preparation
+        # for solvers which require this information. Also adds the antenna
+        # names which will be useful when reference antennas are required.
 
-    for xds in data_xds_list:
         chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
         chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
-        tmp_xds_list.append(xds.assign(
-            {"CHAN_FREQ": (("chan",), chan_freqs[0]),
-             "CHAN_WIDTH": (("chan",), chan_widths[0]),
-             "ANT_NAME": (("ant",), antenna_xds.NAME.data)}))
 
-    data_xds_list = tmp_xds_list
+        _xds = _xds.assign({"CHAN_FREQ": (("chan",), chan_freqs[0]),
+                            "CHAN_WIDTH": (("chan",), chan_widths[0]),
+                            "ANT_NAME": (("ant",), antenna_xds.NAME.data)})
 
-    # Add an attribute to the xds on which we will store the names of fields
-    # which must be written to the MS. Also add the attribute which stores
-    # the unique time chunking per xds. We have to convert the chunking to
-    # python integers to avoid problems with serialization.
+        # Add an attribute to the xds on which we will store the names of
+        # fields which must be written to the MS. Also add the attribute which
+        # stores the unique time chunking per xds. We have to convert the
+        # chunking to python integers to avoid problems with serialization.
 
-    data_xds_list = \
-        [xds.assign_attrs({
-            "WRITE_COLS": (),
-            "UTIME_CHUNKS": tuple(map(int,
-                                      utime_chunking_per_data_xds[xds_ind]))})
-         for xds_ind, xds in enumerate(data_xds_list)]
+        utime_chunks = tuple(map(int, utime_chunking_per_data_xds[xds_ind]))
+
+        _xds = _xds.assign_attrs({"WRITE_COLS": (),
+                                  "UTIME_CHUNKS": utime_chunks})
+
+        _data_xds_list.append(_xds)
+
+    data_xds_list = _data_xds_list
 
     # We may only want to use some of the input correlation values. xarray
-    # has a neat syntax for this.
+    # has a neat syntax for this. TODO: Does this type of selection belong
+    # here?
 
     if ms_opts.select_corr:
         try:
