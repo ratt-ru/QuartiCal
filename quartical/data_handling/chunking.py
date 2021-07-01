@@ -1,3 +1,4 @@
+import dask.delayed as dd
 import numpy as np
 import dask.array as da
 from daskms import xds_from_ms, xds_from_table
@@ -25,6 +26,12 @@ def compute_chunking(ms_opts, compute=True):
         ms_opts.select_ddids
     )
 
+    utime_chunking_per_xds, row_chunking_per_xds = row_chunking(
+        indexing_xds_list,
+        ms_opts.time_chunk,
+        compute=False
+    )
+
     spw_xds_list = xds_from_table(
         ms_opts.path + "::SPECTRAL_WINDOW",
         group_cols=["__row__"],
@@ -32,30 +39,30 @@ def compute_chunking(ms_opts, compute=True):
         chunks={"row": 1, "chan": -1}
     )
 
-    chan_chunking_per_xds = chan_chunking(
-        indexing_xds_list,
+    chan_chunking_per_spw = chan_chunking(
         spw_xds_list,
         ms_opts.freq_chunk,
         compute=False
     )
 
-    utime_chunking_per_xds, row_chunking_per_xds = row_chunking(
-        indexing_xds_list,
-        ms_opts.time_chunk,
-        compute=False
-    )
+    chan_chunking_per_xds = [chan_chunking_per_spw[xds.DATA_DESC_ID]
+                             for xds in indexing_xds_list]
 
     zipper = zip(row_chunking_per_xds, chan_chunking_per_xds)
     chunking_per_xds = [{"row": r, "chan": c} for r, c in zipper]
 
+    chunking_per_spw_xds = \
+        [{"__row__": 1, "chan": c} for c in chan_chunking_per_spw.values()]
+
     if compute:
-        return da.compute(utime_chunking_per_xds, chunking_per_xds)
+        return da.compute(utime_chunking_per_xds,
+                          chunking_per_xds,
+                          chunking_per_spw_xds)
     else:
-        utime_chunking_per_xds, chunking_per_xds
+        utime_chunking_per_xds, chunking_per_xds, chunking_per_spw_xds
 
 
-def chan_chunking(indexing_xds_list,
-                  spw_xds_list,
+def chan_chunking(spw_xds_list,
                   freq_chunk,
                   compute=True):
     """Compute frequency chunks for the input data.
@@ -72,7 +79,7 @@ def chan_chunking(indexing_xds_list,
         compute: Boolean indicating whether or not to compute the result.
 
     Returns:
-        A list giving the chunking in freqency for each indexing xds.
+        A list giving the chunking in freqency for each SPW xds.
     """
     chan_chunking_per_spw = {}
 
@@ -111,6 +118,7 @@ def chan_chunking(indexing_xds_list,
             def integer_chunking(chan_widths, freq_chunk):
 
                 n_chan = chan_widths.size
+                freq_chunk = freq_chunk or n_chan  # Catch zero case.
                 chunks = (freq_chunk,) * (n_chan // freq_chunk)
                 remainder = n_chan - sum(chunks)
                 chunks += (remainder,) if remainder else ()
@@ -123,15 +131,13 @@ def chan_chunking(indexing_xds_list,
                                      chunks=((np.nan,),),
                                      dtype=np.int32)
 
-        chan_chunking_per_spw[ddid] = chunking
-
-    chan_chunking_per_xds = [chan_chunking_per_spw[xds.DATA_DESC_ID]
-                             for xds in indexing_xds_list]
+        # We use delayed to convert to tuples and satisfy daskms/dask.
+        chan_chunking_per_spw[ddid] = dd(tuple)(chunking)
 
     if compute:
-        return da.compute(chan_chunking_per_xds)[0]
+        return da.compute(chan_chunking_per_spw)[0]
     else:
-        return chan_chunking_per_xds
+        return chan_chunking_per_spw
 
 
 def row_chunking(indexing_xds_list,
@@ -220,8 +226,9 @@ def row_chunking(indexing_xds_list,
                                      chunks=((2,), (np.nan,)),
                                      dtype=np.int32)
 
-        utime_per_chunk = chunking[0, :]
-        row_chunks = chunking[1, :]
+        # We use delayed to convert to tuples and satisfy daskms/dask.
+        utime_per_chunk = dd(tuple)(chunking[0, :])
+        row_chunks = dd(tuple)(chunking[1, :])
 
         utime_chunking_per_xds.append(utime_per_chunk)
         row_chunking_per_xds.append(row_chunks)

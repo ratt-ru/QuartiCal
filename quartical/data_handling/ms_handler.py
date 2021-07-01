@@ -52,48 +52,54 @@ def read_xds_list(model_columns, ms_opts):
     logger.info("Field table indicates phase centre is at ({} {}).",
                 phase_dir[0], phase_dir[1])
 
-    utime_chunking_per_xds, chunking_per_xds = compute_chunking(ms_opts)
+    # Determine all the chunking in time, row and channel.
+    chunking_info = compute_chunking(ms_opts, compute=True)
 
-    # Check whether the specified weight column exists.
-
-    extra_columns = ()
-
-    if ms_opts.weight_column:
-        col_names = list(xds_from_ms(ms_opts.path)[0].keys())
-        if ms_opts.weight_column in col_names:
-            extra_columns += (ms_opts.weight_column,)
-            logger.info(f"Using {ms_opts.weight_column} for weights.")
-        else:
-            raise ValueError(f"Weight column {ms_opts.weight_column} "
-                             f"does not exist.")
+    utime_chunking_per_data_xds = chunking_info[0]
+    chunking_per_data_xds = chunking_info[1]
+    chunking_per_spw_xds = chunking_info[2]
 
     # Once we have determined the row chunks from the indexing columns, we set
     # up an xarray data set for the data. Note that we will reload certain
     # indexing columns so that they are consistent with the chunking strategy.
 
-    extra_columns += tuple(model_columns)
+    columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2",
+               "FLAG", "FLAG_ROW", "UVW", "DATA")
+    # TODO: Currently data is assumed to be the DATA column. Fix this!
+    # columns += (ms_opts.data_column,)
+    columns += (ms_opts.weight_column,) if ms_opts.weight_column else ()
+    columns += (*model_columns,)
 
-    data_columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "DATA", "FLAG",
-                    "FLAG_ROW", "UVW") + extra_columns
+    available_columns = list(xds_from_ms(ms_opts.path)[0].keys())
+    assert all(c in available_columns for c in columns), \
+           f"One or more columns in: {columns} is not present in the data."
 
-    extra_schema = {cn: {'dims': ('chan', 'corr')} for cn in model_columns}
+    schema = {cn: {'dims': ('chan', 'corr')} for cn in model_columns}
 
     data_xds_list = xds_from_ms(
         ms_opts.path,
-        columns=data_columns,
+        columns=columns,
         index_cols=("TIME",),
         group_cols=ms_opts.group_by,
         taql_where="ANTENNA1 != ANTENNA2",
-        chunks=chunking_per_xds,
-        table_schema=["MS", {**extra_schema}])
+        chunks=chunking_per_data_xds,
+        table_schema=["MS", {**schema}])
+
+    spw_xds_list = xds_from_table(
+        ms_opts.path + "::SPECTRAL_WINDOW",
+        group_cols=["__row__"],
+        columns=["CHAN_FREQ", "CHAN_WIDTH"],
+        chunks=chunking_per_spw_xds
+    )
 
     # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
     # for undoing BDA.
     ref_xds_list = data_xds_list if ms_opts.is_bda else None
 
-    # BDA data needs to be processed into something more manageable.
+    # BDA data needs to be processed into something more manageable. TODO:
+    # This is almost certainly broken. Needs test cases.
     if ms_opts.is_bda:
-        data_xds_list, utime_chunking_per_xds = process_bda_input(
+        data_xds_list, utime_chunking_per_data_xds = process_bda_input(
             data_xds_list,
             spw_xds_list,
             ms_opts.weight_column
@@ -130,7 +136,8 @@ def read_xds_list(model_columns, ms_opts):
     data_xds_list = \
         [xds.assign_attrs({
             "WRITE_COLS": (),
-            "UTIME_CHUNKS": list(map(int, utime_chunking_per_xds[xds_ind]))})
+            "UTIME_CHUNKS": tuple(map(int,
+                                      utime_chunking_per_data_xds[xds_ind]))})
          for xds_ind, xds in enumerate(data_xds_list)]
 
     # We may only want to use some of the input correlation values. xarray
@@ -264,5 +271,3 @@ def preprocess_xds_list(xds_list, weight_col_name):
         output_xds_list.append(output_xds)
 
     return output_xds_list
-
-

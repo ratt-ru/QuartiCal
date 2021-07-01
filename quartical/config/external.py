@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field, make_dataclass, fields
 from omegaconf import OmegaConf as oc
-from typing import List, Any, Optional
+from typing import List, Optional
 from quartical.config.converters import as_time, as_freq
 
 
@@ -28,7 +28,7 @@ class Input:
 @dataclass
 class MSInputs(Input):
     path: str = "???"
-    column: str = "DATA"
+    data_column: str = "DATA"
     weight_column: Optional[str] = "???"
     time_chunk: str = "0"
     freq_chunk: str = "0"
@@ -44,9 +44,6 @@ class MSInputs(Input):
         default_factory=lambda: []
     )
     select_ddids: List[int] = field(
-        default_factory=lambda: []
-    )
-    select_chans: List[Any] = field(
         default_factory=lambda: []
     )
 
