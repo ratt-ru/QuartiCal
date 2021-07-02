@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import gc
 import numpy as np
+from numba import set_num_threads
 from collections import namedtuple
 from itertools import cycle
 from quartical.gains import TERM_TYPES
@@ -23,6 +24,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     Returns:
         results_dict: A dictionary containing the results of the solvers.
     """
+
+    set_num_threads(solver_opts.threads)
 
     gain_tup = ()
     param_tup = ()

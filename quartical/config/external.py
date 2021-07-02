@@ -107,6 +107,7 @@ class MadFlags(Input):
 class Solver(Input):
     terms: List[str] = field(default_factory=lambda: ["G"])
     iter_recipe: List[int] = field(default_factory=lambda: [25])
+    threads: int = 1
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -115,10 +116,9 @@ class Solver(Input):
 
 
 @dataclass
-class Parallel(Input):
-    dask_threads: int = 0
-    dask_workers: int = 1
-    numba_threads: int = 1
+class Dask(Input):
+    threads: int = 0
+    workers: int = 1
     address: Optional[str] = None
     scheduler: str = field(
         default="threads",
@@ -168,7 +168,7 @@ class BaseConfig:
     solver: Solver = Solver()
     output: Outputs = Outputs()
     mad_flags: MadFlags = MadFlags()
-    parallel: Parallel = Parallel()
+    dask: Dask = Dask()
 
 
 def finalize_structure(additional_config):

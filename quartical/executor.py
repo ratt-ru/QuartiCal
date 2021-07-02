@@ -3,7 +3,6 @@
 from contextlib import ExitStack
 from loguru import logger
 import dask
-import numba
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 import time
@@ -41,24 +40,21 @@ def _execute(exitstack):
     solver_opts = opts.solver
     output_opts = opts.output
     mad_flag_opts = opts.mad_flags
-    parallel_opts = opts.parallel
+    dask_opts = opts.dask
     chain_opts = internal.gains_to_chain(opts)  # Special handling.
-
-    # Set the number of Numba threads. This is a one-and-done operation.
-    numba.set_num_threads(parallel_opts.numba_threads)
 
     model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
 
-    if parallel_opts.scheduler == "distributed":
-        if parallel_opts.address:
+    if dask_opts.scheduler == "distributed":
+        if dask_opts.address:
             logger.info("Initializing distributed client.")
-            client = exitstack.enter_context(Client(parallel_opts.address))
+            client = exitstack.enter_context(Client(dask_opts.address))
         else:
             logger.info("Initializing distributed client using LocalCluster.")
             cluster = LocalCluster(
-                processes=parallel_opts.dask_workers > 1,
-                n_workers=parallel_opts.dask_workers,
-                threads_per_worker=parallel_opts.dask_threads,
+                processes=dask_opts.workers > 1,
+                n_workers=dask_opts.workers,
+                threads_per_worker=dask_opts.threads,
                 memory_limit=0
             )
             cluster = exitstack.enter_context(cluster)
@@ -125,9 +121,9 @@ def _execute(exitstack):
     with ProgressBar():
 
         dask.compute(ms_writes, gain_writes,
-                     num_workers=parallel_opts.dask_threads,
+                     num_workers=dask_opts.threads,
                      optimize_graph=True,
-                     scheduler=parallel_opts.scheduler)
+                     scheduler=dask_opts.scheduler)
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
