@@ -116,8 +116,9 @@ class Solver(Input):
 
 @dataclass
 class Parallel(Input):
-    n_thread: int = 0
-    n_worker: int = 1
+    dask_threads: int = 0
+    dask_workers: int = 1
+    numba_threads: int = 1
     address: Optional[str] = None
     scheduler: str = field(
         default="threads",

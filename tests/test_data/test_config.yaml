@@ -38,8 +38,9 @@ mad_flags:
   threshold_bl: 10
   threshold_global: 12
 parallel:
-  n_thread: 0
-  n_worker: 1
+  dask_threads: 0
+  dask_workers: 1
+  numba_threads:
   address:
   scheduler: threads
 G:

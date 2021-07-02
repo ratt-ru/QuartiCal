@@ -152,10 +152,14 @@ solver:
   #   values are no longer improving) before terminating the solver.
     
 parallel:
-  n_thread:
+  numba_threads:
+    Number of Numba threads per Dask thread (enables nested parallelism). The
+    total number of threads used will be dask_threads*numba_threads; if this
+    product exceeds the number of available threads, performance will suffer.
+  dask_threads:
     Number of threads to use in the dask scheduler. Setting to zero (the 
     default) will use all available resources.
-  n_worker:
+  dask_workers:
     Number of workers to use in the dask distributed scheduler. Advanced users 
     only.
   address:

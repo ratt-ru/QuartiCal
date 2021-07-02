@@ -51,10 +51,12 @@ def _execute(exitstack):
             client = exitstack.enter_context(Client(parallel_opts.address))
         else:
             logger.info("Initializing distributed client using LocalCluster.")
-            cluster = LocalCluster(processes=parallel_opts.n_worker > 1,
-                                   n_workers=parallel_opts.n_worker,
-                                   threads_per_worker=parallel_opts.n_thread,
-                                   memory_limit=0)
+            cluster = LocalCluster(
+                processes=parallel_opts.dask_workers > 1,
+                n_workers=parallel_opts.dask_workers,
+                threads_per_worker=parallel_opts.dask_threads,
+                memory_limit=0
+            )
             cluster = exitstack.enter_context(cluster)
             client = exitstack.enter_context(Client(cluster))
 
@@ -119,7 +121,7 @@ def _execute(exitstack):
     with ProgressBar():
 
         dask.compute(ms_writes, gain_writes,
-                     num_workers=parallel_opts.n_thread,
+                     num_workers=parallel_opts.dask_threads,
                      optimize_graph=True,
                      scheduler=parallel_opts.scheduler)
 
