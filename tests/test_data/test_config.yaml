@@ -21,6 +21,7 @@ input_model:
   source_chunks: 10
   apply_p_jones: true
 solver:
+  threads: 1
   terms:
   - G
   - B
@@ -37,10 +38,9 @@ mad_flags:
   enable: false
   threshold_bl: 10
   threshold_global: 12
-parallel:
-  dask_threads: 0
-  dask_workers: 1
-  numba_threads: 1
+dask:
+  threads: 0
+  workers: 1
   address:
   scheduler: threads
 G:

@@ -136,6 +136,11 @@ solver:
     the first example but then do an additional 15 iterations for K, 5 for G 
     and skip B. Setting to zero effectively disables solving for that term 
     and can be used in conjunction with iterpolation. 
+  threads:
+    Number of Numba threads per Dask thread (enables nested parallelism) to
+    be used when running the solvers. The total number of threads used will be 
+    dask.threads*solver.threads; if this product exceeds the number of 
+    available threads, performance will suffer.
   # mode:
   #   The mode in which the solver should operate. This is assumed to be the 
   #   same for all terms specified by --solver-gain-terms. The first part of 
@@ -151,15 +156,11 @@ solver:
   #   Minimum percentage of solutions which must have stalled (the chi-squared 
   #   values are no longer improving) before terminating the solver.
     
-parallel:
-  numba_threads:
-    Number of Numba threads per Dask thread (enables nested parallelism). The
-    total number of threads used will be dask_threads*numba_threads; if this
-    product exceeds the number of available threads, performance will suffer.
-  dask_threads:
+dask:
+  threads:
     Number of threads to use in the dask scheduler. Setting to zero (the 
     default) will use all available resources.
-  dask_workers:
+  workers:
     Number of workers to use in the dask distributed scheduler. Advanced users 
     only.
   address:
