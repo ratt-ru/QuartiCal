@@ -3,6 +3,7 @@
 from contextlib import ExitStack
 from loguru import logger
 import dask
+import numba
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 import time
@@ -42,6 +43,9 @@ def _execute(exitstack):
     mad_flag_opts = opts.mad_flags
     parallel_opts = opts.parallel
     chain_opts = internal.gains_to_chain(opts)  # Special handling.
+
+    # Set the number of Numba threads. This is a one-and-done operation.
+    numba.set_num_threads(parallel_opts.numba_threads)
 
     model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
 

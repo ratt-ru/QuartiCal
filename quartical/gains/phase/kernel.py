@@ -21,7 +21,10 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 phase_args = namedtuple("phase_args", ("params",))
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+@generated_jit(nopython=True,
+               fastmath=True,
+               parallel=False,
+               cache=True,
                nogil=True)
 def phase_solver(base_args, term_args, meta_args, corr_mode):
     """Solve for a phase-only gain."""
@@ -128,7 +131,10 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
     return impl
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+@generated_jit(nopython=True,
+               fastmath=True,
+               parallel=True,
+               cache=True,
                nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                     a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
