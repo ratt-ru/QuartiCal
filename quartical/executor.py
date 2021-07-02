@@ -3,6 +3,7 @@
 from contextlib import ExitStack
 from loguru import logger
 import dask
+import numba
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 import time
@@ -43,6 +44,9 @@ def _execute(exitstack):
     parallel_opts = opts.parallel
     chain_opts = internal.gains_to_chain(opts)  # Special handling.
 
+    # Set the number of Numba threads. This is a one-and-done operation.
+    numba.set_num_threads(parallel_opts.numba_threads)
+
     model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
 
     if parallel_opts.scheduler == "distributed":
@@ -51,10 +55,12 @@ def _execute(exitstack):
             client = exitstack.enter_context(Client(parallel_opts.address))
         else:
             logger.info("Initializing distributed client using LocalCluster.")
-            cluster = LocalCluster(processes=parallel_opts.n_worker > 1,
-                                   n_workers=parallel_opts.n_worker,
-                                   threads_per_worker=parallel_opts.n_thread,
-                                   memory_limit=0)
+            cluster = LocalCluster(
+                processes=parallel_opts.dask_workers > 1,
+                n_workers=parallel_opts.dask_workers,
+                threads_per_worker=parallel_opts.dask_threads,
+                memory_limit=0
+            )
             cluster = exitstack.enter_context(cluster)
             client = exitstack.enter_context(Client(cluster))
 
@@ -119,7 +125,7 @@ def _execute(exitstack):
     with ProgressBar():
 
         dask.compute(ms_writes, gain_writes,
-                     num_workers=parallel_opts.n_thread,
+                     num_workers=parallel_opts.dask_threads,
                      optimize_graph=True,
                      scheduler=parallel_opts.scheduler)
 

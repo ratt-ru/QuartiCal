@@ -28,7 +28,10 @@ delay_args = namedtuple(
 )
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+@generated_jit(nopython=True,
+               fastmath=True,
+               parallel=False,
+               cache=True,
                nogil=True)
 def delay_solver(base_args, term_args, meta_args, corr_mode):
     """Solve for a delay.
@@ -149,7 +152,10 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
     return impl
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+@generated_jit(nopython=True,
+               fastmath=True,
+               parallel=True,
+               cache=True,
                nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                     residual, a1, a2, weights, t_map_arr, gf_map_arr,
