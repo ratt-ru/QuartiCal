@@ -6,6 +6,7 @@ from quartical.config.internal import gains_to_chain
 from quartical.gains.gain import gain_spec_tup
 from quartical.interpolation.interpolate import (load_and_interpolate_gains,
                                                  convert_and_drop,
+                                                 sort_datasets,
                                                  domain_slice)
 import numpy as np
 from copy import deepcopy
@@ -118,8 +119,38 @@ def test_data_vars(converted_xds_list, interp_mode):
     assert all([set(xds.keys()) ^ expected_keys == set()
                 for xds in converted_xds_list])
 
+# --------------------------------sort_datasets--------------------------------
+
+
+@pytest.fixture(scope="module")
+def sorted_xds_lol(converted_xds_list):
+    return sort_datasets(converted_xds_list)
+
+
+def test_time_grouping(sorted_xds_lol):
+    assert all([len(set(xds.gain_t.values[0] for xds in xds_list)) == 1
+                for xds_list in sorted_xds_lol])
+
+
+def test_time_ordering(sorted_xds_lol):
+    times = [xds_list[0].gain_t.values[0] for xds_list in sorted_xds_lol]
+    assert sorted(times) == times
+
+
+def test_freq_ordering(sorted_xds_lol):
+    for xds_list in sorted_xds_lol:
+        freqs = [xds.gain_f.values[0] for xds in xds_list]
+        assert sorted(freqs) == freqs
+
+
+def test_nogrid(converted_xds_list):
+    with pytest.raises(ValueError):
+        # Check that we fail when gains don't fall on a grid.
+        sort_datasets(converted_xds_list[:-1])
+
 
 # ---------------------------------domain_slice--------------------------------
+
 
 expected_slicing = {
     (10, 19, (0, 20, 40), (9, 29, 49)): slice(0, 2),  # Between
@@ -155,4 +186,4 @@ def test_load_and_interpolate_gains(gain_xds_list,
     interp_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
 
     foo = dask.compute(interp_xds_list)
-    import pdb;pdb.set_trace()
+    # import pdb;pdb.set_trace()
