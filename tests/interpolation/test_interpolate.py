@@ -102,16 +102,30 @@ def load_xds_list():
 
 # ------------------------------convert_and_drop-------------------------------
 
-def test_foo(load_xds_list):
-    return
-    # import pdb; pdb.set_trace()
+@pytest.fixture(scope="module", params=["reim", "ampphase"])
+def interp_mode(request):
+    return request.param
 
+
+@pytest.fixture(scope="module")
+def converted_xds_list(load_xds_list, interp_mode):
+    return convert_and_drop(load_xds_list, interp_mode)
+
+
+def test_data_vars(converted_xds_list, interp_mode):
+    expected_keys = {"re", "im"} if interp_mode == "reim" else {"amp", "phase"}
+
+    assert all([set(xds.keys()) ^ expected_keys == set()
+                for xds in converted_xds_list])
+
+
+# ---------------------------------domain_slice--------------------------------
 
 expected_slicing = {
-    (10, 19, (0, 20, 40), (9, 29, 49)): slice(0, 2),
-    (10, 19, (0, 10, 20), (9, 19, 29)): slice(1, 2),
-    ( 8, 22, (0, 10, 20), (9, 19, 29)): slice(0, 3),
-    (12, 18, (0, 10, 20), (9, 19, 29)): slice(1, 2),
+    (10, 19, (0, 20, 40), (9, 29, 49)): slice(0, 2),  # Between
+    (10, 19, (0, 10, 20), (9, 19, 29)): slice(1, 2),  # Aligned
+    ( 8, 22, (0, 10, 20), (9, 19, 29)): slice(0, 3),  # Overlap
+    (12, 18, (0, 10, 20), (9, 19, 29)): slice(1, 2),  # Contain
     (50, 59, (0, 20, 40, 60, 80), (9, 29, 49, 69, 89)): slice(2, 4),
     (30, 39, (0, 10, 20, 30, 40), (9, 19, 29, 39, 49)): slice(3, 4),
     (18, 42, (0, 10, 20, 30, 40), (9, 19, 29, 39, 49)): slice(1, 5),
