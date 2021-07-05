@@ -136,8 +136,15 @@ def sort_datasets(load_xds_list):
 def domain_slice(lb, ub, lbounds, ubounds):
     """Create a slice corresponding to the neighbourhood of domain (lb, ub)."""
 
-    slice_lb = len(lbounds) - (lb >= lbounds)[::-1].argmax() - 1
-    slice_ub = (ub <= ubounds).argmax()
+    if any(lb >= lbounds):
+        slice_lb = len(lbounds) - (lb >= lbounds)[::-1].argmax() - 1
+    else:
+        slice_lb = 0  # Entirely below input domain.
+
+    if any(ub <= ubounds):
+        slice_ub = (ub <= ubounds).argmax()
+    else:
+        slice_ub = len(ubounds) - 1  # Entirely above input domain.
 
     return slice(slice_lb, slice_ub + 1)  # Non-inclusive, hence +1.
 
