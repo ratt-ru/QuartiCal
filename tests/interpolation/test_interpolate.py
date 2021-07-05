@@ -4,7 +4,9 @@ import dask
 from itertools import product
 from quartical.config.internal import gains_to_chain
 from quartical.gains.gain import gain_spec_tup
-from quartical.interpolation.interpolate import load_and_interpolate_gains
+from quartical.interpolation.interpolate import (load_and_interpolate_gains,
+                                                 convert_and_drop,
+                                                 domain_slice)
 import numpy as np
 from copy import deepcopy
 
@@ -90,17 +92,51 @@ def chain_opts(opts):
 
 @pytest.fixture(scope="module")
 def gain_xds_list():
-    return [[xds] for xds in mock_gain_xds_list(10, 10, 10, 3, 4, 4, 2, 3)]
+    return [[xds] for xds in mock_gain_xds_list(10, 10, 10, 3, 2, 4, 2, 3)]
+
+
+@pytest.fixture(scope="module")
+def load_xds_list():
+    return mock_gain_xds_list(0, 10, 10, 4, 0, 2, 4, 4)
+
+
+# ------------------------------convert_and_drop-------------------------------
+
+def test_foo(load_xds_list):
+    return
+    # import pdb; pdb.set_trace()
+
+
+expected_slicing = {
+    (10, 19, (0, 20, 40), (9, 29, 49)): slice(0, 2),
+    (10, 19, (0, 10, 20), (9, 19, 29)): slice(1, 2),
+    ( 8, 22, (0, 10, 20), (9, 19, 29)): slice(0, 3),
+    (12, 18, (0, 10, 20), (9, 19, 29)): slice(1, 2),
+    (50, 59, (0, 20, 40, 60, 80), (9, 29, 49, 69, 89)): slice(2, 4),
+    (30, 39, (0, 10, 20, 30, 40), (9, 19, 29, 39, 49)): slice(3, 4),
+    (18, 42, (0, 10, 20, 30, 40), (9, 19, 29, 39, 49)): slice(1, 5),
+    (22, 28, (0, 10, 20, 30, 40), (9, 19, 29, 39, 49)): slice(2, 3)
+}
+
+
+@pytest.mark.parametrize("input,expected", expected_slicing.items())
+def test_slices(input, expected):
+    lb, ub, lbounds, ubounds = input
+    result = domain_slice(lb, ub, np.array(lbounds), np.array(ubounds))
+    assert result == expected
 
 
 def test_load_and_interpolate_gains(gain_xds_list,
                                     chain_opts,
+                                    load_xds_list,
                                     monkeypatch):
 
     monkeypatch.setattr(
         "quartical.interpolation.interpolate.xds_from_zarr",
-        lambda store: mock_gain_xds_list(10, 10, 10, 3, 4, 4, 2, 3)
+        lambda store: load_xds_list
     )
+
+    # import pdb; pdb.set_trace()
 
     interp_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
 
