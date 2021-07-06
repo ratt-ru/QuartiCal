@@ -15,12 +15,15 @@ import numpy as np
 from copy import deepcopy
 
 
+# TODO: These deliberately have enough points to work with all interpolation
+# methods. Add tests for the case when we don't.
+
 GAIN_PROPERTIES = {
     "between": (( 0, 10, 10, 4, 0, 2, 4, 4), (10, 10, 10, 3, 2, 4, 2, 3)),
-    "aligned": (( 0, 10, 10, 4, 0, 2, 4, 4), ( 0, 10, 10, 4, 0, 2, 4, 4)),
+    "aligned": (( 0, 10, 10, 4, 0, 4, 4, 4), ( 0, 10, 10, 4, 0, 4, 4, 4)),
     "overlap": (( 0, 10, 10, 4, 0, 2, 4, 4), ( 8, 14,  6, 2, 1, 6, 1, 2)),
     "contain": (( 0, 10, 10, 4, 0, 4, 4, 4), ( 2,  6, 14, 4, 2, 2, 6, 4)),
-    "outside": ((10, 10, 10, 4, 2, 2, 4, 4), ( 0, 10, 10, 5, 0, 2, 4, 5)),
+    "outside": ((10, 10, 10, 4, 4, 4, 4, 4), ( 0, 10, 10, 5, 0, 4, 4, 5)),
 }
 
 
@@ -84,7 +87,7 @@ def mock_gain_xds_list(start_time,
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts):
+def opts(base_opts, interp_mode, interp_method):
 
     # Don't overwrite base config - instead duplicate and update.
 
@@ -92,11 +95,8 @@ def opts(base_opts):
 
     _opts.solver.terms = ["G"]
     _opts.G.load_from = ""
-    _opts.G.interp_method = "2dlinear"
-    _opts.G.interp_mode = "reim"
-    _opts.B.load_from = ""
-    _opts.B.interp_method = "2dlinear"
-    _opts.B.interp_mode = "ampphase"
+    _opts.G.interp_method = interp_method
+    _opts.G.interp_mode = interp_mode
 
     return _opts
 
@@ -318,9 +318,8 @@ def test_load_and_interpolate_gains(gain_xds_list,
         lambda store: load_xds_list
     )
 
-    # import pdb; pdb.set_trace()
+    interp_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
 
-    # interp_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
+    assert da.compute(interp_xds_list)  # Just check that this runs.
 
-    # foo = dask.compute(interp_xds_list)
-    # import pdb;pdb.set_trace()
+# -----------------------------------------------------------------------------
