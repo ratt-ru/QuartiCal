@@ -2,6 +2,7 @@ import pytest
 import xarray
 import dask
 from itertools import product
+from collections import namedtuple
 from quartical.config.internal import gains_to_chain
 from quartical.gains.gain import gain_spec_tup
 from quartical.interpolation.interpolate import (load_and_interpolate_gains,
@@ -11,6 +12,18 @@ from quartical.interpolation.interpolate import (load_and_interpolate_gains,
                                                  domain_slice)
 import numpy as np
 from copy import deepcopy
+
+
+GAIN_PROPERTIES = {
+    "between": (( 0, 10, 10, 4, 0, 2, 4, 4), (10, 10, 10, 3, 2, 4, 2, 3)),
+    "aligned": (( 0, 10, 10, 4, 0, 2, 4, 4), ( 0, 10, 10, 4, 0, 2, 4, 4)),
+    "overlap": (( 0, 10, 10, 4, 0, 2, 4, 4), ( 8, 14,  6, 2, 1, 6, 1, 2)),
+    "contain": (( 0, 10, 10, 4, 0, 4, 4, 4), ( 2,  6, 14, 4, 2, 2, 6, 4)),
+    "outside": ((10, 10, 10, 4, 2, 2, 4, 4), ( 0, 10, 10, 5, 0, 2, 4, 5)),
+}
+
+
+BOUNDS = namedtuple("BOUNDS", "min_t max_t min_f max_f")
 
 
 def mock_gain_xds_list(start_time,
@@ -92,9 +105,24 @@ def chain_opts(opts):
     return gains_to_chain(opts)
 
 
+@pytest.fixture(scope="module", params=GAIN_PROPERTIES.values())
+def _params(request):
+    return request.param[0], request.param[1]
+
+
 @pytest.fixture(scope="module")
-def gain_xds_list():
-    return [[xds] for xds in mock_gain_xds_list(10, 10, 10, 3, 2, 4, 2, 3)]
+def load_params(_params):
+    return _params[0]
+
+
+@pytest.fixture(scope="module")
+def gain_params(_params):
+    return _params[1]
+
+
+@pytest.fixture(scope="module")
+def gain_xds_list(gain_params):
+    return [[xds] for xds in mock_gain_xds_list(*gain_params)]
 
 
 @pytest.fixture(scope="module")
@@ -103,8 +131,8 @@ def term_xds_list(gain_xds_list):
 
 
 @pytest.fixture(scope="module")
-def load_xds_list():
-    return mock_gain_xds_list(0, 10, 10, 4, 0, 2, 4, 4)
+def load_xds_list(load_params):
+    return mock_gain_xds_list(*load_params)
 
 
 # ------------------------------convert_and_drop-------------------------------
@@ -188,40 +216,64 @@ def concat_xds_list(term_xds_list, sorted_xds_lol):
     return make_concat_xds_list(term_xds_list, sorted_xds_lol)
 
 
+@pytest.fixture(scope="module")
+def bounds(load_params):
+    start, step, skip, reps = load_params[:4]  # Time
+    min_t = start
+    max_t = start + (step + skip)*reps - skip - 1
+    start, step, skip, reps = load_params[4:]  # Freq
+    min_f = start
+    max_f = start + (step + skip)*reps - skip - 1
+
+    return BOUNDS(min_t, max_t, min_f, max_f)
+
+
 def test_nxds(concat_xds_list, term_xds_list):
     assert len(concat_xds_list) == len(term_xds_list)
 
 
-def test_time_lower_bounds(concat_xds_list, term_xds_list):
+def test_time_lower_bounds(concat_xds_list, term_xds_list, bounds):
 
     concat_lb = [xds.gain_t.values[0] for xds in concat_xds_list]
     term_lb = [xds.gain_t.values[0] for xds in term_xds_list]
+    req_extrapolation = [tlb < bounds.min_t for tlb in term_lb]
 
-    assert [clb < tlb for clb, tlb in zip(concat_lb, term_lb)]
+    zipper = zip(concat_lb, term_lb, req_extrapolation)
+
+    assert all([(clb <= tlb) or re for clb, tlb, re in zipper])
 
 
-def test_time_upper_bounds(concat_xds_list, term_xds_list):
+def test_time_upper_bounds(concat_xds_list, term_xds_list, bounds):
 
     concat_ub = [xds.gain_t.values[-1] for xds in concat_xds_list]
     term_ub = [xds.gain_t.values[-1] for xds in term_xds_list]
+    req_extrapolation = [tub > bounds.max_f for tub in term_ub]
 
-    assert [cub < tub for cub, tub in zip(concat_ub, term_ub)]
+    zipper = zip(concat_ub, term_ub, req_extrapolation)
+
+    assert all([(cub >= tub) or re for cub, tub, re in zipper])
 
 
-def test_freq_lower_bounds(concat_xds_list, term_xds_list):
+def test_freq_lower_bounds(concat_xds_list, term_xds_list, bounds):
 
     concat_lb = [xds.gain_f.values[0] for xds in concat_xds_list]
     term_lb = [xds.gain_f.values[0] for xds in term_xds_list]
+    req_extrapolation = [tlb < bounds.min_f for tlb in term_lb]
 
-    assert [clb < tlb for clb, tlb in zip(concat_lb, term_lb)]
+    zipper = zip(concat_lb, term_lb, req_extrapolation)
+
+    assert all([(clb <= tlb) or re for clb, tlb, re in zipper])
 
 
-def test_freq_upper_bounds(concat_xds_list, term_xds_list):
+def test_freq_upper_bounds(concat_xds_list, term_xds_list, bounds):
 
     concat_ub = [xds.gain_f.values[-1] for xds in concat_xds_list]
     term_ub = [xds.gain_f.values[-1] for xds in term_xds_list]
+    req_extrapolation = [tub > bounds.max_f for tub in term_ub]
 
-    assert [cub < tub for cub, tub in zip(concat_ub, term_ub)]
+    zipper = zip(concat_ub, term_ub, req_extrapolation)
+
+    assert all([(cub >= tub) or re for cub, tub, re in zipper])
 
 
 def test_load_and_interpolate_gains(gain_xds_list,
@@ -236,7 +288,7 @@ def test_load_and_interpolate_gains(gain_xds_list,
 
     # import pdb; pdb.set_trace()
 
-    interp_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
+    # interp_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
 
-    foo = dask.compute(interp_xds_list)
+    # foo = dask.compute(interp_xds_list)
     # import pdb;pdb.set_trace()
