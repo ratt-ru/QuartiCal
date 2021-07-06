@@ -1,15 +1,16 @@
 import pytest
 import xarray
-import dask
+import dask.array as da
 from itertools import product
 from collections import namedtuple
 from quartical.config.internal import gains_to_chain
 from quartical.gains.gain import gain_spec_tup
 from quartical.interpolation.interpolate import (load_and_interpolate_gains,
                                                  convert_and_drop,
-                                                 make_concat_xds_list,
                                                  sort_datasets,
-                                                 domain_slice)
+                                                 domain_slice,
+                                                 make_concat_xds_list,
+                                                 make_interp_xds_list)
 import numpy as np
 from copy import deepcopy
 
@@ -57,9 +58,9 @@ def mock_gain_xds_list(start_time,
             "corr": np.arange(n_corr)
         }
 
-        gains = np.zeros((n_time, n_freq, n_ant, n_dir, n_corr),
+        gains = da.zeros((n_time, n_freq, n_ant, n_dir, n_corr),
                          dtype=np.complex128)
-        gains[..., (0, -1)] = 1
+        gains += da.array([1, 0, 0, 1])
 
         data_vars = {
             "gains": (("gain_t", "gain_f", "ant", "dir", "corr"), gains)
@@ -139,6 +140,11 @@ def load_xds_list(load_params):
 
 @pytest.fixture(scope="module", params=["reim", "ampphase"])
 def interp_mode(request):
+    return request.param
+
+
+@pytest.fixture(scope="module", params=["2dlinear", "2dspline"])
+def interp_method(request):
     return request.param
 
 
@@ -274,6 +280,32 @@ def test_freq_upper_bounds(concat_xds_list, term_xds_list, bounds):
     zipper = zip(concat_ub, term_ub, req_extrapolation)
 
     assert all([(cub >= tub) or re for cub, tub, re in zipper])
+
+
+# -----------------------------make_interp_xds_list----------------------------
+
+
+@pytest.fixture(scope="module")
+def interp_xds_list(term_xds_list,
+                    concat_xds_list,
+                    interp_mode,
+                    interp_method):
+    return make_interp_xds_list(term_xds_list,
+                                concat_xds_list,
+                                interp_mode,
+                                interp_method)
+
+
+def test_has_gains(interp_xds_list):
+    assert all(hasattr(xds, "gains") for xds in interp_xds_list)
+
+
+def test_chunking(interp_xds_list, term_xds_list):
+    # TODO: Chunking behaviour is tested but not adequately probed yet.
+    assert all(ixds.chunks == txds.chunks
+               for ixds, txds in zip(interp_xds_list, term_xds_list))
+
+# -----------------------------load_and_interpolate----------------------------
 
 
 def test_load_and_interpolate_gains(gain_xds_list,
