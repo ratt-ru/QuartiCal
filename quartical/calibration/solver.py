@@ -5,7 +5,7 @@ import gc
 
 
 def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, term_spec_list, *args, **kwargs):
+                   d_map_arr, corr_mode, reweight_mode, term_spec_list, *args, **kwargs):
 
     # This is rudimentary - it practice we may have more initialisation code
     # here for setting up parameters etc. TODO: Init actually needs to depend
@@ -64,7 +64,7 @@ def solver_wrapper(model, data, a1, a2, weights, t_map_arr, f_map_arr,
 
         info_tup = \
             solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, gain_ind, inverse_gain_tup,
+                   d_map_arr, corr_mode, reweight_mode, gain_ind, inverse_gain_tup,
                    gain_tup, flag_tup, **additional_args[gain_ind])
 
         results_dict[term_spec.name + "-conviter"] += \

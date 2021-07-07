@@ -124,6 +124,9 @@ solver:
     Gain terms for which we are solving. Multiple terms can be specified as 
     a list e.g. [G B dE]. Each term specified here has its own set of 
     arguments which can be specified as (gain).(option). e.g. G.time_interval.
+  reweight_mode:
+    If set to true, this will activate the rewighting of the data, based on 
+    the Complex Students-t framework
   # mode:
   #   The mode in which the solver should operate. This is assumed to be the 
   #   same for all terms specified by --solver-gain-terms. The first part of 

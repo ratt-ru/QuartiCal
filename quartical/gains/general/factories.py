@@ -462,3 +462,89 @@ def set_identity_factory(mode):
             v1[0] = 1
             v1[1] = 1
     return qcjit(impl)
+
+def rb_weight_mult(mode):
+    unpack = unpack_factory(mode)
+    unpackct = unpackct_factory(mode)
+    if mode.literal_value == "full":
+        def impl(r, ic):
+            r00, r01, r10, r11 = unpack(r)
+            rc00, rc01, rc10, rc11 = unpackct(r)
+            denom = (rc00*ic[0,0] + rc01*ic[1,0] + rc10*ic[2,0] + rc11*ic[3,0])*r00 + \
+                            (rc00*ic[0,1] + rc01*ic[1,1] + rc10*ic[2,1] + rc11*ic[3,1])*r01 + \
+                            (rc00*ic[0,2] + rc01*ic[1,2] + rc10*ic[2,2] + rc11*ic[3,2])*r10 + \
+                            (rc00*ic[0,3] + rc01*ic[1,3] + rc10*ic[2,3] + rc11*ic[3,3])*r11
+            return denom.real
+
+    else:
+        def impl(r, ic):
+            r00, r11 = unpack(r)
+            rc00, rc11 = unpackct(r)  
+            denom = rc00*ic[0,0]*r00 + rc11*ic[3,3]*r11 
+            return denom.real
+
+    return qcjit(impl)
+
+def rb_weight_upd(mode):
+
+    if mode.literal_value == "full":
+        def impl(v, denom, o1):
+            if o1[0].real !=0: 
+                o1[0] = (v+4)/(v+denom)
+                o1[1] = (v+4)/(v+denom)
+                o1[2] = (v+4)/(v+denom)
+                o1[3] = (v+4)/(v+denom)
+
+    else:
+        def impl(v, denom, o1):
+            if o1[0].real !=0:
+                o1[0] = (v+2)/(v+denom)
+                o1[1] = (v+2)/(v+denom)
+
+    return qcjit(impl)
+
+def rb_cov_mult(mode):
+    unpack = unpack_factory(mode)
+    unpackct = unpackct_factory(mode)
+
+    if mode.literal_value == "full":
+        def impl(r, ic, w0):
+            r00, r01, r10, r11 = unpack(r)
+            rc00, rc01, rc10, rc11 = unpackct(r)
+            
+            w0r00 = w0*r00
+            w0r01 = w0*r01
+            w0r10 = w0*r10
+            w0r11 = w0*r11
+
+            ic[0,0] += rc00*w0r00
+            ic[0,1] += rc00*w0r01
+            ic[0,2] += rc00*w0r10
+            ic[0,3] += rc00*w0r11
+
+            ic[1,0] += rc01*w0r00
+            ic[1,1] += rc01*w0r01
+            ic[1,2] += rc01*w0r10
+            ic[1,3] += rc01*w0r11
+
+            ic[2,0] += rc10*w0r00   
+            ic[2,1] += rc10*w0r01
+            ic[2,2] += rc10*w0r10
+            ic[2,3] += rc10*w0r11
+
+            ic[3,0] += rc11*w0r00
+            ic[3,1] += rc11*w0r01
+            ic[3,2] += rc11*w0r10
+            ic[3,3] += rc11*w0r11
+            
+
+    else:
+        def impl(r, ic, w0):
+            r00, r11 = unpack(r)
+            rc00, rc11 = unpackct(r)
+            w0r00 = w0*r00
+            w0r11 = w0*r11
+            ic[0,0] += rc00*w0r00
+            ic[3,3] += rc11*w0r11 
+
+    return qcjit(impl)

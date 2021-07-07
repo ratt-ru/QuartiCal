@@ -7,6 +7,7 @@ from quartical.config.converters import as_time, as_freq
 class Input:
 
     def validate_choice_fields(self):
+
         choice_fields = {f.name: f.metadata["choices"]
                          for f in fields(self) if "choices" in f.metadata}
         for field_name, field_choices in choice_fields.items():
@@ -99,6 +100,7 @@ class MadFlags(Input):
 @dataclass
 class Solver(Input):
     gain_terms: List[str] = field(default_factory=lambda: ["G"])
+    reweight_mode: bool = False
 
     def __post_init__(self):
         self.validate_choice_fields()

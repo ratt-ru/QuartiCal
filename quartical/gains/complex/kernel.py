@@ -8,6 +8,7 @@ from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
 import quartical.gains.general.factories as factories
+from quartical.gains.general.rbweights_manager import update_weights, get_number_of_unflaggedw
 from collections import namedtuple
 
 
@@ -18,20 +19,21 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
+NUMBA_DISABLE_JIT = 1
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
 def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, active_term, inverse_gains,
+                   d_map_arr, corr_mode, reweight_mode, active_term, inverse_gains,
                    gains, flags, row_map, row_weights):
 
     if not isinstance(corr_mode, types.Literal):
         return lambda model, data, a1, a2, weights, t_map_arr, f_map_arr, \
-                   d_map_arr, corr_mode, active_term, inverse_gains, \
+                   d_map_arr, corr_mode, reweight_mode, active_term, inverse_gains, \
                    gains, flags, row_map, row_weights: literally(corr_mode)
 
     def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-             d_map_arr, corr_mode, active_term, inverse_gains,
+             d_map_arr, corr_mode, reweight_mode, active_term, inverse_gains,
              gains, flags, row_map, row_weights):
 
         n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
@@ -51,15 +53,26 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         jhr = np.empty_like(gains[active_term])
         update = np.empty_like(gains[active_term])
 
+        v = 10 # initial value for the number of degrees of freedom for the robust weighting 
+        Nvis = 0 # vairable to hold the number of unflagged visibilities
+        
         for i in range(20):
 
-            if dd_term:
+            if dd_term or reweight_mode:
                 residual = compute_residual(data, model, gains, a1, a2,
                                             t_map_arr, f_map_arr, d_map_arr,
                                             row_map, row_weights,
                                             corr_mode)
             else:
                 residual = data
+            
+            # update the weigts if the number of iteration is less than 10
+            # TODO implement a better strategy
+            if i>0 and i%1==0 and reweight_mode:
+                if Nvis==0:
+                    Nvis = get_number_of_unflaggedw(weights) # Do it here so that we only do it once
+                v = update_weights(model, gains, residual, v,  weights, t_map_arr, f_map_arr, active_term, row_map, Nvis, corr_mode)
+
 
             compute_jhj_jhr(jhj,
                             jhr,
@@ -87,7 +100,8 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
                             gains[active_term],
                             i,
                             dd_term,
-                            corr_mode)
+                            corr_mode, reweight_mode)
+
 
             # Check for gain convergence. TODO: This can be affected by the
             # weights. Currently unsure how or why, but using unity weights
@@ -299,13 +313,19 @@ def compute_update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, gain, i_num, dd_term, corr_mode):
+def finalize_update(update, gain, i_num, dd_term, corr_mode, reweight_mode):
 
-    def impl(update, gain, i_num, dd_term, corr_mode):
-        if dd_term:
-            gain[:] = gain[:] + update/2
-        elif i_num % 2 == 0:
-            gain[:] = update
+    def impl(update, gain, i_num, dd_term, corr_mode, reweight_mode):
+        if dd_term or reweight_mode:
+            update += gain[:]
+            if i_num % 2 == 0:
+                gain[:] = update
+            else:
+                gain[:] += update
+                gain[:] *=0.5
         else:
-            gain[:] = (gain[:] + update)/2
+            if i_num % 2 == 0:
+                gain[:] = update
+            else:
+                gain[:] = (gain[:] + update)/2
     return impl
