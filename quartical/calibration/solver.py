@@ -59,6 +59,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     kwargs["inverse_gains"] = tuple([np.empty_like(g) for g in gain_tup])
     kwargs["params"] = param_tup
 
+    kwargs["reweight_mode"] = solver_opts.reweight_mode
+
     terms = solver_opts.terms
     iter_recipe = solver_opts.iter_recipe
 

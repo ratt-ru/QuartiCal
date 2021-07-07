@@ -41,7 +41,8 @@ base_args = namedtuple(
         "gains",
         "flags",
         "row_map",
-        "row_weights"
+        "row_weights",
+        "reweight_mode"
     )
 )
 

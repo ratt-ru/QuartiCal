@@ -49,6 +49,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         flags = base_args.flags
         row_map = base_args.row_map
         row_weights = base_args.row_weights
+        reweight_mode = base_args.reweight_mode
 
         active_term = meta_args.active_term
 
@@ -70,8 +71,10 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         jhr = np.empty_like(gains[active_term])
         update = np.empty_like(gains[active_term])
 
-        v = 10 # initial value for the number of degrees of freedom for the robust weighting 
-        Nvis = 0 # vairable to hold the number of unflagged visibilities
+        v = 10 # initial value for the number of degrees of freedom for the robust re-weighting 
+        Nvis = 0
+        if reweight_mode:
+            Nvis = get_number_of_unflaggedw(weights) # Do it here so that we only do it once (for robust re-weighting)
         
         for i in range(meta_args.iters):
 
@@ -86,8 +89,6 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             # update the weigts if the number of iteration is less than 10
             # TODO implement a better strategy
             if i>0 and i%1==0 and reweight_mode:
-                if Nvis==0:
-                    Nvis = get_number_of_unflaggedw(weights) # Do it here so that we only do it once
                 v = update_weights(model, gains, residual, v,  weights, t_map_arr, f_map_arr, active_term, row_map, Nvis, corr_mode)
 
 

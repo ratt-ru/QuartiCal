@@ -75,7 +75,6 @@ def construct_solver(data_xds_list,
         blocker.add_input("f_map_arr", f_map_arr, "pfj")
         blocker.add_input("d_map_arr", d_map_arr)
         blocker.add_input("corr_mode", corr_mode)
-        blocker.add_input("reweight_mode", opts.solver.reweight_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
         blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
         blocker.add_input("solver_opts", solver_opts)
