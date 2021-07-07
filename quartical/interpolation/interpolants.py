@@ -7,17 +7,6 @@ from csaps import csaps
 from numba import jit
 
 
-# TODO: The interpolants should raise errors for when they cannot handle an 
-# input.
-# if interp_xds.dims[i_t_axis] < 3 or interp_xds.dims[i_f_axis] < 3 or True:
-#     raise ValueError(
-#         f"Cubic spline interpolation requires at least three "
-#         f"values along an axis. After concatenation, the "
-#         f"(time, freq) dimensions of the interpolating dataset "
-#         f"{(interp_xds.dims[i_t_axis], interp_xds.dims[i_f_axis])}"
-#     )
-
-
 def spline2d(x, y, z, xx, yy):
     """Constructs a 2D spline using (x,y,z) and evaluates it at (xx,yy)."""
 
@@ -53,6 +42,14 @@ def spline2d_interpolate_gains(interp_xds, term_xds):
     t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
 
     output_xds = term_xds
+
+    if interp_xds.dims[i_t_axis] < 4 or interp_xds.dims[i_f_axis] < 4:
+        raise ValueError(
+            f"Cubic spline interpolation requires at least four "
+            f"values along an axis. After concatenation, the "
+            f"(time, freq) dimensions of the interpolating dataset were "
+            f"{(interp_xds.dims[i_t_axis], interp_xds.dims[i_f_axis])}"
+        )
 
     for data_field in interp_xds.data_vars.keys():
         interp = da.blockwise(spline2d, "tfadc",

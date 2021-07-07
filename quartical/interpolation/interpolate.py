@@ -251,7 +251,6 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
                  i_f_axis: term_xds[t_f_axis].data},
                 kwargs={"fill_value": "extrapolate"})
         elif interp_method == "2dspline":
-            # TODO: Requires at least three points! Check and error out.
             interp_xds = spline2d_interpolate_gains(interp_xds, term_xds)
         elif interp_method == "smoothingspline":
             interp_xds = csaps2d_interpolate_gains(interp_xds, term_xds)
