@@ -33,7 +33,6 @@ def read_xds_list(model_columns, ms_opts):
     # Determine the number of correlations present in the measurement set.
 
     polarization_xds = xds_from_table(ms_opts.path + "::POLARIZATION")[0]
-
     ms_ncorr = polarization_xds.dims["corr"]
 
     if ms_ncorr not in (1, 2, 4):
@@ -120,10 +119,14 @@ def read_xds_list(model_columns, ms_opts):
 
         chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
         chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
+        ant_names = clone(antenna_xds.NAME.data)
+        # TODO: This may not work in some cases - fix when found.
+        corr_types = clone(polarization_xds.CORR_TYPE.data[0])
 
         _xds = _xds.assign({"CHAN_FREQ": (("chan",), chan_freqs[0]),
                             "CHAN_WIDTH": (("chan",), chan_widths[0]),
-                            "ANT_NAME": (("ant",), antenna_xds.NAME.data)})
+                            "ANT_NAME": (("ant",), ant_names),
+                            "CORR_TYPE": (("corr"), corr_types)})
 
         # Add an attribute to the xds on which we will store the names of
         # fields which must be written to the MS. Also add the attribute which
