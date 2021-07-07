@@ -61,10 +61,14 @@ class Gain:
         self.n_corr = data_xds.dims["corr"]
         partition_schema = data_xds.__daskms_partition_schema__
         self.id_fields = {f: data_xds.attrs[f] for f, _ in partition_schema}
+        self.field_name = data_xds.FIELD_NAME
         self.utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
         self.freq_chunks = list(map(int, data_xds.chunks["chan"]))
         self.n_t_chunk = len(self.utime_chunks)
         self.n_f_chunk = len(self.freq_chunks)
+
+        self.ant_names = data_xds.ANT_NAME.data
+        self.corr_types = data_xds.CORR_TYPE.data
 
         self.n_tipc_g = tuple(map(int, tipc[0]))
         self.n_tint_g = np.sum(self.n_tipc_g)
@@ -88,7 +92,8 @@ class Gain:
 
         # Set up an xarray.Dataset describing the gain term.
         xds = xarray.Dataset(
-            data_vars={},
+            data_vars={"ant_names": (("ant",), self.ant_names),
+                       "corr_type": (("corr",), self.corr_types)},
             coords={"ant": ("ant", np.arange(self.n_ant, dtype=np.int32)),
                     "dir": ("dir", np.arange(self.n_dir, dtype=np.int32)),
                     "corr": ("corr", np.arange(self.n_corr, dtype=np.int32)),
@@ -100,6 +105,7 @@ class Gain:
                     "gain_f": ("gain_f", self.gain_freqs)},
             attrs={"NAME": self.name,
                    "TYPE": self.type,
+                   "FIELD_NAME": self.field_name,
                    **self.id_fields})
 
         return xds
