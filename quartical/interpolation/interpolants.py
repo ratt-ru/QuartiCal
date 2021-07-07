@@ -6,6 +6,9 @@ from scipy.interpolate import interp2d
 from csaps import csaps
 from numba import jit
 
+
+# TODO: The interpolants should raise errors for when they cannot handle an 
+# input.
 # if interp_xds.dims[i_t_axis] < 3 or interp_xds.dims[i_f_axis] < 3 or True:
 #     raise ValueError(
 #         f"Cubic spline interpolation requires at least three "

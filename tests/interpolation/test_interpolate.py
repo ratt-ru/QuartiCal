@@ -93,8 +93,8 @@ def opts(base_opts, interp_mode, interp_method):
 
     _opts = deepcopy(base_opts)
 
-    _opts.solver.terms = ["G"]
-    _opts.G.load_from = ""
+    _opts.solver.terms = ["G", "B"]
+    _opts.G.load_from = "ignored"  # Must not be None.
     _opts.G.interp_method = interp_method
     _opts.G.interp_mode = interp_mode
 
@@ -123,7 +123,7 @@ def gain_params(_params):
 
 @pytest.fixture(scope="module")
 def gain_xds_list(gain_params):
-    return [[xds] for xds in mock_gain_xds_list(*gain_params)]
+    return [[xds, xds] for xds in mock_gain_xds_list(*gain_params)]
 
 
 @pytest.fixture(scope="module")
@@ -308,18 +308,32 @@ def test_chunking(interp_xds_list, term_xds_list):
 # -----------------------------load_and_interpolate----------------------------
 
 
-def test_load_and_interpolate_gains(gain_xds_list,
-                                    chain_opts,
-                                    load_xds_list,
-                                    monkeypatch):
+@pytest.fixture(scope="function")
+def interp_xds_lol(gain_xds_list, chain_opts, load_xds_list, monkeypatch):
 
     monkeypatch.setattr(
         "quartical.interpolation.interpolate.xds_from_zarr",
         lambda store: load_xds_list
     )
 
-    interp_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
+    return load_and_interpolate_gains(gain_xds_list, chain_opts)
 
-    assert da.compute(interp_xds_list)  # Just check that this runs.
+
+@pytest.fixture(scope="function")
+def compute_interp_xds_lol(interp_xds_lol):
+    return da.compute(interp_xds_lol)[0]
+
+
+def test_cixl_has_gains(compute_interp_xds_lol):
+    assert all([hasattr(xds, "gains")
+               for xds_list in compute_interp_xds_lol
+               for xds in xds_list])
+
+
+def test_cixl_gains_ident(compute_interp_xds_lol):
+    # NOTE: Splines will not be exactly identity due to numerical precision.
+    assert all(np.allclose(xds.gains.values, np.array([1, 0, 0, 1]))
+               for xds_list in compute_interp_xds_lol
+               for xds in xds_list)
 
 # -----------------------------------------------------------------------------
