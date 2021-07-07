@@ -5,13 +5,14 @@ import numpy as np
 import xarray
 import pathlib
 from daskms.experimental.zarr import xds_from_zarr
+from quartical.config.internal import yield_from
 from quartical.interpolation.interpolants import (interpolate_missing,
                                                   spline2d_interpolate_gains,
                                                   csaps2d_interpolate_gains)
 
 
-def load_and_interpolate_gains(gain_xds_list, opts):
-    """Load and interpolate gains in accordance with opts.
+def load_and_interpolate_gains(gain_xds_list, chain_opts):
+    """Load and interpolate gains in accordance with chain_opts.
 
     Given the gain datasets which are to be applied/solved for, determine
     whether any are to be loaded from disk. Interpolates on-disk datasets
@@ -19,7 +20,7 @@ def load_and_interpolate_gains(gain_xds_list, opts):
 
     Args:
         gain_xds_list: List of xarray.Datasets containing gains.
-        opts: A Namespace of globla options.
+        chain_opts: A Chain config object.
 
     Returns:
         A list like gain_xds_list with the relevant gains loaded from disk.
@@ -27,11 +28,11 @@ def load_and_interpolate_gains(gain_xds_list, opts):
 
     interp_xds_lol = []
 
-    for term_ind, term in enumerate(opts.solver.gain_terms):
+    param_names = ("load_from", "interp_mode", "interp_method")
 
-        gain_path = getattr(opts, term).load_from
-        interp_mode = getattr(opts, term).interp_mode
-        interp_method = getattr(opts, term).interp_method
+    for loop_vars in enumerate(yield_from(chain_opts, param_names, False)):
+
+        term_ind, (gain_path, interp_mode, interp_method) = loop_vars
 
         # Pull out all the datasets for the current term into a flat list.
         term_xds_list = [tlist[term_ind] for tlist in gain_xds_list]

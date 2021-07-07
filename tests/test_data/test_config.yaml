@@ -1,6 +1,6 @@
 input_ms:
   path: C147_subset.MS
-  column: DATA
+  data_column: DATA
   weight_column:
   time_chunk: '0'
   freq_chunk: 0
@@ -10,6 +10,8 @@ input_ms:
   - FIELD_ID
   - DATA_DESC_ID
   select_corr:
+  select_fields: []
+  select_ddids: []
 input_model:
   recipe: MODEL_DATA
   beam:
@@ -19,9 +21,13 @@ input_model:
   source_chunks: 10
   apply_p_jones: true
 solver:
-  gain_terms:
+  threads: 1
+  terms:
   - G
   - B
+  iter_recipe:
+  - 25
+  - 25
 output:
   gain_dir: gains.qc
   products:
@@ -32,9 +38,9 @@ mad_flags:
   enable: false
   threshold_bl: 10
   threshold_global: 12
-parallel:
-  n_thread: 0
-  n_worker: 1
+dask:
+  threads: 0
+  workers: 1
   address:
   scheduler: threads
 G:

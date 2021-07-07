@@ -19,22 +19,39 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
-NUMBA_DISABLE_JIT = 1
+complex_args = namedtuple("complex_args", ())
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+
+@generated_jit(nopython=True,
+               fastmath=True,
+               parallel=False,
+               cache=True,
                nogil=True)
-def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-                   d_map_arr, corr_mode, reweight_mode, active_term, inverse_gains,
-                   gains, flags, row_map, row_weights):
+
+def complex_solver(base_args, term_args, meta_args, corr_mode):
 
     if not isinstance(corr_mode, types.Literal):
-        return lambda model, data, a1, a2, weights, t_map_arr, f_map_arr, \
-                   d_map_arr, corr_mode, reweight_mode, active_term, inverse_gains, \
-                   gains, flags, row_map, row_weights: literally(corr_mode)
+        return lambda base_args, term_args, meta_args, corr_mode: \
+            literally(corr_mode)
 
-    def impl(model, data, a1, a2, weights, t_map_arr, f_map_arr,
-             d_map_arr, corr_mode, reweight_mode, active_term, inverse_gains,
-             gains, flags, row_map, row_weights):
+    def impl(base_args, term_args, meta_args, corr_mode):
+
+        model = base_args.model
+        data = base_args.data
+        a1 = base_args.a1
+        a2 = base_args.a2
+        weights = base_args.weights
+        t_map_arr = base_args.t_map_arr
+        f_map_arr = base_args.f_map_arr
+        d_map_arr = base_args.d_map_arr
+        inverse_gains = base_args.inverse_gains
+        gains = base_args.gains
+        flags = base_args.flags
+        row_map = base_args.row_map
+        row_weights = base_args.row_weights
+
+        active_term = meta_args.active_term
+
 
         n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
@@ -56,7 +73,7 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
         v = 10 # initial value for the number of degrees of freedom for the robust weighting 
         Nvis = 0 # vairable to hold the number of unflagged visibilities
         
-        for i in range(20):
+        for i in range(meta_args.iters):
 
             if dd_term or reweight_mode:
                 residual = compute_residual(data, model, gains, a1, a2,
@@ -114,12 +131,15 @@ def complex_solver(model, data, a1, a2, weights, t_map_arr, f_map_arr,
             if cnv_perc > 0.99:
                 break
 
-        return term_conv_info(i, cnv_perc)
+        return term_conv_info(i + 1, cnv_perc)
 
     return impl
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+@generated_jit(nopython=True,
+               fastmath=True,
+               parallel=True,
+               cache=True,
                nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                     a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,

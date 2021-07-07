@@ -31,62 +31,62 @@ def model_recipe(request, lsm_name):
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, freq_chunk, time_chunk, model_recipe, beam_name):
+def model_opts(base_opts, model_recipe, beam_name):
 
-    _opts = deepcopy(base_opts)
+    model_opts = deepcopy(base_opts.input_model)
 
-    _opts.input_ms.freq_chunk = freq_chunk
-    _opts.input_ms.time_chunk = time_chunk
-    _opts.input_model.recipe = model_recipe
-    _opts.input_model.beam = beam_name + "/JVLA-L-centred-$(corr)_$(reim).fits"
-    _opts.input_model.beam_l_axis = "-X"
-    _opts.input_model.beam_m_axis = "Y"
+    model_opts.recipe = model_recipe
+    model_opts.beam = \
+        beam_name + "/JVLA-L-centred-$(corr)_$(reim).fits"
+    model_opts.beam_l_axis = "-X"
+    model_opts.beam_m_axis = "Y"
 
-    return _opts
+    return model_opts
 
 
 @pytest.fixture(scope="module")
-def _transcribe_recipe(opts):
-    recipe = transcribe_recipe(opts)
+def ms_opts(base_opts, freq_chunk, time_chunk):
 
-    # Forcefully add this to ensure that the comparison data is read.
-    recipe.ingredients.model_columns = {"MODEL_DATA"}
+    ms_opts = deepcopy(base_opts.input_ms)
 
+    ms_opts.freq_chunk = freq_chunk
+    ms_opts.time_chunk = time_chunk
+
+    return ms_opts
+
+
+@pytest.fixture(scope="module")
+def recipe(model_opts):
+    recipe = transcribe_recipe(model_opts.recipe)
     return recipe
 
 
 @pytest.fixture(scope="module")
-def _predict(_transcribe_recipe, opts):
+def xds_list(ms_opts):
+    xds_list, _ = read_xds_list(["MODEL_DATA"], ms_opts)
+    return xds_list
 
-    model_columns = _transcribe_recipe.ingredients.model_columns
 
-    ms_xds_list, _ = read_xds_list(model_columns, opts)
+@pytest.fixture(scope="module")
+def predicted_xds_list(xds_list, recipe, ms_name, model_opts):
 
-    return predict(ms_xds_list, _transcribe_recipe, opts), ms_xds_list
+    return predict(xds_list, recipe, ms_name, model_opts)
 
 
 @pytest.fixture(scope="function")
-def _sky_dict(base_opts, model_recipe):
-
-    _opts = deepcopy(base_opts)
-
-    _opts.input_model.recipe = model_recipe
-
-    recipe = transcribe_recipe(_opts)
-
+def sky_model_dict(recipe):
     return parse_sky_models(recipe.ingredients.sky_models)
 
 
 @pytest.fixture(scope="function")
-def _dask_sky_dict(_sky_dict, opts):
+def dask_sky_dict(sky_model_dict):
 
-    return daskify_sky_model_dict(_sky_dict, opts)
+    return daskify_sky_model_dict(sky_model_dict, 10)
 
 
 @pytest.fixture(scope="module")
-def _support_tables(base_opts):
-
-    return get_support_tables(base_opts)
+def support_tables(ms_name):
+    return get_support_tables(ms_name)
 
 
 # -----------------------------parse_sky_models--------------------------------
@@ -97,7 +97,7 @@ def _support_tables(base_opts):
     ("point", ["radec", "stokes", "spi", "ref_freq"]),
     ("gauss", ["radec", "stokes", "spi", "ref_freq", "shape"])
 ])
-def test_expected_fields(_sky_dict, source_fields):
+def test_expected_fields(sky_model_dict, source_fields):
 
     # Check that we have all the fields we expect.
 
@@ -105,7 +105,7 @@ def test_expected_fields(_sky_dict, source_fields):
 
     check = True
 
-    for clusters in _sky_dict.values():
+    for clusters in sky_model_dict.values():
         for cluster in clusters.values():
             for field in fields:
                 if source_type in cluster:
@@ -119,7 +119,7 @@ def test_expected_fields(_sky_dict, source_fields):
     ("point", ["radec", "stokes", "spi", "ref_freq"]),
     ("gauss", ["radec", "stokes", "spi", "ref_freq", "shape"])
 ])
-def test_nsource(_sky_dict, source_fields):
+def test_nsource(sky_model_dict, source_fields):
 
     # Check for the expected number of point sources.
 
@@ -129,7 +129,7 @@ def test_nsource(_sky_dict, source_fields):
 
     for field in fields:
         n_source = [len(cluster.get(source_type, {field: []})[field])
-                    for clusters in _sky_dict.values()
+                    for clusters in sky_model_dict.values()
                     for cluster in clusters.values()]
 
         if len(n_source) == 1:
@@ -142,13 +142,13 @@ def test_nsource(_sky_dict, source_fields):
 
 
 @pytest.mark.predict
-def test_chunking(_dask_sky_dict):
+def test_chunking(dask_sky_dict):
 
     # Check for consistent chunking.
 
     check = True
 
-    for sky_model_name, sky_model in _dask_sky_dict.items():
+    for sky_model_name, sky_model in dask_sky_dict.items():
         for cluster_name, cluster in sky_model.items():
             for source_type, sources in cluster.items():
                 for arr in sources:
@@ -163,32 +163,26 @@ def test_chunking(_dask_sky_dict):
 @pytest.mark.predict
 @pytest.mark.parametrize("table", ["ANTENNA", "DATA_DESCRIPTION", "FIELD",
                                    "SPECTRAL_WINDOW", "POLARIZATION"])
-def test_support_fields(_support_tables, table):
-
+def test_support_fields(support_tables, table):
     # Check that we have all expected support tables.
-
-    assert table in _support_tables
+    assert table in support_tables
 
 
 @pytest.mark.predict
 @pytest.mark.parametrize("table", ["ANTENNA"])
-def test_lazy_tables(_support_tables, table):
-
+def test_lazy_tables(support_tables, table):
     # Check that the antenna table is lazily evaluated.
-
     assert all([isinstance(dvar.data, da.Array)
-                for dvar in _support_tables[table][0].data_vars.values()])
+                for dvar in support_tables[table][0].data_vars.values()])
 
 
 @pytest.mark.predict
 @pytest.mark.parametrize("table", ["DATA_DESCRIPTION", "FIELD",
                                    "SPECTRAL_WINDOW", "POLARIZATION"])
-def test_nonlazy_tables(_support_tables, table):
-
+def test_nonlazy_tables(support_tables, table):
     # Check that the expected tables are not lazily evaluated.
-
     assert all([isinstance(dvar.data, np.ndarray)
-                for dvar in _support_tables[table][0].data_vars.values()])
+                for dvar in support_tables[table][0].data_vars.values()])
 
 
 # ---------------------------------predict-------------------------------------
@@ -200,17 +194,15 @@ def test_nonlazy_tables(_support_tables, table):
 # for a number of different input values.
 
 @pytest.mark.predict
-def test_predict(_predict):
+def test_predict(predicted_xds_list, xds_list):
 
     # Check that the predicted visibilities are consistent with the MeqTrees
     # visibilities stored in MODEL_DATA.
 
-    predict_per_xds, ms_xds_list = _predict
-
-    for xds_ind in range(len(predict_per_xds)):
-        for predict_list in predict_per_xds[xds_ind].values():
+    for xds_ind in range(len(predicted_xds_list)):
+        for predict_list in predicted_xds_list[xds_ind].values():
             predicted_vis = sum(predict_list)
-            expected_vis = ms_xds_list[xds_ind].MODEL_DATA.data
+            expected_vis = xds_list[xds_ind].MODEL_DATA.data
             assert_array_almost_equal(predicted_vis, expected_vis)
 
 # -----------------------------------------------------------------------------

@@ -4,7 +4,7 @@ from quartical.utils.dask import Blocker
 from collections import namedtuple
 
 
-term_spec_tup = namedtuple("term_spec_tup", "name type args shape pshape")
+term_spec_tup = namedtuple("term_spec_tup", "name type shape pshape")
 
 
 def construct_solver(data_xds_list,
@@ -13,7 +13,8 @@ def construct_solver(data_xds_list,
                      t_map_list,
                      f_map_list,
                      d_map_list,
-                     opts):
+                     solver_opts,
+                     chain_opts):
     """Constructs the dask graph for the solver layer.
 
     This constructs a custom dask graph for the solver layer given the slew
@@ -27,7 +28,8 @@ def construct_solver(data_xds_list,
         t_map_list: List of dask.Array objects containing time mappings.
         f_map_list: List of dask.Array objects containing frequency mappings.
         d_map_list: List of dask.Array objects containing direction mappings.
-        opts: A Namespace object containing global options.
+        solver_opts: A Solver config object.
+        chain_opts: A Chain config object.
 
     Returns:
         A list of lists containing xarray.Datasets describing the solved gains.
@@ -76,7 +78,8 @@ def construct_solver(data_xds_list,
         blocker.add_input("reweight_mode", opts.solver.reweight_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
         blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
-        
+        blocker.add_input("solver_opts", solver_opts)
+        blocker.add_input("chain_opts", chain_opts)
 
         # TODO: Mildly hacky? If the gain dataset already has a gain variable,
         # we want to pass it in.
@@ -85,7 +88,7 @@ def construct_solver(data_xds_list,
                 blocker.add_input(f"{t.NAME}_initial_gain",
                                   t.gains.data, "rfadc")
 
-        if opts.input_ms.is_bda:
+        if hasattr(data_xds, "ROW_MAP"):  # We are dealing with BDA.
             blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")
             blocker.add_input("row_weights", data_xds.ROW_WEIGHTS.data, "r")
         else:
@@ -93,7 +96,7 @@ def construct_solver(data_xds_list,
             blocker.add_input("row_weights", None)
 
         # Add relevant outputs to blocker object.
-        for gi, gn in enumerate(opts.solver.gain_terms):
+        for gi, gn in enumerate(solver_opts.terms):
 
             chunks = gain_terms[gi].GAIN_SPEC
             blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)
@@ -161,7 +164,6 @@ def expand_specs(gain_terms):
 
                 term_name = gxds.NAME
                 term_type = gxds.TYPE
-                term_args = gxds.ARGS
                 gain_chunk_spec = gxds.GAIN_SPEC
 
                 tc = gain_chunk_spec.tchunk[tc_ind]
@@ -182,11 +184,10 @@ def expand_specs(gain_terms):
 
                     parm_shape = (tc_p, fc_p, ac, dc, pc, cc)
                 else:
-                    parm_shape = ()
+                    parm_shape = (0,) * 6  # Used for creating a dummy array.
 
                 term_list.append(term_spec_tup(term_name,
                                                term_type,
-                                               term_args,
                                                term_shape,
                                                parm_shape))
 

@@ -3,25 +3,64 @@ import numpy as np
 import xarray
 
 
-gain_spec_tup = namedtuple("gain_spec_tup",
-                           "tchunk fchunk achunk dchunk cchunk")
-param_spec_tup = namedtuple("param_spec_tup",
-                            "tchunk fchunk achunk dchunk pchunk cchunk")
+gain_spec_tup = namedtuple(
+    "gain_spec_tup",
+    (
+        "tchunk",
+        "fchunk",
+        "achunk",
+        "dchunk",
+        "cchunk"
+    )
+)
+
+param_spec_tup = namedtuple(
+    "param_spec_tup",
+    (
+        "tchunk",
+        "fchunk",
+        "achunk",
+        "dchunk",
+        "pchunk",
+        "cchunk"
+    )
+)
+
+base_args = namedtuple(
+    "base_args",
+    (
+        "model",
+        "data",
+        "a1",
+        "a2",
+        "weights",
+        "t_map_arr",
+        "f_map_arr",
+        "d_map_arr",
+        "inverse_gains",
+        "gains",
+        "flags",
+        "row_map",
+        "row_weights"
+    )
+)
 
 
 class Gain:
 
-    def __init__(self, term_name, data_xds, coords, tipc, fipc, opts):
+    base_args = base_args
+
+    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
 
         self.name = term_name
-        self.dd_term = getattr(opts, self.name).direction_dependent
-        self.type = getattr(opts, self.name).type
+        self.dd_term = term_opts.direction_dependent
+        self.type = term_opts.type
         self.n_chan = data_xds.dims["chan"]
         self.n_ant = data_xds.dims["ant"]
         self.n_dir = data_xds.dims["dir"] if self.dd_term else 1
         self.n_corr = data_xds.dims["corr"]
-        self.id_fields = {f: data_xds.attrs[f]
-                          for f in opts.input_ms.group_by}
+        partition_schema = data_xds.__daskms_partition_schema__
+        self.id_fields = {f: data_xds.attrs[f] for f, _ in partition_schema}
         self.utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
         self.freq_chunks = list(map(int, data_xds.chunks["chan"]))
         self.n_t_chunk = len(self.utime_chunks)
@@ -45,8 +84,6 @@ class Gain:
         self.gain_freqs = coords[f"{self.name}_mean_gfreqs"]
         self.param_freqs = coords[f"{self.name}_mean_pfreqs"]
 
-        self.additional_args = []
-
     def make_xds(self):
 
         # Set up an xarray.Dataset describing the gain term.
@@ -63,7 +100,6 @@ class Gain:
                     "gain_f": ("gain_f", self.gain_freqs)},
             attrs={"NAME": self.name,
                    "TYPE": self.type,
-                   "ARGS": self.additional_args,
                    **self.id_fields})
 
         return xds

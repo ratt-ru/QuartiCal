@@ -29,10 +29,10 @@ class Input:
 @dataclass
 class MSInputs(Input):
     path: str = "???"
-    column: str = "DATA"
+    data_column: str = "DATA"
     weight_column: Optional[str] = "???"
     time_chunk: str = "0"
-    freq_chunk: int = 0
+    freq_chunk: str = "0"
     is_bda: bool = False
     group_by: Optional[List[str]] = field(
         default_factory=lambda: ["SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID"]
@@ -41,10 +41,17 @@ class MSInputs(Input):
         default=None,
         metadata=dict(choices=[0, 1, 2, 3])
     )
+    select_fields: List[int] = field(
+        default_factory=lambda: []
+    )
+    select_ddids: List[int] = field(
+        default_factory=lambda: []
+    )
 
     def __post_init__(self):
         self.validate_choice_fields()
         self.time_chunk = as_time(self.time_chunk)
+        self.freq_chunk = as_freq(self.freq_chunk)
 
 
 @dataclass
@@ -99,17 +106,21 @@ class MadFlags(Input):
 
 @dataclass
 class Solver(Input):
-    gain_terms: List[str] = field(default_factory=lambda: ["G"])
+    terms: List[str] = field(default_factory=lambda: ["G"])
+    iter_recipe: List[int] = field(default_factory=lambda: [25])
+    threads: int = 1
     reweight_mode: bool = False
 
     def __post_init__(self):
         self.validate_choice_fields()
+        assert len(self.iter_recipe) >= len(self.terms), \
+               "User has specified solver.iter_recipe with too few elements."
 
 
 @dataclass
-class Parallel(Input):
-    n_thread: int = 0
-    n_worker: int = 1
+class Dask(Input):
+    threads: int = 0
+    workers: int = 1
     address: Optional[str] = None
     scheduler: str = field(
         default="threads",
@@ -159,24 +170,24 @@ class BaseConfig:
     solver: Solver = Solver()
     output: Outputs = Outputs()
     mad_flags: MadFlags = MadFlags()
-    parallel: Parallel = Parallel()
+    dask: Dask = Dask()
 
 
 def finalize_structure(additional_config):
 
-    gain_terms = None
+    terms = None
 
     for cfg in additional_config[::-1]:
-        gain_terms = oc.select(cfg, "solver.gain_terms")
-        if gain_terms is not None:
+        terms = oc.select(cfg, "solver.terms")
+        if terms is not None:
             break
 
-    # Use the default gain_terms if no alternative is specified.
-    gain_terms = gain_terms or Solver().gain_terms
+    # Use the default terms if no alternative is specified.
+    terms = terms or Solver().terms
 
     FinalConfig = make_dataclass(
         "FinalConfig",
-        [(gt, Gain, Gain()) for gt in gain_terms],
+        [(t, Gain, Gain()) for t in terms],
         bases=(BaseConfig,)
     )
 

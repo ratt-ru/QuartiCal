@@ -4,7 +4,7 @@ from quartical.data_handling.predict import predict
 from loguru import logger  # noqa
 
 
-def add_model_graph(ms_xds, model_vis_recipe, opts):
+def add_model_graph(ms_xds, model_vis_recipe, ms_path, model_opts):
     """Creates the graph necessary to produce a model per xds.
 
     Given a list of input xarray data sets and the options, constructs a graph
@@ -13,7 +13,9 @@ def add_model_graph(ms_xds, model_vis_recipe, opts):
 
     Args:
         ms_xds: A list of xarray datasets generated from an MS.
-        opts: The options Namepsace.
+        model_vis_recipe: A Recipe object.
+        ms_path: Path to the input measurement set.
+        model_opts: A ModelInputs configuration object.
 
     Returns:
         model_xds_list: A list of xarray datasets containing the model data.
@@ -23,7 +25,10 @@ def add_model_graph(ms_xds, model_vis_recipe, opts):
     # required, it is a list of empty dictionaries.
 
     if model_vis_recipe.ingredients.sky_models:
-        predict_schemes = predict(ms_xds, model_vis_recipe, opts)
+        predict_schemes = predict(ms_xds,
+                                  model_vis_recipe,
+                                  ms_path,
+                                  model_opts)
     else:
         predict_schemes = [{}]*len(ms_xds)
 

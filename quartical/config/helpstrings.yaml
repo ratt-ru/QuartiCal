@@ -1,8 +1,8 @@
 input_ms:
   path: 
     Path to input measurement set.
-  column:
-    Name of input measurement set column.
+  data_column:
+    Name of column to use as data.
   weight_column: 
     Column to read weights from. Weights are applied by default. An empty 
     string will result in all weights being treated as unity.
@@ -25,16 +25,19 @@ input_ms:
     list, e.g. [SCAN_NUMBER, FIELD_ID, DATA_DESC_ID].
   select_corr:
     Select correlations from the input data. These are specified as integer 
-    values and may be given as a list e.g. to select the first and last 
-    correlations in a measurement set with four correlations use [0, 3].
+    values and must be given as a list e.g. to select the first and last 
+    correlations in a measurement set with four correlations, use [0, 3].
+  select_fields:
+    Select fields from the input data. These are specified as integer 
+    values and must be given as a list e.g. to select fields 2 and 6
+    use [2, 6].
+  select_ddids:
+    Select data descriptor IDs (spectral windows) from the input data. These
+    are specified as integer values and must be given as a list e.g. to select 
+    ddids/SPWs 0 and 2, use [0, 2].
   # chunk-jump:
   #   The jump size used in conjunction with --input-ms-chunk-on. If 0, then any 
   #   change in value is a jump. If n, then the change must be >n.
-  # field:
-  #   FIELD_ID to read from the MS.
-  # ddid:
-  #   DATA_DESC_IDs to read from the MS. Default reads all. Multiple IDs may be 
-  #   given as a list, e.g. [0, 2, 5].
   # chan:
   #   Channels to read (within each DDID). Default reads all. Multiple channels 
   #   may be given as a list, e.g. [0, 2, 5].
@@ -120,13 +123,27 @@ mad_flags:
     chunk. These values are flagged.
 
 solver:
-  gain_terms:
+  terms:
     Gain terms for which we are solving. Multiple terms can be specified as 
-    a list e.g. [G B dE]. Each term specified here has its own set of 
+    a list e.g. [G,B,dE]. Each term specified here has its own set of 
     arguments which can be specified as (gain).(option). e.g. G.time_interval.
   reweight_mode:
     If set to true, this will activate the rewighting of the data, based on 
     the Complex Students-t framework
+  iter_recipe:
+    Specifies the iterations to be performed per gain term. This argument
+    expects a list as long or longer than solver.terms. If solver.terms 
+    was given as [K,G,B], an iteration recipe of [20,10,5] would do 20 
+    iterations for K, 10 for G and 5 for B. To loop over the gains multiple 
+    times, use a longer list e.g. [20,10,5,15,5,0] would do the same as 
+    the first example but then do an additional 15 iterations for K, 5 for G 
+    and skip B. Setting to zero effectively disables solving for that term 
+    and can be used in conjunction with iterpolation. 
+  threads:
+    Number of Numba threads per Dask thread (enables nested parallelism) to
+    be used when running the solvers. The total number of threads used will be 
+    dask.threads*solver.threads; if this product exceeds the number of 
+    available threads, performance will suffer.
   # mode:
   #   The mode in which the solver should operate. This is assumed to be the 
   #   same for all terms specified by --solver-gain-terms. The first part of 
@@ -141,19 +158,12 @@ solver:
   # stall_fraction:
   #   Minimum percentage of solutions which must have stalled (the chi-squared 
   #   values are no longer improving) before terminating the solver.
-  # iteration_recipe:
-  #   If multiple gain terms have been specified, this option describes the 
-  #   manner in which we iterate over terms. For input solver.iteration_recipe 
-  #   G dE G, G would be solved to convergence/maximum iterations, then dE and 
-  #   finally G once again. The number of iterations per term is based on their 
-  #   individual settings. If set to None, will solve each term in 
-  #   SOLVER_GAIN_TERMS once.
     
-parallel:
-  n_thread:
+dask:
+  threads:
     Number of threads to use in the dask scheduler. Setting to zero (the 
     default) will use all available resources.
-  n_worker:
+  workers:
     Number of workers to use in the dask distributed scheduler. Advanced users 
     only.
   address:
