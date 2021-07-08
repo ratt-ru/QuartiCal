@@ -98,20 +98,27 @@ def gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
 
 
 @pytest.fixture(scope="module")
-def solver_xds_list(data_xds_list, gain_xds_list, t_bin_list, t_map_list,
-                    f_map_list, d_map_list, solver_opts, chain_opts):
+def _construct_solver(data_xds_list, gain_xds_list, t_bin_list, t_map_list,
+                      f_map_list, d_map_list, solver_opts, chain_opts):
 
     # Call the construct solver function with the relevant inputs.
-    solver_xds_list = construct_solver(data_xds_list,
-                                       gain_xds_list,
-                                       t_bin_list,
-                                       t_map_list,
-                                       f_map_list,
-                                       d_map_list,
-                                       solver_opts,
-                                       chain_opts)
+    solver_xds_list, solver_data_xds_list = construct_solver(
+        data_xds_list,
+        gain_xds_list,
+        t_bin_list,
+        t_map_list,
+        f_map_list,
+        d_map_list,
+        solver_opts,
+        chain_opts
+    )
 
-    return solver_xds_list
+    return solver_xds_list, solver_data_xds_list
+
+
+@pytest.fixture(scope="module")
+def solver_xds_list(_construct_solver):
+    return _construct_solver[0]
 
 
 @pytest.fixture(scope="module")

@@ -166,7 +166,7 @@ def read_xds_list(model_columns, ms_opts):
 
 
 def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
-    """Writes fields spicified in the WRITE_COLS attribute to the MS.
+    """Writes fields specified in the WRITE_COLS attribute to the MS.
 
     Args:
         xds_list: A list of xarray datasets.
@@ -198,19 +198,19 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
         xds_list = [xds.drop_vars(output_opts.columns, errors="ignore")
                     for xds in xds_list]
 
-        vis_prod_map = {"residual": "_RESIDUAL",
-                        "corrected_residual": "_CORRECTED_RESIDUAL",
-                        "corrected_data": "_CORRECTED_DATA"}
-        n_vis_prod = len(output_opts.products)
+        product_map = {"residual": "_RESIDUAL",
+                       "corrected_residual": "_CORRECTED_RESIDUAL",
+                       "corrected_data": "_CORRECTED_DATA",
+                       "weights": "_WEIGHT"}
 
         # Rename QuartiCal's underscore prefixed results so that they will be
         # written to the appropriate column.
         xds_list = \
-            [xds.rename({vis_prod_map[prod]: output_opts.columns[ind]
+            [xds.rename({product_map[prod]: output_opts.columns[ind]
              for ind, prod in enumerate(output_opts.products)})
              for xds in xds_list]
 
-        output_cols += tuple(output_opts.columns[:n_vis_prod])
+        output_cols += tuple(output_opts.columns)
 
     # If the referece xds list exists, we are dealing with BDA data.
     if ref_xds_list:
