@@ -220,6 +220,8 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
             interp_xds = concat_xds.assign(
                 {"amp": (concat_xds.amp.dims, amp_sel),
                  "phase": (concat_xds.phase.dims, phase_sel)})
+
+            interp_fields = ("amp", "phase")
         elif interp_mode == "reim":
             re_sel = da.where((concat_xds.re.data < 1e-6) &
                               (concat_xds.im.data < 1e-6),
@@ -235,10 +237,12 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
                 {"re": (concat_xds.re.dims, re_sel),
                  "im": (concat_xds.im.dims, im_sel)})
 
+            interp_fields = ("re", "im")
+
         # This fills in missing values using linear interpolation, or by
         # padding with the last good value (edges). Regions with no good data
         # will be zeroed.
-        interp_xds = interpolate_missing(interp_xds)
+        interp_xds = interpolate_missing(interp_xds, interp_fields)
 
         # We may be interpolating from one set of axes to another.
         i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
