@@ -133,21 +133,20 @@ def sort_datasets(load_xds_list):
     return sorted_xds_lol
 
 
-def overlap_slice(lb, ub, lbounds, ubounds):
+def domain_slice(lb, ub, lbounds, ubounds):
     """Create a slice corresponding to the neighbourhood of domain (lb, ub)."""
 
-    overlaps = ~((ub < lbounds) | (lb > ubounds))
+    if any(lb >= lbounds):
+        slice_lb = len(lbounds) - (lb >= lbounds)[::-1].argmax() - 1
+    else:
+        slice_lb = 0  # Entirely below input domain.
 
-    sel = np.where(overlaps)[0]
-    slice_lb = sel[0]
-    slice_ub = sel[-1] + 1  # Python indexing is not inclusive.
+    if any(ub <= ubounds):
+        slice_ub = (ub <= ubounds).argmax()
+    else:
+        slice_ub = len(ubounds) - 1  # Entirely above input domain.
 
-    # Dilate. If the lower bound is zero, leave as is, else, include lb - 1.
-    slice_lb = slice_lb - 1 if slice_lb else slice_lb
-    # Upper slice may fall off the end - this is safe.
-    slice_ub = slice_ub + 1
-
-    return slice(slice_lb, slice_ub)
+    return slice(slice_lb, slice_ub + 1)  # Non-inclusive, hence +1.
 
 
 def make_concat_xds_list(term_xds_list, sorted_xds_lol):
@@ -175,8 +174,8 @@ def make_concat_xds_list(term_xds_list, sorted_xds_lol):
         flb = term_xds[f_axis].data[0]
         fub = term_xds[f_axis].data[-1]
 
-        concat_tslice = overlap_slice(tlb, tub, time_lbounds, time_ubounds)
-        concat_fslice = overlap_slice(flb, fub, freq_lbounds, freq_ubounds)
+        concat_tslice = domain_slice(tlb, tub, time_lbounds, time_ubounds)
+        concat_fslice = domain_slice(flb, fub, freq_lbounds, freq_ubounds)
 
         fconcat_xds_list = []
 
@@ -252,11 +251,9 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
                  i_f_axis: term_xds[t_f_axis].data},
                 kwargs={"fill_value": "extrapolate"})
         elif interp_method == "2dspline":
-            interp_xds = spline2d_interpolate_gains(interp_xds,
-                                                    term_xds)
+            interp_xds = spline2d_interpolate_gains(interp_xds, term_xds)
         elif interp_method == "smoothingspline":
-            interp_xds = csaps2d_interpolate_gains(interp_xds,
-                                                   term_xds)
+            interp_xds = csaps2d_interpolate_gains(interp_xds, term_xds)
 
         # Convert the interpolated quantities back in gains.
         if interp_mode == "ampphase":

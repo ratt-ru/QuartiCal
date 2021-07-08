@@ -81,7 +81,8 @@ class Outputs(Input):
         default=None,
         metadata=dict(choices=["corrected_data",
                                "corrected_residual",
-                               "residual"])
+                               "residual",
+                               "weights"])
     )
     columns: Optional[List[str]] = None
 
@@ -108,6 +109,7 @@ class MadFlags(Input):
 class Solver(Input):
     terms: List[str] = field(default_factory=lambda: ["G"])
     iter_recipe: List[int] = field(default_factory=lambda: [25])
+    robust: bool = False
     threads: int = 1
     reweight_mode: bool = False
 

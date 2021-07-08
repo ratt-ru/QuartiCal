@@ -43,6 +43,14 @@ def spline2d_interpolate_gains(interp_xds, term_xds):
 
     output_xds = term_xds
 
+    if interp_xds.dims[i_t_axis] < 4 or interp_xds.dims[i_f_axis] < 4:
+        raise ValueError(
+            f"Cubic spline interpolation requires at least four "
+            f"values along an axis. After concatenation, the "
+            f"(time, freq) dimensions of the interpolating dataset were "
+            f"{(interp_xds.dims[i_t_axis], interp_xds.dims[i_f_axis])}"
+        )
+
     for data_field in interp_xds.data_vars.keys():
         interp = da.blockwise(spline2d, "tfadc",
                               interp_xds[i_t_axis].values, None,

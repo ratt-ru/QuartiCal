@@ -79,14 +79,16 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
     gain_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
-    solved_gain_xds_list = construct_solver(data_xds_list,
-                                            gain_xds_list,
-                                            t_bin_list,
-                                            t_map_list,
-                                            f_map_list,
-                                            d_map_list,
-                                            solver_opts,
-                                            chain_opts)
+    solved_gain_xds_list, data_xds_list = construct_solver(
+        data_xds_list,
+        gain_xds_list,
+        t_bin_list,
+        t_map_list,
+        f_map_list,
+        d_map_list,
+        solver_opts,
+        chain_opts
+    )
 
     # Update the data xarray.Datasets with visibility outputs.
     post_solve_data_xds_list = \

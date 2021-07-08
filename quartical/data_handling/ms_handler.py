@@ -33,7 +33,6 @@ def read_xds_list(model_columns, ms_opts):
     # Determine the number of correlations present in the measurement set.
 
     polarization_xds = xds_from_table(ms_opts.path + "::POLARIZATION")[0]
-
     ms_ncorr = polarization_xds.dims["corr"]
 
     if ms_ncorr not in (1, 2, 4):
@@ -48,7 +47,8 @@ def read_xds_list(model_columns, ms_opts):
     # by merging the field xds grouped by DDID into data grouped by DDID.
 
     field_xds = xds_from_table(ms_opts.path + "::FIELD")[0]
-    phase_dir = np.squeeze(field_xds.PHASE_DIR.data.compute())
+    phase_dir = np.squeeze(field_xds.PHASE_DIR.values)
+    field_names = field_xds.NAME.values
 
     logger.info("Field table indicates phase centre is at ({} {}).",
                 phase_dir[0], phase_dir[1])
@@ -119,10 +119,14 @@ def read_xds_list(model_columns, ms_opts):
 
         chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
         chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
+        ant_names = clone(antenna_xds.NAME.data)
+        # TODO: This may not work in some cases - fix when found.
+        corr_types = clone(polarization_xds.CORR_TYPE.data[0])
 
         _xds = _xds.assign({"CHAN_FREQ": (("chan",), chan_freqs[0]),
                             "CHAN_WIDTH": (("chan",), chan_widths[0]),
-                            "ANT_NAME": (("ant",), antenna_xds.NAME.data)})
+                            "ANT_NAME": (("ant",), ant_names),
+                            "CORR_TYPE": (("corr"), corr_types)})
 
         # Add an attribute to the xds on which we will store the names of
         # fields which must be written to the MS. Also add the attribute which
@@ -130,9 +134,12 @@ def read_xds_list(model_columns, ms_opts):
         # chunking to python integers to avoid problems with serialization.
 
         utime_chunks = tuple(map(int, utime_chunking_per_data_xds[xds_ind]))
+        field_id = getattr(xds, "FIELD_ID", None)
+        field_name = "UNKNOWN" if field_id is None else field_names[field_id]
 
         _xds = _xds.assign_attrs({"WRITE_COLS": (),
-                                  "UTIME_CHUNKS": utime_chunks})
+                                  "UTIME_CHUNKS": utime_chunks,
+                                  "FIELD_NAME": field_name})
 
         _data_xds_list.append(_xds)
 
@@ -159,7 +166,7 @@ def read_xds_list(model_columns, ms_opts):
 
 
 def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
-    """Writes fields spicified in the WRITE_COLS attribute to the MS.
+    """Writes fields specified in the WRITE_COLS attribute to the MS.
 
     Args:
         xds_list: A list of xarray datasets.
@@ -191,19 +198,19 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
         xds_list = [xds.drop_vars(output_opts.columns, errors="ignore")
                     for xds in xds_list]
 
-        vis_prod_map = {"residual": "_RESIDUAL",
-                        "corrected_residual": "_CORRECTED_RESIDUAL",
-                        "corrected_data": "_CORRECTED_DATA"}
-        n_vis_prod = len(output_opts.products)
+        product_map = {"residual": "_RESIDUAL",
+                       "corrected_residual": "_CORRECTED_RESIDUAL",
+                       "corrected_data": "_CORRECTED_DATA",
+                       "weights": "_WEIGHT"}
 
         # Rename QuartiCal's underscore prefixed results so that they will be
         # written to the appropriate column.
         xds_list = \
-            [xds.rename({vis_prod_map[prod]: output_opts.columns[ind]
+            [xds.rename({product_map[prod]: output_opts.columns[ind]
              for ind, prod in enumerate(output_opts.products)})
              for xds in xds_list]
 
-        output_cols += tuple(output_opts.columns[:n_vis_prod])
+        output_cols += tuple(output_opts.columns)
 
     # If the referece xds list exists, we are dealing with BDA data.
     if ref_xds_list:

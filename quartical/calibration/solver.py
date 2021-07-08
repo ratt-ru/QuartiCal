@@ -7,7 +7,7 @@ from itertools import cycle
 from quartical.gains import TERM_TYPES
 
 
-meta_args_nt = namedtuple("meta_args_nt", ("iters", "active_term"))
+meta_args_nt = namedtuple("meta_args_nt", ("iters active_term robust"))
 
 
 def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
@@ -63,6 +63,12 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
 
     terms = solver_opts.terms
     iter_recipe = solver_opts.iter_recipe
+    robust = solver_opts.robust
+
+    # TODO: Analyse the impact of the following. This is necessary if we want
+    # to mutate the weights, as we may end up with an unwritable array.
+    kwargs["weights"] = np.require(kwargs["weights"], requirements=['W', 'O'])
+    results_dict["weights"] = kwargs["weights"]
 
     for term, iters in zip(cycle(terms), iter_recipe):
 
@@ -82,7 +88,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
             base_args_nt(**{k: kwargs[k] for k in base_args_nt._fields})
         term_args = \
             term_args_nt(**{k: kwargs[k] for k in term_args_nt._fields})
-        meta_args = meta_args_nt(iters, active_term)
+        meta_args = meta_args_nt(iters, active_term, robust)
 
         info_tup = solver(base_args,
                           term_args,

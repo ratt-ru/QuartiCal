@@ -139,6 +139,8 @@ solver:
     the first example but then do an additional 15 iterations for K, 5 for G 
     and skip B. Setting to zero effectively disables solving for that term 
     and can be used in conjunction with iterpolation. 
+  robust:
+    Enable robust reweighting in solvers.
   threads:
     Number of Numba threads per Dask thread (enables nested parallelism) to
     be used when running the solvers. The total number of threads used will be 

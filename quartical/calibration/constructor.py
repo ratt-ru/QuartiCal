@@ -36,6 +36,7 @@ def construct_solver(data_xds_list,
     """
 
     solved_gain_xds_list = []
+    output_data_xds_list = []
 
     for xds_ind, data_xds in enumerate(data_xds_list):
 
@@ -95,6 +96,11 @@ def construct_solver(data_xds_list,
             blocker.add_input("row_weights", None)
 
         # Add relevant outputs to blocker object.
+        blocker.add_output("weights",
+                           "rfc",
+                           weight_col.chunks,
+                           weight_col.dtype)
+
         for gi, gn in enumerate(solver_opts.terms):
 
             chunks = gain_terms[gi].GAIN_SPEC
@@ -113,7 +119,13 @@ def construct_solver(data_xds_list,
         # Apply function to inputs to produce dask array outputs (as dict).
         output_dict = blocker.get_dask_outputs()
 
-        # Assign results to the relevant gain xarray.Dataset object.
+        # Assign column results to the relevant data xarray.Dataset object.
+        output_data_xds = data_xds.assign(
+            {"_WEIGHT": (data_xds.WEIGHT.dims, output_dict["weights"])}
+        )
+        output_data_xds_list.append(output_data_xds)
+
+        # Assign gain results to the relevant gain xarray.Dataset object.
         solved_gain_terms = []
 
         for gi, gain_xds in enumerate(gain_terms):
@@ -139,7 +151,7 @@ def construct_solver(data_xds_list,
 
         solved_gain_xds_list.append(solved_gain_terms)
 
-    return solved_gain_xds_list
+    return solved_gain_xds_list, output_data_xds_list
 
 
 def expand_specs(gain_terms):
