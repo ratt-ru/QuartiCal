@@ -111,7 +111,7 @@ def convert_and_drop(load_xds_list, interp_mode):
 def sort_datasets(load_xds_list):
     """Sort the loaded datasets by time and frequency."""
 
-    # We want to sort according the gain axes. TODO: Parameterised case?
+    # We want to sort according to the gain axes. TODO: Parameterised case?
     t_axis, f_axis = load_xds_list[0].GAIN_AXES[:2]
 
     time_lb = [xds[t_axis].values[0] for xds in load_xds_list]
@@ -213,11 +213,11 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
     for term_xds, concat_xds in zip(term_xds_list, concat_xds_list):
 
         if interp_mode == "ampphase":
-            amp_sel = da.where(concat_xds.amp.data < 1e-6,
+            amp_sel = da.where(concat_xds.amp.data == 0,
                                np.nan,
                                concat_xds.amp.data)
 
-            phase_sel = da.where(concat_xds.amp.data < 1e-6,
+            phase_sel = da.where(concat_xds.amp.data == 0,
                                  np.nan,
                                  concat_xds.phase.data)
 
@@ -226,13 +226,13 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
                  "phase": (concat_xds.phase.dims, phase_sel)})
 
         elif interp_mode == "reim":
-            re_sel = da.where((concat_xds.re.data < 1e-6) &
-                              (concat_xds.im.data < 1e-6),
+            re_sel = da.where((concat_xds.re.data == 0) &
+                              (concat_xds.im.data == 0),
                               np.nan,
                               concat_xds.re.data)
 
-            im_sel = da.where((concat_xds.re.data < 1e-6) &
-                              (concat_xds.im.data < 1e-6),
+            im_sel = da.where((concat_xds.re.data == 0) &
+                              (concat_xds.im.data == 0),
                               np.nan,
                               concat_xds.im.data)
 

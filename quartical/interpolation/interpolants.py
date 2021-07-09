@@ -20,11 +20,31 @@ def linear2d_interpolate_gains(interp_xds, term_xds):
     i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
     t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
 
-    output_xds = interp_xds.interp({
-        i_t_axis: term_xds[t_t_axis].data,
-        i_f_axis: term_xds[t_f_axis].data},
+    i_t_dim = interp_xds.dims[i_t_axis]
+    i_f_dim = interp_xds.dims[i_f_axis]
+
+    interp_axes = {}
+
+    if i_t_dim > 1:
+        interp_axes[i_t_axis] = term_xds[t_t_axis].data
+    if i_f_dim > 1:
+        interp_axes[i_f_axis] = term_xds[t_f_axis].data
+
+    output_xds = interp_xds.interp(
+        interp_axes,
         kwargs={"fill_value": "extrapolate"}
     )
+
+    if i_t_dim == 1:
+        output_xds = output_xds.reindex(
+            {i_t_axis: term_xds[t_t_axis].data},
+            method="nearest"
+        )
+    if i_f_dim == 1:
+        output_xds = output_xds.reindex(
+            {i_f_axis: term_xds[t_f_axis].data},
+            method="nearest"
+        )
 
     return output_xds
 
