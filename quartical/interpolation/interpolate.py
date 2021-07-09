@@ -73,7 +73,7 @@ def load_and_interpolate_gains(gain_xds_list, chain_opts):
 
 
 def convert_and_drop(load_xds_list, interp_mode):
-    """Convert complex gain into amplitude and phase. Drop unused data_vars."""
+    """Convert complex gain reim/ampphase. Drop unused data_vars."""
 
     converted_xds_list = []
 
@@ -86,18 +86,21 @@ def convert_and_drop(load_xds_list, interp_mode):
             converted_xds = load_xds.assign(
                 {"phase": (dims, da.angle(load_xds.gains.data)),
                  "amp": (dims, da.absolute(load_xds.gains.data))})
+            interp_vars = {"phase", "amp"}
         elif interp_mode == "reim":
-            # Convert the complex gain into amplitide and phase.
+            # Convert the complex gain into its real and imaginary parts.
             converted_xds = load_xds.assign(
                 {"re": (dims, load_xds.gains.data.real),
                  "im": (dims, load_xds.gains.data.imag)})
+            interp_vars = {"re", "im"}
 
         # Drop the unecessary dims and data vars. TODO: At present, QuartiCal
         # will always interpolate a gain, not the parameters. This makes it
         # impossible to do a further solve on a parameterised term.
         drop_dims = set(converted_xds.dims) - set(converted_xds.GAIN_AXES)
         converted_xds = converted_xds.drop_dims(drop_dims)
-        converted_xds = converted_xds.drop_vars("gains")
+        drop_vars = set(converted_xds.data_vars) - interp_vars
+        converted_xds = converted_xds.drop_vars(drop_vars)
 
         converted_xds_list.append(converted_xds)
 
@@ -221,7 +224,6 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
                 {"amp": (concat_xds.amp.dims, amp_sel),
                  "phase": (concat_xds.phase.dims, phase_sel)})
 
-            interp_fields = ("amp", "phase")
         elif interp_mode == "reim":
             re_sel = da.where((concat_xds.re.data < 1e-6) &
                               (concat_xds.im.data < 1e-6),
@@ -237,12 +239,10 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
                 {"re": (concat_xds.re.dims, re_sel),
                  "im": (concat_xds.im.dims, im_sel)})
 
-            interp_fields = ("re", "im")
-
         # This fills in missing values using linear interpolation, or by
         # padding with the last good value (edges). Regions with no good data
         # will be zeroed.
-        interp_xds = interpolate_missing(interp_xds, interp_fields)
+        interp_xds = interpolate_missing(interp_xds)
 
         # We may be interpolating from one set of axes to another.
         i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]

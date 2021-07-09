@@ -193,7 +193,7 @@ def linterp(xx, x, y):
     return yy
 
 
-def interpolate_missing(interp_xds, interp_fields):
+def interpolate_missing(interp_xds):
     """Linear interpolate missing values in the given xarray dataset.
 
     Args:
@@ -207,7 +207,7 @@ def interpolate_missing(interp_xds, interp_fields):
 
     output_xds = interp_xds
 
-    for data_field in interp_fields:
+    for data_field in interp_xds.data_vars:
 
         interp = da.blockwise(_interpolate_missing, "tfadc",
                               interp_xds[i_t_axis].values, None,
