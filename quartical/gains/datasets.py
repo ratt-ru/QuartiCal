@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
+from quartical.config.external import Gain
 from quartical.config.internal import yield_from
 from loguru import logger  # noqa
+import numpy as np
 import dask.array as da
 import pathlib
 import shutil
@@ -46,15 +48,16 @@ def make_gain_xds_list(data_xds_list,
                                             terms)
 
     gain_xds_list = []
+    effective_gain_xds_list = []
 
     for xds_ind, data_xds in enumerate(data_xds_list):
 
         term_xds_list = []
 
+        term_coords = coords_per_xds[xds_ind]
+
         for loop_vars in enumerate(yield_from(chain_opts, "type")):
             term_ind, (term_name, term_type) = loop_vars
-
-            term_coords = coords_per_xds[xds_ind]
 
             term_t_chunks = tipc_list[xds_ind][:, :, term_ind]
             term_f_chunks = fipc_list[xds_ind][:, :, term_ind]
@@ -71,7 +74,33 @@ def make_gain_xds_list(data_xds_list,
 
         gain_xds_list.append(term_xds_list)
 
+        effective_gain_xds = make_effective_gain_xds(data_xds, term_coords)
+        effective_gain_xds_list.append(effective_gain_xds)
+
     return gain_xds_list
+
+
+def make_effective_gain_xds(data_xds, term_coords):
+
+    eff_coords = {}
+    eff_coords["time"] = term_coords["time"]
+    eff_coords["freq"] = term_coords["freq"]
+    eff_coords["EFF_mean_gtime"] = term_coords["time"]
+    eff_coords["EFF_mean_gfreq"] = term_coords["freq"]
+    eff_coords["EFF_mean_ptime"] = term_coords["time"]
+    eff_coords["EFF_mean_pfreq"] = term_coords["freq"]
+
+    eff_t_chunks = np.tile(data_xds.UTIME_CHUNKS, 2).reshape(2, -1)
+    eff_f_chunks = np.tile(data_xds.chunks["chan"], 2).reshape(2, -1)
+
+    eff_obj = TERM_TYPES["complex"]("EFF",
+                                    Gain(),  # May need to know about dd.
+                                    data_xds,
+                                    eff_coords,
+                                    eff_t_chunks,
+                                    eff_f_chunks)
+
+    return eff_obj.make_xds()
 
 
 def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
@@ -188,8 +217,8 @@ def compute_dataset_coords(data_xds_list,
 
             coord_dict[f"{term_name}_mean_gtime"] = mean_gtimes
             coord_dict[f"{term_name}_mean_ptime"] = mean_ptimes
-            coord_dict[f"{term_name}_mean_gfreqs"] = mean_gfreqs
-            coord_dict[f"{term_name}_mean_pfreqs"] = mean_pfreqs
+            coord_dict[f"{term_name}_mean_gfreq"] = mean_gfreqs
+            coord_dict[f"{term_name}_mean_pfreq"] = mean_pfreqs
 
         coords_per_xds.append(coord_dict)
 
