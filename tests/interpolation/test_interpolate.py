@@ -65,8 +65,10 @@ def mock_gain_xds_list(start_time,
                          dtype=np.complex128)
         gains += da.array([1, 0, 0, 1])
 
+        # Include a dummy data_var to check that it doesn't break anything.
         data_vars = {
-            "gains": (("gain_t", "gain_f", "ant", "dir", "corr"), gains)
+            "gains": (("gain_t", "gain_f", "ant", "dir", "corr"), gains),
+            "dummy": (("ant",), np.arange(n_ant))
         }
 
         attrs = {

@@ -7,6 +7,48 @@ from csaps import csaps
 from numba import jit
 
 
+def linear2d_interpolate_gains(interp_xds, term_xds):
+    """Interpolate from interp_xds to term_xds linearly.
+
+    Args:
+        interp_xds: xarray.Dataset containing the data to interpolate from.
+        term_xds: xarray.Dataset onto which to interpolate.
+
+    Returns:
+        output_xds: xarray.Dataset containing interpolated values
+    """
+    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
+    t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
+
+    i_t_dim = interp_xds.dims[i_t_axis]
+    i_f_dim = interp_xds.dims[i_f_axis]
+
+    interp_axes = {}
+
+    if i_t_dim > 1:
+        interp_axes[i_t_axis] = term_xds[t_t_axis].data
+    if i_f_dim > 1:
+        interp_axes[i_f_axis] = term_xds[t_f_axis].data
+
+    output_xds = interp_xds.interp(
+        interp_axes,
+        kwargs={"fill_value": "extrapolate"}
+    )
+
+    if i_t_dim == 1:
+        output_xds = output_xds.reindex(
+            {i_t_axis: term_xds[t_t_axis].data},
+            method="nearest"
+        )
+    if i_f_dim == 1:
+        output_xds = output_xds.reindex(
+            {i_f_axis: term_xds[t_f_axis].data},
+            method="nearest"
+        )
+
+    return output_xds
+
+
 def spline2d(x, y, z, xx, yy):
     """Constructs a 2D spline using (x,y,z) and evaluates it at (xx,yy)."""
 
@@ -207,7 +249,7 @@ def interpolate_missing(interp_xds):
 
     output_xds = interp_xds
 
-    for data_field in interp_xds.data_vars.keys():
+    for data_field in interp_xds.data_vars:
 
         interp = da.blockwise(_interpolate_missing, "tfadc",
                               interp_xds[i_t_axis].values, None,
