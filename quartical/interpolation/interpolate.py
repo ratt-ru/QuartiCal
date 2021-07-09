@@ -7,6 +7,7 @@ import pathlib
 from daskms.experimental.zarr import xds_from_zarr
 from quartical.config.internal import yield_from
 from quartical.interpolation.interpolants import (interpolate_missing,
+                                                  linear2d_interpolate_gains,
                                                   spline2d_interpolate_gains,
                                                   csaps2d_interpolate_gains)
 
@@ -244,33 +245,31 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
         # will be zeroed.
         interp_xds = interpolate_missing(interp_xds)
 
-        # We may be interpolating from one set of axes to another.
-        i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
-        t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
-
         # Interpolate with various methods.
         if interp_method == "2dlinear":
-            interp_xds = interp_xds.interp(
-                {i_t_axis: term_xds[t_t_axis].data,
-                 i_f_axis: term_xds[t_f_axis].data},
-                kwargs={"fill_value": "extrapolate"})
+            interp_xds = linear2d_interpolate_gains(interp_xds, term_xds)
         elif interp_method == "2dspline":
             interp_xds = spline2d_interpolate_gains(interp_xds, term_xds)
         elif interp_method == "smoothingspline":
             interp_xds = csaps2d_interpolate_gains(interp_xds, term_xds)
 
-        # Convert the interpolated quantities back in gains.
+        # Convert the interpolated quantities back to gains.
         if interp_mode == "ampphase":
             gains = interp_xds.amp.data*da.exp(1j*interp_xds.phase.data)
             interp_xds = term_xds.assign(
-                {"gains": (term_xds.GAIN_AXES, gains)})
+                {"gains": (term_xds.GAIN_AXES, gains)}
+            )
         elif interp_mode == "reim":
             gains = interp_xds.re.data + 1j*interp_xds.im.data
             interp_xds = term_xds.assign(
-                {"gains": (term_xds.GAIN_AXES, gains)})
+                {"gains": (term_xds.GAIN_AXES, gains)}
+            )
 
         t_chunks = term_xds.GAIN_SPEC.tchunk
         f_chunks = term_xds.GAIN_SPEC.fchunk
+
+        # We may be interpolating from one set of axes to another.
+        t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
 
         interp_xds = interp_xds.chunk({t_t_axis: t_chunks, t_f_axis: f_chunks})
 
