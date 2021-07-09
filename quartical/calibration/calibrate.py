@@ -7,7 +7,11 @@ from quartical.gains.general.generics import (compute_residual,
 #                                              assign_presolve_data_stats,)
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
-from quartical.gains.datasets import make_gain_xds_list
+from quartical.gains.datasets import (make_gain_xds_list,
+                                      compute_dataset_coords,
+                                      compute_interval_chunking,
+                                      make_net_gain_xds_list,
+                                      populate_net_gain_xds_list)
 from quartical.interpolation.interpolate import load_and_interpolate_gains
 from loguru import logger  # noqa
 from collections import namedtuple
@@ -66,27 +70,61 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
     f_map_list = make_f_maps(data_xds_list, chain_opts)
     d_map_list = make_d_maps(data_xds_list, chain_opts)
 
+    # Early compute to figure out solution intervals per data chunk.
+    tipc_list, fipc_list = compute_interval_chunking(
+        data_xds_list,
+        t_map_list,
+        f_map_list
+    )
+
+    # Early compute to figure out coordinates of gain datasets.
+    coords_per_xds = compute_dataset_coords(
+        data_xds_list,
+        t_bin_list,
+        f_map_list,
+        tipc_list,
+        fipc_list,
+        solver_opts.terms
+    )
+
     # Create a list of lists of xarray.Dataset objects which will describe the
-    # gains per data xarray.Dataset. This triggers some early compute.
-    gain_xds_list = make_gain_xds_list(data_xds_list,
-                                       t_map_list,
-                                       t_bin_list,
-                                       f_map_list,
-                                       chain_opts)
+    # gains per data xarray.Dataset.
+    gain_xds_list = make_gain_xds_list(
+        data_xds_list,
+        tipc_list,
+        fipc_list,
+        coords_per_xds,
+        chain_opts
+    )
 
     # If there are gains to be loaded from disk, this will load an interpolate
     # them to be consistent with this calibration run.
     gain_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
-    solved_gain_xds_list = construct_solver(data_xds_list,
-                                            gain_xds_list,
-                                            t_bin_list,
-                                            t_map_list,
-                                            f_map_list,
-                                            d_map_list,
-                                            solver_opts,
-                                            chain_opts)
+    solved_gain_xds_list = construct_solver(
+        data_xds_list,
+        gain_xds_list,
+        t_bin_list,
+        t_map_list,
+        f_map_list,
+        d_map_list,
+        solver_opts,
+        chain_opts
+    )
+
+    net_gain_xds_list = make_net_gain_xds_list(
+        data_xds_list,
+        coords_per_xds
+    )
+
+    net_gain_xds_list = populate_net_gain_xds_list(
+        net_gain_xds_list,
+        solved_gain_xds_list,
+        t_bin_list,
+        f_map_list,
+        d_map_list
+    )
 
     # Update the data xarray.Datasets with visibility outputs.
     post_solve_data_xds_list = \
