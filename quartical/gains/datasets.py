@@ -6,12 +6,11 @@ import numpy as np
 import dask.array as da
 import pathlib
 import shutil
-from numba import generated_jit, types, literally
 from daskms.experimental.zarr import xds_to_zarr
 from quartical.gains import TERM_TYPES
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
-from quartical.gains.general.factories import v1_imul_v2_factory
+from quartical.gains.general.generics import combine_gains
 
 
 def make_gain_xds_list(data_xds_list,
@@ -26,10 +25,11 @@ def make_gain_xds_list(data_xds_list,
 
     Args:
         data_xds_list: A list of xarray.Dataset objects containing MS data.
-        t_map_list: List of dask.Array objects containing time mappings.
-        t_bin_list: List of dask.Array objects containing time binnings.
-            Binnings map unique time to solutiion interval, rather than row.
-        f_map_list: List of dask.Array objects containing frequency mappings.
+        tipc_list: List of numpy.ndarray objects containing number of time
+            intervals in a chunk.
+        fipc_list: List of numpy.ndarray objects containing number of freq
+            intervals in a chunk.
+        coords_per_xds: A List of Dicts containing coordinates.
         chain_opts: A Chain config object.
 
     Returns:
@@ -84,7 +84,7 @@ def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
     tipc_list = []
     fipc_list = []
 
-    for xds_ind, data_xds in enumerate(data_xds_list):
+    for xds_ind, _ in enumerate(data_xds_list):
 
         t_map_arr = t_map_list[xds_ind]
         f_map_arr = f_map_list[xds_ind]
@@ -191,25 +191,29 @@ def compute_dataset_coords(data_xds_list,
 
 
 def make_net_gain_xds_list(data_xds_list, coords_per_xds):
+    """Construct a list of datasets to house the net gains.
+
+    Args:
+        data_xds_list: A List of xarray.Dataset objects containing MS data.
+        coords_per_xds: A List of Dicts containing dataset coords.
+
+    Returns:
+        net_gain_xds_list: A List of xarray.Dataset objects to house the
+            net gains.
+    """
 
     net_gain_xds_list = []
 
     for data_xds, xds_coords in zip(data_xds_list, coords_per_xds):
-        net_coords = {}
-        net_coords["time"] = xds_coords["time"]
-        net_coords["freq"] = xds_coords["freq"]
-        net_coords["NET_mean_gtime"] = xds_coords["time"]
-        net_coords["NET_mean_gfreq"] = xds_coords["freq"]
-        net_coords["NET_mean_ptime"] = xds_coords["time"]
-        net_coords["NET_mean_pfreq"] = xds_coords["freq"]
 
         net_t_chunks = np.tile(data_xds.UTIME_CHUNKS, 2).reshape(2, -1)
         net_f_chunks = np.tile(data_xds.chunks["chan"], 2).reshape(2, -1)
 
+        # TODO: The net gain doesn't understand directions (yet).
         net_obj = TERM_TYPES["complex"]("NET",
-                                        Gain(),  # May need to know about dd.
+                                        Gain(),
                                         data_xds,
-                                        net_coords,
+                                        xds_coords,
                                         net_t_chunks,
                                         net_f_chunks)
 
@@ -223,6 +227,24 @@ def populate_net_gain_xds_list(net_gain_xds_list,
                                t_bin_list,
                                f_map_list,
                                d_map_list):
+    """Poplulate the list net gain datasets with net gain values.
+
+    Args:
+        net_gain_xds_list: A List of xarray.Dataset objects to house the
+            net gains.
+        solved_gain_xds_lol: A List of Lists of xarray.Dataset objects housing
+            the solved gain terms.
+        t_bin_list: A List of dask.Arrays containing mappings from unique
+            time to solution interval.
+        f_map_list: A List of dask.Arrays containing mappings from channel
+            to solution interval.
+        d_map_list: A List of numpy.ndarrays containing mappings between
+            direction dependent terms and direction independent terms.
+
+    Returns:
+        net_gain_xds_list: A List of xarray.Dataset objects to house the
+            net gains.
+    """
 
     populated_net_gain_xds_list = []
 
@@ -262,48 +284,6 @@ def populate_net_gain_xds_list(net_gain_xds_list,
         populated_net_gain_xds_list.append(net_gain_xds)
 
     return populated_net_gain_xds_list
-
-
-@generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
-def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains):
-
-    if not isinstance(mode, types.Literal):
-        return lambda t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains: \
-            literally(mode)
-
-    v1_imul_v2 = v1_imul_v2_factory(mode)
-
-    def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains):
-        t_bin_arr = t_bin_arr[0]
-        f_map_arr = f_map_arr[0]
-
-        n_time = t_bin_arr.shape[0]
-        n_freq = f_map_arr.shape[0]
-
-        _, _, n_ant, n_dir, n_corr = net_shape
-
-        net_gains = np.zeros((n_time, n_freq, n_ant, n_dir, n_corr),
-                             dtype=np.complex128)
-        net_gains[..., 0] = 1
-        net_gains[..., -1] = 1
-
-        n_term = len(gains)
-
-        for t in range(n_time):
-            for f in range(n_freq):
-                for a in range(n_ant):
-                    for d in range(n_dir):
-                        for gi in range(n_term):
-                            tm = t_bin_arr[t, gi]
-                            fm = f_map_arr[f, gi]
-                            dm = d_map_arr[gi, d]
-                            v1_imul_v2(net_gains[t, f, a, d],
-                                       gains[gi][tm, fm, a, dm],
-                                       net_gains[t, f, a, d])
-
-        return net_gains
-
-    return impl
 
 
 def write_gain_datasets(gain_xds_lol, output_opts):

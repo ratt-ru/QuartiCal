@@ -113,6 +113,8 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
         chain_opts
     )
 
+    # Construct an effective gain per data_xds. This is always at the full
+    # time and frequency resolution of the data.
     net_gain_xds_list = make_net_gain_xds_list(
         data_xds_list,
         coords_per_xds

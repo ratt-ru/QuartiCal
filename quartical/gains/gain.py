@@ -83,10 +83,14 @@ class Gain:
         self.unique_times = coords["time"]
         self.unique_freqs = coords["freq"]
 
-        self.gain_times = coords[f"{self.name}_mean_gtime"]
-        self.param_times = coords[f"{self.name}_mean_ptime"]
-        self.gain_freqs = coords[f"{self.name}_mean_gfreq"]
-        self.param_freqs = coords[f"{self.name}_mean_pfreq"]
+        self.gain_times = coords.get(f"{self.name}_mean_gtime",
+                                     coords["time"])
+        self.param_times = coords.get(f"{self.name}_mean_ptime",
+                                      coords["time"])
+        self.gain_freqs = coords.get(f"{self.name}_mean_gfreq",
+                                     coords["freq"])
+        self.param_freqs = coords.get(f"{self.name}_mean_pfreq",
+                                      coords["freq"])
 
     def make_xds(self):
 
