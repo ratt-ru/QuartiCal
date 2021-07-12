@@ -12,7 +12,7 @@ from quartical.interpolation.interpolants import (interpolate_missing,
                                                   csaps2d_interpolate_gains)
 
 
-def load_and_interpolate_gains(gain_xds_list, chain_opts):
+def load_and_interpolate_gains(gain_xds_lod, chain_opts):
     """Load and interpolate gains in accordance with chain_opts.
 
     Given the gain datasets which are to be applied/solved for, determine
@@ -20,7 +20,7 @@ def load_and_interpolate_gains(gain_xds_list, chain_opts):
     to be consistent with the solvable datasets.
 
     Args:
-        gain_xds_list: List of xarray.Datasets containing gains.
+        gain_xds_lod: List of dicts of xarray.Datasets containing gains.
         chain_opts: A Chain config object.
 
     Returns:
@@ -29,23 +29,23 @@ def load_and_interpolate_gains(gain_xds_list, chain_opts):
 
     interp_xds_lol = []
 
-    param_names = ("load_from", "interp_mode", "interp_method")
+    req_fields = ("load_from", "interp_mode", "interp_method")
 
-    for loop_vars in enumerate(yield_from(chain_opts, param_names, False)):
+    for loop_vars in yield_from(chain_opts, req_fields):
 
-        term_ind, (gain_path, interp_mode, interp_method) = loop_vars
+        term_name, term_path, interp_mode, interp_method = loop_vars
 
         # Pull out all the datasets for the current term into a flat list.
-        term_xds_list = [tlist[term_ind] for tlist in gain_xds_list]
+        term_xds_list = [term_dict[term_name] for term_dict in gain_xds_lod]
 
         # If the gain_path is None, this term doesn't require loading/interp.
-        if gain_path is None:
+        if term_path is None:
             interp_xds_lol.append(term_xds_list)
             continue
         else:
-            gain_path = pathlib.Path(gain_path)
+            term_path = pathlib.Path(term_path)
 
-        load_path = f"{gain_path.parent}{'::' + gain_path.stem}"
+        load_path = f"{term_path.parent}{'::' + term_path.stem}"
 
         load_xds_list = xds_from_zarr(load_path)
 
@@ -56,11 +56,11 @@ def load_and_interpolate_gains(gain_xds_list, chain_opts):
         # and frequency.
         sorted_xds_lol = sort_datasets(converted_xds_list)
 
-        # Figure out which datasets need to be concatenated. TODO: This may
-        # slightly overconcatenate.
+        # Figure out which datasets need to be concatenated.
         concat_xds_list = make_concat_xds_list(term_xds_list,
                                                sorted_xds_lol)
 
+        # Form up list of datasets with interpolated values.
         interp_xds_list = make_interp_xds_list(term_xds_list,
                                                concat_xds_list,
                                                interp_mode,
@@ -68,9 +68,13 @@ def load_and_interpolate_gains(gain_xds_list, chain_opts):
 
         interp_xds_lol.append(interp_xds_list)
 
-    # This return reverts the datasets to the expected ordering/structure.
+    # This converts the interpolated list of lists into a list of dicts.
+    term_names = [tn for tn in yield_from(chain_opts)]
 
-    return [list(xds_list) for xds_list in zip(*interp_xds_lol)]
+    interp_xds_lod = [{tn: term for tn, term in zip(term_names, terms)}
+                      for terms in zip(*interp_xds_lol)]
+
+    return interp_xds_lod
 
 
 def convert_and_drop(load_xds_list, interp_mode):

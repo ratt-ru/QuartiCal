@@ -7,11 +7,11 @@ from quartical.gains.general.generics import (compute_residual,
 #                                              assign_presolve_data_stats,)
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
-from quartical.gains.datasets import (make_gain_xds_list,
+from quartical.gains.datasets import (make_gain_xds_lod,
                                       compute_dataset_coords,
                                       compute_interval_chunking,
-                                      make_net_gain_xds_list,
-                                      populate_net_gain_xds_list)
+                                      make_net_xds_list,
+                                      populate_net_xds_list)
 from quartical.interpolation.interpolate import load_and_interpolate_gains
 from loguru import logger  # noqa
 from collections import namedtuple
@@ -62,8 +62,11 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
         opts: A Namespace object containing all necessary configuration.
 
     Returns:
-        A dictionary of lists containing graphs which prodcuce a gain array
-        per gain term per xarray dataset.
+        gain_xds_lod: A list of dicts containing xarray.Datasets housing the
+            solved gains.
+        net_xds_list: A list of xarray.Datasets containing the effective gains.
+        data_xds_list: A list of xarra.Datasets containing the MS data with
+            added visibility outputs.
     """
     # Figure out all mappings between data and solution intervals.
     t_bin_list, t_map_list = make_t_maps(data_xds_list, chain_opts)
@@ -87,9 +90,9 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
         solver_opts.terms
     )
 
-    # Create a list of lists of xarray.Dataset objects which will describe the
+    # Create a list of dicts of xarray.Dataset objects which will describe the
     # gains per data xarray.Dataset.
-    gain_xds_list = make_gain_xds_list(
+    gain_xds_lod = make_gain_xds_lod(
         data_xds_list,
         tipc_list,
         fipc_list,
@@ -99,12 +102,12 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
 
     # If there are gains to be loaded from disk, this will load an interpolate
     # them to be consistent with this calibration run.
-    gain_xds_list = load_and_interpolate_gains(gain_xds_list, chain_opts)
+    gain_xds_lod = load_and_interpolate_gains(gain_xds_lod, chain_opts)
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
-    solved_gain_xds_list = construct_solver(
+    gain_xds_lod = construct_solver(
         data_xds_list,
-        gain_xds_list,
+        gain_xds_lod,
         t_bin_list,
         t_map_list,
         f_map_list,
@@ -115,26 +118,27 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
 
     # Construct an effective gain per data_xds. This is always at the full
     # time and frequency resolution of the data.
-    net_gain_xds_list = make_net_gain_xds_list(
+    net_xds_list = make_net_xds_list(
         data_xds_list,
         coords_per_xds
     )
 
-    net_gain_xds_list = populate_net_gain_xds_list(
-        net_gain_xds_list,
-        solved_gain_xds_list,
+    net_xds_list = populate_net_xds_list(
+        net_xds_list,
+        gain_xds_lod,
         t_bin_list,
         f_map_list,
         d_map_list
     )
 
     # Update the data xarray.Datasets with visibility outputs.
-    post_solve_data_xds_list = \
-        make_visibility_output(data_xds_list,
-                               solved_gain_xds_list,
-                               t_map_list,
-                               f_map_list,
-                               d_map_list)
+    data_xds_list = make_visibility_output(
+        data_xds_list,
+        gain_xds_lod,
+        t_map_list,
+        f_map_list,
+        d_map_list
+    )
 
     # for xds_ind, xds in enumerate(data_xds_list):
 
@@ -173,10 +177,10 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
     #     data_stats_xds_list.append(data_stats_xds)
 
     # Return the resulting graphs for the gains and updated xds.
-    return solved_gain_xds_list, net_gain_xds_list, post_solve_data_xds_list
+    return gain_xds_lod, net_xds_list, data_xds_list
 
 
-def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
+def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
                            f_map_list, d_map_list):
     """Creates dask arrays for possible visibility outputs.
 
@@ -185,7 +189,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
 
     Args:
         data_xds_list: A list of xarray.Dataset objects containing MS data.
-        solved_gain_xds_list: A list of lists containing xarray.Dataset objects
+        solved_gain_xds_lod: A list of dicts containing xarray.Dataset objects
             describing the gain terms.
         t_map_list: List of dask.Array objects containing time mappings.
         f_map_list: List of dask.Array objects containing frequency mappings.
@@ -204,7 +208,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
         model_col = data_xds.MODEL_DATA.data
         ant1_col = data_xds.ANTENNA1.data
         ant2_col = data_xds.ANTENNA2.data
-        gain_terms = solved_gain_xds_list[xds_ind]
+        gain_terms = solved_gain_xds_lod[xds_ind]
         t_map_arr = t_map_list[xds_ind]
         f_map_arr = f_map_list[xds_ind]
         d_map_arr = d_map_list[xds_ind]
@@ -219,7 +223,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,
 
         # TODO: For gains with n_dir > 1, we can select out the gains we
         # actually want to correct for.
-        gain_list = [x for gxds in gain_terms
+        gain_list = [x for gxds in gain_terms.values()
                      for x in (gxds.gains.data, gain_schema)]
 
         residual = da.blockwise(

@@ -97,7 +97,7 @@ def _execute(exitstack):
                                     model_opts)
 
     # Adds the dask graph describing the calibration of the data.
-    gain_xds_lol, net_gain_xds_list, data_xds_list = add_calibration_graph(
+    gain_xds_lod, net_xds_list, data_xds_list = add_calibration_graph(
         data_xds_list,
         solver_opts,
         chain_opts
@@ -113,7 +113,8 @@ def _execute(exitstack):
                                ms_opts.path,
                                output_opts)
 
-    gain_writes = write_gain_datasets(gain_xds_lol,
+    gain_writes = write_gain_datasets(gain_xds_lod,
+                                      net_xds_list,
                                       output_opts)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)

@@ -13,12 +13,12 @@ from quartical.utils.maths import mean_for_index
 from quartical.gains.general.generics import combine_gains
 
 
-def make_gain_xds_list(data_xds_list,
-                       tipc_list,
-                       fipc_list,
-                       coords_per_xds,
-                       chain_opts):
-    """Returns a list of xarray.Dataset objects describing the gain terms.
+def make_gain_xds_lod(data_xds_list,
+                      tipc_list,
+                      fipc_list,
+                      coords_per_xds,
+                      chain_opts):
+    """Returns a list of dicts of xarray.Dataset objects describing the gains.
 
     For a given input xds containing data, creates an xarray.Dataset object
     per term which describes the term's dimensions.
@@ -33,15 +33,15 @@ def make_gain_xds_list(data_xds_list,
         chain_opts: A Chain config object.
 
     Returns:
-        gain_xds_list: A list of lists of xarray.Dataset objects describing the
+        gain_xds_lod: A List of Dicts of xarray.Dataset objects describing the
             gain terms assosciated with each data xarray.Dataset.
     """
 
-    gain_xds_list = []
+    gain_xds_lod = []
 
     for xds_ind, data_xds in enumerate(data_xds_list):
 
-        term_xds_list = []
+        term_xds_dict = {}
 
         term_coords = coords_per_xds[xds_ind]
 
@@ -59,11 +59,11 @@ def make_gain_xds_list(data_xds_list,
                                              term_t_chunks,
                                              term_f_chunks)
 
-            term_xds_list.append(term_obj.make_xds())
+            term_xds_dict[term_name] = term_obj.make_xds()
 
-        gain_xds_list.append(term_xds_list)
+        gain_xds_lod.append(term_xds_dict)
 
-    return gain_xds_list
+    return gain_xds_lod
 
 
 def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
@@ -190,16 +190,16 @@ def compute_dataset_coords(data_xds_list,
     return da.compute(coords_per_xds)[0]
 
 
-def make_net_gain_xds_list(data_xds_list, coords_per_xds):
-    """Construct a list of datasets to house the net gains.
+def make_net_xds_list(data_xds_list, coords_per_xds):
+    """Construct a list of dicts of xarray.Datasets to house the net gains.
 
     Args:
         data_xds_list: A List of xarray.Dataset objects containing MS data.
         coords_per_xds: A List of Dicts containing dataset coords.
 
     Returns:
-        net_gain_xds_list: A List of xarray.Dataset objects to house the
-            net gains.
+        net_gain_xds_list: A List of xarray.Dataset objects to house
+            the net gains.
     """
 
     net_gain_xds_list = []
@@ -222,11 +222,11 @@ def make_net_gain_xds_list(data_xds_list, coords_per_xds):
     return net_gain_xds_list
 
 
-def populate_net_gain_xds_list(net_gain_xds_list,
-                               solved_gain_xds_lol,
-                               t_bin_list,
-                               f_map_list,
-                               d_map_list):
+def populate_net_xds_list(net_gain_xds_list,
+                          solved_gain_xds_lod,
+                          t_bin_list,
+                          f_map_list,
+                          d_map_list):
     """Poplulate the list net gain datasets with net gain values.
 
     Args:
@@ -248,19 +248,20 @@ def populate_net_gain_xds_list(net_gain_xds_list,
 
     populated_net_gain_xds_list = []
 
-    for ind, xds_list in enumerate(solved_gain_xds_lol):
+    for ind, (terms, net_xds) in enumerate(zip(solved_gain_xds_lod,
+                                               net_gain_xds_list)):
 
-        net_gain_xds = net_gain_xds_list[ind]
-        net_shape = (net_gain_xds.dims["gain_t"],
-                     net_gain_xds.dims["gain_f"],
-                     net_gain_xds.dims["ant"],
-                     net_gain_xds.dims["dir"],
-                     net_gain_xds.dims["corr"])
+        net_shape = tuple(net_xds.dims[d]
+                          for d in ["gain_t", "gain_f", "ant", "dir", "corr"])
 
         gain_schema = ("time", "chan", "ant", "dir", "corr")
 
-        gains = [x for xds in xds_list for x in (xds.gains.data, gain_schema)]
+        gains = [x for xds in terms.values()
+                 for x in (xds.gains.data, gain_schema)]
         corr_mode = "diag" if net_shape[-1] == 2 else "full"  # TODO: Use int.
+        dtype = np.find_common_type(
+            [xds.gains.dtype for xds in terms.values()], []
+        )
 
         net_gain = da.blockwise(
             combine_gains, ("time", "chan", "ant", "dir", "corr"),
@@ -270,29 +271,35 @@ def populate_net_gain_xds_list(net_gain_xds_list,
             net_shape, None,
             corr_mode, None,
             *gains,
-            dtype=xds_list[0].gains.dtype,
+            dtype=dtype,
             align_arrays=False,
             concatenate=True,
-            adjust_chunks={"time": net_gain_xds.GAIN_SPEC.tchunk,
-                           "chan": net_gain_xds.GAIN_SPEC.fchunk}
+            adjust_chunks={"time": net_xds.GAIN_SPEC.tchunk,
+                           "chan": net_xds.GAIN_SPEC.fchunk}
         )
 
-        net_gain_xds = net_gain_xds.assign(
-            {"gains": (net_gain_xds.GAIN_AXES, net_gain)}
-        )
+        net_xds = net_xds.assign({"gains": (net_xds.GAIN_AXES, net_gain)})
 
-        populated_net_gain_xds_list.append(net_gain_xds)
+        populated_net_gain_xds_list.append(net_xds)
 
     return populated_net_gain_xds_list
 
 
-def write_gain_datasets(gain_xds_lol, output_opts):
+def write_gain_datasets(gain_xds_lod, net_xds_list, output_opts):
     """Write the contents of gain_xds_lol to zarr in accordance with opts."""
 
     root_path = pathlib.Path().absolute()  # Wherever the script is being run.
     gain_path = root_path.joinpath(output_opts.gain_dir)
 
-    term_names = [xds.NAME for xds in gain_xds_lol[0]]
+    term_names = [xds.NAME for xds in gain_xds_lod[0].values()]
+
+    writable_xds_dol = {tn: [d[tn] for d in gain_xds_lod] for tn in term_names}
+
+    # If we are writing out the net/effective gains.
+    if output_opts.net_gain:
+        net_name = net_xds_list[0].NAME
+        term_names.append(net_name)
+        writable_xds_dol[net_name] = net_xds_list
 
     # If the directory in which we intend to store a gain already exists, we
     # remove it to make sure that we don't end up with a mix of old and new.
@@ -305,17 +312,22 @@ def write_gain_datasets(gain_xds_lol, output_opts):
             except Exception as e:
                 logger.warning(f"Failed to delete {term_path}. Reason: {e}.")
 
-    gain_writes = []
+    gain_writes_lol = []
 
-    for ti, term_name in enumerate(term_names):
+    for term_name, term_xds_list in writable_xds_dol.items():
 
-        term_xds_list = [tl[ti].chunk({dim: -1 for dim in tl[ti].dims})
-                         for tl in gain_xds_lol]
+        # Remove chunking along all axes. Not ideal but necessary.
+        term_xds_list = [xds.chunk({dim: -1 for dim in xds.dims})
+                         for xds in term_xds_list]
 
         output_path = f"{gain_path}{'::' + term_name}"
 
         term_writes = xds_to_zarr(term_xds_list, output_path)
 
-        gain_writes.append(term_writes)
+        gain_writes_lol.append(term_writes)
 
-    return [list(terms) for terms in zip(*gain_writes)]
+    # This converts the interpolated list of lists into a list of dicts.
+    write_xds_lod = [{tn: term for tn, term in zip(term_names, terms)}
+                     for terms in zip(*gain_writes_lol)]
+
+    return write_xds_lod
