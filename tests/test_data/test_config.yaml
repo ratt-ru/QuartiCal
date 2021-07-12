@@ -34,6 +34,7 @@ output:
   - residual
   columns:
   - TEST_RESIDUALS
+  net_gain: False
 mad_flags:
   enable: false
   threshold_bl: 10
