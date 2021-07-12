@@ -6,10 +6,12 @@ import numpy as np
 import dask.array as da
 import pathlib
 import shutil
+from numba import generated_jit, types, literally
 from daskms.experimental.zarr import xds_to_zarr
 from quartical.gains import TERM_TYPES
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
+from quartical.gains.general.factories import v1_imul_v2_factory
 
 
 def make_gain_xds_list(data_xds_list,
@@ -236,6 +238,7 @@ def populate_net_gain_xds_list(net_gain_xds_list,
         gain_schema = ("time", "chan", "ant", "dir", "corr")
 
         gains = [x for xds in xds_list for x in (xds.gains.data, gain_schema)]
+        corr_mode = "diag" if net_shape[-1] == 2 else "full"  # TODO: Use int.
 
         net_gain = da.blockwise(
             combine_gains, ("time", "chan", "ant", "dir", "corr"),
@@ -243,6 +246,7 @@ def populate_net_gain_xds_list(net_gain_xds_list,
             f_map_list[ind], ("param", "chan", "term"),
             d_map_list[ind], None,
             net_shape, None,
+            corr_mode, None,
             *gains,
             dtype=xds_list[0].gains.dtype,
             align_arrays=False,
@@ -260,35 +264,46 @@ def populate_net_gain_xds_list(net_gain_xds_list,
     return populated_net_gain_xds_list
 
 
-def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, *gains):
+@generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
+def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains):
 
-    t_bin_arr = t_bin_arr[0]
-    f_map_arr = f_map_arr[0]
+    if not isinstance(mode, types.Literal):
+        return lambda t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains: \
+            literally(mode)
 
-    n_time = t_bin_arr.shape[0]
-    n_freq = f_map_arr.shape[0]
+    v1_imul_v2 = v1_imul_v2_factory(mode)
 
-    _, _, n_ant, n_dir, n_corr = net_shape
+    def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains):
+        t_bin_arr = t_bin_arr[0]
+        f_map_arr = f_map_arr[0]
 
-    net_gains = np.zeros((n_time, n_freq, n_ant, n_dir, n_corr),
-                         dtype=np.complex128)
-    net_gains[..., 0] = 1
-    net_gains[..., -1] = 1
+        n_time = t_bin_arr.shape[0]
+        n_freq = f_map_arr.shape[0]
 
-    n_term = len(gains)
+        _, _, n_ant, n_dir, n_corr = net_shape
 
-    for t in range(n_time):
-        for f in range(n_freq):
-            for a in range(n_ant):
-                for d in range(n_dir):
-                    for gi in range(n_term):
-                        tm = t_bin_arr[t, gi]
-                        fm = f_map_arr[f, gi]
-                        dm = d_map_arr[gi, d]
-                        net_gains[t, f, a, d] = \
-                            net_gains[t, f, a, d] @ gains[gi][tm, fm, a, dm]
+        net_gains = np.zeros((n_time, n_freq, n_ant, n_dir, n_corr),
+                             dtype=np.complex128)
+        net_gains[..., 0] = 1
+        net_gains[..., -1] = 1
 
-    return net_gains
+        n_term = len(gains)
+
+        for t in range(n_time):
+            for f in range(n_freq):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+                        for gi in range(n_term):
+                            tm = t_bin_arr[t, gi]
+                            fm = f_map_arr[f, gi]
+                            dm = d_map_arr[gi, d]
+                            v1_imul_v2(net_gains[t, f, a, d],
+                                       gains[gi][tm, fm, a, dm],
+                                       net_gains[t, f, a, d])
+
+        return net_gains
+
+    return impl
 
 
 def write_gain_datasets(gain_xds_lol, output_opts):

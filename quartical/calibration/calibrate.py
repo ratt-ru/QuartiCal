@@ -171,7 +171,7 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
     #     data_stats_xds_list.append(data_stats_xds)
 
     # Return the resulting graphs for the gains and updated xds.
-    return solved_gain_xds_list, post_solve_data_xds_list
+    return solved_gain_xds_list, net_gain_xds_list, post_solve_data_xds_list
 
 
 def make_visibility_output(data_xds_list, solved_gain_xds_list, t_map_list,

@@ -97,9 +97,11 @@ def _execute(exitstack):
                                     model_opts)
 
     # Adds the dask graph describing the calibration of the data.
-    gain_xds_lol, data_xds_list = add_calibration_graph(data_xds_list,
-                                                        solver_opts,
-                                                        chain_opts)
+    gain_xds_lol, net_gain_xds_list, data_xds_list = add_calibration_graph(
+        data_xds_list,
+        solver_opts,
+        chain_opts
+    )
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
