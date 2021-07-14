@@ -316,15 +316,23 @@ def write_gain_datasets(gain_xds_lod, net_xds_list, output_opts):
 
     for term_name, term_xds_list in writable_xds_dol.items():
 
-        # Remove chunking along all axes. Not ideal but necessary.
-        term_xds_list = [xds.chunk({dim: -1 for dim in xds.dims})
-                         for xds in term_xds_list]
+        term_write_xds_list = []
+
+        # The following rechunks to some sensible chunk size. This ensures
+        # that the chunks are regular and <2GB, which is necessary for zarr.
+
+        for xds in term_xds_list:
+            rechunk_axes = xds.GAIN_AXES[:2]
+            if hasattr(xds, "PARAM_AXES"):
+                rechunk_axes += xds.PARAM_AXES[:2]
+
+            rechunked_xds = xds.chunk({ax: "auto" for ax in rechunk_axes})
+
+            term_write_xds_list.append(rechunked_xds)
 
         output_path = f"{gain_path}{'::' + term_name}"
 
-        term_writes = xds_to_zarr(term_xds_list, output_path)
-
-        gain_writes_lol.append(term_writes)
+        gain_writes_lol.append(xds_to_zarr(term_write_xds_list, output_path))
 
     # This converts the interpolated list of lists into a list of dicts.
     write_xds_lod = [{tn: term for tn, term in zip(term_names, terms)}
