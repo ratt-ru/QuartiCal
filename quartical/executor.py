@@ -4,7 +4,7 @@ from contextlib import ExitStack
 from loguru import logger
 import dask
 from dask.diagnostics import ProgressBar
-from dask.distributed import Client, LocalCluster
+from dask.distributed import Client, LocalCluster, performance_report
 import time
 from quartical.config import parser, preprocess, helper, internal
 from quartical.logging import configure_loguru
@@ -119,9 +119,15 @@ def _execute(exitstack):
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
+    def compute_context(dask_opts):
+        if dask_opts.scheduler == "distributed":
+            return performance_report(filename="dask-report.qc.html")
+        else:
+            return ProgressBar()
+
     t0 = time.time()
 
-    with ProgressBar():
+    with compute_context(dask_opts):
 
         dask.compute(ms_writes, gain_writes,
                      num_workers=dask_opts.threads,
