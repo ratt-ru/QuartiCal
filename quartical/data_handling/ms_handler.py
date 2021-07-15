@@ -124,11 +124,14 @@ def read_xds_list(model_columns, ms_opts):
 
     _data_xds_list = []
 
+    corr_types = np.array(corr_types, dtype='U')
+    ant_names = np.array(antenna_xds.NAME.values, dtype='U')
+
     for xds_ind, xds in enumerate(data_xds_list):
         # Add coordinates to the xarray datasets.
         _xds = xds.assign_coords({"corr": corr_types,
                                   "chan": np.arange(xds.dims["chan"]),
-                                  "ant": np.arange(n_ant)})
+                                  "ant": ant_names})
 
         # Add the actual channel frequecies to the xds - this is in preparation
         # for solvers which require this information. Also adds the antenna
@@ -136,11 +139,9 @@ def read_xds_list(model_columns, ms_opts):
 
         chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
         chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
-        ant_names = clone(antenna_xds.NAME.data)
 
         _xds = _xds.assign({"CHAN_FREQ": (("chan",), chan_freqs[0]),
-                            "CHAN_WIDTH": (("chan",), chan_widths[0]),
-                            "ANT_NAME": (("ant",), ant_names)})
+                            "CHAN_WIDTH": (("chan",), chan_widths[0])})
 
         # Add an attribute to the xds on which we will store the names of
         # fields which must be written to the MS. Also add the attribute which

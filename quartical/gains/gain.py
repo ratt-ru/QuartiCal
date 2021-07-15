@@ -67,7 +67,7 @@ class Gain:
         self.n_t_chunk = len(self.utime_chunks)
         self.n_f_chunk = len(self.freq_chunks)
 
-        self.ant_names = data_xds.ANT_NAME.data
+        self.ant_names = data_xds.ant.values
         self.corr_types = data_xds.corr.values
 
         self.n_tipc_g = tuple(map(int, tipc[0]))
@@ -96,8 +96,7 @@ class Gain:
 
         # Set up an xarray.Dataset describing the gain term.
         xds = xarray.Dataset(
-            data_vars={"ant_names": (("ant",), self.ant_names)},
-            coords={"ant": ("ant", np.arange(self.n_ant, dtype=np.int32)),
+            coords={"ant": ("ant", self.ant_names),
                     "dir": ("dir", np.arange(self.n_dir, dtype=np.int32)),
                     "corr": ("corr", self.corr_types),
                     "t_chunk": ("t_chunk",
