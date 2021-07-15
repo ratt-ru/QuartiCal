@@ -49,6 +49,9 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
 
         load_xds_list = xds_from_zarr(load_path)
 
+        # Ensure that no axes are chunked at this point.
+        load_xds_list = [xds.chunk(-1) for xds in load_xds_list]
+
         # Convert to amp and phase/real and imag. Drop unused data_vars.
         converted_xds_list = convert_and_drop(load_xds_list, interp_mode)
 
@@ -106,9 +109,6 @@ def convert_and_drop(load_xds_list, interp_mode):
         converted_xds = converted_xds.drop_dims(drop_dims)
         drop_vars = set(converted_xds.data_vars) - interp_vars
         converted_xds = converted_xds.drop_vars(drop_vars)
-
-        # Ensure that no axes are chunked at this point.
-        converted_xds = converted_xds.chunk(-1)
 
         converted_xds_list.append(converted_xds)
 

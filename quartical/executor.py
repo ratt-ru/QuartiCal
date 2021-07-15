@@ -136,12 +136,12 @@ def _execute(exitstack):
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
-    # dask.visualize(*writes[:1], *gain_writes[:1],
+    # dask.visualize(*ms_writes[:1], *gain_writes[:1],
     #                color='order', cmap='autumn',
     #                filename='order.pdf', node_attr={'penwidth': '10'},
     #                optimize_graph=True)
 
-    # dask.visualize(*writes[:1], *gain_writes[:1],
+    # dask.visualize(*ms_writes[:1], *gain_writes[:1],
     #                filename='graph.pdf',
     #                optimize_graph=True)
 
