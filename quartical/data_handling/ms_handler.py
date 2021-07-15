@@ -6,21 +6,10 @@ from dask.graph_manipulation import clone
 from loguru import logger
 from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import initialise_flags
+from quartical.data_handling import CORR_TYPES
 from quartical.data_handling.chunking import compute_chunking
 from quartical.data_handling.bda import process_bda_input, process_bda_output
 from quartical.data_handling.selection import filter_xds_list
-
-
-CORR_TYPES = {
-  5: "RR",
-  6: "RL",
-  7: "LR",
-  8: "LL",
-  9: "XX",
-  10: "XY",
-  11: "YX",
-  12: "YY",
-}
 
 
 def read_xds_list(model_columns, ms_opts):
