@@ -8,7 +8,7 @@ term_spec_tup = namedtuple("term_spec_tup", "name type shape pshape")
 
 
 def construct_solver(data_xds_list,
-                     gain_xds_list,
+                     gain_xds_lod,
                      t_bin_list,
                      t_map_list,
                      f_map_list,
@@ -23,7 +23,7 @@ def construct_solver(data_xds_list,
 
     Args:
         data_xds_list: A list of xarray.Dataset objects containing MS data.
-        gain_xds_list: A list of lists containing xarray.Dataset objects
+        gain_xds_lod: A list of dicts containing xarray.Dataset objects
             describing the gain terms.
         t_map_list: List of dask.Array objects containing time mappings.
         f_map_list: List of dask.Array objects containing frequency mappings.
@@ -32,10 +32,11 @@ def construct_solver(data_xds_list,
         chain_opts: A Chain config object.
 
     Returns:
-        A list of lists containing xarray.Datasets describing the solved gains.
+        solved_gain_xds_lod: A list of dicts containing xarray.Datasets
+            describing the solved gains.
     """
 
-    solved_gain_xds_list = []
+    solved_gain_xds_lod = []
 
     for xds_ind, data_xds in enumerate(data_xds_list):
 
@@ -49,7 +50,7 @@ def construct_solver(data_xds_list,
         t_map_arr = t_map_list[xds_ind]
         f_map_arr = f_map_list[xds_ind]
         d_map_arr = d_map_list[xds_ind]
-        gain_terms = gain_xds_list[xds_ind]
+        gain_terms = gain_xds_lod[xds_ind]
         n_corr = data_xds.dims["corr"]
         corr_mode = "diag" if n_corr == 2 else "full"  # TODO: Use int.
 
@@ -80,12 +81,13 @@ def construct_solver(data_xds_list,
         blocker.add_input("solver_opts", solver_opts)
         blocker.add_input("chain_opts", chain_opts)
 
-        # TODO: Mildly hacky? If the gain dataset already has a gain variable,
-        # we want to pass it in.
-        for t in gain_terms:
-            if "gains" in t.data_vars:
-                blocker.add_input(f"{t.NAME}_initial_gain",
-                                  t.gains.data, "rfadc")
+        # If the gain dataset already has a gain variable, we want to pass
+        # it in to initialize the solver.
+        for term_name, term_xds in gain_terms.items():
+            if "gains" in term_xds.data_vars:
+                blocker.add_input(f"{term_name}_initial_gain",
+                                  term_xds.gains.data,
+                                  "rfadc")
 
         if hasattr(data_xds, "ROW_MAP"):  # We are dealing with BDA.
             blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")
@@ -95,51 +97,60 @@ def construct_solver(data_xds_list,
             blocker.add_input("row_weights", None)
 
         # Add relevant outputs to blocker object.
-        for gi, gn in enumerate(solver_opts.terms):
+        for term_name, term_xds in gain_terms.items():
 
-            chunks = gain_terms[gi].GAIN_SPEC
-            blocker.add_output(f"{gn}-gain", "rfadc", chunks, np.complex128)
+            blocker.add_output(f"{term_name}-gain",
+                               "rfadc",
+                               term_xds.GAIN_SPEC,
+                               np.complex128)
 
             # If there is a PARAM_SPEC on the gain xds, it is also an output.
-            if hasattr(gain_terms[gi], "PARAM_SPEC"):
-                chunks = gain_terms[gi].PARAM_SPEC
-                blocker.add_output(f"{gn}-param", "rfadpc", chunks,
+            if hasattr(term_xds, "PARAM_SPEC"):
+                blocker.add_output(f"{term_name}-param",
+                                   "rfadpc",
+                                   term_xds.PARAM_SPEC,
                                    np.float64)
 
             chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
-            blocker.add_output(f"{gn}-conviter", "rf", chunks, np.int64)
-            blocker.add_output(f"{gn}-convperc", "rf", chunks, np.float64)
+            blocker.add_output(f"{term_name}-conviter",
+                               "rf",
+                               chunks,
+                               np.int64)
+            blocker.add_output(f"{term_name}-convperc",
+                               "rf",
+                               chunks,
+                               np.float64)
 
         # Apply function to inputs to produce dask array outputs (as dict).
         output_dict = blocker.get_dask_outputs()
 
         # Assign results to the relevant gain xarray.Dataset object.
-        solved_gain_terms = []
+        solved_gain_dict = {}
 
-        for gi, gain_xds in enumerate(gain_terms):
+        for term_name, term_xds in gain_terms.items():
 
             result_vars = {}
 
-            gain = output_dict[f"{gain_xds.NAME}-gain"]
-            result_vars["gains"] = (gain_xds.GAIN_AXES, gain)
+            gain = output_dict[f"{term_name}-gain"]
+            result_vars["gains"] = (term_xds.GAIN_AXES, gain)
 
-            convperc = output_dict[f"{gain_xds.NAME}-convperc"]
+            convperc = output_dict[f"{term_name}-convperc"]
             result_vars["conv_perc"] = (("t_chunk", "f_chunk"), convperc)
 
-            conviter = output_dict[f"{gain_xds.NAME}-conviter"]
+            conviter = output_dict[f"{term_name}-conviter"]
             result_vars["conv_iter"] = (("t_chunk", "f_chunk"), conviter)
 
-            if hasattr(gain_xds, "PARAM_SPEC"):
-                params = output_dict[f"{gain_xds.NAME}-param"]
-                result_vars["params"] = (gain_xds.PARAM_AXES, params)
+            if hasattr(term_xds, "PARAM_SPEC"):
+                params = output_dict[f"{term_name}-param"]
+                result_vars["params"] = (term_xds.PARAM_AXES, params)
 
-            solved_xds = gain_xds.assign(result_vars)
+            solved_xds = term_xds.assign(result_vars)
 
-            solved_gain_terms.append(solved_xds)
+            solved_gain_dict[term_name] = solved_xds
 
-        solved_gain_xds_list.append(solved_gain_terms)
+        solved_gain_xds_lod.append(solved_gain_dict)
 
-    return solved_gain_xds_list
+    return solved_gain_xds_lod
 
 
 def expand_specs(gain_terms):
@@ -149,21 +160,27 @@ def expand_specs(gain_terms):
     # to be made a little neater/smarter, but works for now. Assembles nested
     # list where the outer list represnts time chunks, the middle list
     # represents frequency chunks and the inner-most list contains the
-    # specs per term.
+    # specs per term. Might be possible to do this with arrays instead.
 
-    n_t_chunks = gain_terms[0].dims["t_chunk"]
-    n_f_chunks = gain_terms[0].dims["f_chunk"]
+    n_t_chunks = set(xds.dims["t_chunk"] for xds in gain_terms.values())
+    n_f_chunks = set(xds.dims["f_chunk"] for xds in gain_terms.values())
+
+    assert len(n_t_chunks) == 1, "Chunking in time is inconsistent."
+    assert len(n_f_chunks) == 1, "Chunking in freq is inconsistent."
+
+    n_t_chunks = n_t_chunks.pop()
+    n_f_chunks = n_f_chunks.pop()
 
     tc_list = []
     for tc_ind in range(n_t_chunks):
         fc_list = []
         for fc_ind in range(n_f_chunks):
             term_list = []
-            for gxds in gain_terms:
+            for xds in gain_terms.values():
 
-                term_name = gxds.NAME
-                term_type = gxds.TYPE
-                gain_chunk_spec = gxds.GAIN_SPEC
+                term_name = xds.NAME
+                term_type = xds.TYPE
+                gain_chunk_spec = xds.GAIN_SPEC
 
                 tc = gain_chunk_spec.tchunk[tc_ind]
                 fc = gain_chunk_spec.fchunk[fc_ind]
@@ -175,7 +192,7 @@ def expand_specs(gain_terms):
                 term_shape = (tc, fc, ac, dc, cc)
 
                 # Check if we have a spec for the parameters.
-                parm_chunk_spec = getattr(gxds, "PARAM_SPEC", ())
+                parm_chunk_spec = getattr(xds, "PARAM_SPEC", ())
                 if parm_chunk_spec:
                     tc_p = parm_chunk_spec.tchunk[tc_ind]
                     fc_p = parm_chunk_spec.fchunk[fc_ind]

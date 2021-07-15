@@ -4,7 +4,7 @@ from contextlib import ExitStack
 from loguru import logger
 import dask
 from dask.diagnostics import ProgressBar
-from dask.distributed import Client, LocalCluster
+from dask.distributed import Client, LocalCluster, performance_report
 import time
 from quartical.config import parser, preprocess, helper, internal
 from quartical.logging import configure_loguru
@@ -97,9 +97,11 @@ def _execute(exitstack):
                                     model_opts)
 
     # Adds the dask graph describing the calibration of the data.
-    gain_xds_lol, data_xds_list = add_calibration_graph(data_xds_list,
-                                                        solver_opts,
-                                                        chain_opts)
+    gain_xds_lod, net_xds_list, data_xds_list = add_calibration_graph(
+        data_xds_list,
+        solver_opts,
+        chain_opts
+    )
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
@@ -111,14 +113,21 @@ def _execute(exitstack):
                                ms_opts.path,
                                output_opts)
 
-    gain_writes = write_gain_datasets(gain_xds_lol,
+    gain_writes = write_gain_datasets(gain_xds_lod,
+                                      net_xds_list,
                                       output_opts)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
+    def compute_context(dask_opts):
+        if dask_opts.scheduler == "distributed":
+            return performance_report(filename="dask-report.qc.html")
+        else:
+            return ProgressBar()
+
     t0 = time.time()
 
-    with ProgressBar():
+    with compute_context(dask_opts):
 
         dask.compute(ms_writes, gain_writes,
                      num_workers=dask_opts.threads,
@@ -127,12 +136,12 @@ def _execute(exitstack):
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
-    # dask.visualize(*writes[:1], *gain_writes[:1],
+    # dask.visualize(*ms_writes[:1], *gain_writes[:1],
     #                color='order', cmap='autumn',
     #                filename='order.pdf', node_attr={'penwidth': '10'},
     #                optimize_graph=True)
 
-    # dask.visualize(*writes[:1], *gain_writes[:1],
+    # dask.visualize(*ms_writes[:1], *gain_writes[:1],
     #                filename='graph.pdf',
     #                optimize_graph=True)
 

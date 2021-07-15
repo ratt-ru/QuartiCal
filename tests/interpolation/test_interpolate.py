@@ -124,13 +124,13 @@ def gain_params(_params):
 
 
 @pytest.fixture(scope="module")
-def gain_xds_list(gain_params):
-    return [[xds, xds] for xds in mock_gain_xds_list(*gain_params)]
+def gain_xds_lod(gain_params):
+    return [{"G": xds, "B": xds} for xds in mock_gain_xds_list(*gain_params)]
 
 
 @pytest.fixture(scope="module")
-def term_xds_list(gain_xds_list):
-    return [xds_list[0] for xds_list in gain_xds_list]
+def term_xds_list(gain_xds_lod):
+    return [xds_list["G"] for xds_list in gain_xds_lod]
 
 
 @pytest.fixture(scope="module")
@@ -316,14 +316,14 @@ def test_chunking(interp_xds_list, term_xds_list):
 
 
 @pytest.fixture(scope="function")
-def interp_xds_lol(gain_xds_list, chain_opts, load_xds_list, monkeypatch):
+def interp_xds_lol(gain_xds_lod, chain_opts, load_xds_list, monkeypatch):
 
     monkeypatch.setattr(
         "quartical.interpolation.interpolate.xds_from_zarr",
         lambda store: load_xds_list
     )
 
-    return load_and_interpolate_gains(gain_xds_list, chain_opts)
+    return load_and_interpolate_gains(gain_xds_lod, chain_opts)
 
 
 @pytest.fixture(scope="function")
@@ -333,14 +333,14 @@ def compute_interp_xds_lol(interp_xds_lol):
 
 def test_cixl_has_gains(compute_interp_xds_lol):
     assert all([hasattr(xds, "gains")
-               for xds_list in compute_interp_xds_lol
-               for xds in xds_list])
+               for xds_dict in compute_interp_xds_lol
+               for xds in xds_dict.values()])
 
 
 def test_cixl_gains_ident(compute_interp_xds_lol):
     # NOTE: Splines will not be exactly identity due to numerical precision.
     assert all(np.allclose(xds.gains.values, np.array([1, 0, 0, 1]))
-               for xds_list in compute_interp_xds_lol
-               for xds in xds_list)
+               for xds_dict in compute_interp_xds_lol
+               for xds in xds_dict.values())
 
 # -----------------------------------------------------------------------------

@@ -3,6 +3,7 @@ import numpy as np
 from numba import prange, literally, generated_jit, types, jit
 from numba.extending import register_jitable
 from numba.typed import List
+from quartical.gains.general.factories import v1_imul_v2_factory
 from quartical.gains.general.convenience import (get_dims,
                                                  get_row,
                                                  old_mul_rweight)
@@ -378,3 +379,45 @@ def compute_convergence(gain, last_gain):
                     n_cnvgd += tmp_diff_abs2/tmp_abs2 < 1e-6**2
 
     return n_cnvgd/(n_tint*n_fint*n_dir)
+
+
+@generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
+def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains):
+
+    if not isinstance(mode, types.Literal):
+        return lambda t_bin_arr, f_map_arr, d_map_arr, \
+                      net_shape, mode, *gains: literally(mode)
+
+    v1_imul_v2 = v1_imul_v2_factory(mode)
+
+    def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains):
+        t_bin_arr = t_bin_arr[0]
+        f_map_arr = f_map_arr[0]
+
+        n_time = t_bin_arr.shape[0]
+        n_freq = f_map_arr.shape[0]
+
+        _, _, n_ant, n_dir, n_corr = net_shape
+
+        net_gains = np.zeros((n_time, n_freq, n_ant, n_dir, n_corr),
+                             dtype=np.complex128)
+        net_gains[..., 0] = 1
+        net_gains[..., -1] = 1
+
+        n_term = len(gains)
+
+        for t in range(n_time):
+            for f in range(n_freq):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+                        for gi in range(n_term):
+                            tm = t_bin_arr[t, gi]
+                            fm = f_map_arr[f, gi]
+                            dm = d_map_arr[gi, d]
+                            v1_imul_v2(net_gains[t, f, a, d],
+                                       gains[gi][tm, fm, a, dm],
+                                       net_gains[t, f, a, d])
+
+        return net_gains
+
+    return impl
