@@ -111,6 +111,12 @@ def construct_solver(data_xds_list,
                                    term_xds.PARAM_SPEC,
                                    np.float64)
 
+            else:  # Only non-parameterised gains return a jhj (for now).
+                blocker.add_output(f"{term_name}-jhj",
+                                   "rfadc",
+                                   term_xds.GAIN_SPEC,
+                                   np.complex128)
+
             chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
             blocker.add_output(f"{term_name}-conviter",
                                "rf",
@@ -143,6 +149,9 @@ def construct_solver(data_xds_list,
             if hasattr(term_xds, "PARAM_SPEC"):
                 params = output_dict[f"{term_name}-param"]
                 result_vars["params"] = (term_xds.PARAM_AXES, params)
+            else:
+                jhj = output_dict[f"{term_name}-jhj"]
+                result_vars["jhj"] = (term_xds.GAIN_AXES, jhj)
 
             solved_xds = term_xds.assign(result_vars)
 

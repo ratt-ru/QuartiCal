@@ -116,7 +116,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             if cnv_perc > 0.99:
                 break
 
-        return term_conv_info(i + 1, cnv_perc)
+        return jhj, term_conv_info(i + 1, cnv_perc)
 
     return impl
 
