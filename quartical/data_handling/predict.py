@@ -24,6 +24,7 @@ from africanus.model.spectral.dask import spectral_model
 from africanus.model.shape.dask import gaussian as gaussian_shape
 from africanus.util.beams import beam_filenames, beam_grids
 
+from quartical.data_handling import CORR_TYPES
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.collections import freeze_default_dict
 
@@ -737,6 +738,8 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
         ddid_xds = ddid_xds_list[data_xds.attrs['DATA_DESC_ID']]
         spw_xds = spw_xds_list[ddid_xds.SPECTRAL_WINDOW_ID.data[0]]
         pol_xds = pol_xds_list[ddid_xds.POLARIZATION_ID.data[0]]
+        corr_type = [CORR_TYPES[ct] for ct in pol_xds.CORR_TYPE.values[0]]
+        corr_type = np.array(corr_type, dtype='U')
 
         model_vis = defaultdict(list)
 
@@ -758,7 +761,9 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
                 if vis.ndim == 4:
                     vis = vis.reshape(vis.shape[:-2] + (4,))
 
-                vis = DataArray(vis, dims=["row", "chan", "corr"])
+                vis = DataArray(vis,
+                                dims=["row", "chan", "corr"],
+                                coords={"corr": corr_type})
 
                 vis = vis.sel(corr=data_xds.corr.values)
 

@@ -84,6 +84,7 @@ class Outputs(Input):
                                "weights"])
     )
     columns: Optional[List[str]] = None
+    net_gain: bool = False
 
     def __post_init__(self):
         self.validate_choice_fields()

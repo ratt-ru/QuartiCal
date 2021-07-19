@@ -70,11 +70,14 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
 
     for term, iters in zip(cycle(terms), iter_recipe):
 
-        if iters == 0:
-            continue
-
         active_term = terms.index(term)
         term_name, term_type, _, _ = term_spec_list[active_term]
+
+        if iters == 0:
+            # TODO: Actually compute it in this special case?
+            results_dict[f"{term_name}-jhj"] = \
+                np.zeros_like(results_dict[f"{term_name}-gain"])
+            continue
 
         term_type_cls = TERM_TYPES[term_type]
 
@@ -88,15 +91,16 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
             term_args_nt(**{k: kwargs[k] for k in term_args_nt._fields})
         meta_args = meta_args_nt(iters, active_term, robust)
 
-        info_tup = solver(base_args,
-                          term_args,
-                          meta_args,
-                          kwargs["corr_mode"])
+        jhj, info_tup = solver(base_args,
+                               term_args,
+                               meta_args,
+                               kwargs["corr_mode"])
 
         results_dict[f"{term_name}-conviter"] += \
             np.atleast_2d(info_tup.conv_iters)
         results_dict[f"{term_name}-convperc"] += \
             np.atleast_2d(info_tup.conv_perc)
+        results_dict[f"{term_name}-jhj"] = jhj
 
     gc.collect()
 
