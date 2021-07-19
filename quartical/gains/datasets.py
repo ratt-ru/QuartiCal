@@ -258,7 +258,7 @@ def populate_net_xds_list(net_gain_xds_list,
 
         gains = [x for xds in terms.values()
                  for x in (xds.gains.data, gain_schema)]
-        corr_mode = "diag" if net_shape[-1] == 2 else "full"  # TODO: Use int.
+        corr_mode = net_shape[-1]
         dtype = np.find_common_type(
             [xds.gains.dtype for xds in terms.values()], []
         )

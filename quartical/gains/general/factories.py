@@ -13,21 +13,26 @@ qcjit = jit(nogil=True,
 def imul_rweight_factory(mode, weight):
 
     if isinstance(weight, types.NoneType):
-        if mode.literal_value == "full" or mode.literal_value == "mixed":
+        if mode.literal_value == 4:
             def impl(invec, outvec, weight, ind):
                 outvec[0] = invec[0]
                 outvec[1] = invec[1]
                 outvec[2] = invec[2]
                 outvec[3] = invec[3]
-        else:
+        elif mode.literal_value == 2:
             def impl(invec, outvec, weight, ind):
                 outvec[0] = invec[0]
                 outvec[1] = invec[1]
+        elif mode.literal_value == 1:
+            def impl(invec, outvec, weight, ind):
+                outvec[0] = invec[0]
+        else:
+            raise ValueError("Unsupported number of correlations.")
     else:
 
         unpack = unpack_factory(mode)
 
-        if mode.literal_value == "full" or mode.literal_value == "mixed":
+        if mode.literal_value == 4:
             def impl(invec, outvec, weight, ind):
                 v00, v01, v10, v11 = unpack(invec)
                 w = weight[ind]
@@ -35,12 +40,20 @@ def imul_rweight_factory(mode, weight):
                 outvec[1] = w*v01
                 outvec[2] = w*v10
                 outvec[3] = w*v11
-        else:
+        elif mode.literal_value == 2:
             def impl(invec, outvec, weight, ind):
                 v00, v11 = unpack(invec)
                 w = weight[ind]
                 outvec[0] = w*v00
                 outvec[1] = w*v11
+        elif mode.literal_value == 1:
+            def impl(invec, outvec, weight, ind):
+                v00 = unpack(invec)
+                w = weight[ind]
+                outvec[0] = w*v00
+        else:
+            raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
@@ -48,7 +61,7 @@ def v1_mul_v2_factory(mode):
 
     unpack = unpack_factory(mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1, v2):
             v1_00, v1_01, v1_10, v1_11 = unpack(v1)
             v2_00, v2_01, v2_10, v2_11 = unpack(v2)
@@ -59,7 +72,7 @@ def v1_mul_v2_factory(mode):
             v3_11 = (v1_10*v2_01 + v1_11*v2_11)
 
             return v3_00, v3_01, v3_10, v3_11
-    else:
+    elif mode.literal_value == 2:
         def impl(v1, v2):
             v1_00, v1_11 = unpack(v1)
             v2_00, v2_11 = unpack(v2)
@@ -68,6 +81,17 @@ def v1_mul_v2_factory(mode):
             v3_11 = v1_11*v2_11
 
             return v3_00, v3_11
+    elif mode.literal_value == 1:
+        def impl(v1, v2):
+            v1_00 = unpack(v1)
+            v2_00 = unpack(v2)
+
+            v3_00 = v1_00*v2_00
+
+            return v3_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
@@ -75,7 +99,7 @@ def v1_imul_v2_factory(mode):
 
     unpack = unpack_factory(mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1, v2, o1):
             v1_00, v1_01, v1_10, v1_11 = unpack(v1)
             v2_00, v2_01, v2_10, v2_11 = unpack(v2)
@@ -84,13 +108,22 @@ def v1_imul_v2_factory(mode):
             o1[1] = (v1_00*v2_01 + v1_01*v2_11)
             o1[2] = (v1_10*v2_00 + v1_11*v2_10)
             o1[3] = (v1_10*v2_01 + v1_11*v2_11)
-    else:
+    elif mode.literal_value == 2:
         def impl(v1, v2, o1):
             v1_00, v1_11 = unpack(v1)
             v2_00, v2_11 = unpack(v2)
 
             o1[0] = v1_00*v2_00
             o1[1] = v1_11*v2_11
+    elif mode.literal_value == 1:
+        def impl(v1, v2, o1):
+            v1_00 = unpack(v1)
+            v2_00 = unpack(v2)
+
+            o1[0] = v1_00*v2_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
@@ -99,7 +132,7 @@ def v1_mul_v2ct_factory(mode):
     unpack = unpack_factory(mode)
     unpackct = unpackct_factory(mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1, v2):
             v1_00, v1_01, v1_10, v1_11 = unpack(v1)
             v2_00, v2_01, v2_10, v2_11 = unpackct(v2)
@@ -110,7 +143,7 @@ def v1_mul_v2ct_factory(mode):
             v3_11 = (v1_10*v2_01 + v1_11*v2_11)
 
             return v3_00, v3_01, v3_10, v3_11
-    else:
+    elif mode.literal_value == 2:
         def impl(v1, v2):
             v1_00, v1_11 = unpack(v1)
             v2_00, v2_11 = unpackct(v2)
@@ -119,6 +152,17 @@ def v1_mul_v2ct_factory(mode):
             v3_11 = v1_11*v2_11
 
             return v3_00, v3_11
+    elif mode.literal_value == 1:
+        def impl(v1, v2):
+            v1_00 = unpack(v1)
+            v2_00 = unpackct(v2)
+
+            v3_00 = v1_00*v2_00
+
+            return v3_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
@@ -127,7 +171,7 @@ def v1_imul_v2ct_factory(mode):
     unpack = unpack_factory(mode)
     unpackct = unpackct_factory(mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1, v2, o1):
             v1_00, v1_01, v1_10, v1_11 = unpack(v1)
             v2_00, v2_01, v2_10, v2_11 = unpackct(v2)
@@ -136,13 +180,22 @@ def v1_imul_v2ct_factory(mode):
             o1[1] = (v1_00*v2_01 + v1_01*v2_11)
             o1[2] = (v1_10*v2_00 + v1_11*v2_10)
             o1[3] = (v1_10*v2_01 + v1_11*v2_11)
-    else:
+    elif mode.literal_value == 2:
         def impl(v1, v2, o1):
             v1_00, v1_11 = unpack(v1)
             v2_00, v2_11 = unpackct(v2)
 
             o1[0] = v1_00*v2_00
             o1[1] = v1_11*v2_11
+    elif mode.literal_value == 1:
+        def impl(v1, v2, o1):
+            v1_00 = unpack(v1)
+            v2_00 = unpackct(v2)
+
+            o1[0] = v1_00*v2_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
@@ -151,7 +204,7 @@ def v1ct_mul_v2_factory(mode):
     unpack = unpack_factory(mode)
     unpackct = unpackct_factory(mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1, v2):
             v1_00, v1_01, v1_10, v1_11 = unpackct(v1)
             v2_00, v2_01, v2_10, v2_11 = unpack(v2)
@@ -162,7 +215,7 @@ def v1ct_mul_v2_factory(mode):
             v3_11 = (v1_10*v2_01 + v1_11*v2_11)
 
             return v3_00, v3_01, v3_10, v3_11
-    else:
+    elif mode.literal_value == 2:
         def impl(v1, v2):
             v1_00, v1_11 = unpackct(v1)
             v2_00, v2_11 = unpack(v2)
@@ -171,6 +224,17 @@ def v1ct_mul_v2_factory(mode):
             v3_11 = v1_11*v2_11
 
             return v3_00, v3_11
+    elif mode.literal_value == 1:
+        def impl(v1, v2):
+            v1_00 = unpackct(v1)
+            v2_00 = unpack(v2)
+
+            v3_00 = v1_00*v2_00
+
+            return v3_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
@@ -179,7 +243,7 @@ def v1ct_imul_v2_factory(mode):
     unpack = unpack_factory(mode)
     unpackct = unpackct_factory(mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1, v2, o1):
             v1_00, v1_01, v1_10, v1_11 = unpackct(v1)
             v2_00, v2_01, v2_10, v2_11 = unpack(v2)
@@ -188,13 +252,22 @@ def v1ct_imul_v2_factory(mode):
             o1[1] = (v1_00*v2_01 + v1_01*v2_11)
             o1[2] = (v1_10*v2_00 + v1_11*v2_10)
             o1[3] = (v1_10*v2_01 + v1_11*v2_11)
-    else:
+    elif mode.literal_value == 2:
         def impl(v1, v2, o1):
             v1_00, v1_11 = unpackct(v1)
             v2_00, v2_11 = unpack(v2)
 
             o1[0] = v1_00*v2_00
             o1[1] = v1_11*v2_11
+    elif mode.literal_value == 1:
+        def impl(v1, v2, o1):
+            v1_00 = unpackct(v1)
+            v2_00 = unpack(v2)
+
+            o1[0] = v1_00*v2_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
@@ -202,7 +275,7 @@ def iwmul_factory(mode):
 
     unpack = unpack_factory(mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1, w1):
             w1_00, w1_01, w1_10, w1_11 = unpack(w1)
 
@@ -210,12 +283,20 @@ def iwmul_factory(mode):
             v1[1] *= w1_00
             v1[2] *= w1_11
             v1[3] *= w1_11
-    else:
+    elif mode.literal_value == 2:
         def impl(v1, w1):
             w1_00, w1_11 = unpack(w1)
 
             v1[0] *= w1_00
             v1[1] *= w1_11
+    elif mode.literal_value == 1:
+        def impl(v1, w1):
+            w1_00 = unpack(w1)
+
+            v1[0] *= w1_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
@@ -224,7 +305,7 @@ def v1_wmul_v2ct_factory(mode):
     unpack = unpack_factory(mode)
     unpackct = unpackct_factory(mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1, v2, w1):
             v1_00, v1_01, v1_10, v1_11 = unpack(v1)
             v2_00, v2_01, v2_10, v2_11 = unpackct(v2)
@@ -236,7 +317,7 @@ def v1_wmul_v2ct_factory(mode):
             v3_11 = (v1_10*w1_00*v2_01 + v1_11*w1_11*v2_11)
 
             return v3_00, v3_01, v3_10, v3_11
-    else:
+    elif mode.literal_value == 2:
         def impl(v1, v2, w1):
             v1_00, v1_11 = unpack(v1)
             v2_00, v2_11 = unpackct(v2)
@@ -246,6 +327,18 @@ def v1_wmul_v2ct_factory(mode):
             v3_11 = v1_11*w1_11*v2_11
 
             return v3_00, v3_11
+    elif mode.literal_value == 1:
+        def impl(v1, v2, w1):
+            v1_00 = unpack(v1)
+            v2_00 = unpackct(v2)
+            w1_00 = unpack(w1)
+
+            v3_00 = v1_00*w1_00*v2_00
+
+            return v3_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
@@ -254,7 +347,7 @@ def v1ct_wmul_v2_factory(mode):
     unpack = unpack_factory(mode)
     unpackct = unpackct_factory(mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1, v2, w1):
             v1_00, v1_01, v1_10, v1_11 = unpackct(v1)
             v2_00, v2_01, v2_10, v2_11 = unpack(v2)
@@ -266,7 +359,7 @@ def v1ct_wmul_v2_factory(mode):
             v3_11 = (v1_10*w1_00*v2_01 + v1_11*w1_11*v2_11)
 
             return v3_00, v3_01, v3_10, v3_11
-    else:
+    elif mode.literal_value == 2:
         def impl(v1, v2, w1):
             v1_00, v1_11 = unpackct(v1)
             v2_00, v2_11 = unpack(v2)
@@ -276,155 +369,168 @@ def v1ct_wmul_v2_factory(mode):
             v3_11 = v1_11*w1_11*v2_11
 
             return v3_00, v3_11
+    elif mode.literal_value == 1:
+        def impl(v1, v2, w1):
+            v1_00 = unpackct(v1)
+            v2_00 = unpack(v2)
+            w1_00 = unpack(w1)
+
+            v3_00 = v1_00*w1_00*v2_00
+
+            return v3_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
 def unpack_factory(mode):
 
-    if mode.literal_value == "full":
+    if mode.literal_value == 4:
         def impl(invec):
             return invec[0], invec[1], invec[2], invec[3]
-    elif mode.literal_value == "diag":
+    elif mode.literal_value == 2:
         def impl(invec):
             return invec[0], invec[1]
-    else:
+    elif mode.literal_value == 1:
         def impl(invec):
-            if len(invec) == 4:
-                return invec[0], invec[1], invec[2], invec[3]
-            else:
-                return invec[0], 0, 0, invec[1]
+            return invec[0]
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
 def unpackct_factory(mode):
 
-    if mode.literal_value == "full":
+    if mode.literal_value == 4:
         def impl(invec):
             return np.conjugate(invec[0]), \
                    np.conjugate(invec[2]), \
                    np.conjugate(invec[1]), \
                    np.conjugate(invec[3])
-    elif mode.literal_value == "diag":
+    elif mode.literal_value == 2:
         def impl(invec):
             return np.conjugate(invec[0]), \
                    np.conjugate(invec[1])
-    else:
+    elif mode.literal_value == 1:
         def impl(invec):
-            if len(invec) == 4:
-                return np.conjugate(invec[0]), \
-                       np.conjugate(invec[2]), \
-                       np.conjugate(invec[1]), \
-                       np.conjugate(invec[3])
-            else:
-                return np.conjugate(invec[0]), \
-                       0, \
-                       0, \
-                       np.conjugate(invec[1])
+            return np.conjugate(invec[0])
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
 def iunpack_factory(mode):
 
-    if mode.literal_value == "full":
+    if mode.literal_value == 4:
         def impl(outvec, invec):
             outvec[0] = invec[0]
             outvec[1] = invec[1]
             outvec[2] = invec[2]
             outvec[3] = invec[3]
-    elif mode.literal_value == "diag":
+    elif mode.literal_value == 2:
         def impl(outvec, invec):
             outvec[0] = invec[0]
             outvec[1] = invec[1]
-    else:
+    elif mode.literal_value == 1:
         def impl(outvec, invec):
-            if len(invec) == 4:
-                outvec[0] = invec[0]
-                outvec[1] = invec[1]
-                outvec[2] = invec[2]
-                outvec[3] = invec[3]
-            else:
-                outvec[0] = invec[0]
-                outvec[1] = 0
-                outvec[2] = 0
-                outvec[3] = invec[1]
+            outvec[0] = invec[0]
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
 def iunpackct_factory(mode):
 
-    if mode.literal_value == "full":
+    if mode.literal_value == 4:
         def impl(outvec, invec):
             outvec[0] = np.conjugate(invec[0])
             outvec[1] = np.conjugate(invec[2])
             outvec[2] = np.conjugate(invec[1])
             outvec[3] = np.conjugate(invec[3])
-    elif mode.literal_value == "diag":
+    elif mode.literal_value == 2:
         def impl(outvec, invec):
             outvec[0] = np.conjugate(invec[0])
             outvec[1] = np.conjugate(invec[1])
-    else:
+    elif mode.literal_value == 1:
         def impl(outvec, invec):
-            if len(invec) == 4:
-                outvec[0] = np.conjugate(invec[0])
-                outvec[1] = np.conjugate(invec[2])
-                outvec[2] = np.conjugate(invec[1])
-                outvec[3] = np.conjugate(invec[3])
-            else:
-                outvec[0] = np.conjugate(invec[0])
-                outvec[1] = 0
-                outvec[2] = 0
-                outvec[3] = np.conjugate(invec[1])
+            outvec[0] = np.conjugate(invec[0])
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
 def iadd_factory(mode):
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(outvec, invec):
             outvec[0] += invec[0]
             outvec[1] += invec[1]
             outvec[2] += invec[2]
             outvec[3] += invec[3]
-    else:
+    elif mode.literal_value == 2:
         def impl(outvec, invec):
             outvec[0] += invec[0]
             outvec[1] += invec[1]
+    elif mode.literal_value == 1:
+        def impl(outvec, invec):
+            outvec[0] += invec[0]
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
 def valloc_factory(mode):
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(dtype, leading_dims=()):
             return np.empty((*leading_dims, 4), dtype=dtype)
-    else:
+    elif mode.literal_value == 2:
         def impl(dtype, leading_dims=()):
             return np.empty((*leading_dims, 2), dtype=dtype)
+    elif mode.literal_value == 1:
+        def impl(dtype, leading_dims=()):
+            return np.empty((*leading_dims, 1), dtype=dtype)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
 def loop_var_factory(mode):
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(n_gains, active_term):
             all_terms = np.arange(n_gains - 1, -1, -1)
             gt_active = np.arange(n_gains - 1, active_term, -1)
             lt_active = np.arange(active_term)
             return all_terms, gt_active, lt_active
-    else:
+    else:  # True for both scalar and diagonal gains.
         def impl(n_gains, active_term):
             all_terms = np.arange(n_gains - 1, -1, -1)
             gt_active = np.where(np.arange(n_gains) != active_term)[0]
             lt_active = np.arange(0)
             return all_terms, gt_active, lt_active
+
     return qcjit(impl)
 
 
 def compute_det_factory(mode):
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1):
             return v1[0]*v1[3] - v1[1]*v1[2]
-    else:
+    elif mode.literal_value == 2:
         def impl(v1):
             return v1[0]*v1[1]
+    elif mode.literal_value == 1:
+        def impl(v1):
+            return v1[0]
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
@@ -432,7 +538,7 @@ def iinverse_factory(mode):
 
     unpack = unpack_factory(mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1, det, o1):
             v1_00, v1_01, v1_10, v1_11 = unpack(v1)
 
@@ -440,25 +546,39 @@ def iinverse_factory(mode):
             o1[1] = -v1_01/det
             o1[2] = -v1_10/det
             o1[3] = v1_00/det
-    else:
+    elif mode.literal_value == 2:
         def impl(v1, det, o1):
             v1_00, v1_11 = unpack(v1)
 
             o1[0] = v1_11/det
             o1[1] = v1_00/det
+    elif mode.literal_value == 1:  # TODO: Is this correct?
+        def impl(v1, det, o1):
+            v1_00 = unpack(v1)
+
+            o1[0] = 1.0/v1_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)
 
 
 def set_identity_factory(mode):
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if mode.literal_value == 4:
         def impl(v1):
             v1[0] = 1
             v1[1] = 0
             v1[2] = 0
             v1[3] = 1
-    else:
+    elif mode.literal_value == 2:
         def impl(v1):
             v1[0] = 1
             v1[1] = 1
+    elif mode.literal_value == 1:
+        def impl(v1):
+            v1[0] = 1
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
     return qcjit(impl)

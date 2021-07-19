@@ -3,6 +3,7 @@ import numpy as np
 from numba import prange, literally, generated_jit, types, jit
 from numba.extending import register_jitable
 from numba.typed import List
+from quartical.utils.numba import coerce_literal
 from quartical.gains.general.factories import v1_imul_v2_factory
 from quartical.gains.general.convenience import (get_dims,
                                                  get_row,
@@ -13,8 +14,7 @@ from quartical.gains.general.convenience import (get_dims,
                nogil=True)
 def invert_gains(gain_list, inverse_gains, mode):
 
-    if not isinstance(mode, types.Literal):
-        return lambda gain_list, inverse_gains, mode: literally(mode)
+    coerce_literal(invert_gains, ["mode"])
 
     if mode.literal_value == "diag":
         invert = invert_diag

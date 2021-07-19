@@ -51,8 +51,7 @@ def construct_solver(data_xds_list,
         f_map_arr = f_map_list[xds_ind]
         d_map_arr = d_map_list[xds_ind]
         gain_terms = gain_xds_lod[xds_ind]
-        n_corr = data_xds.dims["corr"]
-        corr_mode = "diag" if n_corr == 2 else "full"  # TODO: Use int.
+        corr_mode = data_xds.dims["corr"]
 
         # Grab the number of input chunks - doing this on the data should be
         # safe.
