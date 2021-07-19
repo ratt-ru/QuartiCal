@@ -136,6 +136,9 @@ def _execute(exitstack):
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
+    if dask_opts.scheduler == "distributed":
+        client.close()  # Close this client, hopefully gracefully.
+
     # dask.visualize(*ms_writes[:1], *gain_writes[:1],
     #                color='order', cmap='autumn',
     #                filename='order.pdf', node_attr={'penwidth': '10'},
