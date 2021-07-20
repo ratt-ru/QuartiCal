@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, literally, generated_jit, types, jit
-from numba.extending import register_jitable
+from numba import prange, generated_jit, jit
 from numba.typed import List
 from quartical.utils.numba import coerce_literal
 import quartical.gains.general.factories as factories
-from quartical.gains.general.convenience import (get_dims,
-                                                 get_row,
-                                                 old_mul_rweight)
+from quartical.gains.general.convenience import get_dims, get_row
 
 
 qcgjit = generated_jit(nopython=True,
@@ -107,139 +104,64 @@ def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
     return impl
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
-               nogil=True)
+@qcgjit
 def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
                                f_map_arr, d_map_arr, row_map, row_weights,
-                               mode):
+                               corr_mode):
 
-    if not isinstance(mode, types.Literal):
-        return lambda residual, gain_list, a1, a2, t_map_arr, f_map_arr, \
-                      d_map_arr, row_map, row_weights, mode: literally(mode)
+    coerce_literal(compute_corrected_residual, ["corr_mode"])
 
-    if mode.literal_value == "diag":
-        impl = corrected_residual_diag
-    else:
-        impl = corrected_residual_full
+    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
+    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
+    iadd = factories.iadd_factory(corr_mode)
+    iunpack = factories.iunpack_factory(corr_mode)
+    valloc = factories.valloc_factory(corr_mode)
+
+    def impl(residual, gain_list, a1, a2, t_map_arr, f_map_arr,
+             d_map_arr, row_map, row_weights, corr_mode):
+
+        corrected_residual = np.zeros_like(residual)
+
+        inverse_gain_list = List()
+
+        for gain_term in gain_list:
+            inverse_gain_list.append(np.empty_like(gain_term))
+
+        invert_gains(gain_list, inverse_gain_list, corr_mode)
+
+        n_rows, n_chan, _ = get_dims(residual, row_map)
+        n_gains = len(gain_list)
+
+        for row_ind in range(n_rows):
+
+            row = get_row(row_ind, row_map)
+            a1_m, a2_m = a1[row], a2[row]
+            r = valloc(np.complex128)
+
+            for f in range(n_chan):
+
+                iunpack(r, residual[row, f])
+                cr = corrected_residual[row, f]
+
+                for g in range(n_gains):
+
+                    t_m = t_map_arr[row_ind, g]
+                    f_m = f_map_arr[f, g]
+
+                    igain = inverse_gain_list[g][t_m, f_m]
+                    igain_p = igain[a1_m, 0]  # Only correct in direction 0.
+                    igain_q = igain[a2_m, 0]
+
+                    v1_imul_v2(igain_p, r, r)
+                    v1_imul_v2ct(r, igain_q, r)
+
+                imul_rweight(r, r, row_weights, row_ind)
+                iadd(cr, r)
+
+        return corrected_residual
 
     return impl
-
-
-@register_jitable
-def corrected_residual_diag(residual, gain_list, a1, a2, t_map_arr,
-                            f_map_arr, d_map_arr, row_map, row_weights, mode):
-
-    corrected_residual = np.zeros_like(residual)
-
-    inverse_gain_list = List()
-
-    for gain_term in gain_list:
-        inverse_gain_list.append(np.empty_like(gain_term))
-
-    invert_gains(gain_list, inverse_gain_list, mode)
-
-    n_rows, n_chan, _ = get_dims(residual, row_map)
-    n_gains = len(gain_list)
-
-    for row_ind in range(n_rows):
-
-        row = get_row(row_ind, row_map)
-        a1_m, a2_m = a1[row], a2[row]
-
-        for f in range(n_chan):
-
-            cr00 = residual[row, f, 0]
-            cr11 = residual[row, f, 1]
-
-            for g in range(n_gains):
-
-                t_m = t_map_arr[row_ind, g]
-                f_m = f_map_arr[f, g]
-
-                gain = inverse_gain_list[g]
-
-                g00 = gain[t_m, f_m, a1_m, 0, 0]
-                g11 = gain[t_m, f_m, a1_m, 0, 1]
-
-                gh00 = gain[t_m, f_m, a2_m, 0, 0].conjugate()
-                gh11 = gain[t_m, f_m, a2_m, 0, 1].conjugate()
-
-                cr00 = g00*cr00*gh00
-                cr11 = g11*cr11*gh11
-
-            corrected_residual[row, f, 0] += \
-                old_mul_rweight(cr00, row_weights, row_ind)
-            corrected_residual[row, f, 1] += \
-                old_mul_rweight(cr11, row_weights, row_ind)
-
-    return corrected_residual
-
-
-@register_jitable
-def corrected_residual_full(residual, gain_list, a1, a2, t_map_arr,
-                            f_map_arr, d_map_arr, row_map, row_weights, mode):
-
-    corrected_residual = np.zeros_like(residual)
-
-    inverse_gain_list = List()
-
-    for gain_term in gain_list:
-        inverse_gain_list.append(np.empty_like(gain_term))
-
-    invert_gains(gain_list, inverse_gain_list, mode)
-
-    n_rows, n_chan, _ = get_dims(residual, row_map)
-    n_gains = len(gain_list)
-
-    for row_ind in range(n_rows):
-
-        row = get_row(row_ind, row_map)
-        a1_m, a2_m = a1[row], a2[row]
-
-        for f in range(n_chan):
-
-            cr00 = residual[row, f, 0]
-            cr01 = residual[row, f, 1]
-            cr10 = residual[row, f, 2]
-            cr11 = residual[row, f, 3]
-
-            for g in range(n_gains):
-
-                t_m = t_map_arr[row_ind, g]
-                f_m = f_map_arr[f, g]
-
-                gain = inverse_gain_list[g]
-
-                g00 = gain[t_m, f_m, a1_m, 0, 0]
-                g01 = gain[t_m, f_m, a1_m, 0, 1]
-                g10 = gain[t_m, f_m, a1_m, 0, 2]
-                g11 = gain[t_m, f_m, a1_m, 0, 3]
-
-                gh00 = gain[t_m, f_m, a2_m, 0, 0].conjugate()
-                gh01 = gain[t_m, f_m, a2_m, 0, 2].conjugate()
-                gh10 = gain[t_m, f_m, a2_m, 0, 1].conjugate()
-                gh11 = gain[t_m, f_m, a2_m, 0, 3].conjugate()
-
-                gr00 = (g00*cr00 + g01*cr10)
-                gr01 = (g00*cr01 + g01*cr11)
-                gr10 = (g10*cr00 + g11*cr10)
-                gr11 = (g10*cr01 + g11*cr11)
-
-                cr00 = (gr00*gh00 + gr01*gh10)
-                cr01 = (gr00*gh01 + gr01*gh11)
-                cr10 = (gr10*gh00 + gr11*gh10)
-                cr11 = (gr10*gh01 + gr11*gh11)
-
-            corrected_residual[row, f, 0] += \
-                old_mul_rweight(cr00, row_weights, row_ind)
-            corrected_residual[row, f, 1] += \
-                old_mul_rweight(cr01, row_weights, row_ind)
-            corrected_residual[row, f, 2] += \
-                old_mul_rweight(cr10, row_weights, row_ind)
-            corrected_residual[row, f, 3] += \
-                old_mul_rweight(cr11, row_weights, row_ind)
-
-    return corrected_residual
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
@@ -278,16 +200,15 @@ def compute_convergence(gain, last_gain):
     return n_cnvgd/(n_tint*n_fint*n_dir)
 
 
-@generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
-def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains):
+@qcgjit
+def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
+                  *gains):
 
-    if not isinstance(mode, types.Literal):
-        return lambda t_bin_arr, f_map_arr, d_map_arr, \
-                      net_shape, mode, *gains: literally(mode)
+    coerce_literal(combine_gains, ["corr_mode"])
 
-    v1_imul_v2 = factories.v1_imul_v2_factory(mode)
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
 
-    def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains):
+    def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode, *gains):
         t_bin_arr = t_bin_arr[0]
         f_map_arr = f_map_arr[0]
 

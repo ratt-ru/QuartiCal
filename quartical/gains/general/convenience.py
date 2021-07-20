@@ -75,33 +75,6 @@ def _get_row(row_ind, row_map):
         return impl
 
 
-def old_mul_rweight(vis, weight, ind):
-    """Multiplies the row weight into a visiblity if weight is not None.
-
-    Args:
-        vis: An complex valued visibility.
-        weight: A float row weight.
-        ind: Integer row index for selecting weight.
-
-    Returns:
-        Product of visilbity and weight, if weight is not None.
-    """
-    return
-
-
-@overload(old_mul_rweight, inline="always")
-def _old_mul_rweight(vis, weight, ind):
-
-    if isinstance(weight, types.NoneType):
-        def impl(vis, weight, ind):
-            return vis
-        return impl
-    else:
-        def impl(vis, weight, ind):
-            return vis*weight[ind]
-        return impl
-
-
 @qcjit
 def get_chan_extents(f_map_arr, active_term, n_fint, n_chan):
     """Given the frequency mappings, determines the start/stop indices."""
