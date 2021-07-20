@@ -10,8 +10,14 @@ from quartical.gains.general.convenience import (get_dims,
                                                  old_mul_rweight)
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
-               nogil=True)
+qcgjit = generated_jit(nopython=True,
+                       fastmath=True,
+                       parallel=False,
+                       cache=True,
+                       nogil=True)
+
+
+@qcgjit
 def invert_gains(gain_list, inverse_gains, corr_mode):
 
     coerce_literal(invert_gains, ["corr_mode"])
@@ -44,134 +50,61 @@ def invert_gains(gain_list, inverse_gains, corr_mode):
     return impl
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
-               nogil=True)
-def compute_residual(data, model, gain_list, a1, a2, t_map_arr,
-                     f_map_arr, d_map_arr, row_map, row_weights, mode):
+@qcgjit
+def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
+                     d_map_arr, row_map, row_weights, corr_mode):
 
-    coerce_literal(compute_residual, ["mode"])
+    coerce_literal(compute_residual, ["corr_mode"])
 
-    if mode.literal_value == 2:
-        impl = residual_diag
-    else:
-        impl = residual_full
+    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
+    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
+    isub = factories.isub_factory(corr_mode)
+    iunpack = factories.iunpack_factory(corr_mode)
+    valloc = factories.valloc_factory(corr_mode)
+
+    def impl(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
+             d_map_arr, row_map, row_weights, corr_mode):
+
+        residual = data.copy()
+
+        n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
+        n_gains = len(gain_list)
+
+        for row_ind in prange(n_rows):
+
+            row = get_row(row_ind, row_map)
+            a1_m, a2_m = a1[row], a2[row]
+            v = valloc(np.complex128)  # Hold GMGH.
+
+            for f in range(n_chan):
+
+                r = residual[row, f]
+                m = model[row, f]
+
+                for d in range(n_dir):
+
+                    iunpack(v, m[d])
+
+                    for g in range(n_gains - 1, -1, -1):
+
+                        t_m = t_map_arr[row_ind, g]
+                        f_m = f_map_arr[f, g]
+                        d_m = d_map_arr[g, d]  # Broadcast dir.
+
+                        gain = gain_list[g][t_m, f_m]
+                        gain_p = gain[a1_m, d_m]
+                        gain_q = gain[a2_m, d_m]
+
+                        v1_imul_v2(gain_p, v, v)
+                        v1_imul_v2ct(v, gain_q, v)
+
+                    imul_rweight(v, v, row_weights, row_ind)
+                    isub(r, v)
+
+        return residual
 
     return impl
-
-
-@register_jitable
-def residual_diag(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
-                  d_map_arr, row_map, row_weights, mode):
-
-    residual = data.copy()
-
-    n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
-    n_gains = len(gain_list)
-
-    for row_ind in range(n_rows):
-
-        row = get_row(row_ind, row_map)
-        a1_m, a2_m = a1[row], a2[row]
-
-        for f in range(n_chan):
-            for d in range(n_dir):
-
-                m00 = model[row, f, d, 0]
-                m11 = model[row, f, d, 1]
-
-                for g in range(n_gains-1, -1, -1):
-
-                    d_m = d_map_arr[g, d]  # Broadcast dir.
-                    t_m = t_map_arr[row_ind, g]
-                    f_m = f_map_arr[f, g]
-
-                    gain = gain_list[g]
-
-                    g00 = gain[t_m, f_m, a1_m, d_m, 0]
-                    g11 = gain[t_m, f_m, a1_m, d_m, 1]
-
-                    gh00 = gain[t_m, f_m, a2_m, d_m, 0].conjugate()
-                    gh11 = gain[t_m, f_m, a2_m, d_m, 1].conjugate()
-
-                    r00 = g00*m00*gh00
-                    r11 = g11*m11*gh11
-
-                    m00 = r00
-                    m11 = r11
-
-                residual[row, f, 0] -= \
-                    old_mul_rweight(r00, row_weights, row_ind)
-                residual[row, f, 1] -= \
-                    old_mul_rweight(r11, row_weights, row_ind)
-
-    return residual
-
-
-@register_jitable
-def residual_full(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
-                  d_map_arr, row_map, row_weights, mode):
-
-    residual = data.copy()
-
-    n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
-    n_gains = len(gain_list)
-
-    for row_ind in prange(n_rows):
-
-        row = get_row(row_ind, row_map)
-        a1_m, a2_m = a1[row], a2[row]
-
-        for f in range(n_chan):
-            for d in range(n_dir):
-
-                m00 = model[row, f, d, 0]
-                m01 = model[row, f, d, 1]
-                m10 = model[row, f, d, 2]
-                m11 = model[row, f, d, 3]
-
-                for g in range(n_gains-1, -1, -1):
-
-                    d_m = d_map_arr[g, d]  # Broadcast dir.
-                    t_m = t_map_arr[row_ind, g]
-                    f_m = f_map_arr[f, g]
-
-                    gain = gain_list[g]
-
-                    g00 = gain[t_m, f_m, a1_m, d_m, 0]
-                    g01 = gain[t_m, f_m, a1_m, d_m, 1]
-                    g10 = gain[t_m, f_m, a1_m, d_m, 2]
-                    g11 = gain[t_m, f_m, a1_m, d_m, 3]
-
-                    gh00 = gain[t_m, f_m, a2_m, d_m, 0].conjugate()
-                    gh01 = gain[t_m, f_m, a2_m, d_m, 2].conjugate()
-                    gh10 = gain[t_m, f_m, a2_m, d_m, 1].conjugate()
-                    gh11 = gain[t_m, f_m, a2_m, d_m, 3].conjugate()
-
-                    gm00 = (g00*m00 + g01*m10)
-                    gm01 = (g00*m01 + g01*m11)
-                    gm10 = (g10*m00 + g11*m10)
-                    gm11 = (g10*m01 + g11*m11)
-
-                    r00 = (gm00*gh00 + gm01*gh10)
-                    r01 = (gm00*gh01 + gm01*gh11)
-                    r10 = (gm10*gh00 + gm11*gh10)
-                    r11 = (gm10*gh01 + gm11*gh11)
-
-                    m00 = r00
-                    m01 = r01
-                    m10 = r10
-                    m11 = r11
-
-                residual[row, f, 0] -= \
-                    old_mul_rweight(r00, row_weights, row_ind)
-                residual[row, f, 1] -= \
-                    old_mul_rweight(r01, row_weights, row_ind)
-                residual[row, f, 2] -= \
-                    old_mul_rweight(r10, row_weights, row_ind)
-                residual[row, f, 3] -= \
-                    old_mul_rweight(r11, row_weights, row_ind)
-
-    return residual
 
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,

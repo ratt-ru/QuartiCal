@@ -485,6 +485,27 @@ def iadd_factory(mode):
     return qcjit(impl)
 
 
+def isub_factory(mode):
+
+    if mode.literal_value == 4:
+        def impl(outvec, invec):
+            outvec[0] -= invec[0]
+            outvec[1] -= invec[1]
+            outvec[2] -= invec[2]
+            outvec[3] -= invec[3]
+    elif mode.literal_value == 2:
+        def impl(outvec, invec):
+            outvec[0] -= invec[0]
+            outvec[1] -= invec[1]
+    elif mode.literal_value == 1:
+        def impl(outvec, invec):
+            outvec[0] -= invec[0]
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
 def valloc_factory(mode):
     if mode.literal_value == 4:
         def impl(dtype, leading_dims=()):
