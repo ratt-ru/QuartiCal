@@ -7,11 +7,12 @@ import pathlib
 from daskms.experimental.zarr import xds_from_zarr
 from quartical.config.internal import yield_from
 from quartical.interpolation.interpolants import (interpolate_missing,
+                                                  linear2d_interpolate_gains,
                                                   spline2d_interpolate_gains,
                                                   csaps2d_interpolate_gains)
 
 
-def load_and_interpolate_gains(gain_xds_list, chain_opts):
+def load_and_interpolate_gains(gain_xds_lod, chain_opts):
     """Load and interpolate gains in accordance with chain_opts.
 
     Given the gain datasets which are to be applied/solved for, determine
@@ -19,7 +20,7 @@ def load_and_interpolate_gains(gain_xds_list, chain_opts):
     to be consistent with the solvable datasets.
 
     Args:
-        gain_xds_list: List of xarray.Datasets containing gains.
+        gain_xds_lod: List of dicts of xarray.Datasets containing gains.
         chain_opts: A Chain config object.
 
     Returns:
@@ -28,25 +29,28 @@ def load_and_interpolate_gains(gain_xds_list, chain_opts):
 
     interp_xds_lol = []
 
-    param_names = ("load_from", "interp_mode", "interp_method")
+    req_fields = ("load_from", "interp_mode", "interp_method")
 
-    for loop_vars in enumerate(yield_from(chain_opts, param_names, False)):
+    for loop_vars in yield_from(chain_opts, req_fields):
 
-        term_ind, (gain_path, interp_mode, interp_method) = loop_vars
+        term_name, term_path, interp_mode, interp_method = loop_vars
 
         # Pull out all the datasets for the current term into a flat list.
-        term_xds_list = [tlist[term_ind] for tlist in gain_xds_list]
+        term_xds_list = [term_dict[term_name] for term_dict in gain_xds_lod]
 
         # If the gain_path is None, this term doesn't require loading/interp.
-        if gain_path is None:
+        if term_path is None:
             interp_xds_lol.append(term_xds_list)
             continue
         else:
-            gain_path = pathlib.Path(gain_path)
+            term_path = pathlib.Path(term_path)
 
-        load_path = f"{gain_path.parent}{'::' + gain_path.stem}"
+        load_path = f"{term_path.parent}{'::' + term_path.stem}"
 
         load_xds_list = xds_from_zarr(load_path)
+
+        # Ensure that no axes are chunked at this point.
+        load_xds_list = [xds.chunk(-1) for xds in load_xds_list]
 
         # Convert to amp and phase/real and imag. Drop unused data_vars.
         converted_xds_list = convert_and_drop(load_xds_list, interp_mode)
@@ -55,11 +59,11 @@ def load_and_interpolate_gains(gain_xds_list, chain_opts):
         # and frequency.
         sorted_xds_lol = sort_datasets(converted_xds_list)
 
-        # Figure out which datasets need to be concatenated. TODO: This may
-        # slightly overconcatenate.
+        # Figure out which datasets need to be concatenated.
         concat_xds_list = make_concat_xds_list(term_xds_list,
                                                sorted_xds_lol)
 
+        # Form up list of datasets with interpolated values.
         interp_xds_list = make_interp_xds_list(term_xds_list,
                                                concat_xds_list,
                                                interp_mode,
@@ -67,13 +71,17 @@ def load_and_interpolate_gains(gain_xds_list, chain_opts):
 
         interp_xds_lol.append(interp_xds_list)
 
-    # This return reverts the datasets to the expected ordering/structure.
+    # This converts the interpolated list of lists into a list of dicts.
+    term_names = [tn for tn in yield_from(chain_opts)]
 
-    return [list(xds_list) for xds_list in zip(*interp_xds_lol)]
+    interp_xds_lod = [{tn: term for tn, term in zip(term_names, terms)}
+                      for terms in zip(*interp_xds_lol)]
+
+    return interp_xds_lod
 
 
 def convert_and_drop(load_xds_list, interp_mode):
-    """Convert complex gain into amplitude and phase. Drop unused data_vars."""
+    """Convert complex gain reim/ampphase. Drop unused data_vars."""
 
     converted_xds_list = []
 
@@ -86,18 +94,21 @@ def convert_and_drop(load_xds_list, interp_mode):
             converted_xds = load_xds.assign(
                 {"phase": (dims, da.angle(load_xds.gains.data)),
                  "amp": (dims, da.absolute(load_xds.gains.data))})
+            interp_vars = {"phase", "amp"}
         elif interp_mode == "reim":
-            # Convert the complex gain into amplitide and phase.
+            # Convert the complex gain into its real and imaginary parts.
             converted_xds = load_xds.assign(
                 {"re": (dims, load_xds.gains.data.real),
                  "im": (dims, load_xds.gains.data.imag)})
+            interp_vars = {"re", "im"}
 
         # Drop the unecessary dims and data vars. TODO: At present, QuartiCal
         # will always interpolate a gain, not the parameters. This makes it
         # impossible to do a further solve on a parameterised term.
         drop_dims = set(converted_xds.dims) - set(converted_xds.GAIN_AXES)
         converted_xds = converted_xds.drop_dims(drop_dims)
-        converted_xds = converted_xds.drop_vars("gains")
+        drop_vars = set(converted_xds.data_vars) - interp_vars
+        converted_xds = converted_xds.drop_vars(drop_vars)
 
         converted_xds_list.append(converted_xds)
 
@@ -107,7 +118,7 @@ def convert_and_drop(load_xds_list, interp_mode):
 def sort_datasets(load_xds_list):
     """Sort the loaded datasets by time and frequency."""
 
-    # We want to sort according the gain axes. TODO: Parameterised case?
+    # We want to sort according to the gain axes. TODO: Parameterised case?
     t_axis, f_axis = load_xds_list[0].GAIN_AXES[:2]
 
     time_lb = [xds[t_axis].values[0] for xds in load_xds_list]
@@ -209,25 +220,26 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
     for term_xds, concat_xds in zip(term_xds_list, concat_xds_list):
 
         if interp_mode == "ampphase":
-            amp_sel = da.where(concat_xds.amp.data < 1e-6,
+            amp_sel = da.where(concat_xds.amp.data == 0,
                                np.nan,
                                concat_xds.amp.data)
 
-            phase_sel = da.where(concat_xds.amp.data < 1e-6,
+            phase_sel = da.where(concat_xds.amp.data == 0,
                                  np.nan,
                                  concat_xds.phase.data)
 
             interp_xds = concat_xds.assign(
                 {"amp": (concat_xds.amp.dims, amp_sel),
                  "phase": (concat_xds.phase.dims, phase_sel)})
+
         elif interp_mode == "reim":
-            re_sel = da.where((concat_xds.re.data < 1e-6) &
-                              (concat_xds.im.data < 1e-6),
+            re_sel = da.where((concat_xds.re.data == 0) &
+                              (concat_xds.im.data == 0),
                               np.nan,
                               concat_xds.re.data)
 
-            im_sel = da.where((concat_xds.re.data < 1e-6) &
-                              (concat_xds.im.data < 1e-6),
+            im_sel = da.where((concat_xds.re.data == 0) &
+                              (concat_xds.im.data == 0),
                               np.nan,
                               concat_xds.im.data)
 
@@ -240,33 +252,31 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
         # will be zeroed.
         interp_xds = interpolate_missing(interp_xds)
 
-        # We may be interpolating from one set of axes to another.
-        i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
-        t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
-
         # Interpolate with various methods.
         if interp_method == "2dlinear":
-            interp_xds = interp_xds.interp(
-                {i_t_axis: term_xds[t_t_axis].data,
-                 i_f_axis: term_xds[t_f_axis].data},
-                kwargs={"fill_value": "extrapolate"})
+            interp_xds = linear2d_interpolate_gains(interp_xds, term_xds)
         elif interp_method == "2dspline":
             interp_xds = spline2d_interpolate_gains(interp_xds, term_xds)
         elif interp_method == "smoothingspline":
             interp_xds = csaps2d_interpolate_gains(interp_xds, term_xds)
 
-        # Convert the interpolated quantities back in gains.
+        # Convert the interpolated quantities back to gains.
         if interp_mode == "ampphase":
             gains = interp_xds.amp.data*da.exp(1j*interp_xds.phase.data)
             interp_xds = term_xds.assign(
-                {"gains": (term_xds.GAIN_AXES, gains)})
+                {"gains": (term_xds.GAIN_AXES, gains)}
+            )
         elif interp_mode == "reim":
             gains = interp_xds.re.data + 1j*interp_xds.im.data
             interp_xds = term_xds.assign(
-                {"gains": (term_xds.GAIN_AXES, gains)})
+                {"gains": (term_xds.GAIN_AXES, gains)}
+            )
 
         t_chunks = term_xds.GAIN_SPEC.tchunk
         f_chunks = term_xds.GAIN_SPEC.fchunk
+
+        # We may be interpolating from one set of axes to another.
+        t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
 
         interp_xds = interp_xds.chunk({t_t_axis: t_chunks, t_f_axis: f_chunks})
 

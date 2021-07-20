@@ -6,6 +6,7 @@ from dask.graph_manipulation import clone
 from loguru import logger
 from quartical.weights.weights import initialize_weights
 from quartical.flagging.flagging import initialise_flags
+from quartical.data_handling import CORR_TYPES
 from quartical.data_handling.chunking import compute_chunking
 from quartical.data_handling.bda import process_bda_input, process_bda_output
 from quartical.data_handling.selection import filter_xds_list
@@ -32,17 +33,22 @@ def read_xds_list(model_columns, ms_opts):
     logger.info("Antenna table indicates {} antennas were present for this "
                 "observation.", n_ant)
 
-    # Determine the number of correlations present in the measurement set.
+    # Determine the number/type of correlations present in the measurement set.
+    pol_xds = xds_from_table(ms_opts.path + "::POLARIZATION")[0]
 
-    polarization_xds = xds_from_table(ms_opts.path + "::POLARIZATION")[0]
-    ms_ncorr = polarization_xds.dims["corr"]
+    try:
+        corr_types = [CORR_TYPES[ct] for ct in pol_xds.CORR_TYPE.values[0]]
+    except KeyError:
+        raise KeyError("Data contains unsupported correlation products.")
 
-    if ms_ncorr not in (1, 2, 4):
-        raise ValueError("Measurement set contains {} correlations - this "
-                         "is not supported.".format(ms_ncorr))
+    n_corr = len(corr_types)
 
-    logger.info("Polarization table indicates {} correlations are present in "
-                "the measurement set.", ms_ncorr)
+    if n_corr not in (1, 2, 4):
+        raise ValueError(f"Measurement set contains {n_corr} correlations - "
+                         f"this is not supported.")
+
+    logger.info(f"Polarization table indicates {n_corr} correlations are "
+                f"present in the measurement set - {corr_types}.")
 
     # Determine the phase direction from the measurement set. TODO: This will
     # probably need to be done on a per xds basis. Can probably be accomplished
@@ -109,11 +115,14 @@ def read_xds_list(model_columns, ms_opts):
 
     _data_xds_list = []
 
+    corr_types = np.array(corr_types, dtype='U')
+    ant_names = np.array(antenna_xds.NAME.values, dtype='U')
+
     for xds_ind, xds in enumerate(data_xds_list):
         # Add coordinates to the xarray datasets.
-        _xds = xds.assign_coords({"corr": np.arange(xds.dims["corr"]),
+        _xds = xds.assign_coords({"corr": corr_types,
                                   "chan": np.arange(xds.dims["chan"]),
-                                  "ant": np.arange(n_ant)})
+                                  "ant": ant_names})
 
         # Add the actual channel frequecies to the xds - this is in preparation
         # for solvers which require this information. Also adds the antenna
@@ -121,14 +130,9 @@ def read_xds_list(model_columns, ms_opts):
 
         chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
         chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
-        ant_names = clone(antenna_xds.NAME.data)
-        # TODO: This may not work in some cases - fix when found.
-        corr_types = clone(polarization_xds.CORR_TYPE.data[0])
 
         _xds = _xds.assign({"CHAN_FREQ": (("chan",), chan_freqs[0]),
-                            "CHAN_WIDTH": (("chan",), chan_widths[0]),
-                            "ANT_NAME": (("ant",), ant_names),
-                            "CORR_TYPE": (("corr"), corr_types)})
+                            "CHAN_WIDTH": (("chan",), chan_widths[0])})
 
         # Add an attribute to the xds on which we will store the names of
         # fields which must be written to the MS. Also add the attribute which
@@ -154,14 +158,15 @@ def read_xds_list(model_columns, ms_opts):
                                     ms_opts.select_fields,
                                     ms_opts.select_ddids)
 
+    # TODO: Do we want to select on index or corr_type?
     if ms_opts.select_corr:
         try:
-            data_xds_list = [xds.sel(corr=ms_opts.select_corr)
+            data_xds_list = [xds.isel(corr=ms_opts.select_corr)
                              for xds in data_xds_list]
         except KeyError:
             raise KeyError(f"--input-ms-select-corr attempted to select "
                            f"correlations not present in the data - this MS "
-                           f"contains {ms_ncorr} correlations. User "
+                           f"contains {n_corr} correlations. User "
                            f"attempted to select {ms_opts.select_corr}.")
 
     return data_xds_list, ref_xds_list
@@ -186,12 +191,27 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
     # dask-ms handle this. This also might need some further consideration,
     # as the fill_value might cause problems.
 
-    polarization_xds = xds_from_table(ms_path + "::POLARIZATION")[0]
-    ms_ncorr = polarization_xds.dims["corr"]
+    pol_xds = xds_from_table(ms_path + "::POLARIZATION")[0]
+    corr_types = [CORR_TYPES[ct] for ct in pol_xds.CORR_TYPE.values[0]]
+    ms_n_corr = len(corr_types)
 
-    if ms_ncorr != xds_list[0].corr.size:
-        xds_list = [xds.reindex({"corr": np.arange(ms_ncorr)}, fill_value=0)
-                    for xds in xds_list]
+    _xds_list = []
+
+    for xds in xds_list:
+
+        _, u_corr_ind = np.unique(xds.corr.values, return_index=True)
+
+        # Check for duplicate correlations - select out first occurence.
+        if u_corr_ind.size < xds.corr.values.size:
+            xds = xds.isel(corr=u_corr_ind)
+
+        # If the xds has fewer correlations than the measurement set, reindex.
+        if xds.dims["corr"] < ms_n_corr:
+            xds = xds.reindex(corr=corr_types, fill_value=0)
+
+        _xds_list.append(xds)
+
+    xds_list = _xds_list
 
     output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
 

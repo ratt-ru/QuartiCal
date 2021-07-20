@@ -6,7 +6,9 @@ from quartical.config.internal import gains_to_chain
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
-from quartical.calibration.calibrate import make_gain_xds_list
+from quartical.gains.datasets import (make_gain_xds_lod,
+                                      compute_interval_chunking,
+                                      compute_dataset_coords)
 from quartical.calibration.constructor import (construct_solver,
                                                expand_specs)
 from quartical.calibration.mapping import (make_t_maps,
@@ -91,20 +93,52 @@ def d_map_list(data_xds_list, chain_opts):
 
 
 @pytest.fixture(scope="module")
-def gain_xds_list(data_xds_list, t_map_list, t_bin_list, f_map_list,
-                  chain_opts):
-    return make_gain_xds_list(data_xds_list, t_map_list, t_bin_list,
-                              f_map_list, chain_opts)
+def _compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
+    return compute_interval_chunking(data_xds_list, t_map_list, f_map_list)
 
 
 @pytest.fixture(scope="module")
-def _construct_solver(data_xds_list, gain_xds_list, t_bin_list, t_map_list,
+def tipc_list(_compute_interval_chunking):
+    return _compute_interval_chunking[0]
+
+
+@pytest.fixture(scope="module")
+def fipc_list(_compute_interval_chunking):
+    return _compute_interval_chunking[1]
+
+
+@pytest.fixture(scope="module")
+def coords_per_xds(data_xds_list,
+                   t_bin_list,
+                   f_map_list,
+                   tipc_list,
+                   fipc_list,
+                   solver_opts):
+    return compute_dataset_coords(
+        data_xds_list,
+        t_bin_list,
+        f_map_list,
+        tipc_list,
+        fipc_list,
+        solver_opts.terms
+    )
+
+
+@pytest.fixture(scope="module")
+def gain_xds_lod(data_xds_list, tipc_list, fipc_list, coords_per_xds,
+                 chain_opts):
+    return make_gain_xds_lod(data_xds_list, tipc_list, fipc_list,
+                             coords_per_xds, chain_opts)
+
+
+@pytest.fixture(scope="module")
+def _construct_solver(data_xds_list, gain_xds_lod, t_bin_list, t_map_list,
                       f_map_list, d_map_list, solver_opts, chain_opts):
 
     # Call the construct solver function with the relevant inputs.
     solver_xds_list, solver_data_xds_list = construct_solver(
         data_xds_list,
-        gain_xds_list,
+        gain_xds_lod,
         t_bin_list,
         t_map_list,
         f_map_list,
@@ -145,35 +179,35 @@ def test_pickling(solver_xds_list):
 def test_fields(solver_xds_list):
     """Check that the expected output fields have been added to the xds."""
 
-    term_xds_list = solver_xds_list[0]
+    term_xds_dict = solver_xds_list[0]
 
     fields = ["gains", "conv_perc", "conv_iter"]
 
     assert all([hasattr(gxds, field)
-               for gxds in term_xds_list
+               for gxds in term_xds_dict.values()
                for field in fields])
 
 
 def test_t_chunks(solver_xds_list, data_xds_list):
     """Check that the time chunking on the gain xdss is what we expect."""
 
-    term_xds_list = solver_xds_list[0]
+    term_xds_dict = solver_xds_list[0]
 
     expected_t_chunks = data_xds_list[0].DATA.data.numblocks[0]
 
     assert all([len(gxds.chunks["t_chunk"]) == expected_t_chunks
-               for gxds in term_xds_list])
+               for gxds in term_xds_dict.values()])
 
 
 def test_f_chunks(solver_xds_list, data_xds_list):
     """Check that the freq chunking on the gain xdss is what we expect."""
 
-    term_xds_list = solver_xds_list[0]
+    term_xds_dict = solver_xds_list[0]
 
     expected_f_chunks = data_xds_list[0].DATA.data.numblocks[1]
 
     assert all([len(gxds.chunks["f_chunk"]) == expected_f_chunks
-               for gxds in term_xds_list])
+               for gxds in term_xds_dict.values()])
 
 # -------------------------------expand_specs----------------------------------
 
@@ -191,7 +225,7 @@ def test_nchunk(expanded_specs, data_xds_list):
 def test_shapes(expanded_specs, solver_xds_list):
     """Test that the expanded GAIN_SPEC has the correct shapes."""
 
-    term_xds_list = solver_xds_list[0]
+    term_xds_dict = solver_xds_list[0]
     spec_list = expanded_specs
 
     # Flattens out the nested spec list to make comparison easier.
@@ -200,7 +234,7 @@ def test_shapes(expanded_specs, solver_xds_list):
 
     ref_shapes = []
 
-    for gxds in term_xds_list:
+    for gxds in term_xds_dict.values():
 
         chunk_spec = gxds.GAIN_SPEC
         ac = chunk_spec.achunk[0]

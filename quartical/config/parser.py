@@ -5,6 +5,7 @@ from loguru import logger
 from ruamel.yaml import round_trip_dump
 from omegaconf import OmegaConf as oc
 from quartical.config.external import finalize_structure
+from quartical.config.internal import additional_validation
 
 
 def create_user_config():
@@ -115,4 +116,8 @@ def parse_inputs(bypass_sysargv=None):
 
     log_final_config(config)
 
-    return oc.to_object(config)  # Ensures post_init methods are run.
+    config_obj = oc.to_object(config)  # Ensures post_init methods are run.
+
+    additional_validation(config_obj)
+
+    return config_obj
