@@ -4,7 +4,7 @@ from numba import prange, literally, generated_jit, types, jit
 from numba.extending import register_jitable
 from numba.typed import List
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.factories import v1_imul_v2_factory
+import quartical.gains.general.factories as factories
 from quartical.gains.general.convenience import (get_dims,
                                                  get_row,
                                                  old_mul_rweight)
@@ -12,70 +12,36 @@ from quartical.gains.general.convenience import (get_dims,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def invert_gains(gain_list, inverse_gains, mode):
+def invert_gains(gain_list, inverse_gains, corr_mode):
 
-    coerce_literal(invert_gains, ["mode"])
+    coerce_literal(invert_gains, ["corr_mode"])
 
-    if mode.literal_value == "diag":
-        invert = invert_diag
-    else:
-        invert = invert_full
+    compute_det = factories.compute_det_factory(corr_mode)
+    iinverse = factories.iinverse_factory(corr_mode)
 
-    def impl(gain_list, inverse_gains, mode):
+    def impl(gain_list, inverse_gains, corr_mode):
         for gain_ind, gain in enumerate(gain_list):
 
             n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-            inverse_gain = inverse_gains[gain_ind]
+            igain = inverse_gains[gain_ind]
 
             for t in range(n_tint):
                 for f in range(n_fint):
                     for a in range(n_ant):
                         for d in range(n_dir):
 
-                            invert(gain[t, f, a, d, :],
-                                   inverse_gain[t, f, a, d, :],
-                                   mode)
+                            gain_sel = gain[t, f, a, d]
+                            igain_sel = igain[t, f, a, d]
+
+                            det = compute_det(gain_sel)
+
+                            if np.abs(det) < 1e-6:
+                                igain_sel[:] = 0
+                            else:
+                                iinverse(gain_sel, det, igain_sel)
 
     return impl
-
-
-@register_jitable
-def invert_diag(gain, inverse_gain, mode):
-
-    g00 = gain[..., 0]
-    g11 = gain[..., 1]
-
-    det = g00*g11
-
-    if np.abs(det) < 1e-6:
-        inverse_gain[..., 0] = 0
-        inverse_gain[..., 1] = 0
-    else:
-        inverse_gain[..., 0] = 1/g00
-        inverse_gain[..., 1] = 1/g11
-
-
-@register_jitable
-def invert_full(gain, inverse_gain, mode):
-
-    g00 = gain[..., 0]
-    g01 = gain[..., 1]
-    g10 = gain[..., 2]
-    g11 = gain[..., 3]
-
-    det = (g00*g11 - g01*g10)
-
-    if np.abs(det) < 1e-6:
-        inverse_gain[..., 0] = 0
-        inverse_gain[..., 1] = 0
-        inverse_gain[..., 2] = 0
-        inverse_gain[..., 3] = 0
-    else:
-        inverse_gain[..., 0] = g11/det
-        inverse_gain[..., 1] = -g01/det
-        inverse_gain[..., 2] = -g10/det
-        inverse_gain[..., 3] = g00/det
 
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
@@ -83,11 +49,9 @@ def invert_full(gain, inverse_gain, mode):
 def compute_residual(data, model, gain_list, a1, a2, t_map_arr,
                      f_map_arr, d_map_arr, row_map, row_weights, mode):
 
-    if not isinstance(mode, types.Literal):
-        return lambda data, model, gain_list, a1, a2, t_map_arr, f_map_arr, \
-                      d_map_arr, row_map, row_weights, mode: literally(mode)
+    coerce_literal(compute_residual, ["mode"])
 
-    if mode.literal_value == "diag":
+    if mode.literal_value == 2:
         impl = residual_diag
     else:
         impl = residual_full
@@ -388,7 +352,7 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains):
         return lambda t_bin_arr, f_map_arr, d_map_arr, \
                       net_shape, mode, *gains: literally(mode)
 
-    v1_imul_v2 = v1_imul_v2_factory(mode)
+    v1_imul_v2 = factories.v1_imul_v2_factory(mode)
 
     def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, mode, *gains):
         t_bin_arr = t_bin_arr[0]
