@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, literally, generated_jit, types
+from numba import prange, generated_jit
+from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (invert_gains,
                                               compute_residual,
                                               compute_convergence)
@@ -40,9 +41,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
     """
 
-    if not isinstance(corr_mode, types.Literal):
-        return lambda base_args, term_args, meta_args, corr_mode: \
-            literally(corr_mode)
+    coerce_literal(delay_solver, ["corr_mode"])
 
     def impl(base_args, term_args, meta_args, corr_mode):
 
@@ -327,7 +326,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, chan_freqs,
                nogil=True)
 def compute_update(update, jhj, jhr, corr_mode):
 
-    if corr_mode.literal_value in ["full", "mixed"]:
+    if corr_mode.literal_value == 4:
         def impl(update, jhj, jhr, corr_mode):
             n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
 
@@ -350,7 +349,7 @@ def compute_update(update, jhj, jhr, corr_mode):
                             # TODO: This complains as linalg.solve produces
                             # F_CONTIGUOUS output.
                             update[t, f, a, d] = jhj_inv.dot(jhr[t, f, a, d])
-    else:
+    elif corr_mode.literal_value == 2:
         def impl(update, jhj, jhr, corr_mode):
 
             n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
@@ -390,6 +389,9 @@ def compute_update(update, jhj, jhr, corr_mode):
 
                                 upd_sel[0] = jhjinv00*jhr_0 + jhjinv01*jhr_1
                                 upd_sel[1] = jhjinv10*jhr_0 + jhjinv11*jhr_1
+    else:
+        raise ValueError("Scalar delay not yet supported.")
+
     return impl
 
 
@@ -430,13 +432,13 @@ def finalize_update(update, params, gain, chan_freqs, t_bin_arr, pf_map_arr,
     return impl
 
 
-def accumulate_jhr_factory(mode):
+def accumulate_jhr_factory(corr_mode):
 
-    unpack = factories.unpack_factory(mode)
-    unpackct = factories.unpackct_factory(mode)
-    v1_imul_v2 = factories.v1_imul_v2_factory(mode)
+    unpack = factories.unpack_factory(corr_mode)
+    unpackct = factories.unpackct_factory(corr_mode)
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if corr_mode.literal_value == 4:
         def impl(gain, res, rop, lop, jhr, nu):
 
             v1_imul_v2(res, rop, res)
@@ -452,7 +454,7 @@ def accumulate_jhr_factory(mode):
             jhr[1] += nu*upd_00
             jhr[2] += upd_11
             jhr[3] += nu*upd_11
-    else:
+    elif corr_mode.literal_value == 2:
         def impl(gain, res, rop, lop, jhr, nu):
 
             v1_imul_v2(res, rop, res)
@@ -467,15 +469,18 @@ def accumulate_jhr_factory(mode):
             jhr[1] += nu*upd_00
             jhr[2] += upd_11
             jhr[3] += nu*upd_11
+    else:
+        raise ValueError("Scalar delay not yet supported.")
+
     return factories.qcjit(impl)
 
 
-def compute_jh_factory(mode):
+def compute_jh_factory(corr_mode):
 
-    unpack = factories.unpack_factory(mode)
-    unpackct = factories.unpackct_factory(mode)
+    unpack = factories.unpack_factory(corr_mode)
+    unpackct = factories.unpackct_factory(corr_mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if corr_mode.literal_value == 4:
         def impl(lop, rop, gain, nu, jh):
             l_00, l_01, l_10, l_11 = unpack(lop)
             r_00, r_10, r_01, r_11 = unpack(rop)  # Note the "transpose".
@@ -519,7 +524,7 @@ def compute_jh_factory(mode):
             jh[3, 1] += rkl_31*drv_33
             jh[3, 2] += rkl_32*drv_33
             jh[3, 3] += rkl_33*drv_33
-    else:
+    elif corr_mode.literal_value == 2:
         def impl(lop, rop, gain, nu, jh):
             r_00, r_11 = unpack(rop)
             g_00, g_11 = unpackct(gain)
@@ -539,15 +544,18 @@ def compute_jh_factory(mode):
             jh[1, 0] += r_00*drv_10
             jh[2, 1] += r_11*drv_23
             jh[3, 1] += r_11*drv_33
+    else:
+        raise ValueError("Scalar delay not yet supported.")
+
     return factories.qcjit(impl)
 
 
-def compute_jhwj_factory(mode):
+def compute_jhwj_factory(corr_mode):
 
-    unpack = factories.unpack_factory(mode)
-    unpackct = factories.unpackct_factory(mode)
+    unpack = factories.unpack_factory(corr_mode)
+    unpackct = factories.unpackct_factory(corr_mode)
 
-    if mode.literal_value == "full" or mode.literal_value == "mixed":
+    if corr_mode.literal_value == 4:
         def impl(jh, w, jhj):
             w1_00, w1_01, w1_10, w1_11 = unpack(w)
 
@@ -567,7 +575,7 @@ def compute_jhwj_factory(mode):
                                   jhw_1*j_1 +
                                   jhw_2*j_2 +
                                   jhw_3*j_3).real
-    else:
+    elif corr_mode.literal_value == 2:
         def impl(jh, w, jhj):
             w1_00, w1_11 = unpack(w)
 
@@ -597,4 +605,7 @@ def compute_jhwj_factory(mode):
             jhj[2, 3] += (jh_21*j_13).real
             jhj[3, 2] += (jh_31*j_12).real
             jhj[3, 3] += (jh_31*j_13).real
+    else:
+        raise ValueError("Scalar delay not yet supported.")
+
     return factories.qcjit(impl)

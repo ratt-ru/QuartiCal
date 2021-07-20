@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-from numba.extending import overload
-from numba import jit, types
+from numba import jit, types, generated_jit
 import numpy as np
 
 
@@ -11,10 +10,16 @@ qcjit = jit(nogil=True,
             cache=True,
             inline="always")
 
+qcgjit = generated_jit(nogil=True,
+                       nopython=True,
+                       fastmath=True,
+                       cache=True)
+
 # TODO: Consider whether these should have true optionals. This will likely
 # require them all to be implemented as overloads.
 
 
+@qcgjit
 def get_dims(col, row_map):
     """Returns effective column dimensions. This may be larger than col.
 
@@ -26,29 +31,24 @@ def get_dims(col, row_map):
     Returns:
         A shape tuple.
     """
-    return
-
-
-@overload(get_dims, inline="always")
-def _get_dims(col, row_map):
 
     if isinstance(row_map, types.NoneType):
         def impl(col, row_map):
             return col.shape
-        return impl
     else:
         if col.ndim == 4:
             def impl(col, row_map):
                 _, n_chan, n_dir, n_corr = col.shape
                 return (row_map.size, n_chan, n_dir, n_corr)
-            return impl
         else:
             def impl(col, row_map):
                 _, n_chan, n_corr = col.shape
                 return (row_map.size, n_chan, n_corr)
-            return impl
+
+    return impl
 
 
+@qcgjit
 def get_row(row_ind, row_map):
     """Gets the current row index. Row map is needed for the BDA case.
 
@@ -59,20 +59,14 @@ def get_row(row_ind, row_map):
     Returns:
         Integer index of effective row.
     """
-    return
-
-
-@overload(get_row, inline="always")
-def _get_row(row_ind, row_map):
-
     if isinstance(row_map, types.NoneType):
         def impl(row_ind, row_map):
             return row_ind
-        return impl
     else:
         def impl(row_ind, row_map):
             return row_map[row_ind]
-        return impl
+
+    return impl
 
 
 @qcjit
