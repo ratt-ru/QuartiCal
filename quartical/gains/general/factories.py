@@ -377,7 +377,7 @@ def v1ct_wmul_v2_factory(mode):
 
             v3_00 = v1_00*w1_00*v2_00
 
-            return v3_00
+            return (v3_00,)  # Ensure that this doesn't come out as a scalar.
     else:
         raise ValueError("Unsupported number of correlations.")
 
