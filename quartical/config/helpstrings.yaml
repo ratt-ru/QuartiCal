@@ -76,7 +76,7 @@ output:
   products: 
     The desired output data product. Multiple data products can be specified 
     as a list e.g. [residual, corrected_residual]. Choose from [residual, 
-    corrected_residual, corrected_data]. All modes generate gains, the
+    corrected_residual, corrected_data, weights]. All modes generate gains, the
     default doesn't produce a visibility output.
   columns:
     Output MS column names for visibility outputs (if applicable).
@@ -121,15 +121,16 @@ mad_flags:
     Multiplicative factor which determines whether or not a residual is 
     considered to deviate significantly from the median of the given data 
     chunk. These values are flagged.
+  robust:
+    Enables Flagging based on the weights. Only use solver is robust
+  robust_thresh:
+    Flag data with weights less than this value
 
 solver:
   terms:
     Gain terms for which we are solving. Multiple terms can be specified as 
     a list e.g. [G,B,dE]. Each term specified here has its own set of 
     arguments which can be specified as (gain).(option). e.g. G.time_interval.
-  reweight_mode:
-    If set to true, this will activate the rewighting of the data, based on 
-    the Complex Students-t framework
   iter_recipe:
     Specifies the iterations to be performed per gain term. This argument
     expects a list as long or longer than solver.terms. If solver.terms 
@@ -141,6 +142,14 @@ solver:
     and can be used in conjunction with iterpolation. 
   robust:
     Enable robust reweighting in solvers.
+  v0:
+    Initial v-parameter if robust solver is enabled. This should be an integer
+    greater than 2. Default value is 30, a value close to implies harsh weigting
+    from start.
+  v_niter:
+    Number of iterations for which the robust rewieghting is done (Default is 10).
+  cov_thresh:
+    Fived the degrees of freedom to 2 if the covariance function exceeds this value. 
   threads:
     Number of Numba threads per Dask thread (enables nested parallelism) to
     be used when running the solvers. The total number of threads used will be 

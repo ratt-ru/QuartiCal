@@ -100,6 +100,8 @@ class MadFlags(Input):
     enable: bool = False
     threshold_bl: int = 10
     threshold_global: int = 12
+    robust: bool = False
+    robust_thresh: float = 1e-3
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -110,8 +112,10 @@ class Solver(Input):
     terms: List[str] = field(default_factory=lambda: ["G"])
     iter_recipe: List[int] = field(default_factory=lambda: [25])
     robust: bool = False
+    v0: float = 30
+    cov_thresh: float = 200
+    v_niter: int = 10
     threads: int = 1
-    reweight_mode: bool = False
 
     def __post_init__(self):
         self.validate_choice_fields()

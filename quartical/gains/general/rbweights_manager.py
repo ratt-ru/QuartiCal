@@ -33,7 +33,7 @@ def brute_solve_v(wn, fixed_v, npol):
     else:
         root = 2
         fval0 = np.abs(vfunc(wn.real, 2, npol))
-        for ival in range(3, 41):
+        for ival in range(3, 61):
             fval = np.abs(vfunc(wn.real, ival, npol))
             if fval<fval0:
                 root = ival
@@ -51,9 +51,8 @@ def get_number_of_unflaggedw(wn):
     return Nvis
 
 @jit(fastmath=True, nopython=True, cache=True, nogil=True)
-def normalise_cov(ompstd, Nvis):
+def normalise_cov(ompstd, Nvis, cov_thresh):
 	eps = 1e-6
-	cov_thresh = 200
 	ompstd /=Nvis 
 	ompstd += eps**2
 
@@ -72,24 +71,23 @@ def normalise_cov(ompstd, Nvis):
 	return fixed_v
 
 @jit(fastmath=True, cache=True, nogil=True, nopython=True) 
-def compute_covinv(model, gains, residual,
-                    weights, t_map_arr, f_map_arr, active_term, row_map, n_valid, corr_mode):
+def compute_covinv(gains, residual,
+                    weights, t_map_arr, f_map_arr, active_term, row_map, n_valid, cov_thresh, corr_mode):
         
     # TODO implement the option to pass option and do all the other traditional stuffs
     ompstd = np.zeros((4,4), dtype=residual.dtype)
 
-    weights_kernel.compute_cov(model, gains, residual, ompstd, 
+    weights_kernel.compute_cov(gains, residual, ompstd, 
              weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode)
 
     # print(ompstd, "-> corrmode ", corr_mode, " normalsied cov", n_valid)
 
-    fixed_v = normalise_cov(ompstd, n_valid)
+    fixed_v = normalise_cov(ompstd, n_valid, cov_thresh)
     covinv = np.eye(4, dtype=ompstd.dtype)
 
     # print(ompstd, "-> corrmode ", corr_mode, " normalsied cov", n_valid)
     
-    if fixed_v:	
-        cov_thresh = 200	
+    if fixed_v:		
         covinv[0,0] *= 1./cov_thresh
         covinv[1,1] *= 1./cov_thresh
         covinv[2,2] *= 1./cov_thresh
@@ -107,13 +105,13 @@ def compute_covinv(model, gains, residual,
     return covinv, fixed_v
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def update_weights(model, gains, residual, v,
-                     weights, t_map_arr, f_map_arr, active_term, row_map, n_valid, corr_mode):
+def update_weights(gains, residual, v,
+                     weights, t_map_arr, f_map_arr, active_term, row_map, n_valid, cov_thresh, corr_mode):
     
-    icov, fixed_v = compute_covinv(model, gains, residual,
-                    weights, t_map_arr, f_map_arr, active_term, row_map, n_valid, corr_mode)
+    icov, fixed_v = compute_covinv(gains, residual,
+                    weights, t_map_arr, f_map_arr, active_term, row_map, n_valid, cov_thresh, corr_mode)
 
-    weights_kernel.compute_weights(model, gains, residual, icov, v,
+    weights_kernel.compute_weights(gains, residual, icov, v,
                     weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode)
 
     w_sum = np.sum(weights[:,:,0])

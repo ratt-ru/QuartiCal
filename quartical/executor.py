@@ -13,10 +13,13 @@ from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
-from quartical.flagging.flagging import finalise_flags, add_mad_graph
+from quartical.flagging.flagging import finalise_flags, add_mad_graph, add_wflag_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
 # from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
+
+#just for my experiments, add output columns before running
+from quartical.data_handling.ms_handler import add_output_columns
 
 
 @logger.catch
@@ -42,6 +45,8 @@ def _execute(exitstack):
     mad_flag_opts = opts.mad_flags
     dask_opts = opts.dask
     chain_opts = internal.gains_to_chain(opts)  # Special handling.
+
+    add_output_columns(ms_opts, output_opts) # just for me
 
     model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
 
@@ -103,6 +108,9 @@ def _execute(exitstack):
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
+    
+    if mad_flag_opts.robust:
+        data_xds_list = add_wflag_graph(data_xds_list, mad_flag_opts)
 
     data_xds_list = finalise_flags(data_xds_list)
 

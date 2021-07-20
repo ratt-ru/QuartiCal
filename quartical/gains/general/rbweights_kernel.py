@@ -9,15 +9,15 @@ from collections import namedtuple
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def compute_weights(model, gains, residual, icov, v,
+def compute_weights(gains, residual, icov, v,
                     weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode):
 
     rb_weight_mult = factories.rb_weight_mult(corr_mode)
     rb_weight_upd = factories.rb_weight_upd(corr_mode)
 
-    def impl(model, gains, residual, icov, v, 
+    def impl(gains, residual, icov, v, 
             weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode):
-        _, n_chan, n_dir, n_corr = model.shape
+        _, n_chan, n_corr = residual.shape
 
         n_tint, n_fint, n_ant, n_gdir, _ = gains[active_term].shape
         n_int = n_tint*n_fint
@@ -58,14 +58,14 @@ def compute_weights(model, gains, residual, icov, v,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def compute_cov(model, gains, residual, icov,
+def compute_cov(gains, residual, icov,
                     weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode):
 
     rb_cov_mult = factories.rb_cov_mult(corr_mode)
 
-    def impl(model, gains, residual, icov, 
+    def impl(gains, residual, icov, 
             weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode):
-        _, n_chan, n_dir, n_corr = model.shape
+        _, n_chan, n_corr = residual.shape
 
         n_tint, n_fint, n_ant, n_gdir, _ = gains[active_term].shape
         n_int = n_tint*n_fint

@@ -49,7 +49,10 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         flags = base_args.flags
         row_map = base_args.row_map
         row_weights = base_args.row_weights
-        reweight_mode = base_args.reweight_mode
+        robust = meta_args.robust
+        v = meta_args.v0 # initial value for the number of degrees of freedom for the robust re-weighting
+        v_niter = meta_args.v_niter
+        cov_thresh = meta_args.cov_thresh
 
         active_term = meta_args.active_term
 
@@ -70,15 +73,14 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         jhj = np.empty_like(gains[active_term])
         jhr = np.empty_like(gains[active_term])
         update = np.empty_like(gains[active_term])
-
-        v = 10 # initial value for the number of degrees of freedom for the robust re-weighting 
+  
         Nvis = 0
-        if reweight_mode:
+        if robust:
             Nvis = get_number_of_unflaggedw(weights) # Do it here so that we only do it once (for robust re-weighting)
         
         for i in range(meta_args.iters):
 
-            if dd_term or reweight_mode:
+            if dd_term or robust:
                 residual = compute_residual(data, model, gains, a1, a2,
                                             t_map_arr, f_map_arr, d_map_arr,
                                             row_map, row_weights,
@@ -86,10 +88,10 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             else:
                 residual = data
             
-            # update the weigts if the number of iteration is less than 10
+            # update the weights
             # TODO implement a better strategy
-            if i>0 and i%1==0 and reweight_mode:
-                v = update_weights(model, gains, residual, v,  weights, t_map_arr, f_map_arr, active_term, row_map, Nvis, corr_mode)
+            if i>0 and i<v_niter and robust:
+                v = update_weights(gains, residual, v,  weights, t_map_arr, f_map_arr, active_term, row_map, Nvis, cov_thresh, corr_mode)
 
 
             compute_jhj_jhr(jhj,
@@ -118,7 +120,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                             gains[active_term],
                             i,
                             dd_term,
-                            corr_mode, reweight_mode)
+                            corr_mode, robust)
 
 
             # Check for gain convergence. TODO: This can be affected by the
@@ -334,10 +336,10 @@ def compute_update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, gain, i_num, dd_term, corr_mode, reweight_mode):
+def finalize_update(update, gain, i_num, dd_term, corr_mode, robust):
 
-    def impl(update, gain, i_num, dd_term, corr_mode, reweight_mode):
-        if dd_term or reweight_mode:
+    def impl(update, gain, i_num, dd_term, corr_mode, robust):
+        if dd_term or robust:
             update += gain[:]
             if i_num % 2 == 0:
                 gain[:] = update

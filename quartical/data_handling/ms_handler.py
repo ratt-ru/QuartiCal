@@ -10,6 +10,8 @@ from quartical.data_handling.chunking import compute_chunking
 from quartical.data_handling.bda import process_bda_input, process_bda_output
 from quartical.data_handling.selection import filter_xds_list
 
+from MSUtils.msutils import addcol  # to be deleted
+
 
 def read_xds_list(model_columns, ms_opts):
     """Reads a measurement set and generates a list of xarray data sets.
@@ -289,3 +291,15 @@ def preprocess_xds_list(xds_list, ms_opts):
         output_xds_list.append(output_xds)
 
     return output_xds_list
+
+
+
+def add_output_columns(ms_opts, output_opts):
+    # only for me, add output columns befor starting everything
+
+    for ic, column in enumerate(output_opts.columns):
+        if output_opts.products[ic] == "weights":
+            addcol(msname=ms_opts.path, colname=column, valuetype='float')
+        else:
+            addcol(msname=ms_opts.path, colname=column)
+
