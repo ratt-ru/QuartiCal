@@ -276,16 +276,12 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
                         accumulate_jhr(r_pq, rop_pq, lop_pq,
                                        tmp_jhr[a1_m, out_d])
-                        # accumulate_jhr(r_pq, rop_pq, lop_pq,
-                        #                jhr[t_m, f_m, a1_m, out_d])
 
                         iadd(lop_pq_arr[out_d], lop_pq)
                         iadd(rop_pq_arr[out_d], rop_pq)
 
                         accumulate_jhr(r_qp, rop_qp, lop_qp,
                                        tmp_jhr[a2_m, out_d])
-                        # accumulate_jhr(r_qp, rop_qp, lop_qp,
-                        #                jhr[t_m, f_m, a2_m, out_d])
 
                         iadd(lop_qp_arr[out_d], lop_qp)
                         iadd(rop_qp_arr[out_d], rop_qp)
@@ -304,8 +300,6 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         compute_jhwj(lop_qp_d, rop_qp_d, w,
                                      jhj[t_m, f_m, a2_m, d])
 
-                        # iadd(jhr[t_m, f_m, a1_m, d], tmp_jhr[a1_m, d])
-                        # iadd(jhr[t_m, f_m, a2_m, d], tmp_jhr[a2_m, d])
             jhr[t_m, f_m] = tmp_jhr
         return
     return impl
