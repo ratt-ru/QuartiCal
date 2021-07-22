@@ -292,15 +292,16 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         rop_pq_d = rop_pq_arr[d]
 
                         compute_jhwj(lop_pq_d, rop_pq_d, w,
-                                     jhj[t_m, f_m, a1_m, d])
+                                     tmp_jhj[a1_m, d])
 
                         lop_qp_d = lop_qp_arr[d]
                         rop_qp_d = rop_qp_arr[d]
 
                         compute_jhwj(lop_qp_d, rop_qp_d, w,
-                                     jhj[t_m, f_m, a2_m, d])
+                                     tmp_jhj[a2_m, d])
 
             jhr[t_m, f_m] = tmp_jhr
+            jhj[t_m, f_m] = tmp_jhj
         return
     return impl
 
