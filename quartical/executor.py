@@ -74,7 +74,7 @@ def _execute(exitstack):
     # Reads the measurement set using the relavant configuration from opts.
     model_columns = model_vis_recipe.ingredients.model_columns
     data_xds_list, ref_xds_list = read_xds_list(model_columns, ms_opts)
-    # data_xds_list = data_xds_list[:1]
+    data_xds_list = data_xds_list[:1]
 
     # logger.info("Reading data from zms.")
     # data_xds_list = xds_from_zarr(

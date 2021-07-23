@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import prange, generated_jit
+from numpy.lib import unique
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (invert_gains,
                                               compute_residual,
@@ -320,6 +321,7 @@ def compute_update(update, jhj, jhr, corr_mode):
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     compute_det = factories.compute_det_factory(corr_mode)
     iinverse = factories.iinverse_factory(corr_mode)
+    a_mul_vecb = a_mul_vecb_factory(corr_mode)
 
     def impl(update, jhj, jhr, corr_mode):
         n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
@@ -340,13 +342,11 @@ def compute_update(update, jhj, jhr, corr_mode):
                         else:
                             jhj_inv = np.linalg.solve(jhj_sel, ident)
 
-                        jhr00, jhr01, jhr10, jhr11 = jhr[t, f, a, d]
-
-                        jhr_vec = np.array((jhr00, jhr10, jhr01, jhr11))
                         # TODO: This complains as linalg.solve produces
                         # F_CONTIGUOUS output.
-                        upd = jhj_inv.dot(jhr_vec)
-                        update[t, f, a, d] = upd[0], upd[2], upd[1], upd[3]
+                        a_mul_vecb(jhj_inv,
+                                   jhr[t, f, a, d],
+                                   update[t, f, a, d])
 
     return impl
 
@@ -381,23 +381,78 @@ def accumulate_jhr_factory(corr_mode):
 
 def compute_jhwj_factory(corr_mode):
 
-    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
-    v1ct_wmul_v2 = factories.v1ct_wmul_v2_factory(corr_mode)
-    iadd = factories.iadd_factory(corr_mode)
-    # TODO: The following is completely incorrect for the general case. WIP.
+    atkb = aT_kron_b_factory(corr_mode)
+    unpack = factories.unpack_factory(corr_mode)
+    unpackct = factories.unpackct_factory(corr_mode)
 
     def impl(lop, rop, w, jhj):
 
-        foo = np.kron(rop.reshape(2, 2).T, lop.reshape(2, 2))
+        kprod = np.empty_like(jhj)
+        atkb(rop, lop, kprod)
 
-        # TODO: Placeholder for comparison purposes. Can use w directly.
-        W = np.array((w[0], w[0], w[-1], w[-1]))
+        w_00, w_01, w_10, w_11 = unpack(w)  # NOTE: XX, XY, YX, YY
 
-        jhj += (foo * W) @ foo.conj().T
+        for i in range(4):
+            jh_0, jh_1, jh_2, jh_3 = unpack(kprod[i])
+            jhw_0 = jh_0*w_00  # XX
+            jhw_1 = jh_1*w_10  # YX
+            jhw_2 = jh_2*w_01  # XY
+            jhw_3 = jh_3*w_11  # YY
+            for j in range(4):
+                # NOTE: "undoing" transpose as I am abusing unpack.
+                j_0, j_2, j_1, j_3 = unpackct(kprod[j])
+
+                jhj[i, j] += (jhw_0*j_0 + jhw_1*j_1 + jhw_2*j_2 + jhw_3*j_3)
+
         # TODO: I think I am beginning to understand. vec(JHR) is not the same
         # as a flattened/raveled JHR. vec implies stacked columns whereas a
         # ravel/flattened version stacks rows. This is now important as we are
         # moving between representations.
+
+    return factories.qcjit(impl)
+
+
+def aT_kron_b_factory(corr_mode):
+
+    unpack = factories.unpack_factory(corr_mode)
+
+    def impl(a, b, out):
+
+        a00, a10, a01, a11 = unpack(a)  # Effectively transpose.
+        b00, b01, b10, b11 = unpack(b)
+
+        out[0, 0] = a00 * b00
+        out[0, 1] = a00 * b01
+        out[0, 2] = a01 * b00
+        out[0, 3] = a01 * b01
+        out[1, 0] = a00 * b10
+        out[1, 1] = a00 * b11
+        out[1, 2] = a01 * b10
+        out[1, 3] = a01 * b11
+        out[2, 0] = a10 * b00
+        out[2, 1] = a10 * b01
+        out[2, 2] = a11 * b00
+        out[2, 3] = a11 * b01
+        out[3, 0] = a10 * b10
+        out[3, 1] = a10 * b11
+        out[3, 2] = a11 * b10
+        out[3, 3] = a11 * b11
+
+    return factories.qcjit(impl)
+
+
+def a_mul_vecb_factory(corr_mode):
+
+    unpack = factories.unpack_factory(corr_mode)
+
+    def impl(a, b, out):
+
+        b_0, b_2, b_1, b_3 = unpack(b)  # NOTE: b is XX XY YX YY
+
+        for ii, oi in enumerate((0, 2, 1, 3)):
+            a_0, a_1, a_2, a_3 = unpack(a[ii])
+
+            out[oi] = (a_0*b_0 + a_1*b_1 + a_2*b_2 + a_3*b_3)
 
     return factories.qcjit(impl)
 
