@@ -90,6 +90,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                meta_args,
                                kwargs["corr_mode"])
 
+        # jhj = jhj[:, :, :, :, (0,0,2,2), (0,2,0,2)].reshape(jhj.shape[:-2] + (4,))
+
         results_dict[f"{term_name}-conviter"] += \
             np.atleast_2d(info_tup.conv_iters)
         results_dict[f"{term_name}-convperc"] += \

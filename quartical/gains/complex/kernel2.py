@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, generated_jit, objmode
+from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (invert_gains,
                                               compute_residual,
@@ -31,6 +31,8 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
 
     coerce_literal(complex_solver, ["corr_mode"])
 
+    jhj_dims = jhj_dim_factory(corr_mode)
+
     def impl(base_args, term_args, meta_args, corr_mode):
 
         model = base_args.model
@@ -49,7 +51,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
 
         active_term = meta_args.active_term
 
-        n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
+        n_tint, n_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
         t_map_arr = t_map_arr[0]  # We don't need the parameter mappings.
         f_map_arr = f_map_arr[0]  # We don't need the parameter mappings.
@@ -62,7 +64,9 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
 
         cnv_perc = 0.
 
-        jhj = np.empty_like(gains[active_term])
+        jhj = np.empty((n_tint, n_fint, n_ant, n_dir, *jhj_dims()),
+                       dtype=gains[active_term].dtype)
+        # jhj = np.empty_like(gains[active_term])
         jhr = np.empty_like(gains[active_term])
         update = np.empty_like(gains[active_term])
 
@@ -144,6 +148,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
     set_identity = factories.set_identity_factory(corr_mode)
     accumulate_jhr = accumulate_jhr_factory(corr_mode)
     compute_jhwj = compute_jhwj_factory(corr_mode)
+    jhj_dims = jhj_dim_factory(corr_mode)
 
     def impl(jhj, jhr, model, gains, inverse_gains, residual, a1, a2, weights,
              t_map_arr, f_map_arr, d_map_arr, row_map, row_weights,
@@ -175,6 +180,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
         # gt means greater than (n>j) and lt means less than (n<j).
         all_terms, gt_active, lt_active = make_loop_vars(n_gains, active_term)
 
+        tmp_jhj_dims = (n_ant, n_gdir, *jhj_dims())
+
         # Parallel over all solution intervals.
         for i in prange(n_int):
 
@@ -204,7 +211,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
             tmp_jhr = np.zeros((n_ant, n_gdir, n_corr), dtype=complex_dtype)
             # The shape of this matrix needs to distinguish between the
             # scalar/diag and 2x2 cases.
-            tmp_jhj = np.zeros((n_ant, n_gdir, n_corr), dtype=complex_dtype)
+            tmp_jhj = np.zeros(tmp_jhj_dims, dtype=complex_dtype)
 
             for row_ind in range(rs, re):
 
@@ -315,7 +322,9 @@ def compute_update(update, jhj, jhr, corr_mode):
     iinverse = factories.iinverse_factory(corr_mode)
 
     def impl(update, jhj, jhr, corr_mode):
-        n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
+        n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
+
+        ident = np.eye(4, dtype=jhj.dtype)
 
         for t in range(n_tint):
             for f in range(n_fint):
@@ -323,18 +332,22 @@ def compute_update(update, jhj, jhr, corr_mode):
                     for d in range(n_dir):
 
                         jhj_sel = jhj[t, f, a, d]
-                        upd_sel = update[t, f, a, d]
 
-                        det = compute_det(jhj_sel)
+                        det = np.linalg.det(jhj_sel)
 
-                        if det.real < 1e-6:
-                            upd_sel[:] = 0
+                        if np.abs(det) < 1e-6 or ~np.isfinite(det):
+                            jhj_inv = np.zeros_like(jhj_sel)
                         else:
-                            iinverse(jhj_sel, det, upd_sel)
+                            jhj_inv = np.linalg.solve(jhj_sel, ident)
 
-                        v1_imul_v2(jhr[t, f, a, d],
-                                   upd_sel,
-                                   upd_sel)
+                        jhr00, jhr01, jhr10, jhr11 = jhr[t, f, a, d]
+
+                        jhr_vec = np.array((jhr00, jhr10, jhr01, jhr11))
+                        # TODO: This complains as linalg.solve produces
+                        # F_CONTIGUOUS output.
+                        upd = jhj_inv.dot(jhr_vec)
+                        update[t, f, a, d] = upd[0], upd[2], upd[1], upd[3]
+
     return impl
 
 
@@ -359,8 +372,8 @@ def accumulate_jhr_factory(corr_mode):
 
     def impl(res, rop, lop, jhr):
 
-        v1_imul_v2(res, rop, res)
         v1_imul_v2(lop, res, res)
+        v1_imul_v2(res, rop, res)
         iadd(jhr, res)
 
     return factories.qcjit(impl)
@@ -368,12 +381,34 @@ def accumulate_jhr_factory(corr_mode):
 
 def compute_jhwj_factory(corr_mode):
 
+    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
     v1ct_wmul_v2 = factories.v1ct_wmul_v2_factory(corr_mode)
     iadd = factories.iadd_factory(corr_mode)
     # TODO: The following is completely incorrect for the general case. WIP.
 
     def impl(lop, rop, w, jhj):
 
-        iadd(jhj, v1ct_wmul_v2(rop, rop, w))
+        foo = np.kron(rop.reshape(2, 2).T, lop.reshape(2, 2))
+
+        # TODO: Placeholder for comparison purposes. Can use w directly.
+        W = np.array((w[0], w[0], w[-1], w[-1]))
+
+        jhj += (foo * W) @ foo.conj().T
+        # TODO: I think I am beginning to understand. vec(JHR) is not the same
+        # as a flattened/raveled JHR. vec implies stacked columns whereas a
+        # ravel/flattened version stacks rows. This is now important as we are
+        # moving between representations.
+
+    return factories.qcjit(impl)
+
+
+def jhj_dim_factory(corr_mode):
+
+    if corr_mode.literal_value == 4:
+        def impl():
+            return (4, 4)
+    else:
+        def impl():
+            return (corr_mode.literal_value,)
 
     return factories.qcjit(impl)

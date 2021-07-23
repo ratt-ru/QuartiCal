@@ -1,5 +1,5 @@
 from quartical.gains.gain import Gain, gain_spec_tup
-from quartical.gains.complex.kernel import complex_solver, complex_args
+from quartical.gains.complex.kernel2 import complex_solver, complex_args
 
 
 class Complex(Gain):
