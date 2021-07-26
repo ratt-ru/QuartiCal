@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import prange, generated_jit
-from numpy.lib import unique
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (invert_gains,
                                               compute_residual,
@@ -308,6 +307,10 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         compute_jhwj(lop_qp_d, rop_qp_d, w,
                                      tmp_jhj[a2_m, d])
 
+            # This is the spigot point. A parameterised solver can do the
+            # extra operations it requires here. Technically, we could also
+            # compute the update directly, allowing us to avoid storing the
+            # entirety of jhj and jhr.
             jhr[t_m, f_m] = tmp_jhr
             jhj[t_m, f_m] = tmp_jhj
         return
@@ -318,15 +321,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                nogil=True)
 def compute_update(update, jhj, jhr, corr_mode):
 
-    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    compute_det = factories.compute_det_factory(corr_mode)
-    iinverse = factories.iinverse_factory(corr_mode)
-    a_mul_vecb = a_mul_vecb_factory(corr_mode)
-
     def impl(update, jhj, jhr, corr_mode):
         n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
-
-        ident = np.eye(4, dtype=jhj.dtype)
 
         for t in range(n_tint):
             for f in range(n_fint):
@@ -334,21 +330,34 @@ def compute_update(update, jhj, jhr, corr_mode):
                     for d in range(n_dir):
 
                         jhj_sel = jhj[t, f, a, d]
-
                         det = np.linalg.det(jhj_sel)
 
                         if np.abs(det) < 1e-6 or ~np.isfinite(det):
-                            jhj_inv = np.zeros_like(jhj_sel)
+                            update[t, f, a, d] = 0, 0, 0, 0
                         else:
-                            jhj_inv = np.linalg.solve(jhj_sel, ident)
-
-                        # TODO: This complains as linalg.solve produces
-                        # F_CONTIGUOUS output.
-                        a_mul_vecb(jhj_inv,
-                                   jhr[t, f, a, d],
-                                   update[t, f, a, d])
+                            conjgrad(jhj_sel,
+                                     jhr[t, f, a, d],
+                                     update[t, f, a, d])
 
     return impl
+
+
+@factories.qcjit
+def conjgrad(A, b, x):
+    r = b - A @ x
+    p = r.copy()
+    rsold = r.T.conj() @ r
+
+    for i in range(b.size):
+        Ap = A @ p
+        alpha = rsold / (p.T.conj() @ Ap)
+        x += alpha * p
+        r -= alpha * Ap
+        rsnew = r.T.conj() @ r
+        if rsnew.real < 1e-16:
+            break
+        p = r + (rsnew / rsold) * p
+        rsold = rsnew
 
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
@@ -421,18 +430,22 @@ def aT_kron_b_factory(corr_mode):
         a00, a10, a01, a11 = unpack(a)  # Effectively transpose.
         b00, b01, b10, b11 = unpack(b)
 
+        # NOTE: At present this is not merely B^T kron A (definition in Latex
+        # document). It is S(B^T kron A) where S is a shuffle matrix. This is
+        # necessary as the ravelled visibilities are ordered as [XX XY YX YY],
+        # while the vectorised form (vec(V_pq)) would be ordered [XX YX XY YY].
         out[0, 0] = a00 * b00
         out[0, 1] = a00 * b01
         out[0, 2] = a01 * b00
         out[0, 3] = a01 * b01
-        out[1, 0] = a00 * b10
-        out[1, 1] = a00 * b11
-        out[1, 2] = a01 * b10
-        out[1, 3] = a01 * b11
-        out[2, 0] = a10 * b00
-        out[2, 1] = a10 * b01
-        out[2, 2] = a11 * b00
-        out[2, 3] = a11 * b01
+        out[1, 0] = a10 * b00
+        out[1, 1] = a10 * b01
+        out[1, 2] = a11 * b00
+        out[1, 3] = a11 * b01
+        out[2, 0] = a00 * b10
+        out[2, 1] = a00 * b11
+        out[2, 2] = a01 * b10
+        out[2, 3] = a01 * b11
         out[3, 0] = a10 * b10
         out[3, 1] = a10 * b11
         out[3, 2] = a11 * b10

@@ -138,7 +138,8 @@ class Gain(Input):
         default="complex",
         metadata=dict(choices=["complex",
                                "delay",
-                               "phase"])
+                               "phase",
+                               "slow_complex"])
     )
     direction_dependent: bool = False
     time_interval: str = "1"
