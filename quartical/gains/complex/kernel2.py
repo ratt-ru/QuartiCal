@@ -323,44 +323,47 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                nogil=True)
 def compute_update(update, jhj, jhr, corr_mode):
 
+    mat_mul_vec = mat_mul_vec_factory(corr_mode)
+    vecct_mul_vec = vecct_mul_vec_factory(corr_mode)
+    diag_add = diag_add_factory(corr_mode)
+
     def impl(update, jhj, jhr, corr_mode):
-        n_tint, n_fint, n_ant, n_dir, _, _ = jhj.shape
+        n_tint, n_fint, n_ant, n_dir, n_param, n_param = jhj.shape
+
+        r = np.zeros(n_param, dtype=jhr.dtype)
+        p = np.zeros(n_param, dtype=jhr.dtype)
+        Ap = np.zeros(n_param, dtype=jhr.dtype)
+        jhj_sel = np.zeros((n_param, n_param), dtype=jhj.dtype)
 
         for t in range(n_tint):
             for f in range(n_fint):
                 for a in range(n_ant):
                     for d in range(n_dir):
 
-                        jhj_sel = jhj[t, f, a, d]
+                        diag_add(jhj[t, f, a, d], 1e-3, jhj_sel)
+                        jhr_sel = jhr[t, f, a, d]
+                        upd_sel = update[t, f, a, d]
 
-                        det = np.linalg.det(jhj_sel)
+                        mat_mul_vec(jhj_sel, -1*upd_sel, r)
+                        r += jhr_sel
+                        p[:] = r
+                        rsold = vecct_mul_vec(r, r)
 
-                        if np.abs(det) < 1e-6 or ~np.isfinite(det):
-                            update[t, f, a, d] = 0, 0, 0, 0
-                        else:
-                            conjgrad(jhj_sel,
-                                     jhr[t, f, a, d],
-                                     update[t, f, a, d])
+                        for _ in range(n_param):
+                            mat_mul_vec(jhj_sel, p, Ap)
+                            denom = vecct_mul_vec(p, Ap)
+                            if np.abs(denom) == 0:
+                                break
+                            alpha = rsold / denom
+                            upd_sel += alpha * p
+                            r -= alpha * Ap
+                            rsnew = vecct_mul_vec(r, r)
+                            if rsnew.real < 1e-16:
+                                break
+                            p[:] = r + (rsnew / rsold) * p
+                            rsold = rsnew
 
     return impl
-
-
-@factories.qcjit
-def conjgrad(A, b, x):
-    r = b - A @ x
-    p = r.copy()
-    rsold = r.T.conj() @ r
-
-    for i in range(b.size):
-        Ap = A @ p
-        alpha = rsold / (p.T.conj() @ Ap)
-        x += alpha * p
-        r -= alpha * Ap
-        rsnew = r.T.conj() @ r
-        if rsnew.real < 1e-16:
-            break
-        p = r + (rsnew / rsold) * p
-        rsold = rsnew
 
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
@@ -457,18 +460,62 @@ def aT_kron_b_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def a_mul_vecb_factory(corr_mode):
+def mat_mul_vec_factory(corr_mode):
 
-    unpack = factories.unpack_factory(corr_mode)
+    def impl(mat, vec, out):
 
-    def impl(a, b, out):
+        n_row, n_col = mat.shape
 
-        b_0, b_2, b_1, b_3 = unpack(b)  # NOTE: b is XX XY YX YY
+        out[:] = 0
 
-        for ii, oi in enumerate((0, 2, 1, 3)):
-            a_0, a_1, a_2, a_3 = unpack(a[ii])
+        for i in range(n_row):
+            for j in range(n_col):
+                out[i] += mat[i, j] * vec[j]
 
-            out[oi] = (a_0*b_0 + a_1*b_1 + a_2*b_2 + a_3*b_3)
+    return factories.qcjit(impl)
+
+
+def vecct_mul_mat_factory(corr_mode):
+
+    def impl(vec, mat, out):
+
+        n_row, n_col = mat.shape
+
+        out[:] = 0
+
+        for i in range(n_col):
+            for j in range(n_row):
+                out[i] += vec[i].conjugate() * mat[i, j]
+
+    return factories.qcjit(impl)
+
+
+def vecct_mul_vec_factory(corr_mode):
+
+    def impl(vec1, vec2):
+
+        n_ele = vec1.size
+
+        out = 0
+
+        for i in range(n_ele):
+            out += vec1[i].conjugate() * vec2[i]
+
+        return out
+
+    return factories.qcjit(impl)
+
+
+def diag_add_factory(corr_mode):
+
+    def impl(mat, scalar, out):
+
+        n_ele, _ = mat.shape
+
+        out[:] = mat
+
+        for i in range(n_ele):
+            out[i, i] += scalar
 
     return factories.qcjit(impl)
 
