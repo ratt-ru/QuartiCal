@@ -50,6 +50,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         row_weights = base_args.row_weights
 
         active_term = meta_args.active_term
+        nthread = meta_args.nthread
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
@@ -66,9 +67,8 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
 
         jhj = np.empty((n_tint, n_fint, n_ant, n_dir, *jhj_dims()),
                        dtype=gains[active_term].dtype)
-        # jhj = np.empty_like(gains[active_term])
         jhr = np.empty_like(gains[active_term])
-        update = np.empty_like(gains[active_term])
+        update = np.zeros_like(gains[active_term])
 
         for i in range(meta_args.iters):
 
@@ -95,6 +95,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                             row_map,
                             row_weights,
                             active_term,
+                            nthread,
                             corr_mode)
 
             compute_update(update,
@@ -119,7 +120,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             if cnv_perc > 0.99:
                 break
 
-        print(i+1, cnv_perc)
+        print(i + 1, cnv_perc)
 
         return jhj, term_conv_info(i + 1, cnv_perc)
 
@@ -133,7 +134,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                     a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
-                    row_weights, active_term, corr_mode):
+                    row_weights, active_term, nthread, corr_mode):
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -152,7 +153,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
 
     def impl(jhj, jhr, model, gains, inverse_gains, residual, a1, a2, weights,
              t_map_arr, f_map_arr, d_map_arr, row_map, row_weights,
-             active_term, corr_mode):
+             active_term, nthread, corr_mode):
         _, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
@@ -203,11 +204,12 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
             gains_p = valloc(complex_dtype, leading_dims=(n_gains,))
             gains_q = valloc(complex_dtype, leading_dims=(n_gains,))
 
-            lop_pq_arr = np.empty((n_gdir, n_corr), dtype=complex_dtype)
-            rop_pq_arr = np.empty((n_gdir, n_corr), dtype=complex_dtype)
-            lop_qp_arr = np.empty((n_gdir, n_corr), dtype=complex_dtype)
-            rop_qp_arr = np.empty((n_gdir, n_corr), dtype=complex_dtype)
+            lop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
+            rop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
+            lop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
+            rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
 
+            kprod = np.zeros((4, 4), dtype=complex_dtype)
             tmp_jhr = np.zeros((n_ant, n_gdir, n_corr), dtype=complex_dtype)
             # The shape of this matrix needs to distinguish between the
             # scalar/diag and 2x2 cases.
@@ -299,13 +301,13 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                         rop_pq_d = rop_pq_arr[d]
 
                         compute_jhwj(lop_pq_d, rop_pq_d, w,
-                                     tmp_jhj[a1_m, d])
+                                     kprod, tmp_jhj[a1_m, d])
 
                         lop_qp_d = lop_qp_arr[d]
                         rop_qp_d = rop_qp_arr[d]
 
                         compute_jhwj(lop_qp_d, rop_qp_d, w,
-                                     tmp_jhj[a2_m, d])
+                                     kprod, tmp_jhj[a2_m, d])
 
             # This is the spigot point. A parameterised solver can do the
             # extra operations it requires here. Technically, we could also
@@ -330,6 +332,7 @@ def compute_update(update, jhj, jhr, corr_mode):
                     for d in range(n_dir):
 
                         jhj_sel = jhj[t, f, a, d]
+
                         det = np.linalg.det(jhj_sel)
 
                         if np.abs(det) < 1e-6 or ~np.isfinite(det):
@@ -394,9 +397,9 @@ def compute_jhwj_factory(corr_mode):
     unpack = factories.unpack_factory(corr_mode)
     unpackct = factories.unpackct_factory(corr_mode)
 
-    def impl(lop, rop, w, jhj):
+    def impl(lop, rop, w, kprod, jhj):
 
-        kprod = np.empty_like(jhj)
+        # kprod = np.empty_like(jhj)
         atkb(rop, lop, kprod)
 
         w_00, w_01, w_10, w_11 = unpack(w)  # NOTE: XX, XY, YX, YY
