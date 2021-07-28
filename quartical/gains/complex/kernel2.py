@@ -344,6 +344,7 @@ def compute_update(update, jhj, jhr, corr_mode):
                         jhr_sel = jhr[t, f, a, d]
                         upd_sel = update[t, f, a, d]
 
+                        # TODO: Refine! This still allocates.
                         mat_mul_vec(jhj_sel, -1*upd_sel, r)
                         r += jhr_sel
                         p[:] = r
@@ -398,25 +399,28 @@ def compute_jhwj_factory(corr_mode):
 
     atkb = aT_kron_b_factory(corr_mode)
     unpack = factories.unpack_factory(corr_mode)
-    unpackct = factories.unpackct_factory(corr_mode)
+    unpackc = factories.unpackc_factory(corr_mode)
 
     def impl(lop, rop, w, kprod, jhj):
 
-        # kprod = np.empty_like(jhj)
-        atkb(rop, lop, kprod)
+        atkb(rop, lop, kprod)  # NOTE: This is includes a shuffle!
 
         w_00, w_01, w_10, w_11 = unpack(w)  # NOTE: XX, XY, YX, YY
 
         for i in range(4):
-            jh_0, jh_1, jh_2, jh_3 = unpack(kprod[i])
-            jhw_0 = jh_0*w_00  # XX
-            jhw_1 = jh_1*w_10  # YX
-            jhw_2 = jh_2*w_01  # XY
-            jhw_3 = jh_3*w_11  # YY
-            for j in range(4):
-                # NOTE: "undoing" transpose as I am abusing unpack.
-                j_0, j_2, j_1, j_3 = unpackct(kprod[j])
 
+            jh_0, jh_1, jh_2, jh_3 = unpack(kprod[i])
+
+            jhw_0 = jh_0*w_00  # XX
+            jhw_1 = jh_1*w_01  # XY
+            jhw_2 = jh_2*w_10  # YX
+            jhw_3 = jh_3*w_11  # YY
+
+            for j in range(i):
+                jhj[i, j] = jhj[j, i].conjugate()
+
+            for j in range(i, 4):
+                j_0, j_1, j_2, j_3 = unpackc(kprod[j])
                 jhj[i, j] += (jhw_0*j_0 + jhw_1*j_1 + jhw_2*j_2 + jhw_3*j_3)
 
         # TODO: I think I am beginning to understand. vec(JHR) is not the same

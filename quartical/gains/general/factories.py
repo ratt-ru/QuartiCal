@@ -401,6 +401,26 @@ def unpack_factory(mode):
     return qcjit(impl)
 
 
+def unpackc_factory(mode):
+
+    if mode.literal_value == 4:
+        def impl(invec):
+            return invec[0].conjugate(), \
+                   invec[1].conjugate(), \
+                   invec[2].conjugate(), \
+                   invec[3].conjugate()
+    elif mode.literal_value == 2:
+        def impl(invec):
+            return invec[0].conjugate(), invec[1].conjugate()
+    elif mode.literal_value == 1:
+        def impl(invec):
+            return invec[0].conjugate()
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
 def unpackct_factory(mode):
 
     if mode.literal_value == 4:
