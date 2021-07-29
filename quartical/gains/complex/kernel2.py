@@ -319,7 +319,10 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
     return impl
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+@generated_jit(nopython=True,
+               fastmath=True,
+               parallel=True,
+               cache=True,
                nogil=True)
 def compute_update(update, jhj, jhr, corr_mode):
 
@@ -332,41 +335,46 @@ def compute_update(update, jhj, jhr, corr_mode):
     def impl(update, jhj, jhr, corr_mode):
         n_tint, n_fint, n_ant, n_dir, n_param, n_param = jhj.shape
 
-        r = np.zeros(n_param, dtype=jhr.dtype)
-        p = np.zeros(n_param, dtype=jhr.dtype)
-        Ap = np.zeros(n_param, dtype=jhr.dtype)
-        Ax = np.zeros(n_param, dtype=jhr.dtype)
-        A = np.zeros((n_param, n_param), dtype=jhj.dtype)
+        n_int = n_tint * n_fint
 
-        for t in range(n_tint):
-            for f in range(n_fint):
-                for a in range(n_ant):
-                    for d in range(n_dir):
+        for i in prange(n_int):
 
-                        diag_add(jhj[t, f, a, d], 1e-3, A)
-                        b = jhr[t, f, a, d]
-                        x = update[t, f, a, d]
+            t = i // n_fint
+            f = i - t * n_fint
 
-                        mat_mul_vec(A, x, Ax)
-                        r[:] = b
-                        r -= Ax
-                        p[:] = r
-                        r_k = vecct_mul_vec(r, r)
+            r = np.zeros(n_param, dtype=jhr.dtype)
+            p = np.zeros(n_param, dtype=jhr.dtype)
+            Ap = np.zeros(n_param, dtype=jhr.dtype)
+            Ax = np.zeros(n_param, dtype=jhr.dtype)
+            A = np.zeros((n_param, n_param), dtype=jhj.dtype)
 
-                        for _ in range(n_param):
-                            mat_mul_vec(A, p, Ap)
-                            alpha_denom = vecct_mul_vec(p, Ap)
-                            if np.abs(alpha_denom) == 0:
-                                break
-                            alpha = r_k / alpha_denom
-                            vec_iadd_svec(x, alpha, p)
-                            vec_isub_svec(r, alpha, Ap)
-                            r_kplus1 = vecct_mul_vec(r, r)
-                            if r_kplus1.real < 1e-16:
-                                break
-                            p *= (r_kplus1 / r_k)
-                            p += r
-                            r_k = r_kplus1
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    diag_add(jhj[t, f, a, d], 1e-3, A)
+                    b = jhr[t, f, a, d]
+                    x = update[t, f, a, d]
+
+                    mat_mul_vec(A, x, Ax)
+                    r[:] = b
+                    r -= Ax
+                    p[:] = r
+                    r_k = vecct_mul_vec(r, r)
+
+                    for _ in range(n_param):
+                        mat_mul_vec(A, p, Ap)
+                        alpha_denom = vecct_mul_vec(p, Ap)
+                        if np.abs(alpha_denom) == 0:
+                            break
+                        alpha = r_k / alpha_denom
+                        vec_iadd_svec(x, alpha, p)
+                        vec_isub_svec(r, alpha, Ap)
+                        r_kplus1 = vecct_mul_vec(r, r)
+                        if r_kplus1.real < 1e-16:
+                            break
+                        p *= (r_kplus1 / r_k)
+                        p += r
+                        r_k = r_kplus1
 
     return impl
 
