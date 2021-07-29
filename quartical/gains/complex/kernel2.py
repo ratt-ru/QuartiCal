@@ -326,6 +326,8 @@ def compute_update(update, jhj, jhr, corr_mode):
     mat_mul_vec = mat_mul_vec_factory(corr_mode)
     vecct_mul_vec = vecct_mul_vec_factory(corr_mode)
     diag_add = diag_add_factory(corr_mode)
+    vec_iadd_svec = vec_iadd_svec_factory(corr_mode)
+    vec_isub_svec = vec_isub_svec_factory(corr_mode)
 
     def impl(update, jhj, jhr, corr_mode):
         n_tint, n_fint, n_ant, n_dir, n_param, n_param = jhj.shape
@@ -333,36 +335,38 @@ def compute_update(update, jhj, jhr, corr_mode):
         r = np.zeros(n_param, dtype=jhr.dtype)
         p = np.zeros(n_param, dtype=jhr.dtype)
         Ap = np.zeros(n_param, dtype=jhr.dtype)
-        jhj_sel = np.zeros((n_param, n_param), dtype=jhj.dtype)
+        Ax = np.zeros(n_param, dtype=jhr.dtype)
+        A = np.zeros((n_param, n_param), dtype=jhj.dtype)
 
         for t in range(n_tint):
             for f in range(n_fint):
                 for a in range(n_ant):
                     for d in range(n_dir):
 
-                        diag_add(jhj[t, f, a, d], 1e-3, jhj_sel)
-                        jhr_sel = jhr[t, f, a, d]
-                        upd_sel = update[t, f, a, d]
+                        diag_add(jhj[t, f, a, d], 1e-3, A)
+                        b = jhr[t, f, a, d]
+                        x = update[t, f, a, d]
 
-                        # TODO: Refine! This still allocates.
-                        mat_mul_vec(jhj_sel, -1*upd_sel, r)
-                        r += jhr_sel
+                        mat_mul_vec(A, x, Ax)
+                        r[:] = b
+                        r -= Ax
                         p[:] = r
-                        rsold = vecct_mul_vec(r, r)
+                        r_k = vecct_mul_vec(r, r)
 
                         for _ in range(n_param):
-                            mat_mul_vec(jhj_sel, p, Ap)
-                            denom = vecct_mul_vec(p, Ap)
-                            if np.abs(denom) == 0:
+                            mat_mul_vec(A, p, Ap)
+                            alpha_denom = vecct_mul_vec(p, Ap)
+                            if np.abs(alpha_denom) == 0:
                                 break
-                            alpha = rsold / denom
-                            upd_sel += alpha * p
-                            r -= alpha * Ap
-                            rsnew = vecct_mul_vec(r, r)
-                            if rsnew.real < 1e-16:
+                            alpha = r_k / alpha_denom
+                            vec_iadd_svec(x, alpha, p)
+                            vec_isub_svec(r, alpha, Ap)
+                            r_kplus1 = vecct_mul_vec(r, r)
+                            if r_kplus1.real < 1e-16:
                                 break
-                            p[:] = r + (rsnew / rsold) * p
-                            rsold = rsnew
+                            p *= (r_kplus1 / r_k)
+                            p += r
+                            r_k = r_kplus1
 
     return impl
 
@@ -373,11 +377,14 @@ def finalize_update(update, gain, i_num, dd_term, corr_mode):
 
     def impl(update, gain, i_num, dd_term, corr_mode):
         if dd_term:
-            gain[:] = gain[:] + update/2
+            update /= 2
+            gain += update
         elif i_num % 2 == 0:
             gain[:] = update
         else:
-            gain[:] = (gain[:] + update)/2
+            gain += update
+            gain /= 2
+
     return impl
 
 
@@ -520,6 +527,30 @@ def diag_add_factory(corr_mode):
 
         for i in range(n_ele):
             out[i, i] += scalar
+
+    return factories.qcjit(impl)
+
+
+def vec_iadd_svec_factory(corr_mode):
+
+    def impl(vec1, scalar, vec2):
+
+        n_ele = vec1.size
+
+        for i in range(n_ele):
+            vec1[i] += scalar * vec2[i]
+
+    return factories.qcjit(impl)
+
+
+def vec_isub_svec_factory(corr_mode):
+
+    def impl(vec1, scalar, vec2):
+
+        n_ele = vec1.size
+
+        for i in range(n_ele):
+            vec1[i] -= scalar * vec2[i]
 
     return factories.qcjit(impl)
 
