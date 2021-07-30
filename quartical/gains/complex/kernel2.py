@@ -2,8 +2,7 @@
 import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.generics import (invert_gains,
-                                              compute_residual,
+from quartical.gains.general.generics import (compute_residual,
                                               compute_convergence)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
@@ -31,7 +30,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
 
     coerce_literal(complex_solver, ["corr_mode"])
 
-    jhj_dims = jhj_dim_factory(corr_mode)
+    get_jhj_dims = get_jhj_dims_factory(corr_mode)
 
     def impl(base_args, term_args, meta_args, corr_mode):
 
@@ -40,42 +39,42 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         a1 = base_args.a1
         a2 = base_args.a2
         weights = base_args.weights
-        t_map_arr = base_args.t_map_arr
-        f_map_arr = base_args.f_map_arr
+        t_map_arr = base_args.t_map_arr[0]  # Ignore parameter mappings.
+        f_map_arr = base_args.f_map_arr[0]  # Ignore parameter mappings.
         d_map_arr = base_args.d_map_arr
-        inverse_gains = base_args.inverse_gains
         gains = base_args.gains
         flags = base_args.flags
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
         active_term = meta_args.active_term
-        nthread = meta_args.nthread
+        iters = meta_args.iters
 
-        n_tint, n_fint, n_ant, n_dir, n_corr = gains[active_term].shape
+        active_gain = gains[active_term]
 
-        t_map_arr = t_map_arr[0]  # We don't need the parameter mappings.
-        f_map_arr = f_map_arr[0]  # We don't need the parameter mappings.
+        dd_term = np.any(d_map_arr[active_term])
 
-        invert_gains(gains, inverse_gains, corr_mode)
-
-        dd_term = n_dir > 1
-
-        last_gain = gains[active_term].copy()
+        last_gain = active_gain.copy()
 
         cnv_perc = 0.
 
-        jhj = np.empty((n_tint, n_fint, n_ant, n_dir, *jhj_dims()),
-                       dtype=gains[active_term].dtype)
-        jhr = np.empty_like(gains[active_term])
-        update = np.zeros_like(gains[active_term])
+        jhj = np.empty(get_jhj_dims(active_gain), dtype=active_gain.dtype)
+        jhr = np.empty_like(active_gain)
+        update = np.zeros_like(active_gain)
 
-        for i in range(meta_args.iters):
+        for i in range(iters):
 
             if dd_term:
-                residual = compute_residual(data, model, gains, a1, a2,
-                                            t_map_arr, f_map_arr, d_map_arr,
-                                            row_map, row_weights,
+                residual = compute_residual(data,
+                                            model,
+                                            gains,
+                                            a1,
+                                            a2,
+                                            t_map_arr,
+                                            f_map_arr,
+                                            d_map_arr,
+                                            row_map,
+                                            row_weights,
                                             corr_mode)
             else:
                 residual = data
@@ -84,7 +83,6 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                             jhr,
                             model,
                             gains,
-                            inverse_gains,
                             residual,
                             a1,
                             a2,
@@ -95,7 +93,6 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                             row_map,
                             row_weights,
                             active_term,
-                            nthread,
                             corr_mode)
 
             compute_update(update,
@@ -132,9 +129,9 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                parallel=True,
                cache=True,
                nogil=True)
-def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
-                    a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
-                    row_weights, active_term, nthread, corr_mode):
+def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
+                    t_map_arr, f_map_arr, d_map_arr, row_map, row_weights,
+                    active_term, corr_mode):
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -149,11 +146,10 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
     set_identity = factories.set_identity_factory(corr_mode)
     accumulate_jhr = accumulate_jhr_factory(corr_mode)
     compute_jhwj = compute_jhwj_factory(corr_mode)
-    jhj_dims = jhj_dim_factory(corr_mode)
 
-    def impl(jhj, jhr, model, gains, inverse_gains, residual, a1, a2, weights,
+    def impl(jhj, jhr, model, gains, residual, a1, a2, weights,
              t_map_arr, f_map_arr, d_map_arr, row_map, row_weights,
-             active_term, nthread, corr_mode):
+             active_term, corr_mode):
         _, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
@@ -181,7 +177,7 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
         # gt means greater than (n>j) and lt means less than (n<j).
         all_terms, gt_active, lt_active = make_loop_vars(n_gains, active_term)
 
-        tmp_jhj_dims = (n_ant, n_gdir, *jhj_dims())
+        tmp_jhj_dims = jhj.shape[2:]  # Doesn't need time/freq dim.
 
         # Parallel over all solution intervals.
         for i in prange(n_int):
@@ -351,7 +347,8 @@ def compute_update(update, jhj, jhr, corr_mode):
             for a in range(n_ant):
                 for d in range(n_dir):
 
-                    diag_add(jhj[t, f, a, d], 1e-3, A)
+                    # diag_add(jhj[t, f, a, d], 1e-6, A)
+                    A = jhj[t, f, a, d]
                     b = jhr[t, f, a, d]
                     x = update[t, f, a, d]
 
@@ -365,6 +362,7 @@ def compute_update(update, jhj, jhr, corr_mode):
                         mat_mul_vec(A, p, Ap)
                         alpha_denom = vecct_mul_vec(p, Ap)
                         if np.abs(alpha_denom) == 0:
+                            x[:] = 0
                             break
                         alpha = r_k / alpha_denom
                         vec_iadd_svec(x, alpha, p)
@@ -401,11 +399,17 @@ def accumulate_jhr_factory(corr_mode):
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     iadd = factories.iadd_factory(corr_mode)
 
-    def impl(res, rop, lop, jhr):
-
-        v1_imul_v2(lop, res, res)
-        v1_imul_v2(res, rop, res)
-        iadd(jhr, res)
+    if corr_mode.literal_value == 4:
+        def impl(res, rop, lop, jhr):
+            v1_imul_v2(lop, res, res)
+            v1_imul_v2(res, rop, res)
+            iadd(jhr, res)
+    elif corr_mode.literal_value in (1, 2):
+        def impl(res, rop, lop, jhr):  # lop is a no-op in scalar/diag case.
+            v1_imul_v2(res, rop, res)
+            iadd(jhr, res)
+    else:
+        raise ValueError("Unsupported number of correlations.")
 
     return factories.qcjit(impl)
 
@@ -416,32 +420,51 @@ def compute_jhwj_factory(corr_mode):
     unpack = factories.unpack_factory(corr_mode)
     unpackc = factories.unpackc_factory(corr_mode)
 
-    def impl(lop, rop, w, kprod, jhj):
+    if corr_mode.literal_value == 4:
+        def impl(lop, rop, w, kprod, jhj):
 
-        atkb(rop, lop, kprod)  # NOTE: This is includes a shuffle!
+            atkb(rop, lop, kprod)  # NOTE: This is includes a shuffle!
 
-        w_00, w_01, w_10, w_11 = unpack(w)  # NOTE: XX, XY, YX, YY
+            w_00, w_01, w_10, w_11 = unpack(w)  # NOTE: XX, XY, YX, YY
 
-        for i in range(4):
+            for i in range(4):
 
-            jh_0, jh_1, jh_2, jh_3 = unpack(kprod[i])
+                jh_0, jh_1, jh_2, jh_3 = unpack(kprod[i])
 
-            jhw_0 = jh_0*w_00  # XX
-            jhw_1 = jh_1*w_01  # XY
-            jhw_2 = jh_2*w_10  # YX
-            jhw_3 = jh_3*w_11  # YY
+                jhw_0 = jh_0*w_00  # XX
+                jhw_1 = jh_1*w_01  # XY
+                jhw_2 = jh_2*w_10  # YX
+                jhw_3 = jh_3*w_11  # YY
 
-            for j in range(i):
-                jhj[i, j] = jhj[j, i].conjugate()
+                for j in range(i):
+                    jhj[i, j] = jhj[j, i].conjugate()
 
-            for j in range(i, 4):
-                j_0, j_1, j_2, j_3 = unpackc(kprod[j])
-                jhj[i, j] += (jhw_0*j_0 + jhw_1*j_1 + jhw_2*j_2 + jhw_3*j_3)
+                for j in range(i, 4):
+                    j_0, j_1, j_2, j_3 = unpackc(kprod[j])
+                    jhj[i, j] += (jhw_0*j_0 + jhw_1*j_1 +
+                                  jhw_2*j_2 + jhw_3*j_3)
 
-        # TODO: I think I am beginning to understand. vec(JHR) is not the same
-        # as a flattened/raveled JHR. vec implies stacked columns whereas a
-        # ravel/flattened version stacks rows. This is now important as we are
-        # moving between representations.
+            # NOTE: vec(JHR) is not the same as a flattened/raveled JHR.
+            # vec implies stacked columns whereas a ravel/flattened version
+            # stacks rows (with C conventions). This is now important as we are
+            # moving between representations.
+    elif corr_mode.literal_value == 2:
+        def impl(lop, rop, w, kprod, jhj):
+            jh_00, jh_11 = unpack(rop)
+            j_00, j_11 = unpackc(rop)
+            w_00, w_11 = unpack(w)
+
+            jhj[0] += jh_00*w_00*j_00
+            jhj[1] += jh_11*w_11*j_11
+    elif corr_mode.literal_value == 1:
+        def impl(lop, rop, w, kprod, jhj):
+            jh_00 = unpack(rop)
+            j_00 = unpackc(rop)
+            w_00 = unpack(w)
+
+            jhj[0] += jh_00*w_00*j_00
+    else:
+        raise ValueError("Unsupported number of correlations.")
 
     return factories.qcjit(impl)
 
@@ -563,13 +586,15 @@ def vec_isub_svec_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def jhj_dim_factory(corr_mode):
+def get_jhj_dims_factory(corr_mode):
 
     if corr_mode.literal_value == 4:
-        def impl():
-            return (4, 4)
+        def impl(gain):
+            return gain.shape[:4] + (4, 4)
+    elif corr_mode.literal_value in (1, 2):
+        def impl(gain):
+            return gain.shape
     else:
-        def impl():
-            return (corr_mode.literal_value,)
+        raise ValueError("Unsupported number of correlations.")
 
     return factories.qcjit(impl)

@@ -209,9 +209,13 @@ def make_net_xds_list(data_xds_list, coords_per_xds):
         net_t_chunks = np.tile(data_xds.UTIME_CHUNKS, 2).reshape(2, -1)
         net_f_chunks = np.tile(data_xds.chunks["chan"], 2).reshape(2, -1)
 
-        # TODO: The net gain doesn't understand directions (yet).
+        # Create a default config object, consistent with the net gain.
+        # NOTE: If we have a direction-dependent model, assume the net gain
+        # is also direction dependent.
+        config = Gain(direction_dependent=bool(data_xds.dims["dir"]))
+
         net_obj = TERM_TYPES["complex"]("NET",
-                                        Gain(),
+                                        config,
                                         data_xds,
                                         xds_coords,
                                         net_t_chunks,
@@ -275,7 +279,8 @@ def populate_net_xds_list(net_gain_xds_list,
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"time": net_xds.GAIN_SPEC.tchunk,
-                           "chan": net_xds.GAIN_SPEC.fchunk}
+                           "chan": net_xds.GAIN_SPEC.fchunk,
+                           "dir": net_xds.GAIN_SPEC.dchunk}
         )
 
         net_xds = net_xds.assign({"gains": (net_xds.GAIN_AXES, net_gain)})
