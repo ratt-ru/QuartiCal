@@ -8,6 +8,8 @@ from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
 import quartical.gains.general.factories as factories
+from quartical.gains.general.inversion import (invert_factory,
+                                               inversion_buffer_factory)
 from collections import namedtuple
 
 
@@ -322,57 +324,30 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
                nogil=True)
 def compute_update(update, jhj, jhr, corr_mode):
 
-    mat_mul_vec = mat_mul_vec_factory(corr_mode)
-    vecct_mul_vec = vecct_mul_vec_factory(corr_mode)
-    diag_add = diag_add_factory(corr_mode)
-    vec_iadd_svec = vec_iadd_svec_factory(corr_mode)
-    vec_isub_svec = vec_isub_svec_factory(corr_mode)
+    inversion_buffer = inversion_buffer_factory(corr_mode)
+    invert = invert_factory(corr_mode)
 
     def impl(update, jhj, jhr, corr_mode):
-        n_tint, n_fint, n_ant, n_dir, n_param, n_param = jhj.shape
+        n_tint, n_fint, n_ant, n_dir, n_param = jhr.shape
 
         n_int = n_tint * n_fint
+
+        result_dtype = jhr.dtype
 
         for i in prange(n_int):
 
             t = i // n_fint
             f = i - t * n_fint
 
-            r = np.zeros(n_param, dtype=jhr.dtype)
-            p = np.zeros(n_param, dtype=jhr.dtype)
-            Ap = np.zeros(n_param, dtype=jhr.dtype)
-            Ax = np.zeros(n_param, dtype=jhr.dtype)
-            A = np.zeros((n_param, n_param), dtype=jhj.dtype)
+            buffers = inversion_buffer(n_param, result_dtype)
 
             for a in range(n_ant):
                 for d in range(n_dir):
 
-                    # diag_add(jhj[t, f, a, d], 1e-6, A)
-                    A = jhj[t, f, a, d]
-                    b = jhr[t, f, a, d]
-                    x = update[t, f, a, d]
-
-                    mat_mul_vec(A, x, Ax)
-                    r[:] = b
-                    r -= Ax
-                    p[:] = r
-                    r_k = vecct_mul_vec(r, r)
-
-                    for _ in range(n_param):
-                        mat_mul_vec(A, p, Ap)
-                        alpha_denom = vecct_mul_vec(p, Ap)
-                        if np.abs(alpha_denom) == 0:
-                            x[:] = 0
-                            break
-                        alpha = r_k / alpha_denom
-                        vec_iadd_svec(x, alpha, p)
-                        vec_isub_svec(r, alpha, Ap)
-                        r_kplus1 = vecct_mul_vec(r, r)
-                        if r_kplus1.real < 1e-16:
-                            break
-                        p *= (r_kplus1 / r_k)
-                        p += r
-                        r_k = r_kplus1
+                    invert(jhj[t, f, a, d],
+                           jhr[t, f, a, d],
+                           update[t, f, a, d],
+                           buffers)
 
     return impl
 
@@ -498,90 +473,6 @@ def aT_kron_b_factory(corr_mode):
         out[3, 1] = a10 * b11
         out[3, 2] = a11 * b10
         out[3, 3] = a11 * b11
-
-    return factories.qcjit(impl)
-
-
-def mat_mul_vec_factory(corr_mode):
-
-    def impl(mat, vec, out):
-
-        n_row, n_col = mat.shape
-
-        out[:] = 0
-
-        for i in range(n_row):
-            for j in range(n_col):
-                out[i] += mat[i, j] * vec[j]
-
-    return factories.qcjit(impl)
-
-
-def vecct_mul_mat_factory(corr_mode):
-
-    def impl(vec, mat, out):
-
-        n_row, n_col = mat.shape
-
-        out[:] = 0
-
-        for i in range(n_col):
-            for j in range(n_row):
-                out[i] += vec[i].conjugate() * mat[i, j]
-
-    return factories.qcjit(impl)
-
-
-def vecct_mul_vec_factory(corr_mode):
-
-    def impl(vec1, vec2):
-
-        n_ele = vec1.size
-
-        out = 0
-
-        for i in range(n_ele):
-            out += vec1[i].conjugate() * vec2[i]
-
-        return out
-
-    return factories.qcjit(impl)
-
-
-def diag_add_factory(corr_mode):
-
-    def impl(mat, scalar, out):
-
-        n_ele, _ = mat.shape
-
-        out[:] = mat
-
-        for i in range(n_ele):
-            out[i, i] += scalar
-
-    return factories.qcjit(impl)
-
-
-def vec_iadd_svec_factory(corr_mode):
-
-    def impl(vec1, scalar, vec2):
-
-        n_ele = vec1.size
-
-        for i in range(n_ele):
-            vec1[i] += scalar * vec2[i]
-
-    return factories.qcjit(impl)
-
-
-def vec_isub_svec_factory(corr_mode):
-
-    def impl(vec1, scalar, vec2):
-
-        n_ele = vec1.size
-
-        for i in range(n_ele):
-            vec1[i] -= scalar * vec2[i]
 
     return factories.qcjit(impl)
 
