@@ -2,16 +2,12 @@ import numpy as np
 import quartical.gains.general.factories as factories
 from collections import namedtuple
 
-
 buffers = namedtuple("buffers", "Ap Ax p r")
 
 
-def inversion_buffer_factory(corr_mode):
+def inversion_buffer_factory(generalised=False):
 
-    if corr_mode.literal_value in (1, 2):
-        def impl(n_param, dtype):
-            return buffers(*(0,)*4)
-    else:
+    if generalised:
         def impl(n_param, dtype):
 
             r = np.zeros(n_param, dtype=dtype)
@@ -20,13 +16,17 @@ def inversion_buffer_factory(corr_mode):
             Ax = np.zeros(n_param, dtype=dtype)
 
             return buffers(Ap, Ax, p, r)
+    else:
+        def impl(n_param, dtype):
+            return
 
     return factories.qcjit(impl)
 
 
-def invert_factory(corr_mode):
+def invert_factory(corr_mode, generalised=False):
 
-    if corr_mode.literal_value == 4:
+    if generalised:
+
         mat_mul_vec = mat_mul_vec_factory(corr_mode)
         vecct_mul_vec = vecct_mul_vec_factory(corr_mode)
         vec_iadd_svec = vec_iadd_svec_factory(corr_mode)
@@ -58,7 +58,8 @@ def invert_factory(corr_mode):
                 p += r
                 r_k = r_kplus1
 
-    elif corr_mode.literal_value in (1, 2):
+    else:
+
         v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
         compute_det = factories.compute_det_factory(corr_mode)
         iinverse = factories.iinverse_factory(corr_mode)

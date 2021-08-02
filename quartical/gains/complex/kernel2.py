@@ -324,8 +324,9 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
                nogil=True)
 def compute_update(update, jhj, jhr, corr_mode):
 
-    inversion_buffer = inversion_buffer_factory(corr_mode)
-    invert = invert_factory(corr_mode)
+    generalised = jhj.ndim == 6
+    inversion_buffer = inversion_buffer_factory(generalised=generalised)
+    invert = invert_factory(corr_mode, generalised=generalised)
 
     def impl(update, jhj, jhr, corr_mode):
         n_tint, n_fint, n_ant, n_dir, n_param = jhr.shape
