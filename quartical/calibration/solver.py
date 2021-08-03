@@ -72,7 +72,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     kwargs["weights"] = np.require(kwargs["weights"], requirements=['W', 'O'])
     results_dict["weights"] = kwargs["weights"]
 
-    for term, iters in zip(cycle(terms), iter_recipe):
+    for term, iters, v_niter in zip(cycle(terms), iter_recipe, robust_iters):
 
         active_term = terms.index(term)
         term_name, term_type, _, _ = term_spec_list[active_term]
@@ -87,9 +87,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
 
         solver = term_type_cls.solver
         base_args_nt = term_type_cls.base_args
-        term_args_nt = term_type_cls.term_args
-
-        v_niter = 0 if len(robust_iters) < active_term else robust_iters[active_term] 
+        term_args_nt = term_type_cls.term_args 
 
         base_args = \
             base_args_nt(**{k: kwargs[k] for k in base_args_nt._fields})

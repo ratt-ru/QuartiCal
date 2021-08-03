@@ -116,7 +116,7 @@ class Solver(Input):
     cov_thresh: float = 200
     robust_iters: List[int] = field(default_factory=lambda: [10])
     threads: int = 1
-    robust_thresh: float = 1e-3
+    robust_thresh: float = 0
 
     def __post_init__(self):
         self.validate_choice_fields()

@@ -157,7 +157,7 @@ solver:
   cov_thresh:
     Fived the degrees of freedom to 2 if the covariance function exceeds this value.
   robust_thresh:
-    Flag data with weights less than this value 
+    Flag data with weights less than this value, 0 to ignore
   threads:
     Number of Numba threads per Dask thread (enables nested parallelism) to
     be used when running the solvers. The total number of threads used will be 

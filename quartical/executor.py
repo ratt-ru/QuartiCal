@@ -18,8 +18,6 @@ from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
 # from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 
-#just for my experiments, add output columns before running
-from quartical.data_handling.ms_handler import add_output_columns
 
 
 @logger.catch
@@ -46,7 +44,6 @@ def _execute(exitstack):
     dask_opts = opts.dask
     chain_opts = internal.gains_to_chain(opts)  # Special handling.
 
-    add_output_columns(ms_opts, output_opts) # just for me
 
     model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
 

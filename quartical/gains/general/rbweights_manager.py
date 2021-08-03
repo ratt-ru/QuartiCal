@@ -56,7 +56,6 @@ def get_number_of_unflaggedw(arr, nc):
 def normalise_cov(ompstd, Nvis, cov_thresh):
 	
     ompstd /= (Nvis + 1e-8)
-    # ompstd *= 0.70 # use a 70 percent correction factor  
     
     if ompstd[0,0].real>cov_thresh:
         fixed_v = 1
@@ -77,19 +76,14 @@ def normalise_cov(ompstd, Nvis, cov_thresh):
 def compute_covinv(gains, residual,
                     weights, t_map_arr, f_map_arr, active_term, row_map, n_valid, cov_thresh, corr_mode):
         
-    # TODO implement the option to pass option and do all the other traditional stuffs
     ompstd = np.zeros((4,4), dtype=residual.dtype)
     
     weights_kernel.compute_cov(gains, residual, ompstd, 
              weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode)
 
-    # print("  ---", ompstd[0,0]/n_valid, " ", ompstd[1,1]/n_valid, " ", ompstd[2,2]/n_valid, " ", ompstd[3,3]/n_valid, " ", corr_mode, " ", n_valid)
-
     fixed_v = normalise_cov(ompstd, n_valid, cov_thresh)
     covinv = np.eye(4, dtype=ompstd.dtype)
     eps = 1e-8
-
-    # print(ompstd, "-> corrmode ", corr_mode, " normalsied cov", n_valid, "fixed v -> ", fixed_v)
     
     if fixed_v:		
         covinv[0,0] *= 1./cov_thresh
@@ -115,8 +109,6 @@ def update_weights(gains, residual, v,
     npol = 4 if corr_mode=="full" else 2
     n_valid = get_number_of_unflaggedw(weights, npol)
     
-    # print("  ---", n_valid, " here we go")
-
     icov, fixed_v = compute_covinv(gains, residual,
                     weights, t_map_arr, f_map_arr, active_term, row_map, n_valid, cov_thresh, corr_mode)
 
@@ -138,7 +130,6 @@ def update_weights(gains, residual, v,
     else:
         v = brute_solve_v(weights, npol, n_valid)
     
-    # print(" ----fitted v param ", v, " wsum -> ", wsum, " norm ", norm)
    
     return v
 

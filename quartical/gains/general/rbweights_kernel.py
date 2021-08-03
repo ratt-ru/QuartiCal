@@ -80,7 +80,7 @@ def compute_cov(gains, residual, icov,
                                                    n_fint,
                                                    n_chan)
 
-        # Parallel over all solution intervals. ... I change prange to range
+        # Parallel over all solution intervals. ... 
         for i in prange(n_int):
 
             ti = i//n_fint
