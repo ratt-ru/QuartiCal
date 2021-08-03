@@ -488,18 +488,26 @@ def rb_weight_mult(mode):
 def rb_weight_upd(mode):
 
     if mode.literal_value == "full":
-        def impl(v, denom, o1):
+        def impl(v, denom, o1, robust_thresh, wsum):
             if o1[0].real !=0: 
-                o1[0] = (v+4)/(v+denom)
-                o1[1] = (v+4)/(v+denom)
-                o1[2] = (v+4)/(v+denom)
-                o1[3] = (v+4)/(v+denom)
+                w = (v+4)/(v+denom)
+                if w<robust_thresh:
+                    w = 0
+                o1[0] = w
+                o1[1] = w
+                o1[2] = w
+                o1[3] = w
+                wsum[0] += w
 
     else:
-        def impl(v, denom, o1):
+        def impl(v, denom, o1, robust_thresh, wsum):
             if o1[0].real !=0:
-                o1[0] = (v+2)/(v+denom)
-                o1[1] = (v+2)/(v+denom)
+                w = (v+2)/(v+denom)
+                if w < robust_thresh:
+                    w = 0
+                o1[0] = w
+                o1[1] = w
+                wsum[0] += w
 
     return qcjit(impl)
 
@@ -518,23 +526,8 @@ def rb_cov_mult(mode):
             w0r11 = w0*r11
 
             ic[0,0] += rc00*w0r00
-            ic[0,1] += rc00*w0r01
-            ic[0,2] += rc00*w0r10
-            ic[0,3] += rc00*w0r11
-
-            ic[1,0] += rc01*w0r00
             ic[1,1] += rc01*w0r01
-            ic[1,2] += rc01*w0r10
-            ic[1,3] += rc01*w0r11
-
-            ic[2,0] += rc10*w0r00   
-            ic[2,1] += rc10*w0r01
             ic[2,2] += rc10*w0r10
-            ic[2,3] += rc10*w0r11
-
-            ic[3,0] += rc11*w0r00
-            ic[3,1] += rc11*w0r01
-            ic[3,2] += rc11*w0r10
             ic[3,3] += rc11*w0r11
             
 
@@ -545,6 +538,8 @@ def rb_cov_mult(mode):
             w0r00 = w0*r00
             w0r11 = w0*r11
             ic[0,0] += rc00*w0r00
-            ic[3,3] += rc11*w0r11 
+            ic[3,3] += rc11*w0r11
+
+
 
     return qcjit(impl)

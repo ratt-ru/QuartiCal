@@ -51,8 +51,9 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
         row_weights = base_args.row_weights
         robust = meta_args.robust
         v = meta_args.v0 # initial value for the number of degrees of freedom for the robust re-weighting
-        v_niter = meta_args.v_niter
+        v_niter = meta_args.v_niter + 1
         cov_thresh = meta_args.cov_thresh
+        robust_thresh = meta_args.robust_thresh
 
         active_term = meta_args.active_term
 
@@ -81,13 +82,14 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
         jhr = np.empty(jhr_shape, dtype=real_dtype)
         update = np.empty(jhr_shape, dtype=real_dtype)
 
-        Nvis = 0
-        if robust:
-            Nvis = get_number_of_unflaggedw(weights) # Do it here so that we only do it once (for robust re-weighting)
 
         for i in range(meta_args.iters):
 
-            if dd_term or robust:
+            # Determine if this a robust step
+            # TODO implement a better strategy
+            robust_step = i>0 and i<v_niter and robust 
+
+            if dd_term or robust_step:
                 residual = compute_residual(data, model, gains, a1, a2,
                                             t_map_arr, f_map_arr, d_map_arr,
                                             row_map, row_weights,
@@ -95,10 +97,8 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
             else:
                 residual = data
             
-            # update the weights
-            # TODO implement a better strategy
-            if i>0 and i<v_niter and robust:
-                v = update_weights(gains, residual, v,  weights, t_map_arr, f_map_arr, active_term, row_map, Nvis, cov_thresh, corr_mode)
+            if robust_step:
+                v = update_weights(gains, residual, v,  weights, t_map_arr, f_map_arr, active_term, row_map, cov_thresh, robust_thresh, corr_mode)
 
 
             compute_jhj_jhr(jhj,

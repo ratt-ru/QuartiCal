@@ -11,8 +11,8 @@ from quartical.data_handling.chunking import compute_chunking
 from quartical.data_handling.bda import process_bda_input, process_bda_output
 from quartical.data_handling.selection import filter_xds_list
 
-from MSUtils.msutils import addcol  # to be deleted
-
+from MSUtils.msutils import addcol, copycol  # to be deleted
+from pyrap.tables import table
 
 def read_xds_list(model_columns, ms_opts):
     """Reads a measurement set and generates a list of xarray data sets.
@@ -322,4 +322,19 @@ def add_output_columns(ms_opts, output_opts):
             addcol(msname=ms_opts.path, colname=column, valuetype='float')
         else:
             addcol(msname=ms_opts.path, colname=column)
+    
+    tab = table(ms_opts.path, ack=False)
+    already_initialised = "LEGACY_FLAG" in tab.colnames()
+    tab.close()
+
+    if already_initialised:
+        logger.info(f"LEGACY_FLAG column present, will use it to populate the FLAG column.")
+        copycol(ms_opts.path, "LEGACY_FLAG", "FLAG")
+    else:
+        logger.info(f"LEGACY_FLAG column not avaliable, will initialise it with the current FLAG column.")
+        addcol(msname=ms_opts.path, colname="LEGACY_FLAG", valuetype='boolean')
+        copycol(ms_opts.path, "FLAG", "LEGACY_FLAG")
+
+
+
 

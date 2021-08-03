@@ -6,17 +6,16 @@ from quartical.gains.general.convenience import (get_row,
 import quartical.gains.general.factories as factories
 from collections import namedtuple
 
-
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+@generated_jit(nopython=True, fastmath=True, parallel=True, cache=True,
                nogil=True)
 def compute_weights(gains, residual, icov, v,
-                    weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode):
+                    weights, t_map_arr, f_map_arr, active_term, row_map, robust_thresh, wsum, corr_mode):
 
     rb_weight_mult = factories.rb_weight_mult(corr_mode)
     rb_weight_upd = factories.rb_weight_upd(corr_mode)
 
     def impl(gains, residual, icov, v, 
-            weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode):
+            weights, t_map_arr, f_map_arr, active_term, row_map, robust_thresh, wsum, corr_mode):
         _, n_chan, n_corr = residual.shape
 
         n_tint, n_fint, n_ant, n_gdir, _ = gains[active_term].shape
@@ -51,12 +50,12 @@ def compute_weights(gains, residual, icov, v,
                 for f in range(fs, fe):
                     r = residual[row, f]
                     denom = rb_weight_mult(r, icov)
-                    rb_weight_upd(v, denom, weights[row, f])
+                    rb_weight_upd(v, denom, weights[row, f], robust_thresh, wsum)
 
         return
     return impl
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+@generated_jit(nopython=True, fastmath=True, parallel=True, cache=True,
                nogil=True)
 def compute_cov(gains, residual, icov,
                     weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode):
@@ -82,7 +81,7 @@ def compute_cov(gains, residual, icov,
                                                    n_chan)
 
         # Parallel over all solution intervals. ... I change prange to range
-        for i in range(n_int):
+        for i in prange(n_int):
 
             ti = i//n_fint
             fi = i - ti*n_fint
@@ -98,7 +97,7 @@ def compute_cov(gains, residual, icov,
                 
                 for f in range(fs, fe):
                     r = residual[row, f]
-                    w = weights[row, f, 0]
+                    w = weights[row, f, 0].real
                     rb_cov_mult(r, icov, w)                    
         return
     return impl

@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
-from numba import prange, literally, generated_jit, jit
+from numba import  jit, prange
 import numpy as np
-from quartical.gains.general.convenience import (get_row,
-                                                 get_chan_extents,
-                                                 get_row_extents)
-import quartical.gains.general.factories as factories
 import quartical.gains.general.rbweights_kernel as weights_kernel
+
 
 @jit(fastmath=True, nopython=True, cache=True, nogil=True)
 def py_fast_digamma(x):
@@ -19,56 +16,62 @@ def py_fast_digamma(x):
         + f*(691/32760.0 + f*(-1/12.0 + f*3617/8160.0)))))))
     return r + np.log(x) - 0.5/x + t
 
-@jit(fastmath=True, nopython=True, cache=True, nogil=True)
-def vfunc(wn, a, npol):
-    m = len(wn)
-    vval =  py_fast_digamma(a+npol) - np.log(a+npol) -  py_fast_digamma(a) + np.log(a) + (1./m)*np.sum(np.log(wn) - wn) + 1
+@jit(fastmath=True, nopython=True, cache=True, nogil=True, parallel=True)
+def vfunc(wn, a, npol, m):
+    vval = 0
+    nt, nf, _ = wn.shape
+    vgamma = py_fast_digamma(a+npol) - np.log(a+npol) -  py_fast_digamma(a) + np.log(a) + 1
+    for i in prange(nt):
+        for j in prange(nf):
+            w = wn[i, j, 0]
+            if w != 0:
+                vval += np.log(w) - w
+    
+    vval *= 1./m
+    vval += vgamma
     return vval
 
-@jit(fastmath=True, nopython=True, cache=True, nogil=True)
-def brute_solve_v(wn, fixed_v, npol):
+@jit(fastmath=True, nopython=True, cache=True, nogil=True, parallel=True)
+def brute_solve_v(wn, npol, m):
+    vvals = [3, 4, 5, 6, 7, 8, 9, 10, 13, 16, 20, 25, 30, 40]
+    nvals = len(vvals)
+    root = 2
+    fval0 = np.abs(vfunc(wn, 2, npol, m))
+    for ival in prange(nvals):
+        fval = np.abs(vfunc(wn, vvals[ival], npol, m))
+        if fval<fval0:
+            root = ival
+            fval0 = fval
+    return root
 
-    if fixed_v:
-        return 2
-    else:
-        root = 2
-        fval0 = np.abs(vfunc(wn.real, 2, npol))
-        for ival in range(3, 61):
-            fval = np.abs(vfunc(wn.real, ival, npol))
-            if fval<fval0:
-                root = ival
-                fval0 = fval
-        
-        return root
-
-@jit(fastmath=True, nopython=True, cache=True, nogil=True)
-def get_number_of_unflaggedw(wn):
-    
-    nt, nf, nc = wn.shape
-    ww = wn.real!=0
-    Nvis = np.sum(ww)/nc
-
-    return Nvis
+@jit(fastmath=True, nopython=True, cache=True, nogil=True, parallel=True)
+def get_number_of_unflaggedw(arr, nc):
+    flattened = arr.ravel()
+    sum_ = 0
+    for i in prange(flattened.size):
+        sum_ += flattened[i] != 0
+    return sum_/nc
 
 @jit(fastmath=True, nopython=True, cache=True, nogil=True)
 def normalise_cov(ompstd, Nvis, cov_thresh):
-	eps = 1e-6
-	ompstd /=Nvis 
-	ompstd += eps**2
-
-	cov_thresh = 200
-	if ompstd[0,0].real>cov_thresh:
-		fixed_v = 1
-	elif ompstd[1,1].real>cov_thresh:
-		fixed_v = 1
-	elif ompstd[2,2].real>cov_thresh:
-		fixed_v = 1
-	elif ompstd[3,3].real>cov_thresh:
-		fixed_v = 1
-	else:
-		fixed_v = 0
 	
-	return fixed_v
+    ompstd /= (Nvis + 1e-8)
+    # ompstd *= 0.70 # use a 70 percent correction factor  
+    
+    if ompstd[0,0].real>cov_thresh:
+        fixed_v = 1
+    elif ompstd[1,1].real>cov_thresh:
+        fixed_v = 1
+    elif ompstd[2,2].real>cov_thresh:
+        fixed_v = 1
+    elif ompstd[3,3].real>cov_thresh:
+        fixed_v = 1
+    elif Nvis < 1:
+        fixed_v = 1
+    else:
+        fixed_v = 0
+
+    return fixed_v
 
 @jit(fastmath=True, cache=True, nogil=True, nopython=True) 
 def compute_covinv(gains, residual,
@@ -76,16 +79,17 @@ def compute_covinv(gains, residual,
         
     # TODO implement the option to pass option and do all the other traditional stuffs
     ompstd = np.zeros((4,4), dtype=residual.dtype)
-
+    
     weights_kernel.compute_cov(gains, residual, ompstd, 
              weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode)
 
-    # print(ompstd, "-> corrmode ", corr_mode, " normalsied cov", n_valid)
+    # print("  ---", ompstd[0,0]/n_valid, " ", ompstd[1,1]/n_valid, " ", ompstd[2,2]/n_valid, " ", ompstd[3,3]/n_valid, " ", corr_mode, " ", n_valid)
 
     fixed_v = normalise_cov(ompstd, n_valid, cov_thresh)
     covinv = np.eye(4, dtype=ompstd.dtype)
+    eps = 1e-8
 
-    # print(ompstd, "-> corrmode ", corr_mode, " normalsied cov", n_valid)
+    # print(ompstd, "-> corrmode ", corr_mode, " normalsied cov", n_valid, "fixed v -> ", fixed_v)
     
     if fixed_v:		
         covinv[0,0] *= 1./cov_thresh
@@ -93,10 +97,10 @@ def compute_covinv(gains, residual,
         covinv[2,2] *= 1./cov_thresh
         covinv[3,3] *= 1./cov_thresh
     else:
-        covinv[0,0] *= 1/ompstd[0,0]
-        covinv[1,1] *= 1/ompstd[1,1]
-        covinv[2,2] *= 1/ompstd[2,2]
-        covinv[3,3] *= 1/ompstd[3,3]
+        covinv[0,0] *= 1/(ompstd[0,0] + eps)
+        covinv[1,1] *= 1/(ompstd[1,1] + eps)  # don't trust the cross correlations
+        covinv[2,2] *= 1/(ompstd[2,2] + eps)  # 
+        covinv[3,3] *= 1/(ompstd[3,3] + eps)
 
     if corr_mode != "full":
         covinv[1,1] = 0
@@ -106,28 +110,36 @@ def compute_covinv(gains, residual,
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def update_weights(gains, residual, v,
-                     weights, t_map_arr, f_map_arr, active_term, row_map, n_valid, cov_thresh, corr_mode):
+                     weights, t_map_arr, f_map_arr, active_term, row_map, cov_thresh, robust_thresh, corr_mode):
     
+    npol = 4 if corr_mode=="full" else 2
+    n_valid = get_number_of_unflaggedw(weights, npol)
+    
+    # print("  ---", n_valid, " here we go")
+
     icov, fixed_v = compute_covinv(gains, residual,
                     weights, t_map_arr, f_map_arr, active_term, row_map, n_valid, cov_thresh, corr_mode)
 
+    wsum = np.array([0], dtype=weights.dtype)
     weights_kernel.compute_weights(gains, residual, icov, v,
-                    weights, t_map_arr, f_map_arr, active_term, row_map, corr_mode)
-
-    w_sum = np.sum(weights[:,:,0])
-    norm = w_sum.real/n_valid  # normlaise by average of the valid visibilities
-
-    weights/= norm
-
-    #-----------computing the v parameter---------------------#
-    # TODO make this computation only after a certain number of iterations (maybe 5)
-    npol = 4 if corr_mode=="full" else 2
-    ww = weights[:,:,0].flatten()
-    v = brute_solve_v(ww[ww!=0], fixed_v, npol) # remove zero weights
+                    weights, t_map_arr, f_map_arr, active_term, row_map, robust_thresh, wsum, corr_mode)
     
-    # todo implement the weight flagging
-    # self.not_all_flagged = self.flag_weights()
-  
+    #----------------normalise the weights----------------------------------------------#
+    n_valid = get_number_of_unflaggedw(weights, npol)
+    norm = wsum[0].real/(n_valid+1e-8)
+    if norm !=0:
+        weights /= norm
+
+    #-----------compute the v parameter---------------------#
+    # TODO make this computation only after a certain number of iterations (maybe 5)
+
+    if fixed_v:
+        v = 2
+    else:
+        v = brute_solve_v(weights, npol, n_valid)
+    
+    # print(" ----fitted v param ", v, " wsum -> ", wsum, " norm ", norm)
+   
     return v
 
 

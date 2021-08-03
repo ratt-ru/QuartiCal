@@ -178,9 +178,9 @@ def add_mad_graph(data_xds_list, mad_opts):
 
 
 
-def add_wflag_graph(data_xds_list, mad_opts):
+def add_wflag_graph(data_xds_list):
 
-    robust_thresh = mad_opts.robust_thresh
+    # robust_thresh = mad_opts.robust_thresh
     # Definitely have to add more options to make this work
 
     flagged_data_xds_list = []
@@ -189,7 +189,7 @@ def add_wflag_graph(data_xds_list, mad_opts):
         weights = xds._WEIGHT.data
         flag_col = xds.FLAG.data
 
-        flag_col = da.where(weights<robust_thresh, True, flag_col)
+        flag_col = da.where(weights==0, True, flag_col)
 
         flagged_data_xds = xds.assign(
             {"FLAG": (("row", "chan", "corr"), flag_col)})

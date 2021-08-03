@@ -112,7 +112,7 @@ def _execute(exitstack):
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
     
     if mad_flag_opts.robust:
-        data_xds_list = add_wflag_graph(data_xds_list, mad_flag_opts)
+        data_xds_list = add_wflag_graph(data_xds_list)
 
     data_xds_list = finalise_flags(data_xds_list)
 

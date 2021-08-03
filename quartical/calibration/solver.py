@@ -7,7 +7,7 @@ from itertools import cycle
 from quartical.gains import TERM_TYPES
 
 
-meta_args_nt = namedtuple("meta_args_nt", ("iters active_term robust, cov_thresh, v0, v_niter"))
+meta_args_nt = namedtuple("meta_args_nt", ("iters active_term robust cov_thresh v0 v_niter robust_thresh"))
 
 
 def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
@@ -59,13 +59,13 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     kwargs["inverse_gains"] = tuple([np.empty_like(g) for g in gain_tup])
     kwargs["params"] = param_tup
     
-    
     terms = solver_opts.terms
     iter_recipe = solver_opts.iter_recipe
     robust = solver_opts.robust
     cov_thresh = solver_opts.cov_thresh
     v0 = solver_opts.v0
-    v_niter = solver_opts.v_niter
+    robust_iters = solver_opts.robust_iters
+    robust_thresh = solver_opts.robust_thresh
 
     # TODO: Analyse the impact of the following. This is necessary if we want
     # to mutate the weights, as we may end up with an unwritable array.
@@ -89,11 +89,13 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         base_args_nt = term_type_cls.base_args
         term_args_nt = term_type_cls.term_args
 
+        v_niter = 0 if len(robust_iters) < active_term else robust_iters[active_term] 
+
         base_args = \
             base_args_nt(**{k: kwargs[k] for k in base_args_nt._fields})
         term_args = \
             term_args_nt(**{k: kwargs[k] for k in term_args_nt._fields})
-        meta_args = meta_args_nt(iters, active_term, robust, cov_thresh, v0, v_niter)
+        meta_args = meta_args_nt(iters, active_term, robust, cov_thresh, v0, v_niter, robust_thresh)
 
         jhj, info_tup = solver(base_args,
                                term_args,
@@ -105,6 +107,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         results_dict[f"{term_name}-convperc"] += \
             np.atleast_2d(info_tup.conv_perc)
         results_dict[f"{term_name}-jhj"] = jhj
+
+        
 
     gc.collect()
 

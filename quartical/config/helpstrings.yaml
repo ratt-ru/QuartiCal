@@ -127,9 +127,8 @@ mad_flags:
     considered to deviate significantly from the median of the given data 
     chunk. These values are flagged.
   robust:
-    Enables Flagging based on the weights. Only use solver is robust
-  robust_thresh:
-    Flag data with weights less than this value
+    Enables Flagging based on the weights. Only use if solver is robust
+  
 
 solver:
   terms:
@@ -151,10 +150,14 @@ solver:
     Initial v-parameter if robust solver is enabled. This should be an integer
     greater than 2. Default value is 30, a value close to implies harsh weigting
     from start.
-  v_niter:
+  robust_iters:
     Number of iterations for which the robust rewieghting is done (Default is 10).
+    Same specification as iter_recipe, ideally reweight should be done with the 
+    complex solver when in a chain
   cov_thresh:
-    Fived the degrees of freedom to 2 if the covariance function exceeds this value. 
+    Fived the degrees of freedom to 2 if the covariance function exceeds this value.
+  robust_thresh:
+    Flag data with weights less than this value 
   threads:
     Number of Numba threads per Dask thread (enables nested parallelism) to
     be used when running the solvers. The total number of threads used will be 
