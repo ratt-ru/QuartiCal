@@ -277,8 +277,6 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
                             g_q = gains_q[g]
                             v1ct_imul_v2(g_q, lop_qp, lop_qp)
 
-                        t_m = t_map_arr[row_ind, active_term]
-                        f_m = f_map_arr[f, active_term]
                         out_d = d_map_arr[active_term, d]
 
                         accumulate_jhr(r_pq, rop_pq, lop_pq,
@@ -311,8 +309,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
             # extra operations it requires here. Technically, we could also
             # compute the update directly, allowing us to avoid storing the
             # entirety of jhj and jhr.
-            jhr[t_m, f_m] = tmp_jhr
-            jhj[t_m, f_m] = tmp_jhj
+            jhr[ti, fi] = tmp_jhr
+            jhj[ti, fi] = tmp_jhj
         return
     return impl
 
