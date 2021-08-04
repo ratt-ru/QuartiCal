@@ -146,8 +146,7 @@ def interp_mode(request):
 
 
 @pytest.fixture(scope="module", params=["2dlinear",
-                                        "2dspline",
-                                        "smoothingspline"])
+                                        "2dspline"])
 def interp_method(request):
     return request.param
 

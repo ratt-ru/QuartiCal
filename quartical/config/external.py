@@ -154,8 +154,7 @@ class Gain(Input):
     interp_method: str = field(
         default="2dlinear",
         metadata=dict(choices=["2dlinear",
-                               "2dspline",
-                               "smoothingspline"])
+                               "2dspline"])
     )
 
     def __post_init__(self):
