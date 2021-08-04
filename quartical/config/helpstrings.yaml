@@ -190,11 +190,9 @@ gain:
   load_from:
     Load solutions from given database. 
   interp_mode:
-    Set interpolation mode. Choose from [ampphase, reim].
+    Set interpolation mode.
   interp_method:
-    Set interpolation method. Choose from [2dlinear, 2dspline, 
-    smoothingspline]. The smoothing spline implementation is is experimental 
-    and slow.
+    Set interpolation method.
   # parametrisation:
   #       type: str
   #       help: If the gain is parametric, this determines the type of
