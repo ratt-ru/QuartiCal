@@ -61,7 +61,6 @@ else:
                     "distributed",
                     "requests",
                     "pytest",
-                    "csaps",
                     "omegaconf",
                     "colorama",
                     "bokeh"]
