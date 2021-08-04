@@ -3,7 +3,6 @@ from loguru import logger  # noqa
 import dask.array as da
 import numpy as np
 from scipy.interpolate import interp2d
-from csaps import csaps
 from numba import jit
 
 
@@ -95,58 +94,6 @@ def spline2d_interpolate_gains(interp_xds, term_xds):
 
     for data_field in interp_xds.data_vars.keys():
         interp = da.blockwise(spline2d, "tfadc",
-                              interp_xds[i_t_axis].values, None,
-                              interp_xds[i_f_axis].values, None,
-                              interp_xds[data_field].data, "tfadc",
-                              term_xds[t_t_axis].values, None,
-                              term_xds[t_f_axis].values, None,
-                              dtype=np.float64,
-                              adjust_chunks={"t": term_xds.dims[t_t_axis],
-                                             "f": term_xds.dims[t_f_axis]})
-
-        output_xds = output_xds.assign(
-            {data_field: (term_xds.GAIN_AXES, interp)})
-
-    return output_xds
-
-
-def csaps2d(x, y, z, xx, yy):
-    """Constructs a 2D sspline using (x,y,z) and evaluates it at (xx,yy)."""
-
-    n_t, n_f, n_a, n_d, n_c = z.shape
-    n_ti, n_fi = xx.size, yy.size
-
-    zz = np.zeros((n_ti, n_fi, n_a, n_d, n_c), dtype=z.dtype)
-
-    for a in range(n_a):
-        for d in range(n_d):
-            for c in range(n_c):
-                z_sel = z[:, :, a, d, c]
-                if not np.any(z_sel):
-                    continue
-                interp_vals = csaps([x, y], z_sel, [xx, yy]).values
-                zz[:, :, a, d, c] = interp_vals.reshape(n_ti, n_fi)
-
-    return zz
-
-
-def csaps2d_interpolate_gains(interp_xds, term_xds):
-    """Interpolate from interp_xds to term_xds using a 2D smoothing spline.
-
-    Args:
-        interp_xds: xarray.Dataset containing the data to interpolate from.
-        term_xds: xarray.Dataset onto which to interpolate.
-
-    Returns:
-        output_xds: xarray.Dataset containing interpolated values
-    """
-    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
-    t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
-
-    output_xds = term_xds
-
-    for data_field in interp_xds.data_vars.keys():
-        interp = da.blockwise(csaps2d, "tfadc",
                               interp_xds[i_t_axis].values, None,
                               interp_xds[i_f_axis].values, None,
                               interp_xds[data_field].data, "tfadc",
