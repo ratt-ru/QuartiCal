@@ -2,8 +2,7 @@ import pytest
 import dask.array as da
 import numpy as np
 from quartical.interpolation.interpolants import (_interpolate_missing,
-                                                  spline2d,
-                                                  csaps2d)
+                                                  spline2d)
 
 
 # flake8: noqa
@@ -90,34 +89,3 @@ def test_spline2d(input_lbound,
     y = data.reshape((n_t_sample, n_f_sample, 1, 1, 1))
 
     assert np.allclose(spline2d(x1, x2, y, xx1, xx2), np.ones(data.shape))
-
-
-# -----------------------------------spline2d----------------------------------
-
-
-@pytest.mark.parametrize("input_lbound, input_rbound", ((2, 8),))
-@pytest.mark.parametrize("output_lbound, output_rbound",
-                         ((2, 8), (1, 9), (3, 7)))
-@pytest.mark.parametrize("n_t_sample", (5, 10))
-@pytest.mark.parametrize("n_f_sample", (5, 10))
-def test_csaps2d(input_lbound,
-                  input_rbound,
-                  output_lbound,
-                  output_rbound,
-                  n_t_sample,
-                  n_f_sample):
-
-    data = np.ones((n_t_sample, n_f_sample))
-
-    x1 = np.linspace(input_lbound, input_rbound, n_t_sample)
-    x2 = np.linspace(input_lbound, input_rbound, n_f_sample)
-    xx1 = np.linspace(output_lbound, output_rbound, n_t_sample)
-    xx2 = np.linspace(output_lbound, output_rbound, n_f_sample)
-    y = data.reshape((n_t_sample, n_f_sample, 1, 1, 1))
-
-    assert np.allclose(csaps2d(x1, x2, y, xx1, xx2), np.ones(data.shape))
-
-
-# -----------------------------------------------------------------------------
-
-
