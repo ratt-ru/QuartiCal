@@ -282,13 +282,13 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
                         accumulate_jhr(r_pq, rop_pq, lop_pq,
                                        tmp_jhr[a1_m, out_d])
 
-                        iadd(lop_pq_arr[out_d], lop_pq)
+                        iunpack(lop_pq_arr[out_d], lop_pq)
                         iadd(rop_pq_arr[out_d], rop_pq)
 
                         accumulate_jhr(r_qp, rop_qp, lop_qp,
                                        tmp_jhr[a2_m, out_d])
 
-                        iadd(lop_qp_arr[out_d], lop_qp)
+                        iunpack(lop_qp_arr[out_d], lop_qp)
                         iadd(rop_qp_arr[out_d], rop_qp)
 
                     for d in range(n_gdir):
@@ -343,10 +343,17 @@ def compute_update(update, jhj, jhr, corr_mode):
             for a in range(n_ant):
                 for d in range(n_dir):
 
-                    invert(jhj[t, f, a, d],
-                           jhr[t, f, a, d],
-                           update[t, f, a, d],
-                           buffers)
+                    # TODO: This check needs to go away - slow and bad.
+                    # Should rather process the updates.
+                    det = np.linalg.det(jhj[t, f, a, d])
+
+                    if np.abs(det) < 1e-6 or ~np.isfinite(det):
+                        update[t, f, a, d] = 0
+                    else:
+                        invert(jhj[t, f, a, d],
+                               jhr[t, f, a, d],
+                               update[t, f, a, d],
+                               buffers)
 
     return impl
 
@@ -399,16 +406,16 @@ def compute_jhwj_factory(corr_mode):
 
             atkb(rop, lop, kprod)  # NOTE: This is includes a shuffle!
 
-            w_00, w_01, w_10, w_11 = unpack(w)  # NOTE: XX, XY, YX, YY
+            w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
 
             for i in range(4):
 
                 jh_0, jh_1, jh_2, jh_3 = unpack(kprod[i])
 
-                jhw_0 = jh_0*w_00  # XX
-                jhw_1 = jh_1*w_01  # XY
-                jhw_2 = jh_2*w_10  # YX
-                jhw_3 = jh_3*w_11  # YY
+                jhw_0 = jh_0*w_0  # XX
+                jhw_1 = jh_1*w_2  # XY
+                jhw_2 = jh_2*w_1  # YX
+                jhw_3 = jh_3*w_3  # YY
 
                 for j in range(i):
                     jhj[i, j] = jhj[j, i].conjugate()

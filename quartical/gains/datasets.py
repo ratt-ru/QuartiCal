@@ -226,6 +226,14 @@ def make_net_xds_list(data_xds_list, coords_per_xds):
     return net_gain_xds_list
 
 
+def combine_gains_wrapper(t_bin_arr, f_map_arr, d_map_arr, net_shape,
+                          corr_mode, *gains):
+    """Wrapper to stop dask from getting confused. See issue #99."""
+
+    return combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape,
+                         corr_mode, *gains)
+
+
 def populate_net_xds_list(net_gain_xds_list,
                           solved_gain_xds_lod,
                           t_bin_list,
@@ -268,7 +276,7 @@ def populate_net_xds_list(net_gain_xds_list,
         )
 
         net_gain = da.blockwise(
-            combine_gains, ("time", "chan", "ant", "dir", "corr"),
+            combine_gains_wrapper, ("time", "chan", "ant", "dir", "corr"),
             t_bin_list[ind], ("param", "time", "term"),
             f_map_list[ind], ("param", "chan", "term"),
             d_map_list[ind], None,
