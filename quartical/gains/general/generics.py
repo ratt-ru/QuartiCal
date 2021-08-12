@@ -133,11 +133,12 @@ def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
         n_rows, n_chan, _ = get_dims(residual, row_map)
         n_gains = len(gain_list)
 
+        r = valloc(np.complex128)
+
         for row_ind in range(n_rows):
 
             row = get_row(row_ind, row_map)
             a1_m, a2_m = a1[row], a2[row]
-            r = valloc(np.complex128)
 
             for f in range(n_chan):
 

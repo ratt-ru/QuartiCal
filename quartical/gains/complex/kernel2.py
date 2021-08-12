@@ -178,8 +178,6 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
         # gt means greater than (n>j) and lt means less than (n<j).
         all_terms, gt_active, lt_active = make_loop_vars(n_gains, active_term)
 
-        tmp_jhj_dims = jhj.shape[2:]  # Doesn't need time/freq dim.
-
         # Parallel over all solution intervals.
         for i in prange(n_int):
 
@@ -207,10 +205,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
             rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
 
             tmp_kprod = np.zeros((4, 4), dtype=complex_dtype)
-            tmp_jhr = np.zeros((n_ant, n_gdir, n_corr), dtype=complex_dtype)
-            # The shape of this matrix needs to distinguish between the
-            # scalar/diag and 2x2 cases.
-            tmp_jhj = np.zeros(tmp_jhj_dims, dtype=complex_dtype)
+            tmp_jhr = jhr[ti, fi]
+            tmp_jhj = jhj[ti, fi]
 
             for row_ind in range(rs, re):
 
@@ -307,13 +303,6 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
                                                r_qp,
                                                tmp_jhr[a2_m, d],
                                                tmp_jhj[a2_m, d])
-
-            # This is the spigot point. A parameterised solver can do the
-            # extra operations it requires here. Technically, we could also
-            # compute the update directly, allowing us to avoid storing the
-            # entirety of jhj and jhr.
-            jhr[ti, fi] = tmp_jhr
-            jhj[ti, fi] = tmp_jhj
         return
     return impl
 
