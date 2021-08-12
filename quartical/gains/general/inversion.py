@@ -36,6 +36,14 @@ def invert_factory(corr_mode, generalised=False):
 
             Ap, Ax, p, r = buffers
 
+            # TODO: This is expensive and bad. Come up with a better way to
+            # diagnose poorly behaving itervals/directions.
+            det = np.linalg.det(A)
+
+            if np.abs(det) < 1e-6 or ~np.isfinite(det):
+                x[:] = 0
+                return
+
             mat_mul_vec(A, x, Ax)
             r[:] = b
             r -= Ax

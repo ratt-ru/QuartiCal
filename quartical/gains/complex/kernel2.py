@@ -346,17 +346,10 @@ def compute_update(update, jhj, jhr, corr_mode):
             for a in range(n_ant):
                 for d in range(n_dir):
 
-                    # TODO: This check needs to go away - slow and bad.
-                    # Should rather process the updates.
-                    det = np.linalg.det(jhj[t, f, a, d])
-
-                    if np.abs(det) < 1e-6 or ~np.isfinite(det):
-                        update[t, f, a, d] = 0
-                    else:
-                        invert(jhj[t, f, a, d],
-                               jhr[t, f, a, d],
-                               update[t, f, a, d],
-                               buffers)
+                    invert(jhj[t, f, a, d],
+                           jhr[t, f, a, d],
+                           update[t, f, a, d],
+                           buffers)
 
     return impl
 
@@ -378,26 +371,6 @@ def finalize_update(update, gain, i_num, dd_term, corr_mode):
     return impl
 
 
-def accumulate_jhr_factory(corr_mode):
-
-    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    iadd = factories.iadd_factory(corr_mode)
-
-    if corr_mode.literal_value == 4:
-        def impl(res, rop, lop, jhr):
-            v1_imul_v2(lop, res, res)
-            v1_imul_v2(res, rop, res)
-            iadd(jhr, res)
-    elif corr_mode.literal_value in (1, 2):
-        def impl(res, rop, lop, jhr):  # lop is a no-op in scalar/diag case.
-            v1_imul_v2(res, rop, res)
-            iadd(jhr, res)
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
 def compute_jhwj_jhwr_elem_factory(corr_mode):
 
     iadd = factories.iadd_factory(corr_mode)
@@ -414,7 +387,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             v1_imul_v2(res, rop, res)
             iadd(jhr, res)
 
-            # Accumulate and element of jhwj.
+            # Accumulate an element of jhwj.
 
             # WARNING: In this instance we are using the row-major
             # version of the kronecker product identity. This is because the
@@ -445,6 +418,12 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
     elif corr_mode.literal_value == 2:
         def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
+
+            # Accumulate an element of jhwr.
+            v1_imul_v2(res, rop, res)
+            iadd(jhr, res)
+
+            # Accumulate an element of jhwj.
             jh_00, jh_11 = unpack(rop)
             j_00, j_11 = unpackc(rop)
             w_00, w_11 = unpack(w)
@@ -453,6 +432,12 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jhj[1] += jh_11*w_11*j_11
     elif corr_mode.literal_value == 1:
         def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
+
+            # Accumulate an element of jhwr.
+            v1_imul_v2(res, rop, res)
+            iadd(jhr, res)
+
+            # Accumulate an element of jhwj.
             jh_00 = unpack(rop)
             j_00 = unpackc(rop)
             w_00 = unpack(w)
