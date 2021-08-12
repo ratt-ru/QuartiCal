@@ -397,14 +397,20 @@ def accumulate_jhr_factory(corr_mode):
 
 def compute_jhwj_factory(corr_mode):
 
-    atkb = aT_kron_b_factory(corr_mode)
+    a_kron_bt = a_kron_bt_factory(corr_mode)
     unpack = factories.unpack_factory(corr_mode)
     unpackc = factories.unpackc_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
         def impl(lop, rop, w, kprod, jhj):
 
-            atkb(rop, lop, kprod)  # NOTE: This is includes a shuffle!
+            # WARNING: In this instance we are using the row-major
+            # version of the kronecker product identity. This is because the
+            # MS stores the correlations in row-major order (XX, XY, YX, YY),
+            # whereas the standard maths assumes column-major ordering
+            # (XX, YX, XY, YY). This subtle change means we can use the MS
+            # data directly without worrying about swapping elements around.
+            a_kron_bt(lop, rop, kprod)
 
             w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
 
@@ -413,8 +419,8 @@ def compute_jhwj_factory(corr_mode):
                 jh_0, jh_1, jh_2, jh_3 = unpack(kprod[i])
 
                 jhw_0 = jh_0*w_0  # XX
-                jhw_1 = jh_1*w_2  # XY
-                jhw_2 = jh_2*w_1  # YX
+                jhw_1 = jh_1*w_1  # XY
+                jhw_2 = jh_2*w_2  # YX
                 jhw_3 = jh_3*w_3  # YY
 
                 for j in range(i):
@@ -425,10 +431,6 @@ def compute_jhwj_factory(corr_mode):
                     jhj[i, j] += (jhw_0*j_0 + jhw_1*j_1 +
                                   jhw_2*j_2 + jhw_3*j_3)
 
-            # NOTE: vec(JHR) is not the same as a flattened/raveled JHR.
-            # vec implies stacked columns whereas a ravel/flattened version
-            # stacks rows (with C conventions). This is now important as we are
-            # moving between representations.
     elif corr_mode.literal_value == 2:
         def impl(lop, rop, w, kprod, jhj):
             jh_00, jh_11 = unpack(rop)
@@ -450,31 +452,27 @@ def compute_jhwj_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def aT_kron_b_factory(corr_mode):
+def a_kron_bt_factory(corr_mode):
 
     unpack = factories.unpack_factory(corr_mode)
 
     def impl(a, b, out):
 
-        a00, a10, a01, a11 = unpack(a)  # Effectively transpose.
-        b00, b01, b10, b11 = unpack(b)
+        a00, a01, a10, a11 = unpack(a)
+        b00, b10, b01, b11 = unpack(b)  # Effectively transpose.
 
-        # NOTE: At present this is not merely B^T kron A (definition in Latex
-        # document). It is S(B^T kron A) where S is a shuffle matrix. This is
-        # necessary as the ravelled visibilities are ordered as [XX XY YX YY],
-        # while the vectorised form (vec(V_pq)) would be ordered [XX YX XY YY].
         out[0, 0] = a00 * b00
         out[0, 1] = a00 * b01
         out[0, 2] = a01 * b00
         out[0, 3] = a01 * b01
-        out[1, 0] = a10 * b00
-        out[1, 1] = a10 * b01
-        out[1, 2] = a11 * b00
-        out[1, 3] = a11 * b01
-        out[2, 0] = a00 * b10
-        out[2, 1] = a00 * b11
-        out[2, 2] = a01 * b10
-        out[2, 3] = a01 * b11
+        out[1, 0] = a00 * b10
+        out[1, 1] = a00 * b11
+        out[1, 2] = a01 * b10
+        out[1, 3] = a01 * b11
+        out[2, 0] = a10 * b00
+        out[2, 1] = a10 * b01
+        out[2, 2] = a11 * b00
+        out[2, 3] = a11 * b01
         out[3, 0] = a10 * b10
         out[3, 1] = a10 * b11
         out[3, 2] = a11 * b10
