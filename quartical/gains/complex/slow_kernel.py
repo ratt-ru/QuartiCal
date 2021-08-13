@@ -364,7 +364,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
     iadd = factories.iadd_factory(corr_mode)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    a_kron_bt = a_kron_bt_factory(corr_mode)
+    a_kron_bt = factories.a_kron_bt_factory(corr_mode)
     unpack = factories.unpack_factory(corr_mode)
     unpackc = factories.unpackc_factory(corr_mode)
 
@@ -434,35 +434,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jhj[0] += jh_00*w_00*j_00
     else:
         raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
-def a_kron_bt_factory(corr_mode):
-
-    unpack = factories.unpack_factory(corr_mode)
-
-    def impl(a, b, out):
-
-        a00, a01, a10, a11 = unpack(a)
-        b00, b10, b01, b11 = unpack(b)  # Effectively transpose.
-
-        out[0, 0] = a00 * b00
-        out[0, 1] = a00 * b01
-        out[0, 2] = a01 * b00
-        out[0, 3] = a01 * b01
-        out[1, 0] = a00 * b10
-        out[1, 1] = a00 * b11
-        out[1, 2] = a01 * b10
-        out[1, 3] = a01 * b11
-        out[2, 0] = a10 * b00
-        out[2, 1] = a10 * b01
-        out[2, 2] = a11 * b00
-        out[2, 3] = a11 * b01
-        out[3, 0] = a10 * b10
-        out[3, 1] = a10 * b11
-        out[3, 2] = a11 * b10
-        out[3, 3] = a11 * b11
 
     return factories.qcjit(impl)
 

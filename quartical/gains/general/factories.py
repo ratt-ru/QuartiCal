@@ -644,3 +644,32 @@ def set_identity_factory(mode):
         raise ValueError("Unsupported number of correlations.")
 
     return qcjit(impl)
+
+
+def a_kron_bt_factory(corr_mode):
+
+    unpack = unpack_factory(corr_mode)
+
+    def impl(a, b, out):
+
+        a00, a01, a10, a11 = unpack(a)
+        b00, b10, b01, b11 = unpack(b)  # Effectively transpose.
+
+        out[0, 0] = a00 * b00
+        out[0, 1] = a00 * b01
+        out[0, 2] = a01 * b00
+        out[0, 3] = a01 * b01
+        out[1, 0] = a00 * b10
+        out[1, 1] = a00 * b11
+        out[1, 2] = a01 * b10
+        out[1, 3] = a01 * b11
+        out[2, 0] = a10 * b00
+        out[2, 1] = a10 * b01
+        out[2, 2] = a11 * b00
+        out[2, 3] = a11 * b01
+        out[3, 0] = a10 * b10
+        out[3, 1] = a10 * b11
+        out[3, 2] = a11 * b10
+        out[3, 3] = a11 * b11
+
+    return qcjit(impl)
