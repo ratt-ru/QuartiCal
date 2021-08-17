@@ -432,61 +432,54 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
             r_0, _, _, r_3 = unpack(res)  # NOTE: XX, XY, YX, YY
-            g_0, _, _, g_3 = unpackc(gain)
 
-            upd_00 = (-1j*g_0*r_0).real
-            upd_11 = (-1j*g_3*r_3).real
+            g_0, _, _, g_3 = unpack(gain)
+            gc_0, _, _, gc_3 = unpackc(gain)
+
+            drv_00 = -1j*gc_0
+            # drv_10 = drv_00*nu
+            drv_23 = -1j*gc_3
+            # drv_33 = drv_23*nu
+
+            upd_00 = (drv_00*r_0).real
+            upd_11 = (drv_23*r_3).real
 
             jhr[0] += upd_00
             jhr[1] += nu*upd_00
             jhr[2] += upd_11
             jhr[3] += nu*upd_11
 
-            # coeffs = np.array((1j*g_0, 1j*nu*g_0, 1j*g_3, 1j*nu*g_3))
-            # inds = np.array((0, 0, 3, 3))
+            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[0])
+            j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[0])
 
-            # coeffs = np.array([[-1j*g_0, 0, 0, 0],
-            #                    [-1j*nu*g_0, 0, 0, 0],
-            #                    [0, 0, 0, -1j*g_3],
-            #                    [0, 0, 0, -1j*nu*g_3]])
+            jhwj_00 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
 
-            # weights = np.diag(w).astype(np.complex128)
+            j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[3])
 
-            # jh = coeffs @ tmp_kprod
-            # jhj[:] += (jh @ weights @ jh.conj().T).real
-            # jhr[:] += (coeffs @ res).real
+            jhwj_03 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
 
-            # for i in range(4):
+            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[3])
+            jhwj_33 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
 
-            #     ind_i = inds[i]
-            #     coeff_i = coeffs[i]
+            jhj[0, 0] += jhwj_00.real
+            jhj[0, 1] += jhwj_00.real*nu
+            jhj[0, 2] += (jhwj_03*gc_0*g_3).real
+            jhj[0, 3] += (jhwj_03*gc_0*g_3).real*nu
 
-            #     jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[ind_i])
+            jhj[1, 0] = jhj[0, 1]
+            jhj[1, 1] += (jhwj_00).real*nu*nu
+            jhj[1, 2] = jhj[0, 3]
+            jhj[1, 3] += (jhwj_03*gc_0*g_3).real*nu*nu
 
-            #     jhw_0 = coeff_i*jh_0*w_0  # XX
-            #     jhw_1 = coeff_i*jh_1*w_1  # XY
-            #     jhw_2 = coeff_i*jh_2*w_2  # YX
-            #     jhw_3 = coeff_i*jh_3*w_3  # YY
+            jhj[2, 0] = jhj[0, 2]
+            jhj[2, 1] = jhj[1, 2]
+            jhj[2, 2] += jhwj_33.real
+            jhj[2, 3] += jhwj_33.real*nu
 
-            #     jhr[i] += (jhw_0*r_0 + jhw_1*r_1 + jhw_2*r_2 + jhw_3*r_3).real
-
-            #     for j in range(i):
-            #         jhj[i, j] = jhj[j, i]
-
-            #     for j in range(i, 4):
-
-            #         ind_j = inds[j]
-            #         coeff_j = coeffs[j]
-
-            #         j_0, j_1, j_2, j_3 = unpack(tmp_kprod[ind_j])
-
-            #         j_0 = (coeff_j*j_0).conjugate()
-            #         j_1 = (coeff_j*j_1).conjugate()
-            #         j_2 = (coeff_j*j_2).conjugate()
-            #         j_3 = (coeff_j*j_3).conjugate()
-
-            #         jhj[i, j] += (jhw_0*j_0 + jhw_1*j_1 +
-            #                       jhw_2*j_2 + jhw_3*j_3).real
+            jhj[3, 0] = jhj[0, 3]
+            jhj[3, 1] = jhj[1, 3]
+            jhj[3, 2] = jhj[2, 3]
+            jhj[3, 3] += jhwj_33.real*nu*nu
 
     elif corr_mode.literal_value == 2:
         def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
