@@ -1,5 +1,6 @@
 from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
 from quartical.gains.delay.kernel import delay_solver, delay_args
+from quartical.gains.delay.slow_kernel import delay_solver as slow_delay
 import numpy as np
 
 
@@ -67,3 +68,13 @@ class Delay(Gain):
         f_map_arr[0, :] = np.arange(n_chan)
 
         return f_map_arr
+
+
+class SlowDelay(Delay):
+
+    solver = slow_delay
+
+    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
+
+        Delay.__init__(self, term_name, term_opts, data_xds, coords, tipc,
+                       fipc)
