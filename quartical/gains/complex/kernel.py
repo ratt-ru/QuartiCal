@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, literally, generated_jit, types
+from numba import prange, generated_jit
+from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (invert_gains,
                                               compute_residual,
                                               compute_convergence)
@@ -28,9 +29,7 @@ complex_args = namedtuple("complex_args", ())
                nogil=True)
 def complex_solver(base_args, term_args, meta_args, corr_mode):
 
-    if not isinstance(corr_mode, types.Literal):
-        return lambda base_args, term_args, meta_args, corr_mode: \
-            literally(corr_mode)
+    coerce_literal(complex_solver, ["corr_mode"])
 
     def impl(base_args, term_args, meta_args, corr_mode):
 
