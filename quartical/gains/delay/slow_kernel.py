@@ -57,6 +57,9 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
         params = term_args.params[active_term]  # Params for this term.
         t_bin_arr = term_args.t_bin_arr[0]  # Don't need time param mappings.
         chan_freqs = term_args.chan_freqs
+        min_freq = np.min(chan_freqs)
+        chan_freqs /= min_freq  # Scale freqs to avoid precision.
+        params[..., 1, :] *= min_freq  # Scale consistently with freq.
 
         n_term = len(gains)
 
@@ -136,7 +139,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
             if cnv_perc > 0.99:
                 break
 
-        print(i + 1, cnv_perc)
+        params[..., 1, :] /= min_freq
 
         return jhj, term_conv_info(i + 1, cnv_perc)
 
@@ -411,7 +414,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     a_kron_bt = factories.a_kron_bt_factory(corr_mode)
     unpack = factories.unpack_factory(corr_mode)
     unpackc = factories.unpackc_factory(corr_mode)
-    unpackct = factories.unpackc_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
         def impl(lop, rop, w, nu, gain, tmp_kprod, res, jhr, jhj):
@@ -437,9 +439,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             gc_0, _, _, gc_3 = unpackc(gain)
 
             drv_00 = -1j*gc_0
-            # drv_10 = drv_00*nu
             drv_23 = -1j*gc_3
-            # drv_33 = drv_23*nu
 
             upd_00 = (drv_00*r_0).real
             upd_11 = (drv_23*r_3).real
@@ -461,25 +461,30 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[3])
             jhwj_33 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
 
-            jhj[0, 0] += jhwj_00.real
-            jhj[0, 1] += jhwj_00.real*nu
-            jhj[0, 2] += (jhwj_03*gc_0*g_3).real
-            jhj[0, 3] += (jhwj_03*gc_0*g_3).real*nu
+            nusq = nu*nu
+
+            tmp_0 = jhwj_00.real
+            jhj[0, 0] += tmp_0
+            jhj[0, 1] += tmp_0*nu
+            tmp_1 = (jhwj_03*gc_0*g_3).real
+            jhj[0, 2] += tmp_1
+            jhj[0, 3] += tmp_1*nu
 
             jhj[1, 0] = jhj[0, 1]
-            jhj[1, 1] += (jhwj_00).real*nu*nu
+            jhj[1, 1] += tmp_0*nusq
             jhj[1, 2] = jhj[0, 3]
-            jhj[1, 3] += (jhwj_03*gc_0*g_3).real*nu*nu
+            jhj[1, 3] += tmp_1*nusq
 
             jhj[2, 0] = jhj[0, 2]
             jhj[2, 1] = jhj[1, 2]
-            jhj[2, 2] += jhwj_33.real
-            jhj[2, 3] += jhwj_33.real*nu
+            tmp_2 = jhwj_33.real
+            jhj[2, 2] += tmp_2
+            jhj[2, 3] += tmp_2*nu
 
             jhj[3, 0] = jhj[0, 3]
             jhj[3, 1] = jhj[1, 3]
             jhj[3, 2] = jhj[2, 3]
-            jhj[3, 3] += jhwj_33.real*nu*nu
+            jhj[3, 3] += tmp_2*nusq
 
     elif corr_mode.literal_value == 2:
         def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):

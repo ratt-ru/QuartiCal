@@ -90,6 +90,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                meta_args,
                                kwargs["corr_mode"])
 
+        # np.save(f"{term_type}", jhj)
+
         if jhj.ndim == 6:
             jhj = jhj[:, :, :, :, (0, 1, 2, 3), (0, 1, 2, 3)]
 
