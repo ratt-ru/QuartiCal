@@ -90,8 +90,10 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                meta_args,
                                kwargs["corr_mode"])
 
+        # np.save(f"{term_type}", jhj)
+
         if jhj.ndim == 6:
-            jhj = jhj[:, :, :, :, (0, 1, 2, 3), (0, 1, 2, 3)]
+            jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
 
         results_dict[f"{term_name}-conviter"] += \
             np.atleast_2d(info_tup.conv_iters)

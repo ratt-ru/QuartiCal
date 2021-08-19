@@ -64,6 +64,9 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
         params = term_args.params[active_term]  # Params for this term.
         t_bin_arr = term_args.t_bin_arr
         chan_freqs = term_args.chan_freqs
+        min_freq = np.min(chan_freqs)
+        chan_freqs /= min_freq  # Scale freqs to avoid precision.
+        params[..., 1, :] *= min_freq
 
         param_shape = params.shape
         n_tint, n_fint, n_ant, n_dir, n_param, n_corr = param_shape
@@ -145,6 +148,8 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
             if cnv_perc > 0.99:
                 break
+
+        params[..., 1, :] /= min_freq
 
         return jhj, term_conv_info(i + 1, cnv_perc)
 
