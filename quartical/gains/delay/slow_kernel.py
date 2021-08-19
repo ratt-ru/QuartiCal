@@ -56,7 +56,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
         params = term_args.params[active_term]  # Params for this term.
         t_bin_arr = term_args.t_bin_arr[0]  # Don't need time param mappings.
-        chan_freqs = term_args.chan_freqs
+        chan_freqs = term_args.chan_freqs.copy()  # Don't mutate orginal.
         min_freq = np.min(chan_freqs)
         chan_freqs /= min_freq  # Scale freqs to avoid precision.
         params[..., 1, :] *= min_freq  # Scale consistently with freq.
