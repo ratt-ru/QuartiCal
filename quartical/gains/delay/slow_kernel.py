@@ -56,7 +56,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
         params = term_args.params[active_term]  # Params for this term.
         t_bin_arr = term_args.t_bin_arr[0]  # Don't need time param mappings.
-        chan_freqs = term_args.chan_freqs
+        chan_freqs = term_args.chan_freqs.copy()  # Don't mutate orginal.
         min_freq = np.min(chan_freqs)
         chan_freqs /= min_freq  # Scale freqs to avoid precision.
         params[..., 1, :] *= min_freq  # Scale consistently with freq.
@@ -394,14 +394,13 @@ def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr_p,
                     for a in range(n_ant):
                         for d in range(n_dir):
 
-                            t_m = t_bin_arr[t, active_term]
                             f_m = f_map_arr_p[f, active_term]
                             d_m = d_map_arr[active_term, d]
 
-                            inter0 = params[t_m, f_m, a, d_m, 0, 0]
-                            inter1 = params[t_m, f_m, a, d_m, 0, -1]
-                            delay0 = params[t_m, f_m, a, d_m, 1, 0]
-                            delay1 = params[t_m, f_m, a, d_m, 1, -1]
+                            inter0 = params[t, f_m, a, d_m, 0, 0]
+                            inter1 = params[t, f_m, a, d_m, 0, -1]
+                            delay0 = params[t, f_m, a, d_m, 1, 0]
+                            delay1 = params[t, f_m, a, d_m, 1, -1]
 
                             cf = chan_freqs[f]
 
@@ -425,12 +424,11 @@ def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr_p,
                     for a in range(n_ant):
                         for d in range(n_dir):
 
-                            t_m = t_bin_arr[t, active_term]
                             f_m = f_map_arr_p[f, active_term]
                             d_m = d_map_arr[active_term, d]
 
-                            inter0 = params[t_m, f_m, a, d_m, 0, 0]
-                            delay0 = params[t_m, f_m, a, d_m, 1, 0]
+                            inter0 = params[t, f_m, a, d_m, 0, 0]
+                            delay0 = params[t, f_m, a, d_m, 1, 0]
 
                             cf = chan_freqs[f]
 
