@@ -421,14 +421,13 @@ def finalize_update(update, params, gain, chan_freqs, t_bin_arr, pf_map_arr,
                 for a in range(n_ant):
                     for d in range(n_dir):
 
-                        t_m = t_bin_arr[t, active_term]
                         f_m = pf_map_arr[f, active_term]
                         d_m = d_map_arr[active_term, d]
 
-                        inter0 = params[t_m, f_m, a, d_m, 0, 0]
-                        inter1 = params[t_m, f_m, a, d_m, 0, -1]
-                        delay0 = params[t_m, f_m, a, d_m, 1, 0]
-                        delay1 = params[t_m, f_m, a, d_m, 1, -1]
+                        inter0 = params[t, f_m, a, d_m, 0, 0]
+                        inter1 = params[t, f_m, a, d_m, 0, -1]
+                        delay0 = params[t, f_m, a, d_m, 1, 0]
+                        delay1 = params[t, f_m, a, d_m, 1, -1]
 
                         cf = chan_freqs[f]
 
