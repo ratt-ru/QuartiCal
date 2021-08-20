@@ -140,7 +140,8 @@ class Gain(Input):
                                "delay",
                                "phase",
                                "slow_complex",
-                               "slow_delay"])
+                               "slow_delay",
+                               "tec"])
     )
     direction_dependent: bool = False
     time_interval: str = "1"

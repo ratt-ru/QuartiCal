@@ -20,8 +20,8 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
-delay_args = namedtuple(
-    "delay_args",
+tec_args = namedtuple(
+    "tec_args",
     (
         "params",
         "chan_freqs",
@@ -35,9 +35,9 @@ delay_args = namedtuple(
                parallel=False,
                cache=True,
                nogil=True)
-def delay_solver(base_args, term_args, meta_args, corr_mode):
+def tec_solver(base_args, term_args, meta_args, corr_mode):
 
-    coerce_literal(delay_solver, ["corr_mode"])
+    coerce_literal(tec_solver, ["corr_mode"])
 
     get_jhj_dims = get_jhj_dims_factory(corr_mode)
     get_jhr_dims = get_jhr_dims_factory(corr_mode)
