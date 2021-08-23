@@ -6,6 +6,7 @@ import dask
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster, performance_report
 import time
+from pathlib import Path
 from quartical.config import parser, preprocess, helper, internal
 from quartical.logging import configure_loguru
 from quartical.data_handling.ms_handler import (read_xds_list,
@@ -29,7 +30,6 @@ def _execute(exitstack):
     """Runs the application."""
 
     helper.help()  # Check to see if the user asked for help.
-    configure_loguru()
 
     # Get all the config. This should never be used directly.
     opts = parser.parse_inputs()
@@ -42,6 +42,12 @@ def _execute(exitstack):
     mad_flag_opts = opts.mad_flags
     dask_opts = opts.dask
     chain_opts = internal.gains_to_chain(opts)  # Special handling.
+
+    # Init the logger once we know where to put the output.
+    configure_loguru(output_opts.directory)
+
+    # Now that we know where to put the log, log the final config state.
+    parser.log_final_config(opts)
 
     model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
 
@@ -120,15 +126,17 @@ def _execute(exitstack):
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
-    def compute_context(dask_opts):
+    def compute_context(dask_opts, output_opts):
         if dask_opts.scheduler == "distributed":
-            return performance_report(filename="dask-report.qc.html")
+            root_path = Path(output_opts.directory).absolute()
+            report_path = root_path / Path("dask-report.qc.html")
+            return performance_report(filename=str(report_path))
         else:
             return ProgressBar()
 
     t0 = time.time()
 
-    with compute_context(dask_opts):
+    with compute_context(dask_opts, output_opts):
 
         dask.compute(ms_writes, gain_writes,
                      num_workers=dask_opts.threads,

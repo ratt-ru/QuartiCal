@@ -71,8 +71,8 @@ input_model:
     usually be left enabled.
 
 output:
-  gain_dir:
-    Name of directory for output gains.
+  directory:
+    Name of directory in which various QuartiCal outputs will be stored.
   products: 
     The desired output data product. Multiple data products can be specified 
     as a list e.g. [residual, corrected_residual]. Choose from [residual, 

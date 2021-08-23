@@ -37,13 +37,14 @@ def additional_validation(config):
 
     chain = gains_to_chain(config)
 
-    gain_dir = Path(config.output.gain_dir).absolute()
+    root_dir = Path(config.output.directory).absolute()
+    gain_dir = root_dir / Path("gains.qc")
     load_dirs = [Path(lf).absolute().parent
                  for _, lf in yield_from(chain, "load_from") if lf]
 
     msg = (
         f"Output directory {str(gain_dir)} contains terms which will be "
-        f"loaded/interpolated. This is not supported. Please sepcify a "
+        f"loaded/interpolated. This is not supported. Please specify a "
         f"different output directory."
     )
 

@@ -29,7 +29,7 @@ solver:
   - 25
   - 25
 output:
-  gain_dir: gains.qc
+  directory: outputs.qc
   products:
   - residual
   columns:
