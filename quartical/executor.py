@@ -43,6 +43,9 @@ def _execute(exitstack):
     dask_opts = opts.dask
     chain_opts = internal.gains_to_chain(opts)  # Special handling.
 
+    # Make sure that the output directory is correctly cleaned up.
+    preprocess.prepare_output_directory(output_opts.directory)
+
     # Init the logger once we know where to put the output.
     configure_loguru(output_opts.directory)
 
@@ -129,7 +132,7 @@ def _execute(exitstack):
     def compute_context(dask_opts, output_opts):
         if dask_opts.scheduler == "distributed":
             root_path = Path(output_opts.directory).absolute()
-            report_path = root_path / Path("dask-report.qc.html")
+            report_path = root_path / Path("dask_report.html.qc")
             return performance_report(filename=str(report_path))
         else:
             return ProgressBar()

@@ -30,6 +30,7 @@ solver:
   - 25
 output:
   directory: outputs.qc
+  overwrite: true
   products:
   - residual
   columns:

@@ -28,7 +28,7 @@ def configure_loguru(output_dir):
     fmt = " | ".join([tim_fmt, lvl_fmt, src_fmt, msg_fmt])
 
     output_path = Path(output_dir)
-    output_name = Path("{time:YYYYMMDD_HHmmss}_quartical.log")
+    output_name = Path("{time:YYYYMMDD_HHmmss}.log.qc")
 
     config = {
         "handlers": [
