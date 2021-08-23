@@ -1,13 +1,12 @@
 from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
-from quartical.gains.delay.kernel import delay_solver, delay_args
-from quartical.gains.delay.slow_kernel import delay_solver as slow_delay
+from quartical.gains.tec.kernel import tec_solver, tec_args
 import numpy as np
 
 
-class Delay(Gain):
+class TEC(Gain):
 
-    solver = delay_solver
-    term_args = delay_args
+    solver = tec_solver
+    term_args = tec_args
 
     def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
 
@@ -33,7 +32,7 @@ class Delay(Gain):
 
         xds = Gain.make_xds(self)
 
-        xds = xds.assign_coords({"param": np.array(["phase_offset", "delay"]),
+        xds = xds.assign_coords({"param": np.array(["phase_offset", "tec"]),
                                  "param_t": self.gain_times,
                                  "param_f": self.param_freqs})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
@@ -68,13 +67,3 @@ class Delay(Gain):
         f_map_arr[0, :] = np.arange(n_chan)
 
         return f_map_arr
-
-
-class SlowDelay(Delay):
-
-    solver = slow_delay
-
-    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
-
-        Delay.__init__(self, term_name, term_opts, data_xds, coords, tipc,
-                       fipc)

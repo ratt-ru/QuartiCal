@@ -63,7 +63,10 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
         params = term_args.params[active_term]  # Params for this term.
         t_bin_arr = term_args.t_bin_arr
-        chan_freqs = term_args.chan_freqs
+        chan_freqs = term_args.chan_freqs.copy()  # Don't mutate orginal.
+        min_freq = np.min(chan_freqs)
+        chan_freqs /= min_freq  # Scale freqs to avoid precision.
+        params[..., 1, :] *= min_freq
 
         param_shape = params.shape
         n_tint, n_fint, n_ant, n_dir, n_param, n_corr = param_shape
@@ -145,6 +148,8 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
             if cnv_perc > 0.99:
                 break
+
+        params[..., 1, :] /= min_freq
 
         return jhj, term_conv_info(i + 1, cnv_perc)
 
@@ -416,14 +421,13 @@ def finalize_update(update, params, gain, chan_freqs, t_bin_arr, pf_map_arr,
                 for a in range(n_ant):
                     for d in range(n_dir):
 
-                        t_m = t_bin_arr[t, active_term]
                         f_m = pf_map_arr[f, active_term]
                         d_m = d_map_arr[active_term, d]
 
-                        inter0 = params[t_m, f_m, a, d_m, 0, 0]
-                        inter1 = params[t_m, f_m, a, d_m, 0, -1]
-                        delay0 = params[t_m, f_m, a, d_m, 1, 0]
-                        delay1 = params[t_m, f_m, a, d_m, 1, -1]
+                        inter0 = params[t, f_m, a, d_m, 0, 0]
+                        inter1 = params[t, f_m, a, d_m, 0, -1]
+                        delay0 = params[t, f_m, a, d_m, 1, 0]
+                        delay1 = params[t, f_m, a, d_m, 1, -1]
 
                         cf = chan_freqs[f]
 
