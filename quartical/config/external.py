@@ -75,7 +75,8 @@ class ModelInputs(Input):
 
 @dataclass
 class Outputs(Input):
-    gain_dir: str = "gains.qc"
+    directory: str = "outputs.qc"
+    overwrite: bool = False
     products: Optional[List[str]] = field(
         default=None,
         metadata=dict(choices=["corrected_data",

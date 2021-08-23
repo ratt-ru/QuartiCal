@@ -37,16 +37,23 @@ def additional_validation(config):
 
     chain = gains_to_chain(config)
 
-    gain_dir = Path(config.output.gain_dir).absolute()
+    root_path = Path(config.output.directory).absolute()
+
+    if root_path.exists() and not config.output.overwrite:
+        raise FileExistsError(f"{root_path} already exists. Specify "
+                              f"output.overwrite=1 to suppress this "
+                              f"error and overwrite *.qc files/folders.")
+
+    gain_path = root_path / Path("gains.qc")
     load_dirs = [Path(lf).absolute().parent
                  for _, lf in yield_from(chain, "load_from") if lf]
 
     msg = (
-        f"Output directory {str(gain_dir)} contains terms which will be "
-        f"loaded/interpolated. This is not supported. Please sepcify a "
+        f"Output directory {str(gain_path)} contains terms which will be "
+        f"loaded/interpolated. This is not supported. Please specify a "
         f"different output directory."
     )
 
-    assert all(gain_dir != ld for ld in load_dirs), msg
+    assert all(gain_path != ld for ld in load_dirs), msg
 
     return

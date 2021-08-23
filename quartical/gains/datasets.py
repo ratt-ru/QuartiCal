@@ -4,7 +4,7 @@ from quartical.config.internal import yield_from
 from loguru import logger  # noqa
 import numpy as np
 import dask.array as da
-import pathlib
+from pathlib import Path
 import shutil
 from daskms.experimental.zarr import xds_to_zarr
 from quartical.gains import TERM_TYPES
@@ -301,8 +301,8 @@ def populate_net_xds_list(net_gain_xds_list,
 def write_gain_datasets(gain_xds_lod, net_xds_list, output_opts):
     """Write the contents of gain_xds_lol to zarr in accordance with opts."""
 
-    root_path = pathlib.Path().absolute()  # Wherever the script is being run.
-    gain_path = root_path.joinpath(output_opts.gain_dir)
+    root_path = Path(output_opts.directory).absolute()
+    gain_path = root_path / Path("gains.qc")
 
     term_names = [xds.NAME for xds in gain_xds_lod[0].values()]
 
