@@ -1,5 +1,6 @@
 from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
 from quartical.gains.phase.kernel import phase_solver, phase_args
+from quartical.gains.phase.slow_kernel import phase_solver as slow_phase
 import numpy as np
 
 
@@ -40,3 +41,13 @@ class Phase(Gain):
                                 "PARAM_AXES": self.param_axes})
 
         return xds
+
+
+class SlowPhase(Phase):
+
+    solver = slow_phase
+
+    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
+
+        Phase.__init__(self, term_name, term_opts, data_xds, coords, tipc,
+                       fipc)
