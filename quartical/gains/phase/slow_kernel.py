@@ -502,7 +502,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             j_00 = unpackc(rop)
             w_00 = unpack(w)
 
-            jhj[0, 0] += (jh_00*w_00*j_00).real
+            jhj[0] += (jh_00*w_00*j_00).real
     else:
         raise ValueError("Unsupported number of correlations.")
 
