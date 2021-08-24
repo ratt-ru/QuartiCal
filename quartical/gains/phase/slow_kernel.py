@@ -322,9 +322,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
 def compute_update(update, jhj, jhr, corr_mode):
 
     # TODO: Phase-only is special - we don't need the generalised inversion.
-    generalised = jhj.ndim == 6
-    inversion_buffer = inversion_buffer_factory(generalised=generalised)
-    invert = invert_factory(corr_mode, generalised=generalised)
+    inversion_buffer = inversion_buffer_factory()
+    invert = invert_factory(corr_mode)
 
     def impl(update, jhj, jhr, corr_mode):
         n_tint, n_fint, n_ant, n_dir, n_param = jhr.shape
@@ -421,7 +420,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             # whereas the standard maths assumes column-major ordering
             # (XX, YX, XY, YY). This subtle change means we can use the MS
             # data directly without worrying about swapping elements around.
-            a_kron_bt(lop, rop, tmp_kprod)
+            a_kron_bt(lop, rop, tmp_kprod)  # TODO: Only necessary elem.
 
             w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
             r_0, _, _, r_3 = unpack(res)  # NOTE: XX, XY, YX, YY
@@ -450,10 +449,10 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[3])
             jhwj_33 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
 
-            jhj[0, 0] += jhwj_00.real
-            jhj[0, 1] += (gc_0*jhwj_03*g_3).real
-            jhj[1, 0] = jhj[0, 1]
-            jhj[1, 1] += jhwj_33.real
+            jhj[0] += jhwj_00.real
+            jhj[1] += (gc_0*jhwj_03*g_3).real
+            jhj[2] = jhj[1]
+            jhj[3] += jhwj_33.real
 
     elif corr_mode.literal_value == 2:
         def impl(lop, rop, w, gain, tmp_kprod, res, jhr, jhj):
@@ -479,8 +478,8 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_00, w_11 = unpack(w)
 
             # TODO: Consider representing as a vector?
-            jhj[0, 0] += (jh_00*w_00*j_00).real
-            jhj[1, 1] += (jh_11*w_11*j_11).real
+            jhj[0] += (jh_00*w_00*j_00).real
+            jhj[1] += (jh_11*w_11*j_11).real
 
     elif corr_mode.literal_value == 1:
         def impl(lop, rop, w, gain, tmp_kprod, res, jhr, jhj):
@@ -511,9 +510,12 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
 def get_jhj_dims_factory(corr_mode):
 
-    if corr_mode.literal_value in (2, 4):
+    if corr_mode.literal_value in (4,):
         def impl(params):
-            return params.shape[:4] + (2, 2)
+            return params.shape[:4] + (4,)
+    elif corr_mode.literal_value in (2,):
+        def impl(params):
+            return params.shape[:4] + (2,)
     elif corr_mode.literal_value in (1,):
         def impl(params):
             return params.shape[:4] + (1,)
