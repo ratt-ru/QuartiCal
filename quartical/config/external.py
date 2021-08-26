@@ -140,9 +140,7 @@ class Gain(Input):
         metadata=dict(choices=["complex",
                                "delay",
                                "phase",
-                               "slow_phase",
                                "slow_complex",
-                               "slow_delay",
                                "tec"])
     )
     direction_dependent: bool = False

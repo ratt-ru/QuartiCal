@@ -4,11 +4,11 @@ from numba import generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (compute_residual,
                                               compute_convergence)
-from quartical.gains.delay.slow_kernel import (compute_jhj_jhr,
-                                               compute_update,
-                                               finalize_update,
-                                               get_jhj_dims_factory,
-                                               get_jhr_dims_factory)
+from quartical.gains.delay.kernel import (compute_jhj_jhr,
+                                          compute_update,
+                                          finalize_update,
+                                          get_jhj_dims_factory,
+                                          get_jhr_dims_factory)
 from collections import namedtuple
 
 
