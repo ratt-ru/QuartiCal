@@ -20,7 +20,7 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
-delay_args = namedtuple("delay_args", ("params",))
+phase_args = namedtuple("phase_args", ("params",))
 
 
 @generated_jit(nopython=True,
