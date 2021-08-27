@@ -52,8 +52,13 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
 
         active_term = meta_args.active_term
         iters = meta_args.iters
+        is_init = meta_args.is_init
 
         params = term_args.params[active_term]  # Params for this term.
+
+        if not is_init:  # Set initial amplitudes to 1.
+            params[..., 0] = 1
+            params[..., -1] = 1
 
         n_term = len(gains)
 
@@ -73,7 +78,7 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
 
         for i in range(iters):
 
-            if True:
+            if True:  # TODO: This should be consistent with phase only.
                 residual = compute_residual(data,
                                             model,
                                             gains,
@@ -123,8 +128,8 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
 
             last_gain[:] = gains[active_term][:]
 
-            # if cnv_perc > 0.99:
-            #     break
+            if cnv_perc > 0.99:
+                break
 
         return update, term_conv_info(i + 1, cnv_perc)
 
