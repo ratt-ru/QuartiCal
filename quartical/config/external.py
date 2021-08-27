@@ -138,6 +138,7 @@ class Gain(Input):
     type: str = field(
         default="complex",
         metadata=dict(choices=["complex",
+                               "amplitude",
                                "delay",
                                "phase",
                                "slow_complex",
