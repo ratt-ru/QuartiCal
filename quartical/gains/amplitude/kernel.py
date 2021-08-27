@@ -76,9 +76,13 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
         jhr = np.empty(get_jhr_dims(params), dtype=real_dtype)
         update = np.zeros_like(jhr)
 
+        direct_update = not (dd_term or n_term > 1)
+
         for i in range(iters):
 
-            if True:  # TODO: This should be consistent with phase only.
+            if direct_update:
+                residual = data
+            else:
                 residual = compute_residual(data,
                                             model,
                                             gains,
@@ -90,8 +94,6 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
                                             row_map,
                                             row_weights,
                                             corr_mode)
-            else:
-                residual = data
 
             compute_jhj_jhr(jhj,
                             jhr,
@@ -117,7 +119,7 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
             finalize_update(update,
                             params,
                             gains[active_term],
-                            active_term,
+                            direct_update,
                             corr_mode)
 
             # Check for gain convergence. TODO: This can be affected by the
@@ -355,17 +357,21 @@ def compute_update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, params, gain, active_term, corr_mode):
+def finalize_update(update, params, gain, direct_update, corr_mode):
 
     if corr_mode.literal_value in (2, 4):
         # TODO: This is still a bit rubbish. Really need to consider whether
         # parameters should just be a vector rather than this complicated mat.
-        def impl(update, params, gain, active_term, corr_mode):
+        def impl(update, params, gain, direct_update, corr_mode):
 
-            update /= 2
-
-            params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]
-            params[:, :, :, :, 0, -1] += update[:, :, :, :, 1]
+            if direct_update:
+                params[..., 0, 0] += update[..., 0]
+                params[..., 0, -1] += update[..., -1]
+                params /= 2
+            else:
+                update /= 2
+                params[..., 0, 0] += update[..., 0]
+                params[..., 0, -1] += update[..., -1]
 
             n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
 
@@ -380,10 +386,14 @@ def finalize_update(update, params, gain, active_term, corr_mode):
                             gain[t, f, a, d, 0] = amp0
                             gain[t, f, a, d, -1] = amp1
     elif corr_mode.literal_value in (1,):
-        def impl(update, params, gain, active_term, corr_mode):
+        def impl(update, params, gain, direct_update, corr_mode):
 
-            update /= 2
-            params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]
+            if direct_update:
+                params[..., 0, 0] += update[..., 0]
+                params /= 2
+            else:
+                update /= 2
+                params[..., 0, 0] += update[..., 0]
 
             n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
 
