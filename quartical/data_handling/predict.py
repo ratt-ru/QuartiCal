@@ -117,7 +117,7 @@ def parse_sky_models(sky_models):
                 fallback_freq0 = fallback_freq0 or ref_freq
 
             # Extract SPI for I, defaulting to 0 - flat spectrum.
-            spi = [[getattr(spectrum, "spi", 0)]*4]
+            spi = getattr(spectrum, "spi", 0)
 
             if typecode == "gau":
                 emaj = source.shape.ex
@@ -143,6 +143,29 @@ def parse_sky_models(sky_models):
 
             else:
                 raise ValueError("Unknown typecode - {}".format(typecode))
+
+        # Make the SPIs uniform so they can be represented as an array.
+        for group in groups.values():
+            for params in group.values():
+
+                spis = params["spi"]
+
+                multi_spis = [spi for spi in spis if isinstance(spi, list)]
+
+                if multi_spis:
+                    n_component = max(len(mspi) for mspi in multi_spis)
+                else:
+                    n_component = 1
+
+                for ind, spi in enumerate(spis):
+                    if isinstance(spi, list):
+                        if len(spi) < n_component:
+                            spi.extend([0] * (n_component - len(spi)))
+                    else:
+                        spis[ind] = [spi, *([0] * (n_component - 1))]
+
+                # TODO: This assumes four correlations, but should be dynamic.
+                params["spi"] = [[[comp]*4 for comp in spi] for spi in spis]
 
         # Recursively freeze the default dict so that accessing non-existent
         # keys will fail as expected hereafter.
@@ -194,7 +217,7 @@ def daskify_sky_model_dict(sky_model_dict, chunk_size):
                         da.from_array(
                             point_params["stokes"], chunks=(chunk_size, -1)),
                         da.from_array(
-                            point_params["spi"], chunks=(chunk_size, 1, -1)),
+                            point_params["spi"], chunks=(chunk_size, -1, -1)),
                         da.from_array(
                             point_params["ref_freq"], chunks=chunk_size))
 
@@ -209,7 +232,7 @@ def daskify_sky_model_dict(sky_model_dict, chunk_size):
                         da.from_array(
                             gauss_params["stokes"], chunks=(chunk_size, -1)),
                         da.from_array(
-                            gauss_params["spi"], chunks=(chunk_size, 1, -1)),
+                            gauss_params["spi"], chunks=(chunk_size, -1, -1)),
                         da.from_array(
                             gauss_params["ref_freq"], chunks=chunk_size),
                         da.from_array(
