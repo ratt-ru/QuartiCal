@@ -142,7 +142,8 @@ class Gain(Input):
                                "delay",
                                "phase",
                                "slow_complex",
-                               "tec"])
+                               "tec",
+                               "rotation_measure"])
     )
     direction_dependent: bool = False
     time_interval: str = "1"
