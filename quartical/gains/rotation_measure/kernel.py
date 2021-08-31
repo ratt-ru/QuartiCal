@@ -394,9 +394,6 @@ def finalize_update(update, params, gain, lambda_sq, t_bin_arr, f_map_arr_p,
                  d_map_arr, dd_term, active_term, corr_mode):
 
             params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]/2
-            params[:, :, :, :, 0, -1] += update[:, :, :, :, 2]/2
-            params[:, :, :, :, 1, 0] += update[:, :, :, :, 1]/2
-            params[:, :, :, :, 1, -1] += update[:, :, :, :, 3]/2
 
             n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
 
@@ -404,23 +401,24 @@ def finalize_update(update, params, gain, lambda_sq, t_bin_arr, f_map_arr_p,
 
             for t in range(n_time):
                 for f in range(n_freq):
+                    lsq = lambda_sq[f]
                     for a in range(n_ant):
                         for d in range(n_dir):
 
                             f_m = f_map_arr_p[f, active_term]
                             d_m = d_map_arr[active_term, d]
 
-                            inter0 = params[t, f_m, a, d_m, 0, 0]
-                            inter1 = params[t, f_m, a, d_m, 0, -1]
-                            delay0 = params[t, f_m, a, d_m, 1, 0]
-                            delay1 = params[t, f_m, a, d_m, 1, -1]
+                            rm = params[t, f_m, a, d_m, 0, 0]
 
-                            cf = lambda_sq[f]
+                            beta = lsq*rm
 
-                            gain[t, f, a, d, 0] = \
-                                np.exp(1j*(cf*delay0 + inter0))
-                            gain[t, f, a, d, -1] = \
-                                np.exp(1j*(cf*delay1 + inter1))
+                            cos_beta = np.cos(beta)
+                            sin_beta = np.sin(beta)
+
+                            gain[t, f, a, d, 0] = cos_beta
+                            gain[t, f, a, d, 1] = -sin_beta
+                            gain[t, f, a, d, 2] = sin_beta
+                            gain[t, f, a, d, 3] = cos_beta
     else:
         raise ValueError("Rotation measure can only be solved for with four "
                          "correlation data.")
@@ -436,7 +434,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     unpackc = factories.unpackc_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, lsq, rm, gain, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, rm, lsq, gain, tmp_kprod, res, jhr, jhj):
 
             # Accumulate an element of jhwr.
             v1_imul_v2(res, rop, res)
@@ -453,6 +451,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             a_kron_bt(lop, rop, tmp_kprod)
 
             w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
+            r_0, r_1, r_2, r_3 = unpack(res)
 
             beta = lsq*rm
 
@@ -464,24 +463,34 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             dh_2 = lsq*cos_beta
             dh_3 = -lsq*sin_beta
 
-            for i in range(4):
+            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[:, 0])
 
-                jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[i])
+            dhjh = dh_0*jh_0 + dh_1*jh_1 + dh_2*jh_2 + dh_3*jh_3
 
-                jhw_0 = jh_0*w_0  # XX
-                jhw_1 = jh_1*w_1  # XY
-                jhw_2 = jh_2*w_2  # YX
-                jhw_3 = jh_3*w_3  # YY
+            jhj[0, 0] += (dhjh * w_0 * dhjh.conjugate()).real
+            jhr[0] += (dh_0 * r_0).real
 
-                jhr[i] += 
+            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[:, 1])
 
-                for j in range(i):
-                    jhj[i, j] = jhj[j, i].conjugate()
+            dhjh = dh_0*jh_0 + dh_1*jh_1 + dh_2*jh_2 + dh_3*jh_3
 
-                for j in range(i, 4):
-                    j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[j])
-                    jhj[i, j] += (jhw_0*j_0 + jhw_1*j_1 +
-                                  jhw_2*j_2 + jhw_3*j_3)
+            jhj[0, 0] += (dhjh * w_1 * dhjh.conjugate()).real
+            jhr[0] += (dh_1 * r_1).real
+
+            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[:, 2])
+
+            dhjh = dh_0*jh_0 + dh_1*jh_1 + dh_2*jh_2 + dh_3*jh_3
+
+            jhj[0, 0] += (dhjh * w_2 * dhjh.conjugate()).real
+            jhr[0] += (dh_2 * r_2).real
+
+            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[:, 3])
+
+            dhjh = dh_0*jh_0 + dh_1*jh_1 + dh_2*jh_2 + dh_3*jh_3
+
+            jhj[0, 0] += (dhjh * w_3 * dhjh.conjugate()).real
+            jhr[0] += (dh_3 * r_3).real
+
     else:
         raise ValueError("Rotation measure can only be solved for with four "
                          "correlation data.")
@@ -493,7 +502,7 @@ def get_jhj_dims_factory(corr_mode):
 
     if corr_mode.literal_value == 4:
         def impl(params):
-            return params.shape[:4] + (1,)
+            return params.shape[:4] + (1, 1)
     else:
         raise ValueError("Rotation measure can only be solved for with four "
                          "correlation data.")

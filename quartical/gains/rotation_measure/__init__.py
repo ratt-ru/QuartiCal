@@ -23,10 +23,10 @@ class RotationMeasure(Gain):
                                                (self.n_ant,),
                                                (self.n_dir,),
                                                (self.n_ppa,),
-                                               (self.n_corr,))
+                                               (1,))
 
         self.gain_axes = ("gain_t", "gain_f", "ant", "dir", "corr")
-        self.param_axes = ("param_t", "param_f", "ant", "dir", "param", "corr")
+        self.param_axes = ("param_t", "param_f", "ant", "dir", "param", "tmp")
 
     def make_xds(self):
 
