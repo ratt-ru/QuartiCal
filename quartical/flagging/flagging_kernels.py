@@ -61,4 +61,7 @@ def threshold(resid_arr, weights, mad_ests, med_mad_ests, flags, a1, a2):
                 bad_values[row, chan, corr] = \
                     np.sqrt((r_conj * w * r).real) > thr
 
+            if np.any(bad_values[row, chan]):
+                bad_values[row, chan] = True
+
     return bad_values
