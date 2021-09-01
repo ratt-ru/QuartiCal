@@ -36,14 +36,6 @@ def invert_factory(corr_mode, generalised=False):
 
             Ap, Ax, p, r = buffers
 
-            # TODO: This is expensive and bad. Come up with a better way to
-            # diagnose poorly behaving itervals/directions.
-            det = np.linalg.det(A)
-
-            if np.abs(det) < 1e-6 or ~np.isfinite(det):
-                x[:] = 0
-                return
-
             mat_mul_vec(A, x, Ax)
             r[:] = b
             r -= Ax
@@ -53,7 +45,7 @@ def invert_factory(corr_mode, generalised=False):
             for _ in range(x.size):
                 mat_mul_vec(A, p, Ap)
                 alpha_denom = vecct_mul_vec(p, Ap)
-                if np.abs(alpha_denom) == 0:
+                if alpha_denom.real == 0:
                     x[:] = 0
                     break
                 alpha = r_k / alpha_denom

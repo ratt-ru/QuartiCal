@@ -49,6 +49,9 @@ def log_final_config(config):
     Args:
         config: A FinalConfig object.
     """
+
+    config = oc.structured(config)
+
     # This guards against attempting to get the terminal size when the output
     # is being piped/redirected.
     if sys.stdout.isatty():
@@ -113,8 +116,6 @@ def parse_inputs(bypass_sysargv=None):
 
     # Log the final state of the configuration object so that users are aware
     # of what the ultimate configuration was.
-
-    log_final_config(config)
 
     config_obj = oc.to_object(config)  # Ensures post_init methods are run.
 

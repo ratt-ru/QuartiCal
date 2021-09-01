@@ -46,11 +46,17 @@ class MSInputs(Input):
     select_ddids: List[int] = field(
         default_factory=lambda: []
     )
+    select_uv_range: List[float] = field(
+        default_factory=lambda: [0, 0]
+    )
 
     def __post_init__(self):
         self.validate_choice_fields()
         self.time_chunk = as_time(self.time_chunk)
         self.freq_chunk = as_freq(self.freq_chunk)
+
+        assert len(self.select_uv_range) == 2, \
+            "input_ms.select_uv_range expects a two-element list."
 
 
 @dataclass
@@ -75,7 +81,8 @@ class ModelInputs(Input):
 
 @dataclass
 class Outputs(Input):
-    gain_dir: str = "gains.qc"
+    directory: str = "outputs.qc"
+    overwrite: bool = False
     products: Optional[List[str]] = field(
         default=None,
         metadata=dict(choices=["corrected_data",
@@ -137,10 +144,10 @@ class Gain(Input):
     type: str = field(
         default="complex",
         metadata=dict(choices=["complex",
+                               "amplitude",
                                "delay",
                                "phase",
                                "slow_complex",
-                               "slow_delay",
                                "tec"])
     )
     direction_dependent: bool = False

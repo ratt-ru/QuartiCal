@@ -35,6 +35,12 @@ input_ms:
     Select data descriptor IDs (spectral windows) from the input data. These
     are specified as integer values and must be given as a list e.g. to select 
     ddids/SPWs 0 and 2, use [0, 2].
+  select_uv_range:
+    Select a range of uv values to include when calibrating. Practically, this 
+    treats points outside the range as having zero weight. Use zero to
+    indicate an open interval, e.g. [100, 0] would select all values greater
+    than 100, [0, 10000] would select all values less than 10000 and
+    [100, 10000] would select values greater than 100 but less than 10000.
   # chunk-jump:
   #   The jump size used in conjunction with --input-ms-chunk-on. If 0, then any 
   #   change in value is a jump. If n, then the change must be >n.
@@ -71,8 +77,11 @@ input_model:
     usually be left enabled.
 
 output:
-  gain_dir:
-    Name of directory for output gains.
+  directory:
+    Name of directory in which various QuartiCal outputs will be stored.
+  overwrite:
+    Whether or not the contents of the output directory may be overwritten.
+    Will trigger an error when False and output.directory already exists.
   products: 
     The desired output data product. Multiple data products can be specified 
     as a list e.g. [residual, corrected_residual]. Choose from [residual, 
