@@ -85,6 +85,9 @@ def _initialise_flags(data_col, weight_col, flag_col, flag_row_col):
     noweight_points = np.any(weight_col[..., (0, -1)] == 0, axis=-1)
     flags[noweight_points] = True
 
+    # At this point, if any correlation is flagged, flag other correlations.
+    flags[:] = np.any(flags, axis=-1, keepdims=True)
+
     return flags
 
 
