@@ -69,11 +69,10 @@ def _execute(exitstack):
             cluster = exitstack.enter_context(cluster)
             client = exitstack.enter_context(Client(cluster))
 
-        # Install Quartical Scheduler Plugin
-        # Controversial from a security POV,
-        # run_on_scheduler is a debugging function
-        # `dask-scheduler --preload install_plugin.py`
-        # is the standard but less convenient pattern
+        # Install Quartical Scheduler Plugin. Controversial from a security
+        # POV, run_on_scheduler is a debugging function.
+        # `dask-scheduler --preload install_plugin.py` is the standard but
+        # less convenient pattern.
         client.run_on_scheduler(install_plugin)
 
         logger.info("Distributed client sucessfully initialized.")
@@ -83,19 +82,6 @@ def _execute(exitstack):
     # Reads the measurement set using the relavant configuration from opts.
     model_columns = model_vis_recipe.ingredients.model_columns
     data_xds_list, ref_xds_list = read_xds_list(model_columns, ms_opts)
-    # data_xds_list = data_xds_list[:1]
-
-    # logger.info("Reading data from zms.")
-    # data_xds_list = xds_from_zarr(
-    #     "/home/jonathan/3C147_tests/3C147_daskms.zms"
-    # )
-
-    # writes = xds_to_zarr(
-    #     data_xds_list,
-    #     "/home/jonathan/3C147_tests/3C147_daskms.zms"
-    # )
-    # dask.compute(writes)
-    # return
 
     # Preprocess the xds_list - initialise some values and fix bad data.
     data_xds_list = preprocess_xds_list(data_xds_list, ms_opts)
@@ -150,22 +136,3 @@ def _execute(exitstack):
 
     if dask_opts.scheduler == "distributed":
         client.close()  # Close this client, hopefully gracefully.
-
-    # dask.visualize(*ms_writes[:1], *gain_writes[:1],
-    #                color='order', cmap='autumn',
-    #                filename='order.pdf', node_attr={'penwidth': '10'},
-    #                optimize_graph=True)
-
-    # dask.visualize(*ms_writes[:1], *gain_writes[:1],
-    #                filename='graph.pdf',
-    #                optimize_graph=True)
-
-    # dask.visualize(*gains_per_xds["G"],
-    #                filename='gain_graph',
-    #                format="pdf",
-    #                optimize_graph=True,
-    #                collapse_outputs=True,
-    #                node_attr={'penwidth': '4',
-    #                           'fontsize': '18',
-    #                           'fontname': 'helvetica'},
-    #                edge_attr={'penwidth': '2', })
