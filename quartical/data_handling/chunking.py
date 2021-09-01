@@ -15,7 +15,6 @@ def compute_chunking(ms_opts, compute=True):
         columns=("TIME", "INTERVAL"),
         index_cols=("TIME",),
         group_cols=ms_opts.group_by,
-        taql_where="ANTENNA1 != ANTENNA2",
         chunks={"row": -1}
     )
 

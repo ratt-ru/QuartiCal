@@ -46,11 +46,17 @@ class MSInputs(Input):
     select_ddids: List[int] = field(
         default_factory=lambda: []
     )
+    select_uv_range: List[float] = field(
+        default_factory=lambda: [0, 0]
+    )
 
     def __post_init__(self):
         self.validate_choice_fields()
         self.time_chunk = as_time(self.time_chunk)
         self.freq_chunk = as_freq(self.freq_chunk)
+
+        assert len(self.select_uv_range) == 2, \
+            "input_ms.select_uv_range expects a two-element list."
 
 
 @dataclass

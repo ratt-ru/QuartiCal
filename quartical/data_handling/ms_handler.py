@@ -87,7 +87,6 @@ def read_xds_list(model_columns, ms_opts):
         columns=columns,
         index_cols=("TIME",),
         group_cols=ms_opts.group_by,
-        taql_where="ANTENNA1 != ANTENNA2",
         chunks=chunking_per_data_xds,
         table_schema=["MS", {**schema}])
 
@@ -276,6 +275,9 @@ def preprocess_xds_list(xds_list, ms_opts):
         data_col = xds[ms_opts.data_column].data
         flag_col = xds.FLAG.data
         flag_row_col = xds.FLAG_ROW.data
+        uvw_col = xds.UVW.data
+        ant1_col = xds.ANTENNA1.data
+        ant2_col = xds.ANTENNA2.data
 
         # Anywhere we have a broken datapoint, zero it. These points will
         # be flagged below. TODO: This can be optimized.
@@ -291,6 +293,19 @@ def preprocess_xds_list(xds_list, ms_opts):
 
         # Anywhere we have a flag, we set the weight to 0.
         weight_col = da.where(flag_col, 0, weight_col)
+
+        # Set the weights on autocorrelations to zero.
+        weight_col *= (ant1_col != ant2_col)[:, None, None]
+
+        # Set the weights on points outside the UV-range to zero.
+        uv_cut_l, uv_cut_u = ms_opts.select_uv_range
+
+        if uv_cut_l or uv_cut_u:
+            uv = da.sqrt(da.sum(uvw_col[:, :2] ** 2, axis=1))
+
+            uv_sel = (uv_cut_l < uv) & (uv < (uv_cut_u or np.inf))
+
+            weight_col *= uv_sel[:, None, None]
 
         # Drop the variables which held the original weights and data -
         # hereafter there are always in DATA and WEIGHT.

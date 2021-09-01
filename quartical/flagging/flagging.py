@@ -85,6 +85,9 @@ def _initialise_flags(data_col, weight_col, flag_col, flag_row_col):
     noweight_points = np.any(weight_col[..., (0, -1)] == 0, axis=-1)
     flags[noweight_points] = True
 
+    # At this point, if any correlation is flagged, flag other correlations.
+    flags[:] = np.any(flags, axis=-1, keepdims=True)
+
     return flags
 
 
@@ -127,6 +130,7 @@ def add_mad_graph(data_xds_list, mad_opts):
 
     for xds in data_xds_list:
         residuals = xds._RESIDUAL.data
+        weight_col = xds.WEIGHT.data
         flag_col = xds.FLAG.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
@@ -135,6 +139,7 @@ def add_mad_graph(data_xds_list, mad_opts):
 
         mad_estimate = da.blockwise(madmax, ("rowlike", "ant1", "ant2"),
                                     residuals, ("rowlike", "chan", "corr"),
+                                    weight_col, ("rowlike", "chan", "corr"),
                                     flag_col, ("rowlike", "chan", "corr"),
                                     ant1_col, ("rowlike",),
                                     ant2_col, ("rowlike",),
@@ -155,6 +160,7 @@ def add_mad_graph(data_xds_list, mad_opts):
 
         mad_flags = da.blockwise(threshold, ("rowlike", "chan", "corr"),
                                  residuals, ("rowlike", "chan", "corr"),
+                                 weight_col, ("rowlike", "chan", "corr"),
                                  bl_thresh*mad_estimate,
                                  ("rowlike", "ant1", "ant2"),
                                  gbl_thresh*med_mad_estimate,
