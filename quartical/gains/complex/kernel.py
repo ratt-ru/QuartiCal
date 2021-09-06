@@ -51,7 +51,6 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         stop_crit = meta_args.stop_crit
         active_term = meta_args.active_term
 
-
         n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
         t_map_arr = t_map_arr[0]  # We don't need the parameter mappings.

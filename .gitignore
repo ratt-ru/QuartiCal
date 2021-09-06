@@ -8,5 +8,6 @@ user_config.yaml
 .cache
 tests/test_data/beams
 *.log
+*.pyc
 .tdl.conf
 dask-worker-space

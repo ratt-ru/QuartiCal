@@ -3,13 +3,11 @@ import pytest
 import numpy as np
 import dask
 import dask.array as da
-from quartical.config.preprocess import transcribe_recipe
-from quartical.config.internal import gains_to_chain
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
-from quartical.utils.testing import apply_gains
+from tests.testing_utils.gains import apply_gains
 
 
 @pytest.fixture(scope="module")
@@ -26,31 +24,6 @@ def opts(base_opts):
     _opts.G.type = "complex"
 
     return _opts
-
-
-@pytest.fixture(scope="module")
-def model_opts(opts):
-    return opts.input_model
-
-
-@pytest.fixture(scope="module")
-def ms_opts(opts):
-    return opts.input_ms
-
-
-@pytest.fixture(scope="module")
-def solver_opts(opts):
-    return opts.solver
-
-
-@pytest.fixture(scope="module")
-def chain_opts(opts):
-    return gains_to_chain(opts)
-
-
-@pytest.fixture(scope="module")
-def recipe(model_opts):
-    return transcribe_recipe(model_opts.recipe)
 
 
 @pytest.fixture(scope="module")
