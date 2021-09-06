@@ -10,8 +10,13 @@ from quartical.calibration.calibrate import add_calibration_graph
 from tests.testing_utils.gains import apply_gains
 
 
+@pytest.fixture(params=["complex", "slow_complex"], scope="module")
+def solver_type(request):
+    return request.param
+
+
 @pytest.fixture(scope="module")
-def opts(base_opts):
+def opts(base_opts, solver_type):
 
     # Don't overwrite base config - instead create a new Namespace and update.
 
@@ -19,9 +24,9 @@ def opts(base_opts):
 
     _opts.input_model.recipe = "MODEL_DATA"
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [25]
+    _opts.solver.iter_recipe = [30]
     _opts.solver.converging_criteria = 0
-    _opts.G.type = "complex"
+    _opts.G.type = solver_type
 
     return _opts
 
