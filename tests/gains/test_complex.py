@@ -108,10 +108,10 @@ def corrupted_data_xds_list(data_xds_list):
         row_inds = \
             time.map_blocks(lambda x: np.unique(x, return_inverse=True)[1])
 
+        model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
+
         if n_corr == 4:
-            model = da.zeros_like(xds.MODEL_DATA.data) + da.array([1, 0, 0, 1])
-        else:
-            model = da.ones_like(xds.MODEL_DATA.data)
+            model *= da.array([1, 0, 0, 1])
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
@@ -131,8 +131,6 @@ def corrupted_data_xds_list(data_xds_list):
             "WEIGHT": ((xds.WEIGHT.dims), da.ones_like(xds.WEIGHT.data))
             }
         )
-
-        # import pdb; pdb.set_trace()
 
         corrupted_data_xds_list.append(corrupted_xds)
 

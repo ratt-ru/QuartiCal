@@ -17,7 +17,7 @@ def apply_gains(model, gains, ant1, ant2, row_ind, mode):
 
         n_row, n_chan, n_dir, n_corr = model.shape
 
-        data = np.zeros((n_row, n_chan, n_corr), dtype=np.complex64)
+        data = np.zeros((n_row, n_chan, n_corr), dtype=model.dtype)
 
         for row in range(n_row):
             r = row_ind[row]
