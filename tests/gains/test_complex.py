@@ -22,6 +22,7 @@ def opts(base_opts):
     _opts.input_model.recipe = "MODEL_DATA"
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [25]
+    _opts.solver.converging_criteria = 0
     _opts.G.type = "complex"
 
     return _opts
@@ -157,8 +158,9 @@ def residuals(_add_calibration_graph):
 
 # -----------------------------------------------------------------------------
 
-def test_residuals(residuals, corrupted_data_xds_list):
-    import pdb; pdb.set_trace()
+def test_residuals(residuals):
+    # All residual values are less than 1e-14.
+    np.testing.assert_array_less(np.abs(residuals), 1e-14)
 
 
 def test_gains(gain_xds_lod):

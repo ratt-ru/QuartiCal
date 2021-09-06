@@ -7,7 +7,15 @@ from itertools import cycle
 from quartical.gains import TERM_TYPES
 
 
-meta_args_nt = namedtuple("meta_args_nt", ("iters", "active_term", "is_init"))
+meta_args_nt = namedtuple(
+    "meta_args_nt", (
+        "iters",
+        "active_term",
+        "is_init",
+        "stop_frac",
+        "stop_crit"
+        )
+    )
 
 
 def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
@@ -87,7 +95,11 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
             base_args_nt(**{k: kwargs[k] for k in base_args_nt._fields})
         term_args = \
             term_args_nt(**{k: kwargs[k] for k in term_args_nt._fields})
-        meta_args = meta_args_nt(iters, active_term, is_initialised[term_name])
+        meta_args = meta_args_nt(iters,
+                                 active_term,
+                                 is_initialised[term_name],
+                                 solver_opts.converging_fraction,
+                                 solver_opts.converging_criteria)
 
         jhj, info_tup = solver(base_args,
                                term_args,

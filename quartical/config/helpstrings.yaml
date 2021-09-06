@@ -155,6 +155,14 @@ solver:
     be used when running the solvers. The total number of threads used will be 
     dask.threads*solver.threads; if this product exceeds the number of 
     available threads, performance will suffer.
+  converging_criteria:
+    The change in the value of the gain below which it considered to have 
+    converged. Set to zero to iterate for the number of interations specified
+    in solver.iter_recipe.
+  converging_fraction:
+    The fraction of gain values which must converge before a solver will exit 
+    prematurely.
+  
   # mode:
   #   The mode in which the solver should operate. This is assumed to be the 
   #   same for all terms specified by --solver-gain-terms. The first part of 
