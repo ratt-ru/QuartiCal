@@ -71,9 +71,9 @@ def data_xds_list(preprocessed_xds_list, recipe, ms_name, model_opts):
 
 
 @pytest.fixture(scope="module")
-def corrupted_data_xds_list(data_xds_list):
+def true_gain_list(data_xds_list):
 
-    corrupted_data_xds_list = []
+    gain_list = []
 
     for xds in data_xds_list:
 
@@ -101,6 +101,20 @@ def corrupted_data_xds_list(data_xds_list):
             amp *= da.array([1, 0.1, 0.1, 1])
 
         gains = amp*da.exp(1j*phase)
+
+        gain_list.append(gains)
+
+    return gain_list
+
+
+@pytest.fixture(scope="module")
+def corrupted_data_xds_list(data_xds_list, true_gain_list):
+
+    corrupted_data_xds_list = []
+
+    for xds, gains in zip(data_xds_list, true_gain_list):
+
+        n_corr = xds.dims["corr"]
 
         ant1 = xds.ANTENNA1.data
         ant2 = xds.ANTENNA2.data
@@ -158,10 +172,35 @@ def residuals(_add_calibration_graph):
 
 # -----------------------------------------------------------------------------
 
-def test_residuals(residuals):
-    # All residual values are less than 1e-14.
+def test_residual_magnitude(residuals):
+    # Magnitude of the residuals should tend to zero.
     np.testing.assert_array_less(np.abs(residuals), 1e-14)
 
 
-def test_gains(gain_xds_lod):
-    import pdb;pdb.set_trace()
+def test_gains(gain_xds_lod, true_gain_list):
+
+    for solved_gain_dict, true_gain in zip(gain_xds_lod, true_gain_list):
+        solved_gain = solved_gain_dict["G"].gains.values
+        true_gain = true_gain.compute()  # TODO: This could be done elsewhere.
+
+        solved_gain = solved_gain.reshape(solved_gain.shape[:-1] + (2, 2))
+        true_gain = true_gain.reshape(true_gain.shape[:-1] + (2, 2))
+
+        # Indices for the transpose.
+        inds = (0, 1, 2, 3, 5, 4)
+
+        # We want to rotate all the gains to a ref antenna (0) for comparison.
+        solved_gain = \
+            solved_gain @ solved_gain.transpose(inds)[:, :, :1].conj()
+        true_gain = \
+            true_gain @ true_gain.transpose(inds)[:, :, :1].conj()
+
+        # If we have missing antennas, we zero them for comparison.
+        true_gain[solved_gain == 0] = 0
+
+        # To ensure the missing antenna handling doesn't reder this test
+        # useless, check that we have non-zero entries first.
+        assert np.any(solved_gain), "All gains are zero!"
+        np.testing.assert_array_almost_equal(true_gain, solved_gain)
+
+# -----------------------------------------------------------------------------
