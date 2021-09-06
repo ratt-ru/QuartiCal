@@ -96,6 +96,9 @@ def corrupted_data_xds_list(data_xds_list):
                                  scale=0.25,
                                  chunks=chunking)
 
+        if n_corr == 4:
+            amp *= da.array([1, 0.1, 0.1, 1])
+
         gains = amp*da.exp(1j*phase)
 
         ant1 = xds.ANTENNA1.data
@@ -105,7 +108,10 @@ def corrupted_data_xds_list(data_xds_list):
         row_inds = \
             time.map_blocks(lambda x: np.unique(x, return_inverse=True)[1])
 
-        model = xds.MODEL_DATA.data
+        if n_corr == 4:
+            model = da.zeros_like(xds.MODEL_DATA.data) + da.array([1, 0, 0, 1])
+        else:
+            model = da.ones_like(xds.MODEL_DATA.data)
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
@@ -118,7 +124,15 @@ def corrupted_data_xds_list(data_xds_list):
                             concatenate=True,
                             dtype=model.dtype)
 
-        corrupted_xds = xds.assign({"DATA": ((xds.DATA.dims), data)})
+        corrupted_xds = xds.assign({
+            "DATA": ((xds.DATA.dims), data),
+            "MODEL_DATA": ((xds.MODEL_DATA.dims), model),
+            "FLAG": ((xds.FLAG.dims), da.zeros_like(xds.FLAG.data)),
+            "WEIGHT": ((xds.WEIGHT.dims), da.ones_like(xds.WEIGHT.data))
+            }
+        )
+
+        # import pdb; pdb.set_trace()
 
         corrupted_data_xds_list.append(corrupted_xds)
 
