@@ -25,7 +25,7 @@ def opts(base_opts, solver_type):
     _opts.input_model.recipe = "MODEL_DATA"
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [30]
-    _opts.solver.converging_criteria = 0
+    _opts.solver.convergence_criteria = 0
     _opts.G.type = solver_type
 
     return _opts
@@ -152,7 +152,7 @@ def residuals(_add_calibration_graph):
 
 def test_residual_magnitude(residuals):
     # Magnitude of the residuals should tend to zero.
-    np.testing.assert_array_less(np.abs(residuals), 1e-14)
+    np.testing.assert_array_less(np.abs(residuals), 5e-15)
 
 
 def test_gains(gain_xds_lod, true_gain_list):

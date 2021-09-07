@@ -98,8 +98,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         meta_args = meta_args_nt(iters,
                                  active_term,
                                  is_initialised[term_name],
-                                 solver_opts.converging_fraction,
-                                 solver_opts.converging_criteria)
+                                 solver_opts.convergence_fraction,
+                                 solver_opts.convergence_criteria)
 
         jhj, info_tup = solver(base_args,
                                term_args,

@@ -42,17 +42,17 @@ def invert_factory(corr_mode, generalised=False):
             p[:] = r
             r_k = vecct_mul_vec(r, r)
 
+            if r_k == 0:  # If the resdiual is exactly zero, x is exact.
+                return
+
             for _ in range(x.size):
                 mat_mul_vec(A, p, Ap)
                 alpha_denom = vecct_mul_vec(p, Ap)
-                if alpha_denom.real == 0:
-                    x[:] = 0
-                    break
                 alpha = r_k / alpha_denom
                 vec_iadd_svec(x, alpha, p)
                 vec_isub_svec(r, alpha, Ap)
                 r_kplus1 = vecct_mul_vec(r, r)
-                if r_kplus1.real < 1e-16:
+                if r_kplus1.real < 1e-15:
                     break
                 p *= (r_kplus1 / r_k)
                 p += r
