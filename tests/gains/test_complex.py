@@ -76,10 +76,10 @@ def true_gain_list(data_xds_list):
                                loc=1,
                                scale=0.05,
                                chunks=chunking)
-        phase = da.random.normal(size=(n_time, n_chan, n_ant, n_dir, n_corr),
-                                 loc=0,
-                                 scale=0.25,
-                                 chunks=chunking)
+        phase = da.random.uniform(size=(n_time, n_chan, n_ant, n_dir, n_corr),
+                                  high=np.pi/2,
+                                  low=-np.pi/2,
+                                  chunks=chunking)
 
         if n_corr == 4:  # Reduce amplitude of leakage components.
             amp *= da.array([1, 0.1, 0.1, 1])

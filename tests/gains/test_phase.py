@@ -70,6 +70,8 @@ def true_gain_list(data_xds_list):
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
                       chunks=chunking)
         phase = da.random.uniform(size=(n_time, n_chan, n_ant, n_dir, n_corr),
+                                  high=np.pi/2,
+                                  low=-np.pi/2,
                                   chunks=chunking)
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
