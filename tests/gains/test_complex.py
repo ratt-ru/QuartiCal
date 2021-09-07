@@ -3,7 +3,6 @@ import pytest
 import numpy as np
 import dask
 import dask.array as da
-import xarray
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
@@ -165,28 +164,27 @@ def test_residual_magnitude(residuals):
 def test_gains(gain_xds_lod, true_gain_list):
 
     for solved_gain_dict, true_gain in zip(gain_xds_lod, true_gain_list):
-        solved_gain = solved_gain_dict["G"].gains
+        solved_gain = solved_gain_dict["G"].gains.values
         true_gain = true_gain.compute()  # TODO: This could be done elsewhere.
-        true_gain = xarray.DataArray(true_gain,
-                                     solved_gain.coords,
-                                     solved_gain.dims)
 
-        reindexer = {"corr": np.array(("RR", "RL", "LR", "LL"))}
+        n_corr = true_gain.shape[-1]
 
-        true_gain = true_gain.reindex(reindexer, fill_value=0).values
-        solved_gain = solved_gain.reindex(reindexer, fill_value=0).values
+        if n_corr == 4:
+            true_gain = true_gain.reshape(true_gain.shape[:-1] + (2, 2))
+            solved_gain = solved_gain.reshape(solved_gain.shape[:-1] + (2, 2))
 
-        true_gain = true_gain.reshape(true_gain.shape[:-1] + (2, 2))
-        solved_gain = solved_gain.reshape(solved_gain.shape[:-1] + (2, 2))
-
-        # Indices for the transpose.
-        inds = (0, 1, 2, 3, 5, 4)
+            # Indices for the transpose.
+            inds = (0, 1, 2, 3, 5, 4)
+            op = np.matmul
+        else:
+            inds = (0, 1, 2, 3, 4)
+            op = np.multiply
 
         # We want to rotate all the gains to a ref antenna (0) for comparison.
-        solved_gain = \
-            solved_gain @ solved_gain.transpose(inds)[:, :, :1].conj()
-        true_gain = \
-            true_gain @ true_gain.transpose(inds)[:, :, :1].conj()
+        solved_gain = op(solved_gain,
+                         solved_gain.transpose(inds)[:, :, :1].conj())
+        true_gain = op(true_gain,
+                       true_gain.transpose(inds)[:, :, :1].conj())
 
         # If we have missing antennas, we zero them for comparison.
         true_gain[solved_gain == 0] = 0
