@@ -3,6 +3,7 @@ import pytest
 import numpy as np
 import dask
 import dask.array as da
+import xarray
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
@@ -15,13 +16,19 @@ def solver_type(request):
     return request.param
 
 
+@pytest.fixture(params=[[0], [0, 3], [0, 1, 2, 3]], scope="module")
+def select_corr(request):
+    return request.param
+
+
 @pytest.fixture(scope="module")
-def opts(base_opts, solver_type):
+def opts(base_opts, solver_type, select_corr):
 
     # Don't overwrite base config - instead create a new Namespace and update.
 
     _opts = deepcopy(base_opts)
 
+    _opts.input_ms.select_corr = select_corr
     _opts.input_model.recipe = "MODEL_DATA"
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [30]
@@ -75,7 +82,7 @@ def true_gain_list(data_xds_list):
                                  scale=0.25,
                                  chunks=chunking)
 
-        if n_corr == 4:
+        if n_corr == 4:  # Reduce amplitude of leakage components.
             amp *= da.array([1, 0.1, 0.1, 1])
 
         gains = amp*da.exp(1j*phase)
@@ -103,7 +110,7 @@ def corrupted_data_xds_list(data_xds_list, true_gain_list):
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
 
-        if n_corr == 4:
+        if n_corr == 4:  # Zero off diagonal elements.
             model *= da.array([1, 0, 0, 1])
 
         data = da.blockwise(apply_gains, ("rfc"),
@@ -158,11 +165,19 @@ def test_residual_magnitude(residuals):
 def test_gains(gain_xds_lod, true_gain_list):
 
     for solved_gain_dict, true_gain in zip(gain_xds_lod, true_gain_list):
-        solved_gain = solved_gain_dict["G"].gains.values
+        solved_gain = solved_gain_dict["G"].gains
         true_gain = true_gain.compute()  # TODO: This could be done elsewhere.
+        true_gain = xarray.DataArray(true_gain,
+                                     solved_gain.coords,
+                                     solved_gain.dims)
 
-        solved_gain = solved_gain.reshape(solved_gain.shape[:-1] + (2, 2))
+        reindexer = {"corr": np.array(("RR", "RL", "LR", "LL"))}
+
+        true_gain = true_gain.reindex(reindexer, fill_value=0).values
+        solved_gain = solved_gain.reindex(reindexer, fill_value=0).values
+
         true_gain = true_gain.reshape(true_gain.shape[:-1] + (2, 2))
+        solved_gain = solved_gain.reshape(solved_gain.shape[:-1] + (2, 2))
 
         # Indices for the transpose.
         inds = (0, 1, 2, 3, 5, 4)
@@ -176,7 +191,7 @@ def test_gains(gain_xds_lod, true_gain_list):
         # If we have missing antennas, we zero them for comparison.
         true_gain[solved_gain == 0] = 0
 
-        # To ensure the missing antenna handling doesn't reder this test
+        # To ensure the missing antenna handling doesn't render this test
         # useless, check that we have non-zero entries first.
         assert np.any(solved_gain), "All gains are zero!"
         np.testing.assert_array_almost_equal(true_gain, solved_gain)
