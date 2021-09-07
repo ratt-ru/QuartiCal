@@ -79,8 +79,6 @@ def true_gain_list(data_xds_list):
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
 
-        # import pdb; pdb.set_trace()
-
         gains = amp*da.exp(1j*delays*chan_freq[None, :, None, None, None])
 
         gain_list.append(gains)
