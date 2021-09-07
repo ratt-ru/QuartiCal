@@ -52,7 +52,7 @@ def invert_factory(corr_mode, generalised=False):
                 vec_iadd_svec(x, alpha, p)
                 vec_isub_svec(r, alpha, Ap)
                 r_kplus1 = vecct_mul_vec(r, r)
-                if r_kplus1.real < 1e-15:
+                if r_kplus1.real < 1e-30:
                     break
                 p *= (r_kplus1 / r_k)
                 p += r
