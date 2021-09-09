@@ -59,6 +59,8 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
+        stop_frac = meta_args.stop_frac
+        stop_crit = meta_args.stop_crit
         active_term = meta_args.active_term
         iters = meta_args.iters
 
@@ -140,11 +142,13 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
             # weights. Currently unsure how or why, but using unity weights
             # leads to monotonic convergence in all solution intervals.
 
-            cnv_perc = compute_convergence(gains[active_term][:], last_gain)
+            cnv_perc = compute_convergence(gains[active_term][:],
+                                           last_gain,
+                                           stop_crit)
 
             last_gain[:] = gains[active_term][:]
 
-            if cnv_perc > 0.99:
+            if cnv_perc >= stop_frac:
                 break
 
         params[..., 1, :] *= min_freq
