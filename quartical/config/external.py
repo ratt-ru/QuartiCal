@@ -116,6 +116,8 @@ class Solver(Input):
     terms: List[str] = field(default_factory=lambda: ["G"])
     iter_recipe: List[int] = field(default_factory=lambda: [25])
     threads: int = 1
+    convergence_fraction: float = 0.99
+    convergence_criteria: float = 1e-6
 
     def __post_init__(self):
         self.validate_choice_fields()

@@ -4,6 +4,7 @@ from quartical.config.parser import parse_inputs
 import requests
 import tarfile
 from shutil import rmtree
+from tests.fixtures.config import *  # NOQA
 
 
 test_root_path = Path(__file__).resolve().parent

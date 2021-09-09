@@ -166,7 +166,7 @@ def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_convergence(gain, last_gain):
+def compute_convergence(gain, last_gain, criteria):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
@@ -196,7 +196,7 @@ def compute_convergence(gain, last_gain):
                 if tmp_abs2 == 0:
                     n_cnvgd += 1
                 else:
-                    n_cnvgd += tmp_diff_abs2/tmp_abs2 < 1e-6**2
+                    n_cnvgd += tmp_diff_abs2/tmp_abs2 < criteria**2
 
     return n_cnvgd/(n_tint*n_fint*n_dir)
 
