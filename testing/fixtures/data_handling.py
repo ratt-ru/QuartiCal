@@ -1,6 +1,13 @@
 import pytest
 from quartical.data_handling.ms_handler import read_xds_list
+from quartical.data_handling.model_handler import add_model_graph
 
+
+# EXTERNAL FIXTURES:
+#   ms_opts
+#   recipe
+#   ms_name
+#   model_opts
 
 @pytest.fixture(scope="module")
 def read_xds_list_output(ms_opts, recipe):
@@ -15,3 +22,8 @@ def data_xds_list(read_xds_list_output):
 @pytest.fixture(scope="module")
 def ref_xds_list(read_xds_list_output):
     return read_xds_list_output[1]
+
+
+@pytest.fixture(scope="module")
+def predicted_xds_list(data_xds_list, recipe, ms_name, model_opts):
+    return add_model_graph(data_xds_list, recipe, ms_name, model_opts)

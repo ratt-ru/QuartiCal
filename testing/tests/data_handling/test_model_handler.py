@@ -1,9 +1,12 @@
 import pytest
-from quartical.data_handling.ms_handler import read_xds_list
-from quartical.config.preprocess import transcribe_recipe
-from quartical.data_handling.model_handler import add_model_graph
 from copy import deepcopy
 
+
+# EXTERNAL FIXTURES:
+#   base_opts
+#   freq_chunk
+#   time_chunk
+#   predicted_xds_list
 
 recipes = {"{col1}:{sky_model}@dE": 9,
            "{sky_model}:{sky_model}@dE": 9,
@@ -28,7 +31,7 @@ def model_expectations(request, lsm_name):
 
 
 @pytest.fixture(scope="module")
-def model_recipe(model_expectations):
+def raw_model_recipe(model_expectations):
     return model_expectations[0]
 
 
@@ -38,39 +41,18 @@ def expected_ndir(model_expectations):
 
 
 @pytest.fixture(scope="module")
-def model_opts(base_opts, model_recipe):
-    model_opts = deepcopy(base_opts.input_model)
+def opts(base_opts, freq_chunk, time_chunk, raw_model_recipe):
 
-    model_opts.recipe = model_recipe
+    # Don't overwrite base config - instead create a copy and update.
 
-    return model_opts
+    _opts = deepcopy(base_opts)
 
+    _opts.input_ms.freq_chunk = freq_chunk
+    _opts.input_ms.time_chunk = time_chunk
+    _opts.input_model.recipe = raw_model_recipe
 
-@pytest.fixture(scope="module")
-def ms_opts(base_opts, freq_chunk, time_chunk):
+    return _opts
 
-    ms_opts = deepcopy(base_opts.input_ms)
-
-    ms_opts.freq_chunk = freq_chunk
-    ms_opts.time_chunk = time_chunk
-
-    return ms_opts
-
-
-@pytest.fixture(scope="module")
-def recipe(model_opts):
-    return transcribe_recipe(model_opts.recipe)
-
-
-@pytest.fixture(scope="module")
-def xds_list(recipe, ms_opts):
-    xds_list, _ = read_xds_list(recipe.ingredients.model_columns, ms_opts)
-    return xds_list
-
-
-@pytest.fixture(scope="module")
-def predicted_xds_list(xds_list, recipe, ms_name, model_opts):
-    return add_model_graph(xds_list, recipe, ms_name, model_opts)
 
 # ------------------------------add_model_graph--------------------------------
 

@@ -3,6 +3,10 @@ from quartical.config.preprocess import transcribe_recipe
 from quartical.config.internal import gains_to_chain
 
 
+# EXTERNAL FIXTURES:
+#   opts
+
+
 @pytest.fixture(scope="module")
 def model_opts(opts):
     return opts.input_model

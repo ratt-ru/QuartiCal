@@ -3,6 +3,18 @@ import pytest
 from quartical.data_handling.ms_handler import write_xds_list
 import numpy as np
 
+# EXTERNAL FIXTURES:
+#   base_opts
+#   weight_column
+#   freq_chunk
+#   time_chunk
+#   select_corr
+#   data_xds_list
+#   ms_opts
+#   output_opts
+#   ref_xds_list
+#   ms_name
+
 
 @pytest.fixture(scope="module")
 def opts(base_opts, weight_column, freq_chunk, time_chunk, select_corr):
