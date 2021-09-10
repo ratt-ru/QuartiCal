@@ -2,12 +2,6 @@ import pytest
 from copy import deepcopy
 
 
-# EXTERNAL FIXTURES:
-#   base_opts
-#   freq_chunk
-#   time_chunk
-#   predicted_xds_list
-
 recipes = {"{col1}:{sky_model}@dE": 9,
            "{sky_model}:{sky_model}@dE": 9,
            "{col1}~{col2}": 1,

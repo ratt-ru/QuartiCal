@@ -7,11 +7,6 @@ import dask.array as da
 import numpy as np
 from numpy.testing import assert_array_almost_equal
 
-# EXTERNAL FIXTURES:
-#   base_opts
-#   freq_chunk
-#   time_chunk
-#   predicted_xds_list
 
 expected_clusters = {"DIE": {"point": 22, "gauss": 24},
                      "B290": {"point": 1, "gauss": 2},

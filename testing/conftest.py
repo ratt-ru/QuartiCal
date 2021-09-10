@@ -6,6 +6,7 @@ import tarfile
 from shutil import rmtree
 from testing.fixtures.config import *  # NOQA
 from testing.fixtures.data_handling import *  # NOQA
+from testing.fixtures.calibration import *  # NOQA
 
 
 test_root_path = Path(__file__).resolve().parent
