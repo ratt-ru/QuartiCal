@@ -1,18 +1,9 @@
 from copy import deepcopy
 import pytest
 import numpy as np
-import dask
 import dask.array as da
-from quartical.data_handling.ms_handler import (read_xds_list,
-                                                preprocess_xds_list)
-from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
 from testing.utils.gains import apply_gains
-
-
-@pytest.fixture(params=[[0], [0, 3], [0, 1, 2, 3]], scope="module")
-def select_corr(request):
-    return request.param
 
 
 @pytest.fixture(scope="module")
@@ -23,7 +14,6 @@ def opts(base_opts, select_corr):
     _opts = deepcopy(base_opts)
 
     _opts.input_ms.select_corr = select_corr
-    _opts.input_model.recipe = "MODEL_DATA"
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [50]
     _opts.solver.convergence_criteria = 0
@@ -34,28 +24,17 @@ def opts(base_opts, select_corr):
 
 
 @pytest.fixture(scope="module")
-def xds_list(recipe, ms_opts):
-    model_columns = recipe.ingredients.model_columns
-    # We only need to test on one for these tests.
-    return read_xds_list(model_columns, ms_opts)[0][:1]
+def raw_xds_list(read_xds_list_output):
+    # Only use the first xds. This overloads the global fixture.
+    return read_xds_list_output[0][:1]
 
 
 @pytest.fixture(scope="module")
-def preprocessed_xds_list(xds_list, ms_opts):
-    return preprocess_xds_list(xds_list, ms_opts)
-
-
-@pytest.fixture(scope="module")
-def data_xds_list(preprocessed_xds_list, recipe, ms_name, model_opts):
-    return add_model_graph(preprocessed_xds_list, recipe, ms_name, model_opts)
-
-
-@pytest.fixture(scope="module")
-def true_gain_list(data_xds_list):
+def true_gain_list(predicted_xds_list):
 
     gain_list = []
 
-    for xds in data_xds_list:
+    for xds in predicted_xds_list:
 
         n_ant = xds.dims["ant"]
         utime_chunks = xds.UTIME_CHUNKS
@@ -87,11 +66,11 @@ def true_gain_list(data_xds_list):
 
 
 @pytest.fixture(scope="module")
-def corrupted_data_xds_list(data_xds_list, true_gain_list):
+def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
     corrupted_data_xds_list = []
 
-    for xds, gains in zip(data_xds_list, true_gain_list):
+    for xds, gains in zip(predicted_xds_list, true_gain_list):
 
         n_corr = xds.dims["corr"]
 
@@ -132,28 +111,19 @@ def corrupted_data_xds_list(data_xds_list, true_gain_list):
 
 
 @pytest.fixture(scope="module")
-def _add_calibration_graph(corrupted_data_xds_list, solver_opts, chain_opts):
-    gain_xds_lod, net_xds_list, cal_data_xds_list = \
-        add_calibration_graph(corrupted_data_xds_list, solver_opts, chain_opts)
-
-    return dask.compute(gain_xds_lod, cal_data_xds_list[0]._RESIDUAL.data)
-
-
-@pytest.fixture(scope="module")
-def gain_xds_lod(_add_calibration_graph):
-    return _add_calibration_graph[0]
-
-
-@pytest.fixture(scope="module")
-def residuals(_add_calibration_graph):
-    return _add_calibration_graph[1]
+def add_calibration_graph_outputs(corrupted_data_xds_list,
+                                  solver_opts, chain_opts):
+    # Overload this fixture as we need to use the corrupted xdss.
+    return add_calibration_graph(corrupted_data_xds_list,
+                                 solver_opts, chain_opts)
 
 
 # -----------------------------------------------------------------------------
 
-def test_residual_magnitude(residuals):
+def test_residual_magnitude(cmp_post_solve_data_xds_list):
     # Magnitude of the residuals should tend to zero.
-    np.testing.assert_array_less(np.abs(residuals), 5e-15)
+    for xds in cmp_post_solve_data_xds_list:
+        np.testing.assert_array_almost_equal(np.abs(xds._RESIDUAL.data), 0)
 
 
 def test_gains(gain_xds_lod, true_gain_list):
