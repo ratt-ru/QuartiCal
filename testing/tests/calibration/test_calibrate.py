@@ -177,19 +177,19 @@ def test_chunk_spec(single_xds, term_xds_dict, expected_t_ints,
 
 
 @pytest.mark.calibrate
-def test_ngains(solved_gain_xds_list, solver_opts):
+def test_ngains(gain_xds_lod, solver_opts):
     """Check that calibration produces one xds per gain per input xds."""
 
     assert all([len(term_xds_dict) == len(solver_opts.terms)
-                for term_xds_dict in solved_gain_xds_list])
+                for term_xds_dict in gain_xds_lod])
 
 
 @pytest.mark.calibrate
-def test_has_gain_field(solved_gain_xds_list):
+def test_has_gain_field(gain_xds_lod):
     """Check that calibration assigns the gains to the relevant xds."""
 
     assert all([hasattr(term_xds, "gains")
-                for term_xds_dict in solved_gain_xds_list
+                for term_xds_dict in gain_xds_lod
                 for term_xds in term_xds_dict.values()])
 
 # -----------------------------------------------------------------------------

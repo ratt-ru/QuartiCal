@@ -1,6 +1,5 @@
 import pytest
-from quartical.gains.datasets import (make_gain_xds_lod,
-                                      compute_interval_chunking,
+from quartical.gains.datasets import (compute_interval_chunking,
                                       compute_dataset_coords)
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.calibration.mapping import (make_t_maps,
@@ -14,7 +13,7 @@ def add_calibration_graph_outputs(predicted_xds_list, solver_opts, chain_opts):
 
 
 @pytest.fixture(scope="module")
-def solved_gain_xds_list(add_calibration_graph_outputs):
+def gain_xds_lod(add_calibration_graph_outputs):
     return add_calibration_graph_outputs[0]
 
 
@@ -87,13 +86,6 @@ def coords_per_xds(predicted_xds_list,
         fipc_list,
         solver_opts.terms
     )
-
-
-@pytest.fixture(scope="module")
-def gain_xds_lod(predicted_xds_list, tipc_list, fipc_list, coords_per_xds,
-                 chain_opts):
-    return make_gain_xds_lod(predicted_xds_list, tipc_list, fipc_list,
-                             coords_per_xds, chain_opts)
 
 
 @pytest.fixture(scope="module")
