@@ -27,3 +27,8 @@ def ref_xds_list(read_xds_list_output):
 @pytest.fixture(scope="module")
 def predicted_xds_list(data_xds_list, recipe, ms_name, model_opts):
     return add_model_graph(data_xds_list, recipe, ms_name, model_opts)
+
+
+@pytest.fixture(scope="module")
+def data_xds_list_w_model_col(ms_opts):
+    return read_xds_list(["MODEL_DATA"], ms_opts)[0]

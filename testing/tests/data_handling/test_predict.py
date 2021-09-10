@@ -1,15 +1,17 @@
 from copy import deepcopy
 import pytest
-from quartical.data_handling.ms_handler import read_xds_list
-from quartical.config.preprocess import transcribe_recipe
-from quartical.data_handling.predict import (predict,
-                                             parse_sky_models,
+from quartical.data_handling.predict import (parse_sky_models,
                                              daskify_sky_model_dict,
                                              get_support_tables)
 import dask.array as da
 import numpy as np
 from numpy.testing import assert_array_almost_equal
 
+# EXTERNAL FIXTURES:
+#   base_opts
+#   freq_chunk
+#   time_chunk
+#   predicted_xds_list
 
 expected_clusters = {"DIE": {"point": 22, "gauss": 24},
                      "B290": {"point": 1, "gauss": 2},
@@ -17,27 +19,23 @@ expected_clusters = {"DIE": {"point": 22, "gauss": 24},
                      "G195": {"point": 0, "gauss": 1},
                      "H194": {"point": 0, "gauss": 2},
                      "I215": {"point": 0, "gauss": 1},
-                     #  "K285": {"point": 1, "n_gauss": 0},  #noqa
-                     #  "O265": {"point": 1, "n_gauss": 0},  #noqa
                      "R283": {"point": 1, "gauss": 0},
-                     #  "W317": {"point": 1, "n_gauss": 0}}  #noqa
                      "V317": {"point": 0, "gauss": 1}}
 
 
 @pytest.fixture(params=["", "@dE"], ids=["di", "dd"],
                 scope="module")
-def model_recipe(request, lsm_name):
+def raw_model_recipe(request, lsm_name):
     return lsm_name + request.param
 
 
 @pytest.fixture(scope="module")
-def model_opts(base_opts, model_recipe, beam_name):
+def model_opts(base_opts, raw_model_recipe, beam_name):
 
     model_opts = deepcopy(base_opts.input_model)
 
-    model_opts.recipe = model_recipe
-    model_opts.beam = \
-        beam_name + "/JVLA-L-centred-$(corr)_$(reim).fits"
+    model_opts.recipe = raw_model_recipe
+    model_opts.beam = beam_name + "/JVLA-L-centred-$(corr)_$(reim).fits"
     model_opts.beam_l_axis = "-X"
     model_opts.beam_m_axis = "Y"
 
@@ -53,24 +51,6 @@ def ms_opts(base_opts, freq_chunk, time_chunk):
     ms_opts.time_chunk = time_chunk
 
     return ms_opts
-
-
-@pytest.fixture(scope="module")
-def recipe(model_opts):
-    recipe = transcribe_recipe(model_opts.recipe)
-    return recipe
-
-
-@pytest.fixture(scope="module")
-def xds_list(ms_opts):
-    xds_list, _ = read_xds_list(["MODEL_DATA"], ms_opts)
-    return xds_list
-
-
-@pytest.fixture(scope="module")
-def predicted_xds_list(xds_list, recipe, ms_name, model_opts):
-
-    return predict(xds_list, recipe, ms_name, model_opts)
 
 
 @pytest.fixture(scope="function")
@@ -194,15 +174,15 @@ def test_nonlazy_tables(support_tables, table):
 # for a number of different input values.
 
 @pytest.mark.predict
-def test_predict(predicted_xds_list, xds_list):
+def test_predict(predicted_xds_list, data_xds_list_w_model_col):
 
     # Check that the predicted visibilities are consistent with the MeqTrees
     # visibilities stored in MODEL_DATA.
 
     for xds_ind in range(len(predicted_xds_list)):
-        for predict_list in predicted_xds_list[xds_ind].values():
-            predicted_vis = sum(predict_list)
-            expected_vis = xds_list[xds_ind].MODEL_DATA.data
-            assert_array_almost_equal(predicted_vis, expected_vis)
+        predicted_vis = predicted_xds_list[xds_ind].MODEL_DATA.data
+        predicted_vis = predicted_vis.sum(axis=2)  # Sum over directions.
+        expected_vis = data_xds_list_w_model_col[xds_ind].MODEL_DATA.data
+        assert_array_almost_equal(predicted_vis, expected_vis)
 
 # -----------------------------------------------------------------------------
