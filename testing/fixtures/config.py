@@ -19,6 +19,21 @@ def solver_opts(opts):
 
 
 @pytest.fixture(scope="module")
+def output_opts(opts):
+    return opts.output
+
+
+@pytest.fixture(scope="module")
+def mad_flag_opts(opts):
+    return opts.mad_flags
+
+
+@pytest.fixture(scope="module")
+def dask_opts(opts):
+    return opts.dask
+
+
+@pytest.fixture(scope="module")
 def chain_opts(opts):
     return gains_to_chain(opts)
 
