@@ -5,23 +5,18 @@ import numpy as np
 
 
 @pytest.fixture(scope="module")
-def ms_opts(base_opts, weight_column, freq_chunk, time_chunk, select_corr):
+def opts(base_opts, weight_column, freq_chunk, time_chunk, select_corr):
 
     # Don't overwrite base config - instead create a copy and update.
 
-    ms_opts = deepcopy(base_opts.input_ms)
+    _opts = deepcopy(base_opts)
 
-    ms_opts.weight_column = weight_column
-    ms_opts.freq_chunk = freq_chunk
-    ms_opts.time_chunk = time_chunk
-    ms_opts.select_corr = select_corr
+    _opts.input_ms.weight_column = weight_column
+    _opts.input_ms.freq_chunk = freq_chunk
+    _opts.input_ms.time_chunk = time_chunk
+    _opts.input_ms.select_corr = select_corr
 
-    return ms_opts
-
-
-@pytest.fixture(scope="module")
-def output_opts(base_opts):
-    return base_opts.output
+    return _opts
 
 
 @pytest.fixture(scope="module")
