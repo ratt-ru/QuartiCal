@@ -4,7 +4,8 @@ from quartical.gains.datasets import (make_gain_xds_lod,
                                       compute_dataset_coords)
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.calibration.mapping import (make_t_maps,
-                                           make_f_maps)
+                                           make_f_maps,
+                                           make_d_maps)
 
 
 @pytest.fixture(scope="module")
@@ -40,6 +41,11 @@ def t_map_list(tbin_list_tmap_list):
 @pytest.fixture(scope="module")
 def f_map_list(predicted_xds_list, chain_opts):
     return make_f_maps(predicted_xds_list, chain_opts)
+
+
+@pytest.fixture(scope="module")
+def d_map_list(predicted_xds_list, chain_opts):
+    return make_d_maps(predicted_xds_list, chain_opts)
 
 
 @pytest.fixture(scope="module")
