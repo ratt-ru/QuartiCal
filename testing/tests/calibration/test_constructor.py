@@ -19,7 +19,7 @@ from quartical.calibration.mapping import (make_t_maps,
 @pytest.fixture(scope="module")
 def opts(base_opts, time_chunk, freq_chunk):
 
-    # Don't overwrite base config - instead create a new Namespace and update.
+    # Don't overwrite base config - instead create a copy and update.
 
     _opts = deepcopy(base_opts)
 

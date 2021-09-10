@@ -7,7 +7,7 @@ import numpy as np
 @pytest.fixture(scope="module")
 def ms_opts(base_opts, weight_column, freq_chunk, time_chunk, select_corr):
 
-    # Don't overwrite base config - instead create a new Namespace and update.
+    # Don't overwrite base config - instead create a copy and update.
 
     ms_opts = deepcopy(base_opts.input_ms)
 

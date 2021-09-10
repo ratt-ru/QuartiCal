@@ -23,7 +23,7 @@ def select_corr(request):
 @pytest.fixture(scope="module")
 def opts(base_opts, solver_type, select_corr):
 
-    # Don't overwrite base config - instead create a new Namespace and update.
+    # Don't overwrite base config - instead create a copy and update.
 
     _opts = deepcopy(base_opts)
 
