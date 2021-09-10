@@ -4,11 +4,14 @@ from quartical.config.parser import parse_inputs
 import requests
 import tarfile
 from shutil import rmtree
-from tests.fixtures.config import *  # NOQA
+from testing.fixtures.config import *  # NOQA
+from testing.fixtures.data_handling import *  # NOQA
+from testing.fixtures.calibration import *  # NOQA
+from testing.fixtures.gains import *  # NOQA
 
 
 test_root_path = Path(__file__).resolve().parent
-test_data_path = Path(test_root_path, "test_data")
+test_data_path = Path(test_root_path, "data")
 
 _data_tar_name = "C147_subset.tar.gz"
 _beam_tar_name = "beams.tar.gz"
@@ -97,7 +100,7 @@ def time_chunk(request):
     return request.param
 
 
-@pytest.fixture(params=[[0, 1, 2, 3], [0, 3]], scope="module")
+@pytest.fixture(params=[[0, 1, 2, 3], [0, 3], [0]], scope="module")
 def select_corr(request):
     return request.param
 

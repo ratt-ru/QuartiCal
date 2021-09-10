@@ -3,7 +3,6 @@ import xarray
 import dask.array as da
 from itertools import product
 from collections import namedtuple
-from quartical.config.internal import gains_to_chain
 from quartical.gains.gain import gain_spec_tup
 from quartical.interpolation.interpolate import (load_and_interpolate_gains,
                                                  convert_and_drop,
@@ -101,11 +100,6 @@ def opts(base_opts, interp_mode, interp_method):
     _opts.G.interp_mode = interp_mode
 
     return _opts
-
-
-@pytest.fixture(scope="module")
-def chain_opts(opts):
-    return gains_to_chain(opts)
 
 
 @pytest.fixture(scope="module", params=GAIN_PROPERTIES.values())

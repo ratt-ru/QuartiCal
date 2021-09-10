@@ -3,7 +3,7 @@ import pytest
 import dask.array as da
 import numpy as np
 from numpy.testing import assert_array_equal
-from quartical.config.internal import gains_to_chain, yield_from
+from quartical.config.internal import yield_from
 from quartical.calibration.mapping import (make_t_binnings,
                                            make_f_mappings,
                                            make_d_mappings)
@@ -22,11 +22,6 @@ def opts(base_opts, time_int, freq_int):
     _opts.B.freq_interval = 2*freq_int
 
     return _opts
-
-
-@pytest.fixture(scope="module")
-def chain_opts(opts):
-    return gains_to_chain(opts)
 
 
 # ------------------------------make_t_binnings--------------------------------
