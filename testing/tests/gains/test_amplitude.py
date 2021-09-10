@@ -7,7 +7,7 @@ from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
-from tests.testing_utils.gains import apply_gains
+from testing.utils.gains import apply_gains
 
 
 @pytest.fixture(params=[[0], [0, 3], [0, 1, 2, 3]], scope="module")
@@ -27,8 +27,7 @@ def opts(base_opts, select_corr):
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [50]
     _opts.solver.convergence_criteria = 0
-    _opts.G.type = "delay"
-    _opts.G.freq_interval = 0
+    _opts.G.type = "amplitude"
 
     return _opts
 
@@ -65,21 +64,20 @@ def true_gain_list(data_xds_list):
         n_dir = xds.dims["dir"]
         n_corr = xds.dims["corr"]
 
-        chan_freq = xds.CHAN_FREQ.data / xds.CHAN_FREQ.data[0]
-
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
-        delays = da.random.normal(size=(n_time, 1, n_ant, n_dir, n_corr),
-                                  loc=0,
-                                  scale=0.5)
-        amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
-                      chunks=chunking)
+        amp = da.random.normal(size=(n_time, n_chan, n_ant, n_dir, n_corr),
+                               loc=1,
+                               scale=0.05,
+                               chunks=chunking)
+        phase = da.zeros((n_time, n_chan, n_ant, n_dir, n_corr),
+                         chunks=chunking)
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
 
-        gains = amp*da.exp(1j*delays*chan_freq[None, :, None, None, None])
+        gains = amp*da.exp(1j*phase)
 
         gain_list.append(gains)
 

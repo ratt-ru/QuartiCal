@@ -4,11 +4,11 @@ from quartical.config.parser import parse_inputs
 import requests
 import tarfile
 from shutil import rmtree
-from tests.fixtures.config import *  # NOQA
+from testing.fixtures.config import *  # NOQA
 
 
 test_root_path = Path(__file__).resolve().parent
-test_data_path = Path(test_root_path, "test_data")
+test_data_path = Path(test_root_path, "data")
 
 _data_tar_name = "C147_subset.tar.gz"
 _beam_tar_name = "beams.tar.gz"

@@ -7,7 +7,12 @@ from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.calibration.calibrate import add_calibration_graph
-from tests.testing_utils.gains import apply_gains
+from testing.utils.gains import apply_gains
+
+
+@pytest.fixture(params=["complex", "slow_complex"], scope="module")
+def solver_type(request):
+    return request.param
 
 
 @pytest.fixture(params=[[0], [0, 3], [0, 1, 2, 3]], scope="module")
@@ -16,7 +21,7 @@ def select_corr(request):
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr):
+def opts(base_opts, solver_type, select_corr):
 
     # Don't overwrite base config - instead create a new Namespace and update.
 
@@ -25,9 +30,9 @@ def opts(base_opts, select_corr):
     _opts.input_ms.select_corr = select_corr
     _opts.input_model.recipe = "MODEL_DATA"
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [50]
+    _opts.solver.iter_recipe = [30]
     _opts.solver.convergence_criteria = 0
-    _opts.G.type = "phase"
+    _opts.G.type = solver_type
 
     return _opts
 
@@ -67,15 +72,17 @@ def true_gain_list(data_xds_list):
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
-        amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
-                      chunks=chunking)
+        amp = da.random.normal(size=(n_time, n_chan, n_ant, n_dir, n_corr),
+                               loc=1,
+                               scale=0.05,
+                               chunks=chunking)
         phase = da.random.uniform(size=(n_time, n_chan, n_ant, n_dir, n_corr),
                                   high=np.pi/2,
                                   low=-np.pi/2,
                                   chunks=chunking)
 
-        if n_corr == 4:  # This solver only considers the diagonal elements.
-            amp *= da.array([1, 0, 0, 1])
+        if n_corr == 4:  # Reduce amplitude of leakage components.
+            amp *= da.array([1, 0.1, 0.1, 1])
 
         gains = amp*da.exp(1j*phase)
 
