@@ -19,6 +19,11 @@ def solved_gain_xds_list(add_calibration_graph_outputs):
 
 
 @pytest.fixture(scope="module")
+def net_gain_xds_list(add_calibration_graph_outputs):
+    return add_calibration_graph_outputs[1]
+
+
+@pytest.fixture(scope="module")
 def post_cal_data_xds_list(add_calibration_graph_outputs):
     return add_calibration_graph_outputs[2]
 
