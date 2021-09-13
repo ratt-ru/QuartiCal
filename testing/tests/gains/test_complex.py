@@ -92,6 +92,8 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
 
+        # TODO: Commenting out the below breaks tests. Why?
+
         if n_corr == 4:  # Zero off diagonal elements.
             model *= da.array([1, 0, 0, 1])
 
