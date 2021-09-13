@@ -249,7 +249,7 @@ def per_array_jhj_jhr(jhj, jhr):
 
     def impl(jhj, jhr):
 
-        n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
+        n_tint, n_fint, n_ant = jhj.shape[:3]
 
         for t in range(n_tint):
             for f in range(n_fint):
