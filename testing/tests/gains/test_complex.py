@@ -12,7 +12,7 @@ def solver_type(request):
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, solver_type, select_corr):
+def opts(base_opts, solver_type, select_corr, solve_per):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -23,6 +23,7 @@ def opts(base_opts, solver_type, select_corr):
     _opts.solver.iter_recipe = [30]
     _opts.solver.convergence_criteria = 0
     _opts.G.type = solver_type
+    _opts.G.solve_per = solve_per
 
     return _opts
 
@@ -34,7 +35,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list):
+def true_gain_list(predicted_xds_list, solve_per):
 
     gain_list = []
 
@@ -64,6 +65,9 @@ def true_gain_list(predicted_xds_list):
             amp *= da.array([1, 0.1, 0.1, 1])
 
         gains = amp*da.exp(1j*phase)
+
+        if solve_per == "array":
+            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
 
         gain_list.append(gains)
 

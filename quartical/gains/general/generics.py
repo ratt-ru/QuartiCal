@@ -240,3 +240,25 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
         return net_gains
 
     return impl
+
+
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
+def per_array_jhj_jhr(jhj, jhr):
+    """This manipulates the entries of jhj and jhr to be over all antennas."""
+
+    def impl(jhj, jhr):
+
+        n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
+
+        for t in range(n_tint):
+            for f in range(n_fint):
+                for a in range(1, n_ant):
+                    jhj[t, f, 0] += jhj[t, f, a]
+                    jhr[t, f, 0] += jhr[t, f, a]
+
+                for a in range(1, n_ant):
+                    jhj[t, f, a] = jhj[t, f, 0]
+                    jhr[t, f, a] = jhr[t, f, 0]
+
+    return impl

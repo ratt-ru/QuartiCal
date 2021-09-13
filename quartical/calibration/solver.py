@@ -13,7 +13,8 @@ meta_args_nt = namedtuple(
         "active_term",
         "is_init",
         "stop_frac",
-        "stop_crit"
+        "stop_crit",
+        "solve_per"
         )
     )
 
@@ -95,11 +96,15 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
             base_args_nt(**{k: kwargs[k] for k in base_args_nt._fields})
         term_args = \
             term_args_nt(**{k: kwargs[k] for k in term_args_nt._fields})
+
+        term_opts = getattr(chain_opts, term)
+
         meta_args = meta_args_nt(iters,
                                  active_term,
                                  is_initialised[term_name],
                                  solver_opts.convergence_fraction,
-                                 solver_opts.convergence_criteria)
+                                 solver_opts.convergence_criteria,
+                                 term_opts.solve_per)
 
         jhj, info_tup = solver(base_args,
                                term_args,
