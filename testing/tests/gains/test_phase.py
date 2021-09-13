@@ -7,7 +7,7 @@ from testing.utils.gains import apply_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr):
+def opts(base_opts, select_corr, solve_per):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -18,6 +18,7 @@ def opts(base_opts, select_corr):
     _opts.solver.iter_recipe = [50]
     _opts.solver.convergence_criteria = 0
     _opts.G.type = "phase"
+    _opts.G.solve_per = solve_per
 
     return _opts
 
@@ -29,7 +30,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list):
+def true_gain_list(predicted_xds_list, solve_per):
 
     gain_list = []
 
@@ -58,6 +59,9 @@ def true_gain_list(predicted_xds_list):
 
         gains = amp*da.exp(1j*phase)
 
+        if solve_per == "array":
+            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
+
         gain_list.append(gains)
 
     return gain_list
@@ -80,9 +84,6 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
             time.map_blocks(lambda x: np.unique(x, return_inverse=True)[1])
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
-
-        if n_corr == 4:  # Zero off diagonal elements.
-            model *= da.array([1, 0, 0, 1])
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
