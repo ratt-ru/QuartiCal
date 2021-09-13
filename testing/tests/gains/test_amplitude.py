@@ -85,9 +85,6 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
 
-        if n_corr == 4:  # Zero off diagonal elements.
-            model *= da.array([1, 0, 0, 1])
-
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
                             gains, ("rfadc"),
