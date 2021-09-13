@@ -7,7 +7,7 @@ from quartical.calibration.calibrate import add_calibration_graph
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr):
+def opts(base_opts, select_corr, solve_per):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -18,6 +18,7 @@ def opts(base_opts, select_corr):
     _opts.solver.iter_recipe = [50]
     _opts.solver.convergence_criteria = 0
     _opts.G.type = "amplitude"
+    _opts.G.solve_per = solve_per
 
     return _opts
 
@@ -29,7 +30,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list):
+def true_gain_list(predicted_xds_list, solve_per):
 
     gain_list = []
 
@@ -57,6 +58,9 @@ def true_gain_list(predicted_xds_list):
             amp *= da.array([1, 0, 0, 1])
 
         gains = amp*da.exp(1j*phase)
+
+        if solve_per == "array":
+            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
 
         gain_list.append(gains)
 
