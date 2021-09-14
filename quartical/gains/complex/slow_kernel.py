@@ -3,7 +3,8 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (compute_residual,
-                                              compute_convergence)
+                                              compute_convergence,
+                                              per_array_jhj_jhr)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -53,6 +54,7 @@ def slow_complex_solver(base_args, term_args, meta_args, corr_mode):
         stop_crit = meta_args.stop_crit
         active_term = meta_args.active_term
         iters = meta_args.iters
+        solve_per = meta_args.solve_per
 
         active_gain = gains[active_term]
 
@@ -98,6 +100,9 @@ def slow_complex_solver(base_args, term_args, meta_args, corr_mode):
                             row_weights,
                             active_term,
                             corr_mode)
+
+            if solve_per == "array":
+                per_array_jhj_jhr(jhj, jhr)
 
             compute_update(update,
                            jhj,

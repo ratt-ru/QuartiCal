@@ -41,3 +41,38 @@ def apply_gains(model, gains, ant1, ant2, row_ind, mode):
 
         return data
     return impl
+
+
+@generated_jit(nopython=True, nogil=True, cache=True)
+def reference_gains(gains, mode):
+
+    coerce_literal(reference_gains, ["mode"])
+
+    v1_imul_v2 = factories.v1_imul_v2_factory(mode)
+    compute_det = factories.compute_det_factory(mode)
+    iinverse = factories.iinverse_factory(mode)
+
+    def impl(gains, mode):
+
+        gains = gains.copy()  # Sometimes we end up with read-only input.
+
+        n_tint, n_fint, n_ant, n_dir, n_corr = gains.shape
+
+        inv_ref_gain = np.zeros(n_corr, dtype=gains.dtype)
+
+        for t in range(n_tint):
+            for f in range(n_fint):
+                for d in range(n_dir):
+
+                    ref_gain = gains[t, f, 0, d]
+                    det = compute_det(ref_gain)
+                    iinverse(ref_gain, det, inv_ref_gain)
+
+                for a in range(n_ant):
+
+                    gain = gains[t, f, a, d]
+                    v1_imul_v2(gain, inv_ref_gain, gain)
+
+        return gains
+
+    return impl
