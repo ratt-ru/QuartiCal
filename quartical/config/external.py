@@ -153,6 +153,11 @@ class Gain(Input):
                                "tec",
                                "rotation_measure"])
     )
+    solve_per: str = field(
+        default="antenna",
+        metadata=dict(choices=["antenna",
+                               "array"])
+    )
     direction_dependent: bool = False
     time_interval: str = "1"
     freq_interval: str = "1"

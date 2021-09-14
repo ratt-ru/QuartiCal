@@ -54,7 +54,7 @@ jobs:
 
       # Run the test cases
       - name: Testing Step
-        run: py.test -v tests/
+        run: py.test -v testing/tests
 
       # Check that the help prints, suggesting that everything is ok.
       - name: Run QuartiCal
