@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 import dask.array as da
 from quartical.calibration.calibrate import add_calibration_graph
-from testing.utils.gains import apply_gains
+from testing.utils.gains import apply_gains, reference_gains
 
 
 @pytest.fixture(params=["complex", "slow_complex"], scope="module")
@@ -94,8 +94,8 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
         # TODO: Commenting out the below breaks tests. Why?
 
-        if n_corr == 4:  # Zero off diagonal elements.
-            model *= da.array([1, 0, 0, 1])
+        if n_corr == 4:  # Decrease magnitude of off-diagonal elements.
+            model *= da.array([1, 0.1, 0.1, 1])
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
@@ -145,22 +145,8 @@ def test_gains(gain_xds_lod, true_gain_list):
 
         n_corr = true_gain.shape[-1]
 
-        if n_corr == 4:
-            true_gain = true_gain.reshape(true_gain.shape[:-1] + (2, 2))
-            solved_gain = solved_gain.reshape(solved_gain.shape[:-1] + (2, 2))
-
-            # Indices for the transpose.
-            inds = (0, 1, 2, 3, 5, 4)
-            op = np.matmul
-        else:
-            inds = (0, 1, 2, 3, 4)
-            op = np.multiply
-
-        # We want to rotate all the gains to a ref antenna (0) for comparison.
-        solved_gain = op(solved_gain,
-                         solved_gain.transpose(inds)[:, :, :1].conj())
-        true_gain = op(true_gain,
-                       true_gain.transpose(inds)[:, :, :1].conj())
+        solved_gain = reference_gains(solved_gain, n_corr)
+        true_gain = reference_gains(true_gain, n_corr)
 
         # TODO: Data is missing for these ants. Gain flags should capture this.
         true_gain[:, :, (18, 20)] = 0
