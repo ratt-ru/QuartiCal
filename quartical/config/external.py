@@ -150,7 +150,8 @@ class Gain(Input):
                                "delay",
                                "phase",
                                "slow_complex",
-                               "tec"])
+                               "tec",
+                               "rotation_measure"])
     )
     solve_per: str = field(
         default="antenna",
