@@ -166,7 +166,7 @@ def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_convergence(gain, last_gain):
+def compute_convergence(gain, last_gain, criteria):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
@@ -196,7 +196,7 @@ def compute_convergence(gain, last_gain):
                 if tmp_abs2 == 0:
                     n_cnvgd += 1
                 else:
-                    n_cnvgd += tmp_diff_abs2/tmp_abs2 < 1e-6**2
+                    n_cnvgd += tmp_diff_abs2/tmp_abs2 < criteria**2
 
     return n_cnvgd/(n_tint*n_fint*n_dir)
 
@@ -238,5 +238,27 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
                                        net_gains[t, f, a, d])
 
         return net_gains
+
+    return impl
+
+
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
+def per_array_jhj_jhr(jhj, jhr):
+    """This manipulates the entries of jhj and jhr to be over all antennas."""
+
+    def impl(jhj, jhr):
+
+        n_tint, n_fint, n_ant = jhj.shape[:3]
+
+        for t in range(n_tint):
+            for f in range(n_fint):
+                for a in range(1, n_ant):
+                    jhj[t, f, 0] += jhj[t, f, a]
+                    jhr[t, f, 0] += jhr[t, f, a]
+
+                for a in range(1, n_ant):
+                    jhj[t, f, a] = jhj[t, f, 0]
+                    jhr[t, f, a] = jhr[t, f, 0]
 
     return impl

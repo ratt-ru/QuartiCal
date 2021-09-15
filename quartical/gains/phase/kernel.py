@@ -3,7 +3,8 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (compute_residual,
-                                              compute_convergence)
+                                              compute_convergence,
+                                              per_array_jhj_jhr)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -32,9 +33,6 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
 
     coerce_literal(phase_solver, ["corr_mode"])
 
-    get_jhj_dims = get_jhj_dims_factory(corr_mode)
-    get_jhr_dims = get_jhr_dims_factory(corr_mode)
-
     def impl(base_args, term_args, meta_args, corr_mode):
 
         model = base_args.model
@@ -50,8 +48,11 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
+        stop_frac = meta_args.stop_frac
+        stop_crit = meta_args.stop_crit
         active_term = meta_args.active_term
         iters = meta_args.iters
+        solve_per = meta_args.solve_per
 
         params = term_args.params[active_term]  # Params for this term.
 
@@ -67,8 +68,8 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
 
         real_dtype = gains[active_term].real.dtype
 
-        jhj = np.empty(get_jhj_dims(params), dtype=real_dtype)
-        jhr = np.empty(get_jhr_dims(params), dtype=real_dtype)
+        jhj = np.empty(active_gain.shape, dtype=real_dtype)
+        jhr = np.empty(params.shape, dtype=real_dtype)
         update = np.zeros_like(jhr)
 
         for i in range(iters):
@@ -104,6 +105,9 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
                             active_term,
                             corr_mode)
 
+            if solve_per == "array":
+                per_array_jhj_jhr(jhj, jhr)
+
             compute_update(update,
                            jhj,
                            jhr,
@@ -119,11 +123,13 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
             # weights. Currently unsure how or why, but using unity weights
             # leads to monotonic convergence in all solution intervals.
 
-            cnv_perc = compute_convergence(gains[active_term][:], last_gain)
+            cnv_perc = compute_convergence(gains[active_term][:],
+                                           last_gain,
+                                           stop_crit)
 
             last_gain[:] = gains[active_term][:]
 
-            if cnv_perc > 0.99:
+            if cnv_perc >= stop_frac:
                 break
 
         return update, term_conv_info(i + 1, cnv_perc)
@@ -321,7 +327,6 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights,
                nogil=True)
 def compute_update(update, jhj, jhr, corr_mode):
 
-    # TODO: Phase-only is special - we don't need the generalised inversion.
     inversion_buffer = inversion_buffer_factory()
     invert = invert_factory(corr_mode)
 
@@ -354,44 +359,27 @@ def compute_update(update, jhj, jhr, corr_mode):
                nogil=True)
 def finalize_update(update, params, gain, active_term, corr_mode):
 
-    if corr_mode.literal_value in (2, 4):
-        # TODO: This is still a bit rubbish. Really need to consider whether
-        # parameters should just be a vector rather than this complicated mat.
+    if corr_mode.literal_value in (1, 2, 4):
         def impl(update, params, gain, active_term, corr_mode):
 
             update /= 2
+            params += update
 
-            params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]
-            params[:, :, :, :, 0, -1] += update[:, :, :, :, 1]
+            n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
+            n_param = params.shape[-1]
 
-            n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
+            g_inds = np.array((0, n_corr - 1))[:n_param]
+            p_inds = np.array((0, 1))[:n_param]
 
             for t in range(n_tint):
                 for f in range(n_fint):
                     for a in range(n_ant):
                         for d in range(n_dir):
 
-                            phase0 = params[t, f, a, d, 0, 0]
-                            phase1 = params[t, f, a, d, 0, -1]
+                            for gi, pi in zip(g_inds, p_inds):
 
-                            gain[t, f, a, d, 0] = np.exp(1j*phase0)
-                            gain[t, f, a, d, -1] = np.exp(1j*phase1)
-    elif corr_mode.literal_value in (1,):
-        def impl(update, params, gain, active_term, corr_mode):
-
-            update /= 2
-            params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]
-
-            n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
-
-            for t in range(n_tint):
-                for f in range(n_fint):
-                    for a in range(n_ant):
-                        for d in range(n_dir):
-
-                            phase0 = params[t, f, a, d, 0, 0]
-
-                            gain[t, f, a, d, 0] = np.exp(1j*phase0)
+                                phase = params[t, f, a, d, pi]
+                                gain[t, f, a, d, gi] = np.exp(1j*phase)
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -502,37 +490,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_00 = unpack(w)
 
             jhj[0] += (jh_00*w_00*j_00).real
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
-def get_jhj_dims_factory(corr_mode):
-
-    if corr_mode.literal_value in (4,):
-        def impl(params):
-            return params.shape[:4] + (4,)
-    elif corr_mode.literal_value in (2,):
-        def impl(params):
-            return params.shape[:4] + (2,)
-    elif corr_mode.literal_value in (1,):
-        def impl(params):
-            return params.shape[:4] + (1,)
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
-def get_jhr_dims_factory(corr_mode):
-
-    if corr_mode.literal_value in (2, 4):
-        def impl(params):
-            return params.shape[:4] + (2,)
-    elif corr_mode.literal_value in (1,):
-        def impl(params):
-            return params.shape[:4] + (1,)
     else:
         raise ValueError("Unsupported number of correlations.")
 

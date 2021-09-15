@@ -3,7 +3,8 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (compute_residual,
-                                              compute_convergence)
+                                              compute_convergence,
+                                              per_array_jhj_jhr)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -39,9 +40,6 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
     coerce_literal(delay_solver, ["corr_mode"])
 
-    get_jhj_dims = get_jhj_dims_factory(corr_mode)
-    get_jhr_dims = get_jhr_dims_factory(corr_mode)
-
     def impl(base_args, term_args, meta_args, corr_mode):
 
         model = base_args.model
@@ -58,15 +56,18 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
+        stop_frac = meta_args.stop_frac
+        stop_crit = meta_args.stop_crit
         active_term = meta_args.active_term
         iters = meta_args.iters
+        solve_per = meta_args.solve_per
 
         params = term_args.params[active_term]  # Params for this term.
         t_bin_arr = term_args.t_bin_arr[0]  # Don't need time param mappings.
         chan_freqs = term_args.chan_freqs.copy()  # Don't mutate orginal.
         min_freq = np.min(chan_freqs)
         chan_freqs /= min_freq  # Scale freqs to avoid precision.
-        params[..., 1, :] *= min_freq  # Scale consistently with freq.
+        params[..., 1::2] *= min_freq  # Scale delay consistently with freq.
 
         n_term = len(gains)
 
@@ -80,8 +81,9 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
         real_dtype = gains[active_term].real.dtype
 
-        jhj = np.empty(get_jhj_dims(params), dtype=real_dtype)
-        jhr = np.empty(get_jhr_dims(params), dtype=real_dtype)
+        pshape = params.shape
+        jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
+        jhr = np.empty(pshape, dtype=real_dtype)
         update = np.zeros_like(jhr)
 
         for i in range(iters):
@@ -119,6 +121,9 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
                             active_term,
                             corr_mode)
 
+            if solve_per == "array":
+                per_array_jhj_jhr(jhj, jhr)
+
             compute_update(update,
                            jhj,
                            jhr,
@@ -139,14 +144,16 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
             # weights. Currently unsure how or why, but using unity weights
             # leads to monotonic convergence in all solution intervals.
 
-            cnv_perc = compute_convergence(gains[active_term][:], last_gain)
+            cnv_perc = compute_convergence(gains[active_term][:],
+                                           last_gain,
+                                           stop_crit)
 
             last_gain[:] = gains[active_term][:]
 
-            if cnv_perc > 0.99:
+            if cnv_perc >= stop_frac:
                 break
 
-        params[..., 1, :] /= min_freq
+        params[..., 1::2] /= min_freq  # Undo scaling so units are clear.
 
         return jhj, term_conv_info(i + 1, cnv_perc)
 
@@ -381,66 +388,36 @@ def compute_update(update, jhj, jhr, corr_mode):
 def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr_p,
                     d_map_arr, dd_term, active_term, corr_mode):
 
-    if corr_mode.literal_value in (2, 4):
-        # TODO: This is still a bit rubbish. Really need to consider whether
-        # parameters should just be a vector rather than this complicated mat.
+    if corr_mode.literal_value in (1, 2, 4):
         def impl(update, params, gain, chan_freqs, t_bin_arr, f_map_arr_p,
                  d_map_arr, dd_term, active_term, corr_mode):
 
-            params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]/2
-            params[:, :, :, :, 0, -1] += update[:, :, :, :, 2]/2
-            params[:, :, :, :, 1, 0] += update[:, :, :, :, 1]/2
-            params[:, :, :, :, 1, -1] += update[:, :, :, :, 3]/2
+            update /= 2
+            params += update
 
-            n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
+            n_tint, n_fint, n_ant, n_dir, n_param = params.shape
 
-            n_time, n_freq, _, _, _ = gain.shape
+            n_time, n_freq, _, _, n_corr = gain.shape
 
-            for t in range(n_time):
-                for f in range(n_freq):
-                    for a in range(n_ant):
-                        for d in range(n_dir):
-
-                            f_m = f_map_arr_p[f, active_term]
-                            d_m = d_map_arr[active_term, d]
-
-                            inter0 = params[t, f_m, a, d_m, 0, 0]
-                            inter1 = params[t, f_m, a, d_m, 0, -1]
-                            delay0 = params[t, f_m, a, d_m, 1, 0]
-                            delay1 = params[t, f_m, a, d_m, 1, -1]
-
-                            cf = chan_freqs[f]
-
-                            gain[t, f, a, d, 0] = \
-                                np.exp(1j*(cf*delay0 + inter0))
-                            gain[t, f, a, d, -1] = \
-                                np.exp(1j*(cf*delay1 + inter1))
-    elif corr_mode.literal_value in (1,):
-        def impl(update, params, gain, chan_freqs, t_bin_arr, f_map_arr_p,
-                 d_map_arr, dd_term, active_term, corr_mode):
-
-            params[:, :, :, :, 0, 0] += update[:, :, :, :, 0]/2
-            params[:, :, :, :, 1, 0] += update[:, :, :, :, 1]/2
-
-            n_tint, n_fint, n_ant, n_dir, n_param, n_corr = params.shape
-
-            n_time, n_freq, _, _, _ = gain.shape
+            g_inds = np.array((0, n_corr - 1))[:(n_param // 2)]
+            p_inds = np.array((0, 2))[:(n_param // 2)]
 
             for t in range(n_time):
                 for f in range(n_freq):
+                    cf = chan_freqs[f]
+                    f_m = f_map_arr_p[f, active_term]
                     for a in range(n_ant):
                         for d in range(n_dir):
 
-                            f_m = f_map_arr_p[f, active_term]
                             d_m = d_map_arr[active_term, d]
 
-                            inter0 = params[t, f_m, a, d_m, 0, 0]
-                            delay0 = params[t, f_m, a, d_m, 1, 0]
+                            for gi, pi in zip(g_inds, p_inds):
 
-                            cf = chan_freqs[f]
+                                inter = params[t, f_m, a, d_m, pi]
+                                delay = params[t, f_m, a, d_m, pi + 1]
 
-                            gain[t, f, a, d, 0] = \
-                                np.exp(1j*(cf*delay0 + inter0))
+                                gain[t, f, a, d, gi] = \
+                                    np.exp(1j*(cf*delay + inter))
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -592,34 +569,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jhj[0, 1] += tmp*nu
             jhj[1, 0] += tmp*nu
             jhj[1, 1] += tmp*nusq
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
-def get_jhj_dims_factory(corr_mode):
-
-    if corr_mode.literal_value in (2, 4):
-        def impl(params):
-            return params.shape[:4] + (4, 4)
-    elif corr_mode.literal_value in (1,):
-        def impl(params):
-            return params.shape[:4] + (2, 2)
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
-def get_jhr_dims_factory(corr_mode):
-
-    if corr_mode.literal_value in (2, 4):
-        def impl(params):
-            return params.shape[:4] + (4,)
-    elif corr_mode.literal_value in (1,):
-        def impl(params):
-            return params.shape[:4] + (2,)
     else:
         raise ValueError("Unsupported number of correlations.")
 

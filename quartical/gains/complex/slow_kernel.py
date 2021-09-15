@@ -3,7 +3,8 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (compute_residual,
-                                              compute_convergence)
+                                              compute_convergence,
+                                              per_array_jhj_jhr)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -28,9 +29,9 @@ complex_args = namedtuple("complex_args", ())
                parallel=False,
                cache=True,
                nogil=True)
-def complex_solver(base_args, term_args, meta_args, corr_mode):
+def slow_complex_solver(base_args, term_args, meta_args, corr_mode):
 
-    coerce_literal(complex_solver, ["corr_mode"])
+    coerce_literal(slow_complex_solver, ["corr_mode"])
 
     get_jhj_dims = get_jhj_dims_factory(corr_mode)
 
@@ -49,8 +50,11 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
+        stop_frac = meta_args.stop_frac
+        stop_crit = meta_args.stop_crit
         active_term = meta_args.active_term
         iters = meta_args.iters
+        solve_per = meta_args.solve_per
 
         active_gain = gains[active_term]
 
@@ -97,6 +101,9 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                             active_term,
                             corr_mode)
 
+            if solve_per == "array":
+                per_array_jhj_jhr(jhj, jhr)
+
             compute_update(update,
                            jhj,
                            jhr,
@@ -112,11 +119,13 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             # weights. Currently unsure how or why, but using unity weights
             # leads to monotonic convergence in all solution intervals.
 
-            cnv_perc = compute_convergence(gains[active_term][:], last_gain)
+            cnv_perc = compute_convergence(gains[active_term][:],
+                                           last_gain,
+                                           stop_crit)
 
             last_gain[:] = gains[active_term][:]
 
-            if cnv_perc > 0.99:
+            if cnv_perc >= stop_frac:
                 break
 
         return jhj, term_conv_info(i + 1, cnv_perc)

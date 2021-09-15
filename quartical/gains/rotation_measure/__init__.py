@@ -1,29 +1,24 @@
 from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
-from quartical.gains.tec.kernel import tec_solver, tec_args
+from quartical.gains.rotation_measure.kernel import rm_solver, rm_args
 import numpy as np
 
 
-class TEC(Gain):
+class RotationMeasure(Gain):
 
-    solver = tec_solver
-    term_args = tec_args
+    solver = rm_solver
+    term_args = rm_args
 
     def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
 
         Gain.__init__(self, term_name, term_opts, data_xds, coords, tipc, fipc)
 
-        parameterisable = ["XX", "YY", "RR", "LL"]
-
-        self.parameterised_corr = \
-            [ct for ct in self.corr_types if ct in parameterisable]
-        self.n_param = 2 * len(self.parameterised_corr)
-
+        self.n_param = 1  # This term only makes sense in a 2x2 chain.
         self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
                                              self.n_fipc_g,
                                              (self.n_ant,),
                                              (self.n_dir,),
                                              (self.n_corr,))
-        self.param_chunk_spec = param_spec_tup(self.n_tipc_g,
+        self.param_chunk_spec = param_spec_tup(self.n_tipc_g,  # Check!
                                                self.n_fipc_p,
                                                (self.n_ant,),
                                                (self.n_dir,),
@@ -36,12 +31,7 @@ class TEC(Gain):
 
         xds = Gain.make_xds(self)
 
-        param_template = ["phase_offset_{}", "TEC_{}"]
-
-        param_labels = [pt.format(ct) for ct in self.parameterised_corr
-                        for pt in param_template]
-
-        xds = xds.assign_coords({"param": np.array(param_labels),
+        xds = xds.assign_coords({"param": np.array(["rotation_measure"]),
                                  "param_t": self.gain_times,
                                  "param_f": self.param_freqs})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
