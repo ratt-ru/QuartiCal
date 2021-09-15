@@ -12,7 +12,7 @@ class RotationMeasure(Gain):
 
         Gain.__init__(self, term_name, term_opts, data_xds, coords, tipc, fipc)
 
-        self.n_ppa = 1
+        self.n_param = 1  # This term only makes sense in a 2x2 chain.
         self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
                                              self.n_fipc_g,
                                              (self.n_ant,),
@@ -22,11 +22,10 @@ class RotationMeasure(Gain):
                                                self.n_fipc_p,
                                                (self.n_ant,),
                                                (self.n_dir,),
-                                               (self.n_ppa,),
-                                               (1,))
+                                               (self.n_param,))
 
         self.gain_axes = ("gain_t", "gain_f", "ant", "dir", "corr")
-        self.param_axes = ("param_t", "param_f", "ant", "dir", "param", "tmp")
+        self.param_axes = ("param_t", "param_f", "ant", "dir", "param")
 
     def make_xds(self):
 

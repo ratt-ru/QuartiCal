@@ -205,9 +205,6 @@ def expand_specs(gain_terms):
                     tc_p = parm_chunk_spec.tchunk[tc_ind]
                     fc_p = parm_chunk_spec.fchunk[fc_ind]
                     pc = parm_chunk_spec.pchunk[0]
-                    # TODO: This is bad - I think parameters should just be a
-                    # vector in its final dim. It simplifies the many modes.
-                    cc = parm_chunk_spec.cchunk[0]
 
                     parm_shape = (tc_p, fc_p, ac, dc, pc)
                 else:
