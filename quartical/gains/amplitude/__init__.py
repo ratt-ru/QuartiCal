@@ -12,7 +12,12 @@ class Amplitude(Gain):
 
         Gain.__init__(self, term_name, term_opts, data_xds, coords, tipc, fipc)
 
-        self.n_ppa = 1
+        parameterisable = ["XX", "YY", "RR", "LL"]
+
+        self.parameterised_corr = \
+            [ct for ct in self.corr_types if ct in parameterisable]
+        self.n_param = len(self.parameterised_corr)
+
         self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
                                              self.n_fipc_g,
                                              (self.n_ant,),
@@ -22,16 +27,20 @@ class Amplitude(Gain):
                                                self.n_fipc_g,
                                                (self.n_ant,),
                                                (self.n_dir,),
-                                               (self.n_ppa,),
-                                               (self.n_corr,))
+                                               (self.n_param,))
         self.gain_axes = ("gain_t", "gain_f", "ant", "dir", "corr")
-        self.param_axes = ("param_t", "param_f", "ant", "dir", "param", "corr")
+        self.param_axes = ("param_t", "param_f", "ant", "dir", "param")
 
     def make_xds(self):
 
         xds = Gain.make_xds(self)
 
-        xds = xds.assign_coords({"param": np.array(["amplitude"]),
+        param_template = ["amplitude_{}"]
+
+        param_labels = [pt.format(ct) for ct in self.parameterised_corr
+                        for pt in param_template]
+
+        xds = xds.assign_coords({"param": np.array(param_labels),
                                  "param_t": self.param_times,
                                  "param_f": self.param_freqs})
         xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
