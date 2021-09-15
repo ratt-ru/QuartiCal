@@ -7,9 +7,7 @@ from quartical.gains.general.generics import (compute_residual,
                                               per_array_jhj_jhr)
 from quartical.gains.delay.kernel import (compute_jhj_jhr,
                                           compute_update,
-                                          finalize_update,
-                                          get_jhj_dims_factory,
-                                          get_jhr_dims_factory)
+                                          finalize_update)
 from collections import namedtuple
 
 
@@ -41,9 +39,6 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
     coerce_literal(tec_solver, ["corr_mode"])
 
-    get_jhj_dims = get_jhj_dims_factory(corr_mode)
-    get_jhr_dims = get_jhr_dims_factory(corr_mode)
-
     def impl(base_args, term_args, meta_args, corr_mode):
 
         model = base_args.model
@@ -71,7 +66,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         chan_freqs = term_args.chan_freqs.copy()  # Don't mutate orginal.
         min_freq = np.min(chan_freqs)
         inv_chan_freqs = min_freq/chan_freqs  # Scale freqs to avoid precision.
-        params[..., 1, :] /= min_freq  # Scale consistently with freq.
+        params[..., 1::2] /= min_freq  # Scale consistently with freq.
 
         n_term = len(gains)
 
@@ -85,8 +80,9 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
         real_dtype = gains[active_term].real.dtype
 
-        jhj = np.empty(get_jhj_dims(params), dtype=real_dtype)
-        jhr = np.empty(get_jhr_dims(params), dtype=real_dtype)
+        pshape = params.shape
+        jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
+        jhr = np.empty(pshape, dtype=real_dtype)
         update = np.zeros_like(jhr)
 
         for i in range(iters):
@@ -156,7 +152,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
             if cnv_perc >= stop_frac:
                 break
 
-        params[..., 1, :] *= min_freq
+        params[..., 1::2] *= min_freq
 
         return jhj, term_conv_info(i + 1, cnv_perc)
 
