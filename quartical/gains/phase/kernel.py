@@ -360,8 +360,6 @@ def compute_update(update, jhj, jhr, corr_mode):
 def finalize_update(update, params, gain, active_term, corr_mode):
 
     if corr_mode.literal_value in (1, 2, 4):
-        # TODO: This is still a bit rubbish. Really need to consider whether
-        # parameters should just be a vector rather than this complicated mat.
         def impl(update, params, gain, active_term, corr_mode):
 
             update /= 2
