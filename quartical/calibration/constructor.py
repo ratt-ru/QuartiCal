@@ -106,7 +106,7 @@ def construct_solver(data_xds_list,
             # If there is a PARAM_SPEC on the gain xds, it is also an output.
             if hasattr(term_xds, "PARAM_SPEC"):
                 blocker.add_output(f"{term_name}-param",
-                                   "rfadpc",
+                                   "rfadp",
                                    term_xds.PARAM_SPEC,
                                    np.float64)
 
@@ -206,9 +206,9 @@ def expand_specs(gain_terms):
                     fc_p = parm_chunk_spec.fchunk[fc_ind]
                     pc = parm_chunk_spec.pchunk[0]
 
-                    parm_shape = (tc_p, fc_p, ac, dc, pc, cc)
+                    parm_shape = (tc_p, fc_p, ac, dc, pc)
                 else:
-                    parm_shape = (0,) * 6  # Used for creating a dummy array.
+                    parm_shape = (0,) * 5  # Used for creating a dummy array.
 
                 term_list.append(term_spec_tup(term_name,
                                                term_type,

@@ -21,8 +21,7 @@ param_spec_tup = namedtuple(
         "fchunk",
         "achunk",
         "dchunk",
-        "pchunk",
-        "cchunk"
+        "pchunk"
     )
 )
 
