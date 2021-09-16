@@ -47,12 +47,13 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
         a1 = base_args.a1
         a2 = base_args.a2
         weights = base_args.weights
+        flags = base_args.flags
         t_map_arr = base_args.t_map_arr[0]  # Don't need time param mappings.
         f_map_arr_g = base_args.f_map_arr[0]  # Gain mappings.
         f_map_arr_p = base_args.f_map_arr[1]  # Parameter mappings.
         d_map_arr = base_args.d_map_arr
         gains = base_args.gains
-        flags = base_args.flags
+        gain_flags = base_args.gain_flags
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
@@ -110,6 +111,7 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
                             a1,
                             a2,
                             weights,
+                            flags,
                             t_map_arr,
                             f_map_arr_g,
                             f_map_arr_p,
@@ -163,8 +165,8 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
                cache=True,
                nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, params, residual, a1, a2, weights,
-                    t_map_arr, f_map_arr_g, f_map_arr_p, d_map_arr, lambda_sq,
-                    row_map, row_weights, active_term, corr_mode):
+                    flags, t_map_arr, f_map_arr_g, f_map_arr_p, d_map_arr,
+                    lambda_sq, row_map, row_weights, active_term, corr_mode):
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -180,8 +182,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, params, residual, a1, a2, weights,
     compute_jhwj_jhwr_elem = compute_jhwj_jhwr_elem_factory(corr_mode)
 
     def impl(jhj, jhr, model, gains, params, residual, a1, a2, weights,
-             t_map_arr, f_map_arr_g, f_map_arr_p, d_map_arr, lambda_sq,
-             row_map, row_weights, active_term, corr_mode):
+             flags, t_map_arr, f_map_arr_g, f_map_arr_p, d_map_arr,
+             lambda_sq, row_map, row_weights, active_term, corr_mode):
         _, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
@@ -247,6 +249,9 @@ def compute_jhj_jhr(jhj, jhr, model, gains, params, residual, a1, a2, weights,
                 rm_t = t_map_arr[row_ind, active_term]
 
                 for f in range(fs, fe):
+
+                    if flags[row, f]:  # Skip flagged data points.
+                        continue
 
                     r = residual[row, f]
                     w = weights[row, f]  # Consider a map?
