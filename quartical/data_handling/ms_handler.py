@@ -270,8 +270,6 @@ def preprocess_xds_list(xds_list, ms_opts):
     for xds in xds_list:
 
         # Unpack the data on the xds into variables with understandable names.
-        # We create copies of arrays we intend to mutate as otherwise we end
-        # up implicitly updating the xds.
         data_col = xds[ms_opts.data_column].data
         flag_col = xds.FLAG.data
         flag_row_col = xds.FLAG_ROW.data
@@ -291,13 +289,11 @@ def preprocess_xds_list(xds_list, ms_opts):
                                     flag_col,
                                     flag_row_col)
 
-        # Anywhere we have a flag, we set the weight to 0.
-        weight_col = da.where(flag_col, 0, weight_col)
+        # Set the temporary flags on unflagged autocorrelations.
+        flag_col = da.where((ant1_col == ant2_col)[:, None] & ~flag_col,
+                            np.int8(-1), flag_col)
 
-        # Set the weights on autocorrelations to zero.
-        weight_col *= (ant1_col != ant2_col)[:, None, None]
-
-        # Set the weights on points outside the UV-range to zero.
+        # Set the temporary flags on points outside the UV-range.
         uv_cut_l, uv_cut_u = ms_opts.select_uv_range
 
         if uv_cut_l or uv_cut_u:
@@ -305,7 +301,8 @@ def preprocess_xds_list(xds_list, ms_opts):
 
             uv_sel = (uv_cut_l < uv) & (uv < (uv_cut_u or np.inf))
 
-            weight_col *= uv_sel[:, None, None]
+            flag_col = da.where(~uv_sel[:, None] & ~flag_col,
+                                np.int8(-1), flag_col)
 
         # Drop the variables which held the original weights and data -
         # hereafter there are always in DATA and WEIGHT.
@@ -319,7 +316,7 @@ def preprocess_xds_list(xds_list, ms_opts):
         output_xds = output_xds.assign(
             {"DATA": (("row", "chan", "corr"), data_col),
              "WEIGHT": (("row", "chan", "corr"), weight_col),
-             "FLAG": (("row", "chan", "corr"), flag_col)})
+             "FLAG": (("row", "chan"), flag_col)})
 
         output_xds_list.append(output_xds)
 

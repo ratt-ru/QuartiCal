@@ -46,12 +46,13 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         a1 = base_args.a1
         a2 = base_args.a2
         weights = base_args.weights
+        flags = base_args.flags
         t_map_arr = base_args.t_map_arr[0]  # Don't need time param mappings.
         f_map_arr_g = base_args.f_map_arr[0]  # Gain mappings.
         f_map_arr_p = base_args.f_map_arr[1]  # Parameter mappings.
         d_map_arr = base_args.d_map_arr
         gains = base_args.gains
-        flags = base_args.flags
+        gain_flags = base_args.gain_flags
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
@@ -110,6 +111,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
                             a1,
                             a2,
                             weights,
+                            flags,
                             t_map_arr,
                             f_map_arr_g,
                             f_map_arr_p,

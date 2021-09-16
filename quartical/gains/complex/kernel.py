@@ -39,12 +39,13 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         a1 = base_args.a1
         a2 = base_args.a2
         weights = base_args.weights
+        flags = base_args.flags
         t_map_arr = base_args.t_map_arr
         f_map_arr = base_args.f_map_arr
         d_map_arr = base_args.d_map_arr
         inverse_gains = base_args.inverse_gains
         gains = base_args.gains
-        flags = base_args.flags
+        gain_flags = base_args.gain_flags
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
@@ -89,6 +90,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                             a1,
                             a2,
                             weights,
+                            flags,
                             t_map_arr,
                             f_map_arr,
                             d_map_arr,
@@ -135,8 +137,8 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                cache=True,
                nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
-                    a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
-                    row_weights, active_term, corr_mode):
+                    a2, weights, flags, t_map_arr, f_map_arr, d_map_arr,
+                    row_map, row_weights, active_term, corr_mode):
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -150,8 +152,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
     loop_var = factories.loop_var_factory(corr_mode)
 
     def impl(jhj, jhr, model, gains, inverse_gains, residual, a1,
-             a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
-             row_weights, active_term, corr_mode):
+             a2, weights, flags, t_map_arr, f_map_arr, d_map_arr,
+             row_map, row_weights, active_term, corr_mode):
         _, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
@@ -207,6 +209,9 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                 a1_m, a2_m = a1[row], a2[row]
 
                 for f in range(fs, fe):
+
+                    if flags[row, f]:  # Skip flagged data points.
+                        continue
 
                     r = residual[row, f]
                     w = weights[row, f]  # Consider a map?
