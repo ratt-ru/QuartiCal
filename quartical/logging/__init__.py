@@ -2,6 +2,7 @@
 from loguru import logger
 import logging
 import sys
+from pathlib import Path
 
 
 class InterceptHandler(logging.Handler):
@@ -13,7 +14,7 @@ class InterceptHandler(logging.Handler):
         logger_opt.log(record.levelname, record.getMessage())
 
 
-def configure_loguru():
+def configure_loguru(output_dir):
     logging.basicConfig(handlers=[InterceptHandler()], level="WARNING")
 
     # Put together a formatting string for the logger. Split into pieces in
@@ -26,12 +27,15 @@ def configure_loguru():
 
     fmt = " | ".join([tim_fmt, lvl_fmt, src_fmt, msg_fmt])
 
+    output_path = Path(output_dir)
+    output_name = Path("{time:YYYYMMDD_HHmmss}.log.qc")
+
     config = {
         "handlers": [
             {"sink": sys.stderr,
              "level": "INFO",
              "format": fmt},
-            {"sink": "{time:YYYYMMDD_HHmmss}_quartical.log",
+            {"sink": str(output_path / output_name),
              "level": "DEBUG",
              "format": fmt}
         ],

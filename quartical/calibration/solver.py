@@ -7,7 +7,17 @@ from itertools import cycle
 from quartical.gains import TERM_TYPES
 
 
-meta_args_nt = namedtuple("meta_args_nt", ("iters active_term robust"))
+meta_args_nt = namedtuple(
+    "meta_args_nt", (
+        "iters",
+        "active_term",
+        "is_init",
+        "stop_frac",
+        "stop_crit",
+        "solve_per",
+        "robust"
+        )
+    )
 
 
 def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
@@ -31,15 +41,19 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     param_tup = ()
     flag_tup = ()
     results_dict = {}
+    is_initialised = {}
 
     for (term_name, term_type, term_shape, term_pshape) in term_spec_list:
+
         gain = np.zeros(term_shape, dtype=np.complex128)
 
-        # Check for initialisation data.
+        # Check for initialisation data. TODO: Parameterised terms?
         if f"{term_name}_initial_gain" in kwargs:
             gain[:] = kwargs[f"{term_name}_initial_gain"]
+            is_initialised[term_name] = True
         else:
             gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
+            is_initialised[term_name] = False
 
         flag = np.zeros(term_shape, dtype=np.uint8)
         param = np.zeros(term_pshape, dtype=gain.real.dtype)
@@ -55,7 +69,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         results_dict[f"{term_name}-convperc"] = np.atleast_2d(0.)  # float
 
     kwargs["gains"] = gain_tup
-    kwargs["flags"] = flag_tup
+    kwargs["gain_flags"] = flag_tup
     kwargs["inverse_gains"] = tuple([np.empty_like(g) for g in gain_tup])
     kwargs["params"] = param_tup
 
@@ -89,12 +103,27 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
             base_args_nt(**{k: kwargs[k] for k in base_args_nt._fields})
         term_args = \
             term_args_nt(**{k: kwargs[k] for k in term_args_nt._fields})
-        meta_args = meta_args_nt(iters, active_term, robust)
+
+        term_opts = getattr(chain_opts, term)
+
+        meta_args = meta_args_nt(iters,
+                                 active_term,
+                                 is_initialised[term_name],
+                                 solver_opts.convergence_fraction,
+                                 solver_opts.convergence_criteria,
+                                 term_opts.solve_per,
+                                 robust)
 
         jhj, info_tup = solver(base_args,
                                term_args,
                                meta_args,
                                kwargs["corr_mode"])
+
+        # After a solver is run once, it will have been initialised.
+        is_initialised[term_name] = True
+
+        if jhj.ndim == 6:
+            jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
 
         results_dict[f"{term_name}-conviter"] += \
             np.atleast_2d(info_tup.conv_iters)

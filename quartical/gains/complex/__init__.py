@@ -1,5 +1,6 @@
 from quartical.gains.gain import Gain, gain_spec_tup
 from quartical.gains.complex.kernel import complex_solver, complex_args
+from quartical.gains.complex.slow_kernel import slow_complex_solver
 
 
 class Complex(Gain):
@@ -27,3 +28,13 @@ class Complex(Gain):
                                 "GAIN_AXES": self.gain_axes})
 
         return xds
+
+
+class SlowComplex(Complex):
+
+    solver = slow_complex_solver
+
+    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
+
+        Complex.__init__(self, term_name, term_opts, data_xds, coords, tipc,
+                         fipc)

@@ -1,13 +1,15 @@
 name: QuartiCal CI Workflow
 
 # Specific github action events that you can lookup in their API
-on: [push, pull_request]
+on: [pull_request]
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
     strategy:
       matrix:
+        os: [ubuntu-18.04, ubuntu-20.04]
         python-version: ["3.7", "3.8", "3.9"]
 
     steps:
@@ -52,4 +54,8 @@ jobs:
 
       # Run the test cases
       - name: Testing Step
-        run: py.test -v tests/
+        run: py.test -v testing/tests
+
+      # Check that the help prints, suggesting that everything is ok.
+      - name: Run QuartiCal
+        run: goquartical

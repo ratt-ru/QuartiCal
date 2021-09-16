@@ -9,7 +9,7 @@ def finalise_flags(xds_list):
     """Finishes processing flags to produce writable flag data.
 
     Given a list of xarray.Dataset objects, uses the updated flag column to
-    create appropriate flags for writing to disk.
+    create appropriate flags for writing to disk. Removes all temporary flags.
 
     Args:
         xds_list: A list of xarray datasets.
@@ -22,11 +22,29 @@ def finalise_flags(xds_list):
 
     for xds in xds_list:
 
+        data_col = xds.DATA.data
         flag_col = xds.FLAG.data
+
+        # Remove QuartiCal's temporary flagging.
+        flag_col = da.where(flag_col == -1, 0, flag_col)
+
+        # Reintroduce the correlation axis.
+        flag_col = da.broadcast_to(flag_col[:, :, None],
+                                   data_col.shape,
+                                   chunks=data_col.chunks)
+
+        # Convert back to a boolean array.
+        flag_col = flag_col.astype(np.bool)
+
+        # Make the FLAG_ROW column consistent with FLAG.
         flag_row_col = da.all(flag_col, axis=(1, 2))
 
-        updated_xds = \
-            xds.assign({"FLAG_ROW": (xds.FLAG_ROW.dims, flag_row_col)})
+        updated_xds = xds.assign(
+            {
+                "FLAG": (xds.DATA.dims, flag_col),
+                "FLAG_ROW": (xds.FLAG_ROW.dims, flag_row_col)
+            }
+        )
         updated_xds.attrs["WRITE_COLS"] += ("FLAG", "FLAG_ROW")
 
         writable_xds.append(updated_xds)
@@ -50,12 +68,12 @@ def initialise_flags(data_col, weight_col, flag_col, flag_row_col):
         flags: A dask.array containing the initialized aggregate flags.
     """
 
-    return da.blockwise(_initialise_flags, ("rowlike", "chan", "corr"),
+    return da.blockwise(_initialise_flags, ("rowlike", "chan"),
                         data_col, ("rowlike", "chan", "corr"),
                         weight_col, ("rowlike", "chan", "corr"),
                         flag_col, ("rowlike", "chan", "corr"),
                         flag_row_col, ("rowlike",),
-                        dtype=flag_col.dtype,
+                        dtype=np.int8,
                         name="init_flags-" + uuid4().hex,
                         adjust_chunks=data_col.chunks,
                         align_arrays=False,
@@ -84,6 +102,9 @@ def _initialise_flags(data_col, weight_col, flag_col, flag_row_col):
 
     noweight_points = np.any(weight_col[..., (0, -1)] == 0, axis=-1)
     flags[noweight_points] = True
+
+    # At this point, if any correlation is flagged, flag other correlations.
+    flags = np.any(flags, axis=-1).astype(np.int8)
 
     return flags
 
@@ -127,6 +148,7 @@ def add_mad_graph(data_xds_list, mad_opts):
 
     for xds in data_xds_list:
         residuals = xds._RESIDUAL.data
+        weight_col = xds.WEIGHT.data
         flag_col = xds.FLAG.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
@@ -135,6 +157,7 @@ def add_mad_graph(data_xds_list, mad_opts):
 
         mad_estimate = da.blockwise(madmax, ("rowlike", "ant1", "ant2"),
                                     residuals, ("rowlike", "chan", "corr"),
+                                    weight_col, ("rowlike", "chan", "corr"),
                                     flag_col, ("rowlike", "chan", "corr"),
                                     ant1_col, ("rowlike",),
                                     ant2_col, ("rowlike",),
@@ -155,6 +178,7 @@ def add_mad_graph(data_xds_list, mad_opts):
 
         mad_flags = da.blockwise(threshold, ("rowlike", "chan", "corr"),
                                  residuals, ("rowlike", "chan", "corr"),
+                                 weight_col, ("rowlike", "chan", "corr"),
                                  bl_thresh*mad_estimate,
                                  ("rowlike", "ant1", "ant2"),
                                  gbl_thresh*med_mad_estimate,

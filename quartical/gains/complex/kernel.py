@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, literally, generated_jit, types
+from numba import prange, generated_jit
+from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (invert_gains,
                                               compute_residual,
-                                              compute_convergence)
+                                              compute_convergence,
+                                              per_array_jhj_jhr)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -28,9 +30,7 @@ complex_args = namedtuple("complex_args", ())
                nogil=True)
 def complex_solver(base_args, term_args, meta_args, corr_mode):
 
-    if not isinstance(corr_mode, types.Literal):
-        return lambda base_args, term_args, meta_args, corr_mode: \
-            literally(corr_mode)
+    coerce_literal(complex_solver, ["corr_mode"])
 
     def impl(base_args, term_args, meta_args, corr_mode):
 
@@ -39,16 +39,20 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         a1 = base_args.a1
         a2 = base_args.a2
         weights = base_args.weights
+        flags = base_args.flags
         t_map_arr = base_args.t_map_arr
         f_map_arr = base_args.f_map_arr
         d_map_arr = base_args.d_map_arr
         inverse_gains = base_args.inverse_gains
         gains = base_args.gains
-        flags = base_args.flags
+        gain_flags = base_args.gain_flags
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
+        stop_frac = meta_args.stop_frac
+        stop_crit = meta_args.stop_crit
         active_term = meta_args.active_term
+        solve_per = meta_args.solve_per
 
         n_tint, t_fint, n_ant, n_dir, n_corr = gains[active_term].shape
 
@@ -86,6 +90,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                             a1,
                             a2,
                             weights,
+                            flags,
                             t_map_arr,
                             f_map_arr,
                             d_map_arr,
@@ -93,6 +98,9 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                             row_weights,
                             active_term,
                             corr_mode)
+
+            if solve_per == "array":
+                per_array_jhj_jhr(jhj, jhr)
 
             compute_update(update,
                            jhj,
@@ -109,11 +117,13 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             # weights. Currently unsure how or why, but using unity weights
             # leads to monotonic convergence in all solution intervals.
 
-            cnv_perc = compute_convergence(gains[active_term][:], last_gain)
+            cnv_perc = compute_convergence(gains[active_term][:],
+                                           last_gain,
+                                           stop_crit)
 
             last_gain[:] = gains[active_term][:]
 
-            if cnv_perc > 0.99:
+            if cnv_perc >= stop_frac:
                 break
 
         return jhj, term_conv_info(i + 1, cnv_perc)
@@ -127,8 +137,8 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                cache=True,
                nogil=True)
 def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
-                    a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
-                    row_weights, active_term, corr_mode):
+                    a2, weights, flags, t_map_arr, f_map_arr, d_map_arr,
+                    row_map, row_weights, active_term, corr_mode):
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -142,8 +152,8 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
     loop_var = factories.loop_var_factory(corr_mode)
 
     def impl(jhj, jhr, model, gains, inverse_gains, residual, a1,
-             a2, weights, t_map_arr, f_map_arr, d_map_arr, row_map,
-             row_weights, active_term, corr_mode):
+             a2, weights, flags, t_map_arr, f_map_arr, d_map_arr,
+             row_map, row_weights, active_term, corr_mode):
         _, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
@@ -199,6 +209,9 @@ def compute_jhj_jhr(jhj, jhr, model, gains, inverse_gains, residual, a1,
                 a1_m, a2_m = a1[row], a2[row]
 
                 for f in range(fs, fe):
+
+                    if flags[row, f]:  # Skip flagged data points.
+                        continue
 
                     r = residual[row, f]
                     w = weights[row, f]  # Consider a map?

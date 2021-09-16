@@ -3,7 +3,6 @@ import xarray
 import dask.array as da
 from itertools import product
 from collections import namedtuple
-from quartical.config.internal import gains_to_chain
 from quartical.gains.gain import gain_spec_tup
 from quartical.interpolation.interpolate import (load_and_interpolate_gains,
                                                  convert_and_drop,
@@ -103,11 +102,6 @@ def opts(base_opts, interp_mode, interp_method):
     return _opts
 
 
-@pytest.fixture(scope="module")
-def chain_opts(opts):
-    return gains_to_chain(opts)
-
-
 @pytest.fixture(scope="module", params=GAIN_PROPERTIES.values())
 def _params(request):
     return request.param[0], request.param[1]
@@ -146,8 +140,7 @@ def interp_mode(request):
 
 
 @pytest.fixture(scope="module", params=["2dlinear",
-                                        "2dspline",
-                                        "smoothingspline"])
+                                        "2dspline"])
 def interp_method(request):
     return request.param
 

@@ -46,14 +46,14 @@ def construct_solver(data_xds_list,
         ant1_col = data_xds.ANTENNA1.data
         ant2_col = data_xds.ANTENNA2.data
         weight_col = data_xds.WEIGHT.data
+        flag_col = data_xds.FLAG.data
         chan_freqs = data_xds.CHAN_FREQ.data
         t_bin_arr = t_bin_list[xds_ind]
         t_map_arr = t_map_list[xds_ind]
         f_map_arr = f_map_list[xds_ind]
         d_map_arr = d_map_list[xds_ind]
         gain_terms = gain_xds_lod[xds_ind]
-        n_corr = data_xds.dims["corr"]
-        corr_mode = "diag" if n_corr == 2 else "full"  # TODO: Use int.
+        corr_mode = data_xds.dims["corr"]
 
         # Grab the number of input chunks - doing this on the data should be
         # safe.
@@ -72,6 +72,7 @@ def construct_solver(data_xds_list,
         blocker.add_input("a1", ant1_col, "r")
         blocker.add_input("a2", ant2_col, "r")
         blocker.add_input("weights", weight_col, "rfc")
+        blocker.add_input("flags", flag_col, "rf")
         blocker.add_input("t_bin_arr", t_bin_arr, "prj")  # Not always needed.
         blocker.add_input("t_map_arr", t_map_arr, "prj")
         blocker.add_input("f_map_arr", f_map_arr, "pfj")
@@ -113,7 +114,7 @@ def construct_solver(data_xds_list,
             # If there is a PARAM_SPEC on the gain xds, it is also an output.
             if hasattr(term_xds, "PARAM_SPEC"):
                 blocker.add_output(f"{term_name}-param",
-                                   "rfadpc",
+                                   "rfadp",
                                    term_xds.PARAM_SPEC,
                                    np.float64)
 
@@ -219,9 +220,9 @@ def expand_specs(gain_terms):
                     fc_p = parm_chunk_spec.fchunk[fc_ind]
                     pc = parm_chunk_spec.pchunk[0]
 
-                    parm_shape = (tc_p, fc_p, ac, dc, pc, cc)
+                    parm_shape = (tc_p, fc_p, ac, dc, pc)
                 else:
-                    parm_shape = (0,) * 6  # Used for creating a dummy array.
+                    parm_shape = (0,) * 5  # Used for creating a dummy array.
 
                 term_list.append(term_spec_tup(term_name,
                                                term_type,

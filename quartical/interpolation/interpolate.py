@@ -8,8 +8,7 @@ from daskms.experimental.zarr import xds_from_zarr
 from quartical.config.internal import yield_from
 from quartical.interpolation.interpolants import (interpolate_missing,
                                                   linear2d_interpolate_gains,
-                                                  spline2d_interpolate_gains,
-                                                  csaps2d_interpolate_gains)
+                                                  spline2d_interpolate_gains)
 
 
 def load_and_interpolate_gains(gain_xds_lod, chain_opts):
@@ -257,8 +256,6 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
             interp_xds = linear2d_interpolate_gains(interp_xds, term_xds)
         elif interp_method == "2dspline":
             interp_xds = spline2d_interpolate_gains(interp_xds, term_xds)
-        elif interp_method == "smoothingspline":
-            interp_xds = csaps2d_interpolate_gains(interp_xds, term_xds)
 
         # Convert the interpolated quantities back to gains.
         if interp_mode == "ampphase":

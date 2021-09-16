@@ -212,8 +212,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
         t_map_arr = t_map_list[xds_ind]
         f_map_arr = f_map_list[xds_ind]
         d_map_arr = d_map_list[xds_ind]
-        n_corr = data_xds.dims["corr"]
-        corr_mode = "diag" if n_corr == 2 else "full"  # TODO: Use int.
+        corr_mode = data_xds.dims["corr"]
 
         is_bda = hasattr(data_xds, "ROW_MAP")  # We are dealing with BDA.
         row_map = data_xds.ROW_MAP.data if is_bda else None

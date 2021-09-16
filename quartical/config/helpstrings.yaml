@@ -35,6 +35,12 @@ input_ms:
     Select data descriptor IDs (spectral windows) from the input data. These
     are specified as integer values and must be given as a list e.g. to select 
     ddids/SPWs 0 and 2, use [0, 2].
+  select_uv_range:
+    Select a range of uv values to include when calibrating. Practically, this 
+    treats points outside the range as having zero weight. Use zero to
+    indicate an open interval, e.g. [100, 0] would select all values greater
+    than 100, [0, 10000] would select all values less than 10000 and
+    [100, 10000] would select values greater than 100 but less than 10000.
   # chunk-jump:
   #   The jump size used in conjunction with --input-ms-chunk-on. If 0, then any 
   #   change in value is a jump. If n, then the change must be >n.
@@ -71,8 +77,11 @@ input_model:
     usually be left enabled.
 
 output:
-  gain_dir:
-    Name of directory for output gains.
+  directory:
+    Name of directory in which various QuartiCal outputs will be stored.
+  overwrite:
+    Whether or not the contents of the output directory may be overwritten.
+    Will trigger an error when False and output.directory already exists.
   products: 
     The desired output data product. Multiple data products can be specified 
     as a list e.g. [residual, corrected_residual]. Choose from [residual, 
@@ -148,6 +157,14 @@ solver:
     be used when running the solvers. The total number of threads used will be 
     dask.threads*solver.threads; if this product exceeds the number of 
     available threads, performance will suffer.
+  convergence_criteria:
+    The change in the value of the gain below which it considered to have 
+    converged. Set to zero to iterate for the number of interations specified
+    in solver.iter_recipe.
+  convergence_fraction:
+    The fraction of gain values which must converge before a solver will exit 
+    prematurely.
+  
   # mode:
   #   The mode in which the solver should operate. This is assumed to be the 
   #   same for all terms specified by --solver-gain-terms. The first part of 
@@ -192,11 +209,9 @@ gain:
   load_from:
     Load solutions from given database. 
   interp_mode:
-    Set interpolation mode. Choose from [ampphase, reim].
+    Set interpolation mode.
   interp_method:
-    Set interpolation method. Choose from [2dlinear, 2dspline, 
-    smoothingspline]. The smoothing spline implementation is is experimental 
-    and slow.
+    Set interpolation method.
   # parametrisation:
   #       type: str
   #       help: If the gain is parametric, this determines the type of

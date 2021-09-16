@@ -4,7 +4,7 @@ from quartical.config.internal import yield_from
 from loguru import logger  # noqa
 import numpy as np
 import dask.array as da
-import pathlib
+from pathlib import Path
 import shutil
 from daskms.experimental.zarr import xds_to_zarr
 from quartical.gains import TERM_TYPES
@@ -209,9 +209,13 @@ def make_net_xds_list(data_xds_list, coords_per_xds):
         net_t_chunks = np.tile(data_xds.UTIME_CHUNKS, 2).reshape(2, -1)
         net_f_chunks = np.tile(data_xds.chunks["chan"], 2).reshape(2, -1)
 
-        # TODO: The net gain doesn't understand directions (yet).
+        # Create a default config object, consistent with the net gain.
+        # NOTE: If we have a direction-dependent model, assume the net gain
+        # is also direction dependent.
+        config = Gain(direction_dependent=bool(data_xds.dims["dir"]))
+
         net_obj = TERM_TYPES["complex"]("NET",
-                                        Gain(),
+                                        config,
                                         data_xds,
                                         xds_coords,
                                         net_t_chunks,
@@ -220,6 +224,14 @@ def make_net_xds_list(data_xds_list, coords_per_xds):
         net_gain_xds_list.append(net_obj.make_xds())
 
     return net_gain_xds_list
+
+
+def combine_gains_wrapper(t_bin_arr, f_map_arr, d_map_arr, net_shape,
+                          corr_mode, *gains):
+    """Wrapper to stop dask from getting confused. See issue #99."""
+
+    return combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape,
+                         corr_mode, *gains)
 
 
 def populate_net_xds_list(net_gain_xds_list,
@@ -258,13 +270,13 @@ def populate_net_xds_list(net_gain_xds_list,
 
         gains = [x for xds in terms.values()
                  for x in (xds.gains.data, gain_schema)]
-        corr_mode = "diag" if net_shape[-1] == 2 else "full"  # TODO: Use int.
+        corr_mode = net_shape[-1]
         dtype = np.find_common_type(
             [xds.gains.dtype for xds in terms.values()], []
         )
 
         net_gain = da.blockwise(
-            combine_gains, ("time", "chan", "ant", "dir", "corr"),
+            combine_gains_wrapper, ("time", "chan", "ant", "dir", "corr"),
             t_bin_list[ind], ("param", "time", "term"),
             f_map_list[ind], ("param", "chan", "term"),
             d_map_list[ind], None,
@@ -275,7 +287,8 @@ def populate_net_xds_list(net_gain_xds_list,
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"time": net_xds.GAIN_SPEC.tchunk,
-                           "chan": net_xds.GAIN_SPEC.fchunk}
+                           "chan": net_xds.GAIN_SPEC.fchunk,
+                           "dir": net_xds.GAIN_SPEC.dchunk}
         )
 
         net_xds = net_xds.assign({"gains": (net_xds.GAIN_AXES, net_gain)})
@@ -288,8 +301,8 @@ def populate_net_xds_list(net_gain_xds_list,
 def write_gain_datasets(gain_xds_lod, net_xds_list, output_opts):
     """Write the contents of gain_xds_lol to zarr in accordance with opts."""
 
-    root_path = pathlib.Path().absolute()  # Wherever the script is being run.
-    gain_path = root_path.joinpath(output_opts.gain_dir)
+    root_path = Path(output_opts.directory).absolute()
+    gain_path = root_path / Path("gains.qc")
 
     term_names = [xds.NAME for xds in gain_xds_lod[0].values()]
 
