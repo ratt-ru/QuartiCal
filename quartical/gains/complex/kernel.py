@@ -45,7 +45,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         d_map_arr = base_args.d_map_arr
         inverse_gains = base_args.inverse_gains
         gains = base_args.gains
-        gain_flags = base_args.flags
+        gain_flags = base_args.gain_flags
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 

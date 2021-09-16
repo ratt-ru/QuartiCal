@@ -47,7 +47,7 @@ def slow_complex_solver(base_args, term_args, meta_args, corr_mode):
         f_map_arr = base_args.f_map_arr[0]  # Ignore parameter mappings.
         d_map_arr = base_args.d_map_arr
         gains = base_args.gains
-        gain_flags = base_args.flags
+        gain_flags = base_args.gain_flags
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
