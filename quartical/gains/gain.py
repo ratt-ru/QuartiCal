@@ -33,12 +33,13 @@ base_args = namedtuple(
         "a1",
         "a2",
         "weights",
+        "flags",
         "t_map_arr",
         "f_map_arr",
         "d_map_arr",
         "inverse_gains",
         "gains",
-        "flags",
+        "gain_flags",
         "row_map",
         "row_weights"
     )

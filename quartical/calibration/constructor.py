@@ -45,6 +45,7 @@ def construct_solver(data_xds_list,
         ant1_col = data_xds.ANTENNA1.data
         ant2_col = data_xds.ANTENNA2.data
         weight_col = data_xds.WEIGHT.data
+        flag_col = data_xds.FLAG.data
         chan_freqs = data_xds.CHAN_FREQ.data
         t_bin_arr = t_bin_list[xds_ind]
         t_map_arr = t_map_list[xds_ind]
@@ -70,6 +71,7 @@ def construct_solver(data_xds_list,
         blocker.add_input("a1", ant1_col, "r")
         blocker.add_input("a2", ant2_col, "r")
         blocker.add_input("weights", weight_col, "rfc")
+        blocker.add_input("flags", flag_col, "rf")
         blocker.add_input("t_bin_arr", t_bin_arr, "prj")  # Not always needed.
         blocker.add_input("t_map_arr", t_map_arr, "prj")
         blocker.add_input("f_map_arr", f_map_arr, "pfj")
