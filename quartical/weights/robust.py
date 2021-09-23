@@ -1,6 +1,7 @@
 import numpy as np
 from numba import generated_jit, jit
 import quartical.gains.general.factories as factories
+from quartical.gains.general.generics import compute_residual
 
 
 qcgjit = generated_jit(nopython=True,
@@ -15,17 +16,16 @@ qcjit = jit(nopython=True,
 
 
 @qcgjit
-def compute_inv_covariance(residuals, weights, flags, mode):
+def update_icovariance(residuals, flags, etas, icovariance, mode):
 
-    compute_covariance_inner = compute_covariance_inner_factory(mode)
+    update_covariance_inner = update_covariance_inner_factory(mode)
 
-    def impl(residuals, weights, flags, mode):
+    def impl(residuals, flags, etas, icovariance, mode):
 
         n_row, n_chan, n_corr = residuals.shape
 
         # NOTE: We don't bother with the off diagonal entries.
         covariance = np.zeros(n_corr, dtype=np.float64)
-        inv_covariance = np.zeros_like(covariance)
 
         n_unflagged = n_row * n_chan
 
@@ -35,49 +35,44 @@ def compute_inv_covariance(residuals, weights, flags, mode):
                     n_unflagged -= 1
                     continue
                 else:
-                    compute_covariance_inner(residuals[r, f],
-                                             weights[r, f],
-                                             covariance)
+                    update_covariance_inner(residuals[r, f],
+                                            etas[r, f],
+                                            covariance)
 
         if n_unflagged:
             covariance /= n_unflagged
-            inv_covariance[:] = 1/covariance
-
-        return inv_covariance
+            icovariance[:] = 1/covariance
 
     return impl
 
 
-def compute_covariance_inner_factory(mode):
+def update_covariance_inner_factory(mode):
 
     unpack = factories.unpack_factory(mode)
     unpackc = factories.unpackc_factory(mode)
 
     if mode.literal_value == 4:
-        def impl(res, w, cov):
+        def impl(res, eta, cov):
             r0, r1, r2, r3 = unpack(res)
             r0c, r1c, r2c, r3c = unpackc(res)
-            w0, w1, w2, w3 = unpack(w)
 
-            cov[0] += (r0 * w0 * r0c).real
-            cov[1] += (r1 * w1 * r1c).real
-            cov[2] += (r2 * w2 * r2c).real
-            cov[3] += (r3 * w3 * r3c).real
+            cov[0] += (r0 * eta * r0c).real
+            cov[1] += (r1 * eta * r1c).real
+            cov[2] += (r2 * eta * r2c).real
+            cov[3] += (r3 * eta * r3c).real
     elif mode.literal_value == 2:
-        def impl(res, w, cov):
+        def impl(res, eta, cov):
             r0, r1 = unpack(res)
             r0c, r1c = unpackc(res)
-            w0, w1 = unpack(w)
 
-            cov[0] += (r0 * w0 * r0c).real
-            cov[1] += (r1 * w1 * r1c).real
+            cov[0] += (r0 * eta * r0c).real
+            cov[1] += (r1 * eta * r1c).real
     elif mode.literal_value == 1:
-        def impl(res, w, cov):
+        def impl(res, eta, cov):
             r0 = unpack(res)
             r0c = unpackc(res)
-            w0 = unpack(w)
 
-            cov[0] += (r0 * w0 * r0c).real
+            cov[0] += (r0 * eta * r0c).real
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -85,11 +80,11 @@ def compute_covariance_inner_factory(mode):
 
 
 @qcgjit
-def update_weights(residuals, weights, flags, inv_covariance, dof, mode):
+def update_etas(residuals, flags, etas, icovariance, dof, mode):
 
-    update_weights_inner = update_weights_inner_factory(mode)
+    update_etas_inner = update_etas_inner_factory(mode)
 
-    def impl(residuals, weights, flags, inv_covariance, dof, mode):
+    def impl(residuals, flags, etas, icovariance, dof, mode):
 
         n_row, n_chan, n_corr = residuals.shape
 
@@ -99,40 +94,40 @@ def update_weights(residuals, weights, flags, inv_covariance, dof, mode):
                     continue
                 else:
                     numerator = dof + n_corr  # Not correct for diagonal terms.
-                    denominator = dof + update_weights_inner(residuals[r, f],
-                                                             inv_covariance)
-                    weights[r, f] = numerator/denominator
+                    denominator = dof + update_etas_inner(residuals[r, f],
+                                                          icovariance)
+                    etas[r, f] = numerator/denominator
 
     return impl
 
 
-def update_weights_inner_factory(mode):
+def update_etas_inner_factory(mode):
 
     unpack = factories.unpack_factory(mode)
     unpackc = factories.unpackc_factory(mode)
 
     if mode.literal_value == 4:
-        def impl(res, inv_cov):
+        def impl(res, icov):
             r0, r1, r2, r3 = unpack(res)
             r0c, r1c, r2c, r3c = unpackc(res)
-            ic0, ic1, ic2, ic3 = unpack(inv_cov)
+            ic0, ic1, ic2, ic3 = unpack(icov)
 
             return (r0 * ic0 * r0c).real + \
                    (r1 * ic1 * r1c).real + \
                    (r2 * ic2 * r2c).real + \
                    (r3 * ic3 * r3c).real
     elif mode.literal_value == 2:
-        def impl(res, inv_cov):
+        def impl(res, icov):
             r0, r1 = unpack(res)
             r0c, r1c = unpackc(res)
-            ic0, ic1 = unpack(inv_cov)
+            ic0, ic1 = unpack(icov)
 
             return (r0 * ic0 * r0c).real + (r1 * ic1 * r1c).real
     elif mode.literal_value == 1:
-        def impl(res, inv_cov):
+        def impl(res, icov):
             r0 = unpack(res)
             r0c = unpackc(res)
-            ic0 = unpack(inv_cov)
+            ic0 = unpack(icov)
 
             return (r0 * ic0 * r0c).real
     else:
@@ -165,9 +160,9 @@ def dof_variable(dof):
 
 
 @qcjit
-def dof_constant(weights, flags, dof):
+def dof_constant(etas, flags, dof, n_corr):
 
-    n_row, n_chan, n_corr = weights.shape
+    n_row, n_chan = etas.shape
 
     n_unflagged = n_row * n_chan
 
@@ -178,8 +173,8 @@ def dof_constant(weights, flags, dof):
                 n_unflagged -= 1
                 continue
             else:
-                w = weights[r, f, 0]  # We have the same weight on all corrs.
-                constant += np.log(w) - w
+                eta = etas[r, f]  # We have the same weight on all corrs.
+                constant += np.log(eta) - eta
 
     if n_unflagged:
         constant /= n_unflagged
@@ -188,9 +183,9 @@ def dof_constant(weights, flags, dof):
 
 
 @qcjit
-def compute_dof(weights, flags, dof):
+def compute_dof(etas, flags, dof, n_corr):
 
-    constant = dof_constant(weights, flags, dof)
+    constant = dof_constant(etas, flags, dof, n_corr)
 
     left = 1
     right = 30
@@ -209,3 +204,87 @@ def compute_dof(weights, flags, dof):
             left = mid
 
     return mid
+
+
+@qcjit
+def mean_weight(weights, flags):
+
+    n_row, n_chan, n_corr = weights.shape
+
+    mean = np.zeros(n_corr, dtype=weights.dtype)
+
+    n_unflagged = n_row * n_chan
+
+    for r in range(n_row):
+        for f in range(n_chan):
+            if flags[r, f]:
+                n_unflagged -= 1
+                continue
+            else:
+                for c in range(n_corr):
+                    mean[c] += weights[r, f, c]
+
+    if n_unflagged:
+        mean /= n_unflagged
+
+    return mean
+
+
+@qcjit
+def update_weights(weights, etas, icovariance):
+
+    n_row, n_chan, n_corr = weights.shape
+
+    for r in range(n_row):
+        for f in range(n_chan):
+            for c in range(n_corr):
+
+                weights[r, f, c] = etas[r, f] * icovariance[c]
+
+
+@qcgjit
+def robust_reweighting(base_args, meta_args, etas, icovariance, dof, mode):
+
+    def impl(base_args, meta_args, etas, icovariance, dof, mode):
+        model = base_args.model
+        data = base_args.data
+        a1 = base_args.a1
+        a2 = base_args.a2
+        weights = base_args.weights
+        flags = base_args.flags
+        t_map_arr = base_args.t_map_arr[0]  # Ignore parameter mappings.
+        f_map_arr = base_args.f_map_arr[0]  # Ignore parameter mappings.
+        d_map_arr = base_args.d_map_arr
+        gains = base_args.gains
+        row_map = base_args.row_map
+        row_weights = base_args.row_weights
+
+        residuals = compute_residual(data,
+                                     model,
+                                     gains,
+                                     a1,
+                                     a2,
+                                     t_map_arr,
+                                     f_map_arr,
+                                     d_map_arr,
+                                     row_map,
+                                     row_weights,
+                                     mode)
+
+        # First reweighting - we have already calibrated with MS weights.
+        # This tries to approximate what that means in terms of initial values.
+        if np.all(icovariance == 0):
+            icovariance[:] = mean_weight(weights, flags)
+            update_etas(residuals, flags, etas, icovariance, dof, mode)
+
+        update_icovariance(residuals, flags, etas, icovariance, mode)
+
+        dof = compute_dof(etas, flags, dof, mode)
+
+        update_etas(residuals, flags, etas, icovariance, dof, mode)
+
+        update_weights(weights, etas, icovariance)
+
+        return dof
+
+    return impl

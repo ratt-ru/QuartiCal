@@ -5,6 +5,7 @@ from numba import set_num_threads
 from collections import namedtuple
 from itertools import cycle
 from quartical.gains import TERM_TYPES
+from quartical.weights.robust import robust_reweighting
 
 
 meta_args_nt = namedtuple(
@@ -82,6 +83,11 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     kwargs["weights"] = np.require(kwargs["weights"], requirements=['W', 'O'])
     results_dict["weights"] = kwargs["weights"]
 
+    if solver_opts.robust:
+        etas = np.ones_like(kwargs["weights"][..., 0])
+        icovariance = np.zeros(kwargs["corr_mode"], np.float64)
+        dof = 5
+
     for term, iters in zip(cycle(terms), iter_recipe):
 
         active_term = terms.index(term)
@@ -118,6 +124,16 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                term_args,
                                meta_args,
                                kwargs["corr_mode"])
+
+        if solver_opts.robust:
+
+            dof = robust_reweighting(
+                base_args,
+                meta_args,
+                etas,
+                icovariance,
+                dof,
+                kwargs["corr_mode"])
 
         # After a solver is run once, it will have been initialised.
         is_initialised[term_name] = True
