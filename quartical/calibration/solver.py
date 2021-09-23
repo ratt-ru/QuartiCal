@@ -84,7 +84,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     results_dict["weights"] = kwargs["weights"]
 
     if solver_opts.robust:
-        etas = np.ones_like(kwargs["weights"][..., 0])
+        etas = np.zeros_like(kwargs["weights"][..., 0])
         icovariance = np.zeros(kwargs["corr_mode"], np.float64)
         dof = 5
 
