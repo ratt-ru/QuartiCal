@@ -58,4 +58,6 @@ jobs:
 
       # Check that the help prints, suggesting that everything is ok.
       - name: Run QuartiCal
-        run: set +e goquartical
+        run:
+          set +e
+          goquartical
