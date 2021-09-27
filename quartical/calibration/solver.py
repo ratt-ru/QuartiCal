@@ -88,7 +88,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         icovariance = np.zeros(kwargs["corr_mode"], np.float64)
         dof = 5
 
-    for term, iters in zip(cycle(terms), iter_recipe):
+    for ind, (term, iters) in enumerate(zip(cycle(terms), iter_recipe)):
 
         active_term = terms.index(term)
         term_name, term_type, _, _ = term_spec_list[active_term]
@@ -125,15 +125,21 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                meta_args,
                                kwargs["corr_mode"])
 
-        if solver_opts.robust:
+        # If reweighting is enabled, do it when the epoch changes, except
+        # for the final epoch - we don't reweight if we won't solve again.
+        if solver_opts.robust and ind != (len(iter_recipe) - 1):
+            current_epoch = ind // len(terms)
+            next_epoch = (ind + 1) // len(terms)
 
-            dof = robust_reweighting(
-                base_args,
-                meta_args,
-                etas,
-                icovariance,
-                dof,
-                kwargs["corr_mode"])
+            if current_epoch != next_epoch:
+
+                dof = robust_reweighting(
+                    base_args,
+                    meta_args,
+                    etas,
+                    icovariance,
+                    dof,
+                    kwargs["corr_mode"])
 
         # After a solver is run once, it will have been initialised.
         is_initialised[term_name] = True
