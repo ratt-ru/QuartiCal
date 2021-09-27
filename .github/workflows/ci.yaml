@@ -40,7 +40,7 @@ jobs:
           path: |
             ~/measures
             ~/.casarc
-        
+
       - name: Download and install CASA Measures Data
         if: steps.load-cached-casa-measures.outputs.cache-hit != 'true'
         run: |
@@ -59,12 +59,4 @@ jobs:
       # Check that the help prints, suggesting that everything is ok.
       - name: Run QuartiCal
         id: runhelp
-        run: |
-          set +e
-          goquartical
-          echo ::set-output name=exit_status::$?
-      
-      - name: Check on failures
-        if: steps.runhelp.outputs.exit_status != 0
-        run: exit 1
-
+        run: set -e goquartical
