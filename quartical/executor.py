@@ -2,6 +2,7 @@
 # Sets up logger - hereafter import logger from Loguru.
 from contextlib import ExitStack
 from loguru import logger
+import sys
 import dask
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster, performance_report
@@ -20,7 +21,7 @@ from quartical.gains.datasets import write_gain_datasets
 # from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 
 
-@logger.catch
+@logger.catch(onerror=lambda _: sys.exit(1))
 def execute():
     with ExitStack() as stack:
         _execute(stack)
