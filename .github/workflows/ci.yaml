@@ -59,7 +59,7 @@ jobs:
       # Check that the help prints, suggesting that everything is ok.
       - name: Run QuartiCal
         id: runhelp
-        run:
+        run: |
           set +e
           goquartical
           echo ::set-output name=exit_status::$?
