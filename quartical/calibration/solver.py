@@ -84,6 +84,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     results_dict["weights"] = kwargs["weights"]
 
     if solver_opts.robust:
+        final_epoch = len(iter_recipe) // len(terms)
         etas = np.zeros_like(kwargs["weights"][..., 0])
         icovariance = np.zeros(kwargs["corr_mode"], np.float64)
         dof = 5
@@ -127,11 +128,11 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
 
         # If reweighting is enabled, do it when the epoch changes, except
         # for the final epoch - we don't reweight if we won't solve again.
-        if solver_opts.robust and ind != (len(iter_recipe) - 1):
+        if solver_opts.robust:
             current_epoch = ind // len(terms)
             next_epoch = (ind + 1) // len(terms)
 
-            if current_epoch != next_epoch:
+            if current_epoch != next_epoch and next_epoch != final_epoch:
 
                 dof = robust_reweighting(
                     base_args,
