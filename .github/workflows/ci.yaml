@@ -59,4 +59,4 @@ jobs:
       # Check that the help prints, suggesting that everything is ok.
       - name: Run QuartiCal
         id: runhelp
-        run: set -e goquartical
+        run: set -e && goquartical
