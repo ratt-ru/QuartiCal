@@ -82,6 +82,10 @@ def read_xds_list(model_columns, ms_opts):
 
     schema = {cn: {'dims': ('chan', 'corr')} for cn in model_columns}
 
+    known_weight_cols = ("WEIGHT", "WEIGHT_SPECTRUM")
+    if ms_opts.weight_column not in known_weight_cols:
+        schema[ms_opts.weight_column] = {'dims': ('chan', 'corr')}
+
     data_xds_list = xds_from_ms(
         ms_opts.path,
         columns=columns,
