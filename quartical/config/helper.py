@@ -4,8 +4,6 @@ import textwrap
 import re
 from colorama import Fore, Style
 from pathlib import Path
-import traceback
-import omegaconf
 from omegaconf import OmegaConf as oc
 from dataclasses import fields, _MISSING_TYPE, is_dataclass
 from quartical.config.external import finalize_structure
@@ -39,13 +37,7 @@ def populate(typ, help_str, help_dict=None):
     for fld in flds:
         fld_name, fld_type = fld.name, fld.type
         help_dict[fld_name] = {}
-        try:
-            nested = populate(fld_type,
-                              help_str[fld_name],
-                              help_dict[fld_name])
-        except omegaconf.errors.ConfigKeyError:
-            traceback.print_exc()
-            sys.exit("Helpfile is missing entries. This is a bug.")
+        nested = populate(fld_type, help_str[fld_name], help_dict[fld_name])
         if not nested:
             msg = f"{help_str[fld_name]} "
             if fld.metadata.get("choices", None):
