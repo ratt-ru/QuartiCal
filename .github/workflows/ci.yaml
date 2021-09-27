@@ -53,10 +53,9 @@ jobs:
         run: python -m pip install .
 
       # Run the test cases
-      # - name: Testing Step
-      #   run: py.test -v testing/tests
+      - name: Testing Step
+        run: py.test -v testing/tests
 
       # Check that the help prints, suggesting that everything is ok.
       - name: Run QuartiCal
         run: goquartical
-        continue-on-error: false
