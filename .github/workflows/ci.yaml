@@ -59,3 +59,4 @@ jobs:
       # Check that the help prints, suggesting that everything is ok.
       - name: Run QuartiCal
         run: goquartical
+        continue-on-error: false
