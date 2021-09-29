@@ -89,10 +89,9 @@ output:
     Whether or not the contents of the output directory may be overwritten.
     Will trigger an error when False and output.directory already exists.
   products:
-    The desired output data product. Multiple data products can be specified
-    as a list e.g. [residual, corrected_residual]. Choose from [residual,
-    corrected_residual, corrected_data]. All modes generate gains, the
-    default doesn't produce a visibility output.
+    The desired output data products. Multiple data products can be specified
+    as a list e.g. [residual, corrected_residual]. QuartiCal always produces
+    gains. Any required measurement set outputs should be specified here.
   columns:
     Output MS column names for visibility outputs (if applicable).
     Column names will be used in order, matching the order of output.products.

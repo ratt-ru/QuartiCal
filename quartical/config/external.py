@@ -92,7 +92,8 @@ class Outputs(Input):
         metadata=dict(choices=["corrected_data",
                                "corrected_residual",
                                "residual",
-                               "weights"])
+                               "weights",
+                               "corrected_weights"])
     )
     columns: Optional[List[str]] = None
     net_gain: bool = False

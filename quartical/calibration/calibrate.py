@@ -295,7 +295,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
                            "chan": data_col.chunks[1]})
 
         # We may also want to form corrected weights. Not technicallay a
-        # visibility output but close enough.
+        # visibility output but close enough. TODO: Change calling function.
         corrected_weights = da.blockwise(
             dask_corrected_weights, ("rowlike", "chan", "corr"),
             weight_col, ("rowlike", "chan", "corr"),
@@ -308,7 +308,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
             *((row_weights, ("rowlike",)) if is_bda else (None, None)),
             corr_mode, None,
             *gain_list,
-            dtype=residual.dtype,
+            dtype=weight_col.dtype,
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],

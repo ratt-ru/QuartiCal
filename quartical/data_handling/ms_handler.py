@@ -225,7 +225,8 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
         product_map = {"residual": "_RESIDUAL",
                        "corrected_residual": "_CORRECTED_RESIDUAL",
                        "corrected_data": "_CORRECTED_DATA",
-                       "weights": "_WEIGHT"}
+                       "weights": "_WEIGHT",
+                       "corrected_weights": "_CORRECTED_WEIGHTS"}
 
         # Rename QuartiCal's underscore prefixed results so that they will be
         # written to the appropriate column.
