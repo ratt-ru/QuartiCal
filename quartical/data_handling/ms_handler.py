@@ -74,6 +74,7 @@ def read_xds_list(model_columns, ms_opts):
                "FLAG", "FLAG_ROW", "UVW")
     columns += (ms_opts.data_column,)
     columns += (ms_opts.weight_column,) if ms_opts.weight_column else ()
+    columns += (ms_opts.sigma_column,) if ms_opts.sigma_column else ()
     columns += (*model_columns,)
 
     available_columns = list(xds_from_ms(ms_opts.path)[0].keys())
@@ -286,7 +287,10 @@ def preprocess_xds_list(xds_list, ms_opts):
 
         data_col = da.where(da.isfinite(data_col), data_col, 0)
 
-        weight_col = initialize_weights(xds, data_col, ms_opts.weight_column)
+        weight_col = initialize_weights(xds,
+                                        data_col,
+                                        ms_opts.weight_column,
+                                        ms_opts.sigma_column)
 
         flag_col = initialise_flags(data_col,
                                     weight_col,

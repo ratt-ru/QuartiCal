@@ -29,7 +29,8 @@ class Input:
 class MSInputs(Input):
     path: str = "???"
     data_column: str = "DATA"
-    weight_column: Optional[str] = "???"
+    sigma_column: Optional[str] = None
+    weight_column: Optional[str] = None
     time_chunk: str = "0"
     freq_chunk: str = "0"
     is_bda: bool = False
@@ -57,6 +58,9 @@ class MSInputs(Input):
 
         assert len(self.select_uv_range) == 2, \
             "input_ms.select_uv_range expects a two-element list."
+
+        assert not (self.sigma_column and self.weight_column), \
+            "sigma_column and weight_column are mutually exclusive."
 
 
 @dataclass
