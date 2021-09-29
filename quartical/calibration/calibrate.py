@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
 from quartical.gains.general.generics import (compute_residual,
-                                              compute_corrected_residual)
+                                              compute_corrected_residual,
+                                              compute_corrected_weights)
 # from quartical.statistics.statistics import (assign_interval_stats,
 #                                              assign_post_solve_chisq,
 #                                              assign_presolve_data_stats,)
@@ -49,6 +50,16 @@ def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
     return compute_corrected_residual(residual, gains, a1, a2, t_map_arr[0],
                                       f_map_arr[0], d_map_arr, row_map,
                                       row_weights, corr_mode)
+
+
+def dask_corrected_weights(weights, a1, a2, t_map_arr, f_map_arr,
+                           d_map_arr, row_map, row_weights, corr_mode,
+                           *gains):
+    """Thin wrapper to handle an unknown number of input gains."""
+
+    return compute_corrected_weights(weights, gains, a1, a2, t_map_arr[0],
+                                     f_map_arr[0], d_map_arr, row_map,
+                                     row_weights, corr_mode)
 
 
 def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
@@ -206,6 +217,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
     for xds_ind, data_xds in enumerate(data_xds_list):
         data_col = data_xds.DATA.data
         model_col = data_xds.MODEL_DATA.data
+        weight_col = data_xds.WEIGHT.data
         ant1_col = data_xds.ANTENNA1.data
         ant2_col = data_xds.ANTENNA2.data
         gain_terms = solved_gain_xds_lod[xds_ind]
@@ -282,12 +294,34 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
             adjust_chunks={"rowlike": data_col.chunks[0],
                            "chan": data_col.chunks[1]})
 
+        # We may also want to form corrected weights. Not technicallay a
+        # visibility output but close enough.
+        corrected_weights = da.blockwise(
+            dask_corrected_weights, ("rowlike", "chan", "corr"),
+            weight_col, ("rowlike", "chan", "corr"),
+            ant1_col, ("rowlike",),
+            ant2_col, ("rowlike",),
+            t_map_arr, ("gp", "rowlike", "term"),
+            f_map_arr, ("gp", "chan", "term"),
+            d_map_arr, None,
+            *((row_map, ("rowlike",)) if is_bda else (None, None)),
+            *((row_weights, ("rowlike",)) if is_bda else (None, None)),
+            corr_mode, None,
+            *gain_list,
+            dtype=residual.dtype,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"rowlike": data_col.chunks[0],
+                           "chan": data_col.chunks[1]}
+        )
+
         # QuartiCal will assign these to the xarray.Datasets as the following
         # underscore prefixed data vars. This is done to avoid overwriting
         # input data prematurely.
         visibility_outputs = {"_RESIDUAL": residual,
                               "_CORRECTED_RESIDUAL": corrected_residual,
-                              "_CORRECTED_DATA": corrected_data}
+                              "_CORRECTED_DATA": corrected_data,
+                              "_CORRECTED_WEIGHTS": corrected_weights}
 
         dims = data_xds.DATA.dims  # All visiblity columns share these dims.
         data_vars = {k: (dims, v) for k, v in visibility_outputs.items()}
