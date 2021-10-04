@@ -94,12 +94,6 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         active_term = terms.index(term)
         term_name, term_type, _, _ = term_spec_list[active_term]
 
-        if iters == 0:
-            # TODO: Actually compute it in this special case?
-            results_dict[f"{term_name}-jhj"] = \
-                np.zeros_like(results_dict[f"{term_name}-gain"])
-            continue
-
         term_type_cls = TERM_TYPES[term_type]
 
         solver = term_type_cls.solver
@@ -121,10 +115,18 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                  term_opts.solve_per,
                                  robust)
 
-        jhj, info_tup = solver(base_args,
-                               term_args,
-                               meta_args,
-                               kwargs["corr_mode"])
+        if iters != 0:
+            jhj, info_tup = solver(base_args,
+                                   term_args,
+                                   meta_args,
+                                   kwargs["corr_mode"])
+
+            # After a solver is run once, it will have been initialised.
+            is_initialised[term_name] = True
+        else:
+            # TODO: Actually compute it in this special case?
+            jhj = np.zeros_like(results_dict[f"{term_name}-gain"])
+            info_tup = (0, 0)
 
         # If reweighting is enabled, do it when the epoch changes, except
         # for the final epoch - we don't reweight if we won't solve again.
@@ -142,16 +144,12 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                     dof,
                     kwargs["corr_mode"])
 
-        # After a solver is run once, it will have been initialised.
-        is_initialised[term_name] = True
-
+        # TODO: Ugly hack for larger jhj matrices. Refine.
         if jhj.ndim == 6:
             jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
 
-        results_dict[f"{term_name}-conviter"] += \
-            np.atleast_2d(info_tup.conv_iters)
-        results_dict[f"{term_name}-convperc"] += \
-            np.atleast_2d(info_tup.conv_perc)
+        results_dict[f"{term_name}-conviter"] += np.atleast_2d(info_tup[0])
+        results_dict[f"{term_name}-convperc"] += np.atleast_2d(info_tup[1])
         results_dict[f"{term_name}-jhj"] = jhj
 
     gc.collect()
