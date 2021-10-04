@@ -29,7 +29,8 @@ class Input:
 class MSInputs(Input):
     path: str = "???"
     data_column: str = "DATA"
-    weight_column: Optional[str] = "???"
+    sigma_column: Optional[str] = None
+    weight_column: Optional[str] = None
     time_chunk: str = "0"
     freq_chunk: str = "0"
     is_bda: bool = False
@@ -57,6 +58,9 @@ class MSInputs(Input):
 
         assert len(self.select_uv_range) == 2, \
             "input_ms.select_uv_range expects a two-element list."
+
+        assert not (self.sigma_column and self.weight_column), \
+            "sigma_column and weight_column are mutually exclusive."
 
 
 @dataclass
@@ -87,7 +91,9 @@ class Outputs(Input):
         default=None,
         metadata=dict(choices=["corrected_data",
                                "corrected_residual",
-                               "residual"])
+                               "residual",
+                               "weights",
+                               "corrected_weights"])
     )
     columns: Optional[List[str]] = None
     net_gain: bool = False
@@ -115,6 +121,7 @@ class MadFlags(Input):
 class Solver(Input):
     terms: List[str] = field(default_factory=lambda: ["G"])
     iter_recipe: List[int] = field(default_factory=lambda: [25])
+    robust: bool = False
     threads: int = 1
     convergence_fraction: float = 0.99
     convergence_criteria: float = 1e-6

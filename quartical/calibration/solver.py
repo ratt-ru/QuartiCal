@@ -5,6 +5,7 @@ from numba import set_num_threads
 from collections import namedtuple
 from itertools import cycle
 from quartical.gains import TERM_TYPES
+from quartical.weights.robust import robust_reweighting
 
 
 meta_args_nt = namedtuple(
@@ -14,7 +15,8 @@ meta_args_nt = namedtuple(
         "is_init",
         "stop_frac",
         "stop_crit",
-        "solve_per"
+        "solve_per",
+        "robust"
         )
     )
 
@@ -74,17 +76,23 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
 
     terms = solver_opts.terms
     iter_recipe = solver_opts.iter_recipe
+    robust = solver_opts.robust
 
-    for term, iters in zip(cycle(terms), iter_recipe):
+    # TODO: Analyse the impact of the following. This is necessary if we want
+    # to mutate the weights, as we may end up with an unwritable array.
+    kwargs["weights"] = np.require(kwargs["weights"], requirements=['W', 'O'])
+    results_dict["weights"] = kwargs["weights"]
+
+    if solver_opts.robust:
+        final_epoch = len(iter_recipe) // len(terms)
+        etas = np.zeros_like(kwargs["weights"][..., 0])
+        icovariance = np.zeros(kwargs["corr_mode"], np.float64)
+        dof = 5
+
+    for ind, (term, iters) in enumerate(zip(cycle(terms), iter_recipe)):
 
         active_term = terms.index(term)
         term_name, term_type, _, _ = term_spec_list[active_term]
-
-        if iters == 0:
-            # TODO: Actually compute it in this special case?
-            results_dict[f"{term_name}-jhj"] = \
-                np.zeros_like(results_dict[f"{term_name}-gain"])
-            continue
 
         term_type_cls = TERM_TYPES[term_type]
 
@@ -104,23 +112,44 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                  is_initialised[term_name],
                                  solver_opts.convergence_fraction,
                                  solver_opts.convergence_criteria,
-                                 term_opts.solve_per)
+                                 term_opts.solve_per,
+                                 robust)
 
-        jhj, info_tup = solver(base_args,
-                               term_args,
-                               meta_args,
-                               kwargs["corr_mode"])
+        if iters != 0:
+            jhj, info_tup = solver(base_args,
+                                   term_args,
+                                   meta_args,
+                                   kwargs["corr_mode"])
 
-        # After a solver is run once, it will have been initialised.
-        is_initialised[term_name] = True
+            # After a solver is run once, it will have been initialised.
+            is_initialised[term_name] = True
+        else:
+            # TODO: Actually compute it in this special case?
+            jhj = np.zeros_like(results_dict[f"{term_name}-gain"])
+            info_tup = (0, 0)
 
+        # If reweighting is enabled, do it when the epoch changes, except
+        # for the final epoch - we don't reweight if we won't solve again.
+        if solver_opts.robust:
+            current_epoch = ind // len(terms)
+            next_epoch = (ind + 1) // len(terms)
+
+            if current_epoch != next_epoch and next_epoch != final_epoch:
+
+                dof = robust_reweighting(
+                    base_args,
+                    meta_args,
+                    etas,
+                    icovariance,
+                    dof,
+                    kwargs["corr_mode"])
+
+        # TODO: Ugly hack for larger jhj matrices. Refine.
         if jhj.ndim == 6:
             jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
 
-        results_dict[f"{term_name}-conviter"] += \
-            np.atleast_2d(info_tup.conv_iters)
-        results_dict[f"{term_name}-convperc"] += \
-            np.atleast_2d(info_tup.conv_perc)
+        results_dict[f"{term_name}-conviter"] += np.atleast_2d(info_tup[0])
+        results_dict[f"{term_name}-convperc"] += np.atleast_2d(info_tup[1])
         results_dict[f"{term_name}-jhj"] = jhj
 
     gc.collect()
