@@ -7,6 +7,8 @@ def madmax(resid_arr, weights, flags, a1, a2, n_ant):
 
     median_per_bl = np.zeros((1, n_ant, n_ant), dtype=resid_arr.real.dtype)
 
+    _, _, n_corr = resid_arr.shape
+
     for a in range(n_ant):
         for b in range(a + 1, n_ant):
 
@@ -20,9 +22,9 @@ def madmax(resid_arr, weights, flags, a1, a2, n_ant):
                 median_per_bl[0, a, b] = np.inf
                 continue
 
-            bl_resid = resid_arr[bl_sel].flatten()
-            bl_weights = weights[bl_sel].flatten()
-            bl_flags = flags[bl_sel].flatten()
+            bl_resid = resid_arr[bl_sel].reshape(-1, n_corr)
+            bl_weights = weights[bl_sel].reshape(-1, n_corr)
+            bl_flags = flags[bl_sel].flatten()  # No correlation axis.
 
             abs_bl_resid = \
                 np.sqrt((bl_resid.conj() * bl_weights * bl_resid).real)
@@ -42,7 +44,7 @@ def threshold(resid_arr, weights, mad_ests, med_mad_ests, flags, a1, a2):
 
     n_row, n_chan, n_corr = resid_arr.shape
 
-    bad_values = np.zeros(resid_arr.shape, dtype=np.bool_)
+    bad_values = np.zeros_like(flags)
 
     sigma = 1.4826
 
@@ -58,10 +60,8 @@ def threshold(resid_arr, weights, mad_ests, med_mad_ests, flags, a1, a2):
                 r_conj = r.conjugate()
                 w = weights[row, chan, corr]
 
-                bad_values[row, chan, corr] = \
-                    np.sqrt((r_conj * w * r).real) > thr
-
-            if np.any(bad_values[row, chan]):
-                bad_values[row, chan] = True
+                if np.sqrt((r_conj * w * r).real) > thr:
+                    bad_values[row, chan] = True
+                    break
 
     return bad_values

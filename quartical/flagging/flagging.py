@@ -158,7 +158,7 @@ def add_mad_graph(data_xds_list, mad_opts):
         mad_estimate = da.blockwise(madmax, ("rowlike", "ant1", "ant2"),
                                     residuals, ("rowlike", "chan", "corr"),
                                     weight_col, ("rowlike", "chan", "corr"),
-                                    flag_col, ("rowlike", "chan", "corr"),
+                                    flag_col, ("rowlike", "chan"),
                                     ant1_col, ("rowlike",),
                                     ant2_col, ("rowlike",),
                                     n_ant, None,
@@ -176,14 +176,14 @@ def add_mad_graph(data_xds_list, mad_opts):
 
         row_chunks = residuals.chunks[0]
 
-        mad_flags = da.blockwise(threshold, ("rowlike", "chan", "corr"),
+        mad_flags = da.blockwise(threshold, ("rowlike", "chan"),
                                  residuals, ("rowlike", "chan", "corr"),
                                  weight_col, ("rowlike", "chan", "corr"),
                                  bl_thresh*mad_estimate,
                                  ("rowlike", "ant1", "ant2"),
                                  gbl_thresh*med_mad_estimate,
                                  ("rowlike",),
-                                 flag_col, ("rowlike", "chan", "corr"),
+                                 flag_col, ("rowlike", "chan"),
                                  ant1_col, ("rowlike",),
                                  ant2_col, ("rowlike",),
                                  dtype=np.bool_,
@@ -191,10 +191,9 @@ def add_mad_graph(data_xds_list, mad_opts):
                                  concatenate=True,
                                  adjust_chunks={"rowlike": row_chunks},)
 
-        flag_col = da.where(mad_flags, True, flag_col)
+        flag_col = da.where(mad_flags, 1, flag_col)
 
-        flagged_data_xds = xds.assign(
-            {"FLAG": (("row", "chan", "corr"), flag_col)})
+        flagged_data_xds = xds.assign({"FLAG": (("row", "chan"), flag_col)})
 
         flagged_data_xds_list.append(flagged_data_xds)
 
