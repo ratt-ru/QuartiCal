@@ -165,6 +165,135 @@ def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
     return impl
 
 
+@qcgjit
+def compute_corrected_weights(weights, gain_list, a1, a2, t_map_arr,
+                              f_map_arr, d_map_arr, row_map, row_weights,
+                              corr_mode):
+
+    coerce_literal(compute_corrected_weights, ["corr_mode"])
+
+    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
+    v1ct_imul_v2 = factories.v1ct_imul_v2_factory(corr_mode)
+    iadd = factories.iadd_factory(corr_mode)
+    iunpack = factories.iunpack_factory(corr_mode)
+    iunpackct = factories.iunpackct_factory(corr_mode)
+    valloc = factories.valloc_factory(corr_mode)
+    corrected_weights_buffer = corrected_weights_buffer_factory(corr_mode)
+    corrected_weights_inner = corrected_weights_inner_factory(corr_mode)
+
+    def impl(weights, gain_list, a1, a2, t_map_arr, f_map_arr,
+             d_map_arr, row_map, row_weights, corr_mode):
+
+        corrected_weights = np.zeros_like(weights)
+
+        n_rows, n_chan, _ = get_dims(weights, row_map)
+        n_gains = len(gain_list)
+
+        w = valloc(np.float64)
+
+        gp = valloc(np.complex128)
+        gq = valloc(np.complex128)
+
+        buffer = corrected_weights_buffer()
+
+        for row_ind in range(n_rows):
+
+            row = get_row(row_ind, row_map)
+            a1_m, a2_m = a1[row], a2[row]
+
+            for f in range(n_chan):
+
+                iunpack(w, weights[row, f])
+                cw = corrected_weights[row, f]
+
+                for g in range(n_gains):
+
+                    t_m = t_map_arr[row_ind, g]
+                    f_m = f_map_arr[f, g]
+                    gain = gain_list[g][t_m, f_m]
+
+                    if g == 0:
+                        iunpack(gp, gain[a1_m, 0])
+                        iunpackct(gq, gain[a2_m, 0])
+                    else:
+                        v1_imul_v2(gp, gain[a1_m, 0], gp)
+                        v1ct_imul_v2(gain[a2_m, 0], gq, gq)
+
+                corrected_weights_inner(w, gp, gq, buffer)
+
+                imul_rweight(w, w, row_weights, row_ind)
+                iadd(cw, w)
+
+        return corrected_weights
+
+    return impl
+
+
+def corrected_weights_inner_factory(corr_mode):
+
+    a_kron_bt = factories.a_kron_bt_factory(corr_mode)
+    unpack = factories.unpack_factory(corr_mode)
+
+    if corr_mode.literal_value == 4:
+        def impl(weights, gain_p, gain_q, buffer):
+
+            a_kron_bt(gain_p, gain_q, buffer)
+
+            w_0, w_1, w_2, w_3 = unpack(weights)
+
+            for i in range(4):
+
+                k_0, k_1, k_2, k_3 = unpack(buffer[:, i])
+
+                weights[i] = (k_0.conjugate() * w_0 * k_0).real + \
+                             (k_1.conjugate() * w_1 * k_1).real + \
+                             (k_2.conjugate() * w_2 * k_2).real + \
+                             (k_3.conjugate() * w_3 * k_3).real
+
+    elif corr_mode.literal_value == 2:
+        def impl(weights, gain_p, gain_q, buffer):
+            gp_00, gp_11 = unpack(gain_p)
+            gq_00, gq_11 = unpack(gain_q)
+            w_00, w_11 = unpack(weights)
+
+            gpgq_00 = gp_00*gq_00
+            gpgq_11 = gp_11*gq_11
+
+            weights[0] = (gpgq_00.conjugate() * w_00 * gpgq_00).real
+            weights[1] = (gpgq_11.conjugate() * w_11 * gpgq_11).real
+    elif corr_mode.literal_value == 1:
+        def impl(weights, gain_p, gain_q, buffer):
+            gp_00 = unpack(gain_p)
+            gq_00 = unpack(gain_q)
+            w_00 = unpack(weights)
+
+            gpgq_00 = gp_00*gq_00
+
+            weights[0] = (gpgq_00.conjugate() * w_00 * gpgq_00).real
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return factories.qcjit(impl)
+
+
+def corrected_weights_buffer_factory(corr_mode):
+
+    if corr_mode.literal_value == 4:
+        def impl():
+            return np.zeros((4, 4), dtype=np.complex128)
+    elif corr_mode.literal_value == 2:
+        def impl():
+            return np.zeros((2,), dtype=np.complex128)
+    elif corr_mode.literal_value == 1:
+        def impl():
+            return np.zeros((1,), dtype=np.complex128)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return factories.qcjit(impl)
+
+
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def compute_convergence(gain, last_gain, criteria):
 
