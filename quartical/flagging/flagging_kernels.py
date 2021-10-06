@@ -23,9 +23,9 @@ def compute_chisq(resid_arr, weights):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_bl_medians(chisq, flags, a1, a2, n_ant):
+def compute_bl_mad(chisq, flags, a1, a2, n_ant):
 
-    median_per_bl = np.zeros((1, n_ant, n_ant), dtype=chisq.dtype)
+    mad_per_bl = np.zeros((1, n_ant, n_ant), dtype=chisq.dtype)
 
     for a in range(n_ant):
         for b in range(a + 1, n_ant):
@@ -34,7 +34,7 @@ def compute_bl_medians(chisq, flags, a1, a2, n_ant):
                 np.where(((a1 == a) & (a2 == b)) | ((a1 == b) & (a2 == a)))
 
             if not bl_sel[0].size:  # Missing baseline.
-                median_per_bl[0, a, b] = np.inf
+                mad_per_bl[0, a, b] = 0
                 continue
 
             bl_chisq = chisq[bl_sel].flatten()
@@ -43,27 +43,25 @@ def compute_bl_medians(chisq, flags, a1, a2, n_ant):
             unflagged_sel = np.where(bl_flags == 0)
 
             if unflagged_sel[0].size:
-                median_per_bl[0, a, b] = np.median(bl_chisq[unflagged_sel])
+                bl_median = np.median(bl_chisq[unflagged_sel])
+                bl_mad = np.median(np.abs(bl_chisq - bl_median)[unflagged_sel])
+                mad_per_bl[0, a, b] = bl_mad
             else:
-                median_per_bl[0, a, b] = np.inf
+                mad_per_bl[0, a, b] = 0
 
-    return median_per_bl
-
-
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_gbl_medians(chisq, flags):
-
-    unflagged_sel = np.where(flags.flatten() == 0)
-
-    return np.median(chisq.flatten()[unflagged_sel])
+    return mad_per_bl
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_mad_estimate(chisq, flags, gbl_median):
+def compute_gbl_mad(chisq, flags):
 
+    gbl_chisq = chisq.flatten()
     unflagged_sel = np.where(flags.flatten() == 0)
 
-    return np.median(np.abs(chisq - gbl_median).flatten()[unflagged_sel])
+    gbl_median = np.median(gbl_chisq[unflagged_sel])
+    gbl_mad = np.median(np.abs(gbl_chisq - gbl_median)[unflagged_sel])
+
+    return gbl_mad
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)

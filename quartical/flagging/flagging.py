@@ -2,10 +2,9 @@ import dask.array as da
 import numpy as np
 from uuid import uuid4
 from loguru import logger  # noqa
-from quartical.flagging.flagging_kernels import (compute_bl_medians,
-                                                 compute_gbl_medians,
+from quartical.flagging.flagging_kernels import (compute_bl_mad,
+                                                 compute_gbl_mad,
                                                  compute_chisq,
-                                                 compute_mad_estimate,
                                                  compute_mad_flags)
 
 
@@ -166,41 +165,32 @@ def add_mad_graph(data_xds_list, mad_opts):
                              align_arrays=False,
                              concatenate=True)
 
-        bl_medians = da.blockwise(compute_bl_medians,
-                                  ("rowlike", "ant1", "ant2"),
-                                  chisq, ("rowlike", "chan"),
-                                  flag_col, ("rowlike", "chan"),
-                                  ant1_col, ("rowlike",),
-                                  ant2_col, ("rowlike",),
-                                  n_ant, None,
-                                  dtype=chisq.dtype,
-                                  align_arrays=False,
-                                  concatenate=True,
-                                  adjust_chunks={"rowlike": (1,)*n_t_chunk},
-                                  new_axes={"ant1": n_ant,
-                                            "ant2": n_ant})
+        bl_mad = da.blockwise(compute_bl_mad, ("rowlike", "ant1", "ant2"),
+                              chisq, ("rowlike", "chan"),
+                              flag_col, ("rowlike", "chan"),
+                              ant1_col, ("rowlike",),
+                              ant2_col, ("rowlike",),
+                              n_ant, None,
+                              dtype=chisq.dtype,
+                              align_arrays=False,
+                              concatenate=True,
+                              adjust_chunks={"rowlike": (1,)*n_t_chunk},
+                              new_axes={"ant1": n_ant,
+                                        "ant2": n_ant})
 
-        gbl_medians = da.blockwise(compute_gbl_medians, ("rowlike",),
-                                   chisq, ("rowlike", "chan"),
-                                   flag_col, ("rowlike", "chan"),
-                                   dtype=chisq.dtype,
-                                   align_arrays=False,
-                                   concatenate=True,
-                                   adjust_chunks={"rowlike": (1,)*n_t_chunk})
-
-        mad_estimate = da.blockwise(compute_mad_estimate, ("rowlike",),
-                                    chisq, ("rowlike", "chan"),
-                                    flag_col, ("rowlike", "chan"),
-                                    gbl_medians, ("rowlike",),
-                                    dtype=chisq.dtype,
-                                    align_arrays=False,
-                                    concatenate=True)
+        gbl_mad = da.blockwise(compute_gbl_mad, ("rowlike",),
+                               chisq, ("rowlike", "chan"),
+                               flag_col, ("rowlike", "chan"),
+                               dtype=chisq.dtype,
+                               align_arrays=False,
+                               concatenate=True,
+                               adjust_chunks={"rowlike": (1,)*n_t_chunk})
 
         row_chunks = residuals.chunks[0]
 
         mad_flags = da.blockwise(compute_mad_flags, ("rowlike", "chan"),
                                  chisq, ("rowlike", "chan"),
-                                 mad_estimate, ("rowlike",),
+                                 gbl_mad, ("rowlike",),
                                  gbl_thresh, None,
                                  dtype=np.int8,
                                  align_arrays=False,
@@ -208,6 +198,9 @@ def add_mad_graph(data_xds_list, mad_opts):
                                  adjust_chunks={"rowlike": row_chunks},)
 
         flag_col = da.where(mad_flags, 1, flag_col)
+
+        # if xds.SCAN_NUMBER==29:
+        #     import pdb; pdb.set_trace()
 
         flagged_data_xds = xds.assign({"FLAG": (("row", "chan"), flag_col)})
 
