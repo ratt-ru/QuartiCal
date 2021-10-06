@@ -65,17 +65,35 @@ def compute_gbl_mad(chisq, flags):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_mad_flags(chisq, mad_est, threshold):
+def compute_mad_flags(chisq, gbl_mad_est, bl_mad_est, ant1, ant2,
+                      gbl_threshold, bl_threshold, max_deviation):
 
     flags = np.zeros_like(chisq, dtype=np.int8)
 
-    std = 1.4826 * mad_est  # MAD to standard deviation for Gaussian dist.
+    scale_factor = 1.4826
 
-    cutoff = threshold * std
+    gbl_std = scale_factor * gbl_mad_est  # MAD to standard deviation.
+
+    gbl_cutoff = gbl_threshold * gbl_std
+
+    gbl_std_threshold = max_deviation * gbl_std
 
     n_row, n_chan = chisq.shape
 
     for row in range(n_row):
+
+        a1_m, a2_m = ant1[row], ant2[row]
+
+        bl_std = scale_factor * bl_mad_est[0, a1_m, a2_m]
+
+        if bl_std > gbl_std_threshold:
+            flags[row] = 1
+            continue
+
+        bl_cutoff = bl_threshold * bl_std
+
+        cutoff = min(gbl_cutoff, bl_cutoff)
+
         for chan in range(n_chan):
 
             if chisq[row, chan] > cutoff:

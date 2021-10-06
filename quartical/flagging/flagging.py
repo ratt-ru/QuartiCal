@@ -146,6 +146,7 @@ def add_mad_graph(data_xds_list, mad_opts):
 
     bl_thresh = mad_opts.threshold_bl
     gbl_thresh = mad_opts.threshold_global
+    max_deviation = mad_opts.max_deviation
 
     flagged_data_xds_list = []
 
@@ -191,16 +192,18 @@ def add_mad_graph(data_xds_list, mad_opts):
         mad_flags = da.blockwise(compute_mad_flags, ("rowlike", "chan"),
                                  chisq, ("rowlike", "chan"),
                                  gbl_mad, ("rowlike",),
+                                 bl_mad, ("rowlike", "ant1", "ant2"),
+                                 ant1_col, ("rowlike",),
+                                 ant2_col, ("rowlike",),
                                  gbl_thresh, None,
+                                 bl_thresh, None,
+                                 max_deviation, None,
                                  dtype=np.int8,
                                  align_arrays=False,
                                  concatenate=True,
                                  adjust_chunks={"rowlike": row_chunks},)
 
         flag_col = da.where(mad_flags, 1, flag_col)
-
-        # if xds.SCAN_NUMBER==29:
-        #     import pdb; pdb.set_trace()
 
         flagged_data_xds = xds.assign({"FLAG": (("row", "chan"), flag_col)})
 

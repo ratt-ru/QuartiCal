@@ -111,7 +111,8 @@ class Outputs(Input):
 class MadFlags(Input):
     enable: bool = False
     threshold_bl: float = 10
-    threshold_global: float = 12
+    threshold_global: float = 10
+    max_deviation: float = 3
 
     def __post_init__(self):
         self.validate_choice_fields()
