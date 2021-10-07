@@ -152,7 +152,7 @@ def add_mad_graph(data_xds_list, mad_opts):
 
     for xds in data_xds_list:
         residuals = xds._RESIDUAL.data
-        weight_col = xds.WEIGHT.data
+        weight_col = xds._WEIGHT.data
         flag_col = xds.FLAG.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
