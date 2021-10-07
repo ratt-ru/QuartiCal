@@ -76,7 +76,11 @@ def compute_mad_flags(chisq, gbl_mad_est, bl_mad_est, ant1, ant2,
 
     gbl_cutoff = gbl_threshold * gbl_std
 
-    gbl_std_threshold = max_deviation * gbl_std
+    # This is the MAD estimate of the baseline MAD estimates. We want to use
+    # this to find bad baselines.
+    valid_bl_mad = bl_mad_est.flatten()[bl_mad_est.flatten() > 0]
+    valid_bl_mad_median = np.median(valid_bl_mad)
+    bl_mad_mad = np.median(np.abs(valid_bl_mad - valid_bl_mad_median))
 
     n_row, n_chan = chisq.shape
 
@@ -86,7 +90,10 @@ def compute_mad_flags(chisq, gbl_mad_est, bl_mad_est, ant1, ant2,
 
         bl_std = scale_factor * bl_mad_est[0, a1_m, a2_m]
 
-        if bl_std > gbl_std_threshold:
+        bl_mad_deviation = \
+            np.abs(bl_mad_est[0, a1_m, a2_m] - valid_bl_mad_median)/bl_mad_mad
+
+        if bl_mad_deviation > max_deviation:
             flags[row] = 1
             continue
 
