@@ -23,9 +23,9 @@ def compute_chisq(resid_arr, weights):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_bl_mad(chisq, flags, a1, a2, n_ant):
+def compute_bl_mad_and_med(chisq, flags, a1, a2, n_ant):
 
-    mad_per_bl = np.zeros((1, n_ant, n_ant), dtype=chisq.dtype)
+    mad_and_med = np.zeros((2, n_ant, n_ant), dtype=chisq.dtype)
 
     for a in range(n_ant):
         for b in range(a + 1, n_ant):
@@ -34,7 +34,6 @@ def compute_bl_mad(chisq, flags, a1, a2, n_ant):
                 np.where(((a1 == a) & (a2 == b)) | ((a1 == b) & (a2 == a)))
 
             if not bl_sel[0].size:  # Missing baseline.
-                mad_per_bl[0, a, b] = 0
                 continue
 
             bl_chisq = chisq[bl_sel].flatten()
@@ -45,15 +44,14 @@ def compute_bl_mad(chisq, flags, a1, a2, n_ant):
             if unflagged_sel[0].size:
                 bl_median = np.median(bl_chisq[unflagged_sel])
                 bl_mad = np.median(np.abs(bl_chisq - bl_median)[unflagged_sel])
-                mad_per_bl[0, a, b] = bl_mad
-            else:
-                mad_per_bl[0, a, b] = 0
+                mad_and_med[0, a, b] = bl_mad
+                mad_and_med[1, a, b] = bl_median
 
-    return mad_per_bl
+    return mad_and_med
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_gbl_mad(chisq, flags):
+def compute_gbl_mad_and_med(chisq, flags):
 
     gbl_chisq = chisq.flatten()
     unflagged_sel = np.where(flags.flatten() == 0)
@@ -61,24 +59,26 @@ def compute_gbl_mad(chisq, flags):
     gbl_median = np.median(gbl_chisq[unflagged_sel])
     gbl_mad = np.median(np.abs(gbl_chisq - gbl_median)[unflagged_sel])
 
-    return gbl_mad
+    return np.array((gbl_mad, gbl_median)).astype(chisq.dtype)
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def compute_mad_flags(chisq, gbl_mad_est, bl_mad_est, ant1, ant2,
+def compute_mad_flags(chisq, gbl_mad_and_med, bl_mad_and_med, ant1, ant2,
                       gbl_threshold, bl_threshold, max_deviation):
 
     flags = np.zeros_like(chisq, dtype=np.int8)
 
     scale_factor = 1.4826
 
-    gbl_std = scale_factor * gbl_mad_est  # MAD to standard deviation.
+    gbl_mad, gbl_med = gbl_mad_and_med
+    bl_mad, bl_med = bl_mad_and_med
 
+    gbl_std = scale_factor * gbl_mad  # MAD to standard deviation.
     gbl_cutoff = gbl_threshold * gbl_std
 
     # This is the MAD estimate of the baseline MAD estimates. We want to use
     # this to find bad baselines.
-    valid_bl_mad = bl_mad_est.flatten()[bl_mad_est.flatten() > 0]
+    valid_bl_mad = bl_mad.flatten()[bl_mad.flatten() > 0]
     valid_bl_mad_median = np.median(valid_bl_mad)
     bl_mad_mad = np.median(np.abs(valid_bl_mad - valid_bl_mad_median))
 
@@ -88,22 +88,24 @@ def compute_mad_flags(chisq, gbl_mad_est, bl_mad_est, ant1, ant2,
 
         a1_m, a2_m = ant1[row], ant2[row]
 
-        bl_std = scale_factor * bl_mad_est[0, a1_m, a2_m]
+        mad_pq = bl_mad[a1_m, a2_m]
+        med_pq = bl_med[a1_m, a2_m]
 
-        bl_mad_deviation = \
-            np.abs(bl_mad_est[0, a1_m, a2_m] - valid_bl_mad_median)/bl_mad_mad
+        bl_mad_deviation = np.abs(mad_pq - valid_bl_mad_median)/bl_mad_mad
 
         if bl_mad_deviation > max_deviation:
             flags[row] = 1
             continue
 
+        bl_std = scale_factor * mad_pq
         bl_cutoff = bl_threshold * bl_std
-
-        cutoff = min(gbl_cutoff, bl_cutoff)
 
         for chan in range(n_chan):
 
-            if chisq[row, chan] > cutoff:
+            if np.abs(chisq[row, chan] - med_pq) > bl_cutoff:
+                flags[row, chan] = 1
+
+            if np.abs(chisq[row, chan] - gbl_med) > gbl_cutoff:
                 flags[row, chan] = 1
 
     return flags

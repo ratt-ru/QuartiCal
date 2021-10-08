@@ -2,8 +2,8 @@ import dask.array as da
 import numpy as np
 from uuid import uuid4
 from loguru import logger  # noqa
-from quartical.flagging.flagging_kernels import (compute_bl_mad,
-                                                 compute_gbl_mad,
+from quartical.flagging.flagging_kernels import (compute_bl_mad_and_med,
+                                                 compute_gbl_mad_and_med,
                                                  compute_chisq,
                                                  compute_mad_flags)
 
@@ -166,33 +166,37 @@ def add_mad_graph(data_xds_list, mad_opts):
                              align_arrays=False,
                              concatenate=True)
 
-        bl_mad = da.blockwise(compute_bl_mad, ("rowlike", "ant1", "ant2"),
-                              chisq, ("rowlike", "chan"),
-                              flag_col, ("rowlike", "chan"),
-                              ant1_col, ("rowlike",),
-                              ant2_col, ("rowlike",),
-                              n_ant, None,
-                              dtype=chisq.dtype,
-                              align_arrays=False,
-                              concatenate=True,
-                              adjust_chunks={"rowlike": (1,)*n_t_chunk},
-                              new_axes={"ant1": n_ant,
-                                        "ant2": n_ant})
+        bl_mad_and_med = da.blockwise(
+            compute_bl_mad_and_med, ("rowlike", "ant1", "ant2"),
+            chisq, ("rowlike", "chan"),
+            flag_col, ("rowlike", "chan"),
+            ant1_col, ("rowlike",),
+            ant2_col, ("rowlike",),
+            n_ant, None,
+            dtype=chisq.dtype,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"rowlike": (2,)*n_t_chunk},
+            new_axes={"ant1": n_ant,
+                      "ant2": n_ant}
+        )
 
-        gbl_mad = da.blockwise(compute_gbl_mad, ("rowlike",),
-                               chisq, ("rowlike", "chan"),
-                               flag_col, ("rowlike", "chan"),
-                               dtype=chisq.dtype,
-                               align_arrays=False,
-                               concatenate=True,
-                               adjust_chunks={"rowlike": (1,)*n_t_chunk})
+        gbl_mad_and_med = da.blockwise(
+            compute_gbl_mad_and_med, ("rowlike",),
+            chisq, ("rowlike", "chan"),
+            flag_col, ("rowlike", "chan"),
+            dtype=chisq.dtype,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"rowlike": (2,)*n_t_chunk}
+        )
 
         row_chunks = residuals.chunks[0]
 
         mad_flags = da.blockwise(compute_mad_flags, ("rowlike", "chan"),
                                  chisq, ("rowlike", "chan"),
-                                 gbl_mad, ("rowlike",),
-                                 bl_mad, ("rowlike", "ant1", "ant2"),
+                                 gbl_mad_and_med, ("rowlike",),
+                                 bl_mad_and_med, ("rowlike", "ant1", "ant2"),
                                  ant1_col, ("rowlike",),
                                  ant2_col, ("rowlike",),
                                  gbl_thresh, None,
