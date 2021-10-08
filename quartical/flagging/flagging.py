@@ -2,7 +2,10 @@ import dask.array as da
 import numpy as np
 from uuid import uuid4
 from loguru import logger  # noqa
-from quartical.flagging.flagging_kernels import madmax, threshold
+from quartical.flagging.flagging_kernels import (compute_bl_mad_and_med,
+                                                 compute_gbl_mad_and_med,
+                                                 compute_chisq,
+                                                 compute_mad_flags)
 
 
 def finalise_flags(xds_list):
@@ -143,58 +146,70 @@ def add_mad_graph(data_xds_list, mad_opts):
 
     bl_thresh = mad_opts.threshold_bl
     gbl_thresh = mad_opts.threshold_global
+    max_deviation = mad_opts.max_deviation
 
     flagged_data_xds_list = []
 
     for xds in data_xds_list:
         residuals = xds._RESIDUAL.data
-        weight_col = xds.WEIGHT.data
+        weight_col = xds._WEIGHT.data
         flag_col = xds.FLAG.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         n_ant = xds.dims["ant"]
         n_t_chunk = residuals.numblocks[0]
 
-        mad_estimate = da.blockwise(madmax, ("rowlike", "ant1", "ant2"),
-                                    residuals, ("rowlike", "chan", "corr"),
-                                    weight_col, ("rowlike", "chan", "corr"),
-                                    flag_col, ("rowlike", "chan", "corr"),
-                                    ant1_col, ("rowlike",),
-                                    ant2_col, ("rowlike",),
-                                    n_ant, None,
-                                    dtype=residuals.real.dtype,
-                                    align_arrays=False,
-                                    concatenate=True,
-                                    adjust_chunks={"rowlike": (1,)*n_t_chunk},
-                                    new_axes={"ant1": n_ant,
-                                              "ant2": n_ant})
+        chisq = da.blockwise(compute_chisq, ("rowlike", "chan"),
+                             residuals, ("rowlike", "chan", "corr"),
+                             weight_col, ("rowlike", "chan", "corr"),
+                             dtype=residuals.real.dtype,
+                             align_arrays=False,
+                             concatenate=True)
 
-        med_mad_estimate = da.map_blocks(valid_median,
-                                         mad_estimate,
-                                         drop_axis=(1, 2),
-                                         dtype=np.float64)
+        bl_mad_and_med = da.blockwise(
+            compute_bl_mad_and_med, ("rowlike", "ant1", "ant2"),
+            chisq, ("rowlike", "chan"),
+            flag_col, ("rowlike", "chan"),
+            ant1_col, ("rowlike",),
+            ant2_col, ("rowlike",),
+            n_ant, None,
+            dtype=chisq.dtype,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"rowlike": (2,)*n_t_chunk},
+            new_axes={"ant1": n_ant,
+                      "ant2": n_ant}
+        )
+
+        gbl_mad_and_med = da.blockwise(
+            compute_gbl_mad_and_med, ("rowlike",),
+            chisq, ("rowlike", "chan"),
+            flag_col, ("rowlike", "chan"),
+            dtype=chisq.dtype,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"rowlike": (2,)*n_t_chunk}
+        )
 
         row_chunks = residuals.chunks[0]
 
-        mad_flags = da.blockwise(threshold, ("rowlike", "chan", "corr"),
-                                 residuals, ("rowlike", "chan", "corr"),
-                                 weight_col, ("rowlike", "chan", "corr"),
-                                 bl_thresh*mad_estimate,
-                                 ("rowlike", "ant1", "ant2"),
-                                 gbl_thresh*med_mad_estimate,
-                                 ("rowlike",),
-                                 flag_col, ("rowlike", "chan", "corr"),
+        mad_flags = da.blockwise(compute_mad_flags, ("rowlike", "chan"),
+                                 chisq, ("rowlike", "chan"),
+                                 gbl_mad_and_med, ("rowlike",),
+                                 bl_mad_and_med, ("rowlike", "ant1", "ant2"),
                                  ant1_col, ("rowlike",),
                                  ant2_col, ("rowlike",),
-                                 dtype=np.bool_,
+                                 gbl_thresh, None,
+                                 bl_thresh, None,
+                                 max_deviation, None,
+                                 dtype=np.int8,
                                  align_arrays=False,
                                  concatenate=True,
                                  adjust_chunks={"rowlike": row_chunks},)
 
-        flag_col = da.where(mad_flags, True, flag_col)
+        flag_col = da.where(mad_flags, 1, flag_col)
 
-        flagged_data_xds = xds.assign(
-            {"FLAG": (("row", "chan", "corr"), flag_col)})
+        flagged_data_xds = xds.assign({"FLAG": (("row", "chan"), flag_col)})
 
         flagged_data_xds_list.append(flagged_data_xds)
 

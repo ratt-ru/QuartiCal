@@ -217,7 +217,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
     for xds_ind, data_xds in enumerate(data_xds_list):
         data_col = data_xds.DATA.data
         model_col = data_xds.MODEL_DATA.data
-        weight_col = data_xds.WEIGHT.data
+        weight_col = data_xds._WEIGHT.data  # The weights exiting the solver.
         ant1_col = data_xds.ANTENNA1.data
         ant2_col = data_xds.ANTENNA2.data
         gain_terms = solved_gain_xds_lod[xds_ind]
@@ -296,7 +296,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
 
         # We may also want to form corrected weights. Not technicallay a
         # visibility output but close enough. TODO: Change calling function.
-        corrected_weights = da.blockwise(
+        corrected_weight = da.blockwise(
             dask_corrected_weights, ("rowlike", "chan", "corr"),
             weight_col, ("rowlike", "chan", "corr"),
             ant1_col, ("rowlike",),
@@ -321,7 +321,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
         visibility_outputs = {"_RESIDUAL": residual,
                               "_CORRECTED_RESIDUAL": corrected_residual,
                               "_CORRECTED_DATA": corrected_data,
-                              "_CORRECTED_WEIGHTS": corrected_weights}
+                              "_CORRECTED_WEIGHT": corrected_weight}
 
         dims = data_xds.DATA.dims  # All visiblity columns share these dims.
         data_vars = {k: (dims, v) for k, v in visibility_outputs.items()}
