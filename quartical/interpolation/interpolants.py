@@ -208,3 +208,109 @@ def interpolate_missing(interp_xds):
             {data_field: (interp_xds[data_field].dims, interp)})
 
     return output_xds
+
+
+def interp_gpr(t, f, gain, jhj, tp, fp, sigmaf, lt, lf):
+    '''
+    GPR interpolation assuming data lies on a grid.
+    No hyper-parameter optimisation.
+
+    t - time coordinates where we have data
+    f - freq coordinates where we have data
+    gain - (tfadc) array of complex valued data
+    jhj- (tfadc) array of real valued "weights"
+    tp - times we want to interpolate to
+    fp - freqs we want to interpolate to
+    sigmaf - signal variance
+    lt - time length scale
+    lf - freq length scale
+
+    The interpolation is performed by using the conjugate
+    gradient algorithm to invert the Hessian of
+
+    (y - Lx).H W (y - Lx) + x.H x
+
+    where L is the Cholesky factor of the covariance matrix
+    (i.e. whitened Wiener filter) and W are the diagonal
+    elements of jhj.
+    '''
+    from functools import partial
+    from pfb.opt.pcg import pcg
+    def matern52(x, xp, sigmaf, lt, lnu):
+        N = x.size
+        Np = xp.size
+        xxp = np.tile(x[:, i], (Np, 1)).T - np.tile(xp[:, i], (N, 1))
+        return sigmaf**2*np.exp(-np.sqrt(5)*xxp/l) * (1 +
+                                np.sqrt(5)*xxp/l + 5*d**2/(3*l**2))
+
+    def kron_matvec(A, b):
+        D = len(A)
+        N = b.size
+        x = b
+
+        for d in range(D):
+            Gd = A[d].shape[0]
+            NGd = N // Gd
+            X = np.reshape(x, (Gd, NGd))
+            Z = A[d].dot(X).T
+            x = Z.ravel()
+        return x.reshape(b.shape)
+
+    nt = t.size
+    ntp = tp.size
+    if not (t == tp).all():
+        ut, idxt = np.unique(np.concatenate(t, tp), return_inverse=True)
+        idxtp = idxt[nt:]
+        idxt = idxt[0:nt]  # time indices where we have data
+    else:
+        ut = t
+        idxt = np.arange(nt)
+
+    K = matern52(ut, ut, sigmaf, lt)
+    Lt = np.linalg.cholesky(K + 1e-6*np.eye(nt))
+
+    nf = f.size
+    nfp = fp.size
+    if not (f == fp).all():
+        uf, idxf = np.unique(np.concatenate(f, fp), return_inverse=True)
+        idxfp = idxf[nf:]
+        idxf = idxf[0:nf]  # freq indices where we have data
+    else:
+        uf = f
+        idxf = np.arange(nf)
+
+    K = matern52(uf, uf, sigmaf, lf)
+    Lf = np.linalg.cholesky(K + 1e-6*np.eye(nf))
+
+    L = (Lt, Lf)
+    LH = (Lt.T, Lf.T)
+
+    mask = np.zeros((ut.size, uf.size), dtype=bool)
+    mask[idxt, idxf] = True
+
+    def hess(x, W, mask):
+        res = kron_matvec(L, x)
+        res[mask] *= W  # weight locations where we have data
+        res[~mask] = 0  # zero locations where we don't have data
+        return kron_matvec(LH, res)
+
+    _, _, nant, ndir, ncorr = jhj.shape
+    sol = np.zeros((ntp, nfp, nantm, ndir, ncorr), dtype=gains.dtype)
+    for p in range(nant):
+        for d in range(ndir):
+            for c in range(ncorr):
+                W = jhj[:, :, p, d, c].ravel()
+                y = gains[:, :, p, d, c].ravel()
+                A = partial(hess,
+                            W=W,
+                            mask=mask)
+                b[mask] = W * y
+                x = pcg(A,
+                        kron_matvec(LH, b),
+                        np.zeros((ut.size, uf.size), dtype=gains.dtype),
+                        maxit=100,
+                        minit=1,
+                        backtrack=False)
+                sol[:, :, p, d, c] = x[idxtp, idxfp]
+
+    return sol
