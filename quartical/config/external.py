@@ -92,8 +92,8 @@ class Outputs(Input):
         metadata=dict(choices=["corrected_data",
                                "corrected_residual",
                                "residual",
-                               "weights",
-                               "corrected_weights"])
+                               "weight",
+                               "corrected_weight"])
     )
     columns: Optional[List[str]] = None
     net_gain: bool = False
@@ -110,8 +110,9 @@ class Outputs(Input):
 @dataclass
 class MadFlags(Input):
     enable: bool = False
-    threshold_bl: int = 10
-    threshold_global: int = 12
+    threshold_bl: float = 5
+    threshold_global: float = 5
+    max_deviation: float = 5
 
     def __post_init__(self):
         self.validate_choice_fields()
