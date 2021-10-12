@@ -210,7 +210,71 @@ def interpolate_missing(interp_xds):
     return output_xds
 
 
-def interp_gpr(t, f, gain, jhj, tp, fp, sigmaf, lt, lf):
+# GPR related utils below this line
+def matern52(x, xp, sigmaf, l):
+    N = x.size
+    Np = xp.size
+    xxp = np.tile(x, (Np, 1)).T - np.tile(xp, (N, 1))
+    return sigmaf**2*np.exp(-np.sqrt(5)*xxp/l) * (1 +
+                            np.sqrt(5)*xxp/l + 5*xxp**2/(3*l**2))
+
+def kron_matvec(A, b):
+    D = len(A)
+    N = b.size
+    x = b
+
+    for d in range(D):
+        Gd = A[d].shape[0]
+        NGd = N // Gd
+        X = np.reshape(x, (Gd, NGd))
+        Z = A[d].dot(X).T
+        x = Z.ravel()
+    return x.reshape(b.shape)
+
+def pcg(A, b, x0, M=None, tol=1e-5, maxit=150):
+
+    if M is None:
+        def M(x): return x
+
+    r = A(x0) - b
+    y = M(r)
+    p = -y
+    rnorm = np.vdot(r, y)
+    if np.isnan(rnorm) or rnorm == 0.0:
+        eps0 = 1.0
+    else:
+        eps0 = rnorm
+    k = 0
+    x = x0
+    eps = 1.0
+    stall_count = 0
+    while eps > tol and k < maxit:
+        xp = x.copy()
+        rp = r.copy()
+        Ap = A(p)
+        rnorm = np.vdot(r, y)
+        alpha = rnorm / np.vdot(p, Ap)
+        x = xp + alpha * p
+        r = rp + alpha * Ap
+        y = M(r)
+        rnorm_next = np.vdot(r, y)
+        beta = rnorm_next / rnorm
+        p = beta * p - y
+        rnorm = rnorm_next
+        k += 1
+
+        # using worst case convergence criteria
+        epsx = np.linalg.norm(x - xp) / np.linalg.norm(x)
+        epsn = rnorm / eps0
+        eps = np.maximum(epsx, epsn)
+
+    if k >= maxit:
+        print(f"Max iters reached. eps = {eps}")
+    else:
+        print(f"Success, converged after {k} iters")
+    return x
+
+def _interp_gpr(t, f, gain, jhj, tp, fp, sigmaf, lt, lf):
     '''
     GPR interpolation assuming data lies on a grid.
     No hyper-parameter optimisation.
@@ -231,86 +295,102 @@ def interp_gpr(t, f, gain, jhj, tp, fp, sigmaf, lt, lf):
     (y - Lx).H W (y - Lx) + x.H x
 
     where L is the Cholesky factor of the covariance matrix
-    (i.e. whitened Wiener filter) and W are the diagonal
+    (i.e. whitened Wiener filter) and W consists of the diagonal
     elements of jhj.
     '''
     from functools import partial
-    from pfb.opt.pcg import pcg
-    def matern52(x, xp, sigmaf, lt, lnu):
-        N = x.size
-        Np = xp.size
-        xxp = np.tile(x[:, i], (Np, 1)).T - np.tile(xp[:, i], (N, 1))
-        return sigmaf**2*np.exp(-np.sqrt(5)*xxp/l) * (1 +
-                                np.sqrt(5)*xxp/l + 5*d**2/(3*l**2))
-
-    def kron_matvec(A, b):
-        D = len(A)
-        N = b.size
-        x = b
-
-        for d in range(D):
-            Gd = A[d].shape[0]
-            NGd = N // Gd
-            X = np.reshape(x, (Gd, NGd))
-            Z = A[d].dot(X).T
-            x = Z.ravel()
-        return x.reshape(b.shape)
 
     nt = t.size
     ntp = tp.size
-    if not (t == tp).all():
-        ut, idxt = np.unique(np.concatenate(t, tp), return_inverse=True)
+    if t is not tp:
+        ut, idxt = np.unique(np.concatenate((t, tp)), return_inverse=True)
         idxtp = idxt[nt:]
         idxt = idxt[0:nt]  # time indices where we have data
     else:
         ut = t
         idxt = np.arange(nt)
+        idxtp = np.arange(nt)
 
+    nut = ut.size
     K = matern52(ut, ut, sigmaf, lt)
-    Lt = np.linalg.cholesky(K + 1e-6*np.eye(nt))
+    Lt = np.linalg.cholesky(K + 1e-14*np.eye(nut))
+    K = matern52(tp, tp, sigmaf, lt)
+    Ltp = np.linalg.cholesky(K + 1e-14*np.eye(ntp))
 
     nf = f.size
     nfp = fp.size
-    if not (f == fp).all():
-        uf, idxf = np.unique(np.concatenate(f, fp), return_inverse=True)
+    if f is not fp:
+        uf, idxf = np.unique(np.concatenate((f, fp)), return_inverse=True)
         idxfp = idxf[nf:]
         idxf = idxf[0:nf]  # freq indices where we have data
     else:
         uf = f
         idxf = np.arange(nf)
+        idxfp = np.arange(nf)
 
-    K = matern52(uf, uf, sigmaf, lf)
-    Lf = np.linalg.cholesky(K + 1e-6*np.eye(nf))
+    nuf = uf.size
+    K = matern52(uf, uf, 1.0, lf)
+    Lf = np.linalg.cholesky(K + 1e-14*np.eye(nuf))
+    K = matern52(fp, fp, 1.0, lf)
+    Lfp = np.linalg.cholesky(K + 1e-14*np.eye(nfp))
 
     L = (Lt, Lf)
     LH = (Lt.T, Lf.T)
+    Lp = (Ltp, Lfp)
 
-    mask = np.zeros((ut.size, uf.size), dtype=bool)
-    mask[idxt, idxf] = True
+    # index mappings
+    idx = np.ix_(idxt, idxf)
+    idxp = np.ix_(idxtp, idxfp)
+
+    mask = np.zeros((nut, nuf), dtype=bool)
+    mask[idx] = True
 
     def hess(x, W, mask):
         res = kron_matvec(L, x)
         res[mask] *= W  # weight locations where we have data
         res[~mask] = 0  # zero locations where we don't have data
-        return kron_matvec(LH, res)
+        return kron_matvec(LH, res) + x
 
     _, _, nant, ndir, ncorr = jhj.shape
-    sol = np.zeros((ntp, nfp, nantm, ndir, ncorr), dtype=gains.dtype)
+    sol = np.zeros((ntp, nfp, nant, ndir, ncorr), dtype=gain.dtype)
+    b = np.zeros((nut, nuf), dtype=gain.dtype)
     for p in range(nant):
         for d in range(ndir):
             for c in range(ncorr):
                 W = jhj[:, :, p, d, c].ravel()
-                y = gains[:, :, p, d, c].ravel()
+                y = gain[:, :, p, d, c].ravel()
+                ymean = np.mean(y)
+                y -= ymean
+
                 A = partial(hess,
                             W=W,
                             mask=mask)
+
                 b[mask] = W * y
+                b[~mask] = 0j
                 x = pcg(A,
                         kron_matvec(LH, b),
-                        np.zeros((ut.size, uf.size), dtype=gains.dtype),
-                        maxit=100,
-                        minit=1,
-                        backtrack=False)
-                sol[:, :, p, d, c] = x[idxtp, idxfp]
+                        np.zeros((nut, nuf), dtype=gain.dtype),
+                        tol=1e-12,
+                        maxit=5000)
+                xp = x[idxp].reshape(ntp, nfp)
+                sol[:, :, p, d, c] = kron_matvec(Lp, xp) + ymean
 
     return sol
+
+def interp_gpr(t, f, gain, jhj, tp, fp, sigmaf, lt, lf):
+    smooth_gain = blockwise(_interp_gpr, 'tfadc',
+                            t, 't',
+                            f, 'f',
+                            gain, 'tfadc',
+                            jhj, 'tfadc',
+                            tp, 't',
+                            fp, 'f',
+                            sigmaf, None,
+                            lt, None,
+                            lf, None,
+                            align_arrays=False,
+                            adjust_chunks={'t': tp.chunks[0],
+                                           'f': fp.chunks[0]},
+                            dtype=gain.dtype)
+    return smooth_gain
