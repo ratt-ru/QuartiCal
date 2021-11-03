@@ -49,7 +49,8 @@ def invert_gains(gain_list, inverse_gains, corr_mode):
 
 @qcgjit
 def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
-                     d_map_arr, row_map, row_weights, corr_mode):
+                     d_map_arr, row_map, row_weights, corr_mode,
+                     sub_dirs=None):
 
     coerce_literal(compute_residual, ["corr_mode"])
 
@@ -61,12 +62,17 @@ def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
     valloc = factories.valloc_factory(corr_mode)
 
     def impl(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
-             d_map_arr, row_map, row_weights, corr_mode):
+             d_map_arr, row_map, row_weights, corr_mode, sub_dirs=None):
 
         residual = data.copy()
 
         n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
         n_gains = len(gain_list)
+
+        if sub_dirs is None:
+            dir_loop = np.arange(n_dir)
+        else:
+            dir_loop = np.array(sub_dirs)
 
         for row_ind in prange(n_rows):
 
@@ -79,7 +85,7 @@ def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                 r = residual[row, f]
                 m = model[row, f]
 
-                for d in range(n_dir):
+                for d in dir_loop:
 
                     iunpack(v, m[d])
 

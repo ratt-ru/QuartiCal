@@ -34,12 +34,12 @@ dstat_dims_tup = namedtuple("dstat_dims_tup",
 
 
 def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
-                  row_map, row_weights, corr_mode, *gains):
+                  sub_dirs, row_map, row_weights, corr_mode, *gains):
     """Thin wrapper to handle an unknown number of input gains."""
 
     return compute_residual(data, model, gains, a1, a2, t_map_arr[0],
                             f_map_arr[0], d_map_arr, row_map, row_weights,
-                            corr_mode)
+                            corr_mode, sub_dirs=sub_dirs)
 
 
 def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
@@ -62,7 +62,7 @@ def dask_corrected_weights(weights, a1, a2, t_map_arr, f_map_arr,
                                      row_weights, corr_mode)
 
 
-def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
+def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -148,7 +148,8 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
         gain_xds_lod,
         t_map_list,
         f_map_list,
-        d_map_list
+        d_map_list,
+        output_opts
     )
 
     # for xds_ind, xds in enumerate(data_xds_list):
@@ -192,7 +193,7 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
 
 
 def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
-                           f_map_list, d_map_list):
+                           f_map_list, d_map_list, output_opts):
     """Creates dask arrays for possible visibility outputs.
 
     Given and xds containing data and its assosciated gains, produces
@@ -246,6 +247,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
             t_map_arr, ("gp", "rowlike", "term"),
             f_map_arr, ("gp", "chan", "term"),
             d_map_arr, None,
+            output_opts.subtract_directions, None,
             *((row_map, ("rowlike",)) if is_bda else (None, None)),
             *((row_weights, ("rowlike",)) if is_bda else (None, None)),
             corr_mode, None,
