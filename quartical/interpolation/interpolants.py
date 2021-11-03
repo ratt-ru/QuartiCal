@@ -214,14 +214,14 @@ def interpolate_missing(interp_xds):
 def matern52(x, xp, sigmaf, l):
     N = x.size
     Np = xp.size
-    xxp = np.tile(x, (Np, 1)).T - np.tile(xp, (N, 1))
+    xxp = np.abs(np.tile(x, (Np, 1)).T - np.tile(xp, (N, 1)))
     return sigmaf**2*np.exp(-np.sqrt(5)*xxp/l) * (1 +
                             np.sqrt(5)*xxp/l + 5*xxp**2/(3*l**2))
 
 def kron_matvec(A, b):
     D = len(A)
     N = b.size
-    x = b
+    x = b.ravel()
 
     for d in range(D):
         Gd = A[d].shape[0]
@@ -231,6 +231,24 @@ def kron_matvec(A, b):
         x = Z.ravel()
     return x.reshape(b.shape)
 
+# kron_matvec for non-sqaure matrices
+def kron_tensorvec(A, b):
+    D = len(A)
+    G = np.zeros(D, dtype=np.int32)
+    M = np.zeros(D, dtype=np.int32)
+    for d in range(D):
+        M[d], G[d] = A[d].shape
+    x = b
+    for d in range(D):
+        Gd = G[d]
+        rem = np.prod(np.delete(G, d))
+        X = np.reshape(x, (Gd, rem))
+        Z = (A[d].dot(X)).T
+        x = Z.ravel()
+        G[d] = M[d]
+    return x.reshape(tuple(M))
+
+from ducc0.misc import vdot  # np.vdot can be very inaccurate for large arrays
 def pcg(A, b, x0, M=None, tol=1e-5, maxit=150):
 
     if M is None:
@@ -239,7 +257,7 @@ def pcg(A, b, x0, M=None, tol=1e-5, maxit=150):
     r = A(x0) - b
     y = M(r)
     p = -y
-    rnorm = np.vdot(r, y)
+    rnorm = vdot(r, y)
     if np.isnan(rnorm) or rnorm == 0.0:
         eps0 = 1.0
     else:
@@ -252,12 +270,12 @@ def pcg(A, b, x0, M=None, tol=1e-5, maxit=150):
         xp = x.copy()
         rp = r.copy()
         Ap = A(p)
-        rnorm = np.vdot(r, y)
-        alpha = rnorm / np.vdot(p, Ap)
+        rnorm = vdot(r, y)
+        alpha = rnorm / vdot(p, Ap)
         x = xp + alpha * p
         r = rp + alpha * Ap
         y = M(r)
-        rnorm_next = np.vdot(r, y)
+        rnorm_next = vdot(r, y)
         beta = rnorm_next / rnorm
         p = beta * p - y
         rnorm = rnorm_next
@@ -300,81 +318,50 @@ def _interp_gpr(t, f, gain, jhj, tp, fp, sigmaf, lt, lf):
     '''
     from functools import partial
 
+    # data prior covariance
     nt = t.size
-    ntp = tp.size
-    if t is not tp:
-        ut, idxt = np.unique(np.concatenate((t, tp)), return_inverse=True)
-        idxtp = idxt[nt:]
-        idxt = idxt[0:nt]  # time indices where we have data
-    else:
-        ut = t
-        idxt = np.arange(nt)
-        idxtp = np.arange(nt)
-
-    nut = ut.size
-    K = matern52(ut, ut, sigmaf, lt)
-    Lt = np.linalg.cholesky(K + 1e-14*np.eye(nut))
-    K = matern52(tp, tp, sigmaf, lt)
-    Ltp = np.linalg.cholesky(K + 1e-14*np.eye(ntp))
+    K = matern52(t, t, sigmaf, lt)
+    Lt = np.linalg.cholesky(K + 1e-10*np.eye(nt))
 
     nf = f.size
-    nfp = fp.size
-    if f is not fp:
-        uf, idxf = np.unique(np.concatenate((f, fp)), return_inverse=True)
-        idxfp = idxf[nf:]
-        idxf = idxf[0:nf]  # freq indices where we have data
-    else:
-        uf = f
-        idxf = np.arange(nf)
-        idxfp = np.arange(nf)
-
-    nuf = uf.size
-    K = matern52(uf, uf, 1.0, lf)
-    Lf = np.linalg.cholesky(K + 1e-14*np.eye(nuf))
-    K = matern52(fp, fp, 1.0, lf)
-    Lfp = np.linalg.cholesky(K + 1e-14*np.eye(nfp))
+    K = matern52(f, f, 1.0, lf)
+    Lf = np.linalg.cholesky(K + 1e-10*np.eye(nf))
 
     L = (Lt, Lf)
     LH = (Lt.T, Lf.T)
-    Lp = (Ltp, Lfp)
 
-    # index mappings
-    idx = np.ix_(idxt, idxf)
-    idxp = np.ix_(idxtp, idxfp)
+    # cross covariance
+    Kp = (matern52(tp, t, sigmaf, lt), matern52(fp, f, 1.0, lf))
 
-    mask = np.zeros((nut, nuf), dtype=bool)
-    mask[idx] = True
-
-    def hess(x, W, mask):
+    # operator that needs to be inverted
+    def hess(x, W, L, LH):
         res = kron_matvec(L, x)
-        res[mask] *= W  # weight locations where we have data
-        res[~mask] = 0  # zero locations where we don't have data
+        res *= W
         return kron_matvec(LH, res) + x
 
     _, _, nant, ndir, ncorr = jhj.shape
-    sol = np.zeros((ntp, nfp, nant, ndir, ncorr), dtype=gain.dtype)
-    b = np.zeros((nut, nuf), dtype=gain.dtype)
+    sol = np.zeros((tp.size, fp.size, nant, ndir, ncorr), dtype=gain.dtype)
     for p in range(nant):
         for d in range(ndir):
             for c in range(ncorr):
-                W = jhj[:, :, p, d, c].ravel()
-                y = gain[:, :, p, d, c].ravel()
+                W = jhj[:, :, p, d, c]
+                y = gain[:, :, p, d, c]
                 ymean = np.mean(y)
+                # remove mean in case there are large gaps in the data
                 y -= ymean
 
                 A = partial(hess,
-                            W=W,
-                            mask=mask)
+                            W=W, L=L, LH=LH)
 
-                b[mask] = W * y
-                b[~mask] = 0j
+                b = W * y
                 x = pcg(A,
                         kron_matvec(LH, b),
-                        np.zeros((nut, nuf), dtype=gain.dtype),
-                        tol=1e-12,
-                        maxit=5000)
-                xp = x[idxp].reshape(ntp, nfp)
-                sol[:, :, p, d, c] = kron_matvec(Lp, xp) + ymean
+                        np.zeros((nt, nf), dtype=gain.dtype),
+                        tol=1e-6,
+                        maxit=500)
+                x = W * kron_matvec(L, x)
+                x = b - x
+                sol[:, :, p, d, c] = kron_tensorvec(Kp, x)  + ymean
 
     return sol
 

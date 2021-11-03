@@ -95,16 +95,17 @@ def test_gpr():
     from quartical.interpolation.interpolants import kron_matvec
     from quartical.interpolation.interpolants import _interp_gpr
 
-    nt = 50
-    ntp = 50
-    nf = 100
-    nfp = 100
+    nt = 100
+    ntp = 250
+    nf = 250
+    nfp = 500
     nant = 1
     ndir = 1
     ncorr = 1
     sigmaf = 0.25
-    lt = 0.1
-    lf = 0.1
+    lt = 0.05
+    lf = 0.15
+    jitter = 1e-10
 
     t = np.linspace(0, 1, nt)
     tp = np.linspace(0, 1, ntp)
@@ -112,10 +113,10 @@ def test_gpr():
     fp = np.linspace(0, 1, nfp)
 
     K = matern52(t, t, sigmaf, lt)
-    Lt = np.linalg.cholesky(K +1e-14*np.eye(nt))
+    Lt = np.linalg.cholesky(K + jitter*np.eye(nt))
 
     K = matern52(f, f, 1.0, lf)
-    Lf = np.linalg.cholesky(K + 1e-14*np.eye(nf))
+    Lf = np.linalg.cholesky(K + jitter*np.eye(nf))
 
     L = (Lt, Lf)
 
@@ -127,14 +128,15 @@ def test_gpr():
             for c in range(ncorr):
                 xif = (np.random.randn(nt, nf) +
                        1.0j*np.random.randn(nt, nf))
-                smooth_gains[:, :, p, d, c] = kron_matvec(L, xif)
+                smooth_gains[:, :, p, d, c] = 1.0 + kron_matvec(L, xif)
 
-                Sigma = 1e-12
-                # xin = (np.random.randn(nt, nf) +
-                #        1.0j*np.random.randn(nt, nf)) * np.sqrt(Sigma/2.0)
-                jhj[:, :, p, d, c] = 1.0/Sigma
+                W = 20 + np.random.randn(nt, nf)
+                W[W<0] = 1.0
+                xin = (np.random.randn(nt, nf) +
+                       1.0j*np.random.randn(nt, nf)) / np.sqrt(W)
+                jhj[:, :, p, d, c] = W
 
-                noisy_gains[:, :, p, d, c] = smooth_gains[:, :, p, d, c] # + xin
+                noisy_gains[:, :, p, d, c] = smooth_gains[:, :, p, d, c] + xin
 
     rec_gains = _interp_gpr(t, f, noisy_gains, jhj, tp, fp, sigmaf, lt, lf)
 
@@ -147,23 +149,85 @@ def test_gpr():
                 sgor = RectBivariateSpline(t, f, smooth_gains[:, :, p, d, c].real)
                 sgoi = RectBivariateSpline(t, f, smooth_gains[:, :, p, d, c].imag)
 
-                # print(np.abs(sgp-rec_gains[:, :, p, d, c]).max())
-
                 # plt.figure(1)
-                # plt.imshow(sgor(tp, fp) - rec_gains[:, :, p, d, c].real)
+                # plt.imshow(sgor(tp, fp)) # - rec_gains[:, :, p, d, c].real)
                 # plt.colorbar()
 
                 # plt.figure(2)
-                # plt.imshow(sgoi(tp, fp) - rec_gains[:, :, p, d, c].imag)
+                # plt.imshow(rec_gains[:, :, p, d, c].real)
+                # plt.colorbar()
+
+                # plt.figure(3)
+                # plt.imshow(noisy_gains[:, :, p, d, c].real)
                 # plt.colorbar()
 
                 # plt.show()
 
                 real_diff = sgor(tp, fp) - rec_gains[:, :, p, d, c].real
                 imag_diff = sgoi(tp, fp) - rec_gains[:, :, p, d, c].imag
-                # print(np.abs(real_diff).max())
-                # print(np.abs(real_diff).max())
-                assert np.allclose(real_diff, 0.0, atol=1e-3)
-                assert np.allclose(imag_diff, 0.0, atol=1e-3)
+                # This is just a tol that works
+                # TODO - a more rigorous test
+                assert np.allclose(real_diff, 0.0, atol=0.2)
+                assert np.allclose(imag_diff, 0.0, atol=0.2)
+
+
+def test_kron_pcg_inv():
+    from quartical.interpolation.interpolants import matern52, kron_matvec, pcg
+    from functools import partial
+    import matplotlib.pyplot as plt
+    np.random.seed(420)
+
+    nt = 50
+    nf = 100
+    sigmaf = 0.15
+    lt = 0.15
+    lf = 0.25
+    t = np.linspace(0, 1, nt)
+    f = np.linspace(0, 1, nf)
+    jitter = 1e-10
+
+    Kt = matern52(t, t, sigmaf, lt)
+    Lt = np.linalg.cholesky(Kt + jitter*np.eye(nt))
+
+    Kf = matern52(f, f, 1.0, lf)
+    Lf = np.linalg.cholesky(Kf + jitter*np.eye(nf))
+
+    L = (Lt, Lf)
+    LH = (Lt.T, Lf.T)
+
+    W = 0.1 + np.abs(np.random.randn(nt, nf))
+    # W = np.ones((nt, nf)) / 1e-2
+
+    # full matrix to invert
+    K = np.kron(Kt, Kf)  + np.diag(1.0/W.ravel())
+    y = 1 + np.random.randn(nt, nf) + 1.0j * np.random.randn(nt, nf)
+
+    Ky1 = K.dot(y.ravel())
+
+    Kinvy = np.linalg.solve(K, y.ravel())
+
+    # equivalent representation
+    # (K + Winv)inv y = (W - W L (I + LH W L)inv LH W) y
+    #                 = W (y - L (I + LH W L)inv LH W y)
+
+    # operator to invert
+    def hess(x, W, L, LH):
+        res = kron_matvec(L, x)
+        res *= W
+        return kron_matvec(LH, res) + x
+
+    A = partial(hess, W=W, L=L, LH=LH)
+
+    x = pcg(A,
+            kron_matvec(LH, W * y),
+            np.zeros((nt, nf), dtype=y.dtype),
+            tol=1e-6, maxit=500)
+    x = kron_matvec(L, x)
+    x = W * (y - x)
+
+    # agrees up to tol
+    assert np.allclose(np.abs(Kinvy - x.ravel()), 0.0, atol=1e-6)
+
 
 test_gpr()
+# test_kron_pcg_inv()
