@@ -93,11 +93,13 @@ def _execute(exitstack):
                                     ms_opts.path,
                                     model_opts)
 
-    # Adds the dask graph describing the calibration of the data.
+    # Adds the dask graph describing the calibration of the data. TODO:
+    # This call has excess functionality now. Split out mapping and outputs.
     gain_xds_lod, net_xds_list, data_xds_list = add_calibration_graph(
         data_xds_list,
         solver_opts,
-        chain_opts
+        chain_opts,
+        output_opts
     )
 
     if mad_flag_opts.enable:

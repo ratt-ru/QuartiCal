@@ -96,6 +96,7 @@ class Outputs(Input):
                                "corrected_weight"])
     )
     columns: Optional[List[str]] = None
+    subtract_directions: Optional[List[int]] = None
     net_gain: bool = False
 
     def __post_init__(self):

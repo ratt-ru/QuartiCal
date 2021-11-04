@@ -101,6 +101,10 @@ output:
     is formed by multiplying all the gain terms together. This can be used
     to reduce the computational load of solution transfer by transferring the
     effective gain rather than each individual term.
+  subtract_directions:
+    Which model directions to subtract when generating residuals. Must be
+    specified as a list of integers e.g. [0, 5, 7]. The default will subtract
+    all directions.
   # solver_flags:
   #   Apply solver flags when writing data to measurement set.
   # file_name:
@@ -120,9 +124,6 @@ output:
   # solver_mode:
   #   Solver operational mode. Determines whether gains are solved for or merely
   #   applied from stored solutions.
-  # subtract_directions:
-  #   Which model directions to subtract, if generating residuals. May be
-  #   specified as a list e.g. [0, 5, 7]. Defaults to 0.
   # plots:
   #   Generate output plots. Defaults to False.
   # casa_tables:
