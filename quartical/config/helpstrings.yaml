@@ -47,18 +47,7 @@ input_ms:
     indicate an open interval, e.g. [100, 0] would select all values greater
     than 100, [0, 10000] would select all values less than 10000 and
     [100, 10000] would select values greater than 100 but less than 10000.
-  # chunk-jump:
-  #   The jump size used in conjunction with --input-ms-chunk-on. If 0, then any
-  #   change in value is a jump. If n, then the change must be >n.
-  # chan:
-  #   Channels to read (within each DDID). Default reads all. Multiple channels
-  #   may be given as a list, e.g. [0, 2, 5].
-  # rebin_time:
-  #   Rebin data in time on the fly. Specify as a number of timeslots to average
-  #   together, or a value with a unit (e.g. '5s').
-  # rebin_freq:
-  #   Rebin data in frequency on the fly. Specify as a number of channels to
-  #   average together, or a value with a unit (e.g. '4MHz').
+
 
 input_model:
   recipe:
@@ -79,8 +68,10 @@ input_model:
     The number of sources to predict simultaneously. Has a large impact on
     memory footprint.
   apply_p_jones:
-    Determines whether P-Jones is incorporated in the predict. This should
-    usually be left enabled.
+    Determines whether P-Jones (parallactic angle rotation) is applied to the
+    model. This affects both measurement set columns and predicted components.
+    Care must taken when using this option and output.apply_p_jones_inv. 
+
 
 output:
   directory:
@@ -96,6 +87,11 @@ output:
     Output MS column names for visibility outputs (if applicable).
     Column names will be used in order, matching the order of output.products.
     Multiple columns can be specified as a list e.g. [COL1, COL2, COL3].
+  apply_p_jones_inv:
+    Determines whether the inverse of P-Jones (parallactic angle rotation) is 
+    applied to the output visibilitites. This has the effect of derotating 
+    the output visibilities into the sky frame. Care must taken when using
+    this option and input_model.apply_p_jones. 
   net_gain:
     Output the effective/net gain per antenna per time per channel. This
     is formed by multiplying all the gain terms together. This can be used
@@ -107,28 +103,7 @@ output:
     all directions.
   # solver_flags:
   #   Apply solver flags when writing data to measurement set.
-  # file_name:
-  #   Base name for output files. Full base path will be
-  #   OUTPUT_DIRECTORY[.cc-out]/OUTPUT_FILE_NAMExxx, unless OUTPUT_FILE_NAME
-  #   contains a slash, in which case OUTPUT_DIRECTORY is ignored and
-  #   OUTPUT_FILE_NAME is taken to be a full base path. Defaults to cc.
-  # overwrite:
-  #   Allow overwriting of existing output files. If this is set, and the output
-  #   parset file exists, will raise an exception.
-  # backup:
-  #   Allow automatic backup of existing output directories. Automatic backup is
-  #   only used when OUTPUT_DIRECTORY is used (i.e. OUTPUT_FILE_NAME doesn't
-  #   contain any slashes), and it ends with .cc-out (implicitly or explicitly).
-  #   In this case, existing output directories are renamed to .cc.out.0, .1,
-  #   etc.
-  # solver_mode:
-  #   Solver operational mode. Determines whether gains are solved for or merely
-  #   applied from stored solutions.
-  # plots:
-  #   Generate output plots. Defaults to False.
-  # casa_tables:
-  #   Export gaintables to CASA caltable format. Tables are exported to same
-  #   directory as set for QuartiCal databases.
+
 
 mad_flags:
   enable:
@@ -177,21 +152,10 @@ solver:
   convergence_fraction:
     The fraction of gain values which must converge before a solver will exit
     prematurely.
-
-  # mode:
-  #   The mode in which the solver should operate. This is assumed to be the
-  #   same for all terms specified by --solver-gain-terms. The first part of
-  #   each option refers to the gain and the second to the visibilities. Thus,
-  #   "full-full" means both the gains and the visibilities have four
-  #   correlations, "diag-full" has diagonal gains and "diag-diag" implies
-  #   that both the gains and visibilities are diagonal. Specifying "scalar"
-  #   will assume both gains and visibilitites are scalar.
   # chisq_interval:
   #   Number of iterations to perform between chi-squared checks. This is done
   #   to avoid computing the expensive chi-squared test every iteration.
-  # stall_fraction:
-  #   Minimum percentage of solutions which must have stalled (the chi-squared
-  #   values are no longer improving) before terminating the solver.
+
 
 dask:
   threads:
@@ -228,15 +192,6 @@ gain:
     Set interpolation mode.
   interp_method:
     Set interpolation method.
-  # parametrisation:
-  #       type: str
-  #       help: If the gain is parametric, this determines the type of
-  #             parametrisation.
-  #       choices:
-  #           - f-slope
-  #           - t-slope
-  #           - tf-plane
-  #       default: f-slope
   #   restrict-update:
   #       type: str
   #       help: Determines update restrictions. This does not change the solver
@@ -253,22 +208,12 @@ gain:
   #       help: For direction-dependent terms, makes the listed directions
   #             (specified by index) non-solvable. -1 disables.
   #       default: -1
-  #   delta-threshold:
-  #       type: float
-  #       help: Convergence threshold. Solutions that change by less than this
-  #             value are considered converged.
-  #       default: 1e-6
   #   chisq-threshold:
   #       type: float
   #       help: Threshold for solution stagnancy - if the relative improvement in
   #             the chi-squared is less than this value, then the solution is
   #             marked as stalled.
   #       default: 1e-6
-  #   conv-fraction:
-  #       type: float
-  #       help: Fraction of solutions required to converge before terminating the
-  #             solver.
-  #       default: 0.99
   #   reference-antenna:
   #       type: int
   #       help: Reference antenna - its phase is guaranteed to be zero.
@@ -288,19 +233,3 @@ gain:
   #       type: int
   #       help: Number of iterations to perform between clips.
   #       default: 5
-  #   precomputed:
-  #       type: bool
-  #       help: Set to 1 (and specify load-from or xfer-from) to load a
-  #             precomputed term from disk.
-  #       default: False
-  #   xfer-from:
-  #       type: str
-  #       help: Transfer solutions from given database. Similar to -load-from,
-  #             but solutions will be interpolated onto the required
-  #             time/frequency grid, so they can originate from a different field
-  #             (e.g. from a calibrator).
-  #       default: None
-  #   save-to:
-  #       type: str
-  #       help: Save solutions to given database.
-  #       default: None

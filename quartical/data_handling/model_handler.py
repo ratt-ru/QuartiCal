@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
 from quartical.data_handling.predict import predict
-from quartical.data_handling.angles import (make_parangle_xds_list,
-                                            apply_parangles)
+from quartical.data_handling.angles import apply_parangles
 from loguru import logger  # noqa
 
 
-def add_model_graph(data_xds_list, model_vis_recipe, ms_path, model_opts):
+def add_model_graph(data_xds_list, parangle_xds_list, model_vis_recipe,
+                    ms_path, model_opts):
     """Creates the graph necessary to produce a model per xds.
 
     Given a list of input xarray data sets and the options, constructs a graph
@@ -15,6 +15,8 @@ def add_model_graph(data_xds_list, model_vis_recipe, ms_path, model_opts):
 
     Args:
         data_xds_list: A list of xarray datasets generated from an MS.
+        parangle_xds_list: A list of xarray datasets containing parallactic
+            angle information.
         model_vis_recipe: A Recipe object.
         ms_path: Path to the input measurement set.
         model_opts: A ModelInputs configuration object.
@@ -27,8 +29,6 @@ def add_model_graph(data_xds_list, model_vis_recipe, ms_path, model_opts):
     # required, it is a list of empty dictionaries.
 
     if model_vis_recipe.ingredients.sky_models:
-        # This call will determine whether the predicted components have P
-        # applied ot them. TODO: Unify control.
         predict_schemes = predict(data_xds_list,
                                   model_vis_recipe,
                                   ms_path,
@@ -36,16 +36,16 @@ def add_model_graph(data_xds_list, model_vis_recipe, ms_path, model_opts):
     else:
         predict_schemes = [{}]*len(data_xds_list)
 
-    # TODO: At this point we are ready to construct the model array. First,
+    # NOTE: At this point we are ready to construct the model array. First,
     # however, we need to apply parallactic angle corrections to model columns
     # which require them. P Jones is applied to predicted components
     # internally, so we only need to consider model columns for now.
 
-    model_columns = model_vis_recipe.ingredients.model_columns
-    parangle_xds_list = make_parangle_xds_list(ms_path, data_xds_list)
-    data_xds_list = apply_parangles(data_xds_list,
-                                    parangle_xds_list,
-                                    model_columns)
+    if model_opts.apply_p_jones:
+        model_columns = model_vis_recipe.ingredients.model_columns
+        data_xds_list = apply_parangles(data_xds_list,
+                                        parangle_xds_list,
+                                        model_columns)
 
     # Initialise a list to contain the xdss after the model data has been
     # assigned.
