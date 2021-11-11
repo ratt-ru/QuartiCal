@@ -96,6 +96,7 @@ class Outputs(Input):
                                "corrected_weight"])
     )
     columns: Optional[List[str]] = None
+    apply_p_jones_inv: bool = True
     subtract_directions: Optional[List[int]] = None
     net_gain: bool = False
 

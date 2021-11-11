@@ -10,6 +10,7 @@ from quartical.data_handling import CORR_TYPES
 from quartical.data_handling.chunking import compute_chunking
 from quartical.data_handling.bda import process_bda_input, process_bda_output
 from quartical.data_handling.selection import filter_xds_list
+from quartical.data_handling.angles import apply_parangles
 
 
 def read_xds_list(model_columns, ms_opts):
@@ -330,3 +331,33 @@ def preprocess_xds_list(xds_list, ms_opts):
         output_xds_list.append(output_xds)
 
     return output_xds_list
+
+
+def postprocess_xds_list(data_xds_list, parangle_xds_list, output_opts):
+    """Adds data postprocessing steps.
+
+    Given a list of xarray.DataSet objects, applies the inverse of P-Jones
+    if necessary.
+
+    Args:
+        data_xds_list: A list of xarray.Dataset objects containing MS data.
+        parangle_xds_list: A list of xarray.Dataset objects containing
+            parallactic angle information.
+        output_opts: An Outputs config object.
+
+    Returns:
+        output_data_xds_list: A list of xarray.DataSet objects containing MS
+            data with postprocessing operations applied.
+    """
+
+    if output_opts.apply_p_jones_inv:
+        derot_vars = ["_RESIDUAL", "_CORRECTED_DATA", "_CORRECTED_RESIDUAL"]
+
+        output_data_xds_list = apply_parangles(data_xds_list,
+                                               parangle_xds_list,
+                                               derot_vars,
+                                               derotate=True)
+    else:
+        output_data_xds_list = data_xds_list
+
+    return output_data_xds_list

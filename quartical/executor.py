@@ -12,8 +12,10 @@ from quartical.config import parser, preprocess, helper, internal
 from quartical.logging import configure_loguru
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
-                                                preprocess_xds_list)
+                                                preprocess_xds_list,
+                                                postprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
+from quartical.data_handling.angles import make_parangle_xds_list
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
@@ -87,8 +89,14 @@ def _execute(exitstack):
     # Preprocess the xds_list - initialise some values and fix bad data.
     data_xds_list = preprocess_xds_list(data_xds_list, ms_opts)
 
+    # Make a list of datasets containing the parallactic angles as these
+    # can be expensive to compute and may be used several times. NOTE: At
+    # present, these also include the effect of the receptor angles.
+    parangle_xds_list = make_parangle_xds_list(ms_opts.path, data_xds_list)
+
     # A list of xdss onto which appropriate model data has been assigned.
     data_xds_list = add_model_graph(data_xds_list,
+                                    parangle_xds_list,
                                     model_vis_recipe,
                                     ms_opts.path,
                                     model_opts)
@@ -106,6 +114,11 @@ def _execute(exitstack):
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
 
     data_xds_list = finalise_flags(data_xds_list)
+
+    # This will apply the inverse of P-Jones but can also be extended.
+    data_xds_list = postprocess_xds_list(data_xds_list,
+                                         parangle_xds_list,
+                                         output_opts)
 
     ms_writes = write_xds_list(data_xds_list,
                                ref_xds_list,
