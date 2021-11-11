@@ -203,7 +203,8 @@ def apply_parangles(data_xds_list, parangle_xds_list, data_var_names,
             # Negate the angles if the desired output is a derotation.
             parangles = -parangles if derotate else parangles
 
-            rot_vars[data_var_name] = da.blockwise(_apply_parangle_rot, "rfc",
+            rot_vars[data_var_name] = da.blockwise(py_apply_parangle_rot,
+                                                   "rfc",
                                                    data_var, "rfc",
                                                    parangles, "ra2",
                                                    utime_ind, "r",
@@ -221,11 +222,18 @@ def apply_parangles(data_xds_list, parangle_xds_list, data_var_names,
     return output_data_xds_list
 
 
-@generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
-def _apply_parangle_rot(data_col, parangles, utime_ind, ant1_col, ant2_col,
-                        corr_mode, feed_type):
+def py_apply_parangle_rot(data_col, parangles, utime_ind, ant1_col, ant2_col,
+                          corr_mode, feed_type):
+    """Wrapper for numba function to ensure pickling works."""
+    return nb_apply_parangle_rot(data_col, parangles, utime_ind, ant1_col,
+                                 ant2_col, corr_mode, feed_type)
 
-    coerce_literal(_apply_parangle_rot, ["corr_mode", "feed_type"])
+
+@generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
+def nb_apply_parangle_rot(data_col, parangles, utime_ind, ant1_col, ant2_col,
+                          corr_mode, feed_type):
+
+    coerce_literal(nb_apply_parangle_rot, ["corr_mode", "feed_type"])
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
