@@ -357,5 +357,7 @@ def postprocess_xds_list(data_xds_list, parangle_xds_list, output_opts):
                                                parangle_xds_list,
                                                derot_vars,
                                                derotate=True)
+    else:
+        output_data_xds_list = data_xds_list
 
     return output_data_xds_list
