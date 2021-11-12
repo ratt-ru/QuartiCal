@@ -87,6 +87,9 @@ output:
     Output MS column names for visibility outputs (if applicable).
     Column names will be used in order, matching the order of output.products.
     Multiple columns can be specified as a list e.g. [COL1, COL2, COL3].
+  flags:
+    If True, write out flags to FLAG and FLAG_ROW. This can be disabled if
+    you want QuartiCal to leave the measurement set flags unaltered.
   apply_p_jones_inv:
     Determines whether the inverse of P-Jones (parallactic angle rotation) is 
     applied to the output visibilitites. This has the effect of derotating 

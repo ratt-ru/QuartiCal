@@ -48,7 +48,6 @@ def finalise_flags(xds_list):
                 "FLAG_ROW": (xds.FLAG_ROW.dims, flag_row_col)
             }
         )
-        updated_xds.attrs["WRITE_COLS"] += ("FLAG", "FLAG_ROW")
 
         writable_xds.append(updated_xds)
 
