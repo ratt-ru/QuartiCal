@@ -78,15 +78,12 @@ def written_xds_list(raw_xds_list, ref_xds_list, ms_name, output_opts):
                                 "_CORRECTED_RESIDUAL": xds.DATA})
                     for xds in raw_xds_list]
 
-    raw_xds_list = [xds.assign_attrs({"WRITE_COLS": ("DATA",)})
-                    for xds in raw_xds_list]
-
     return write_xds_list(raw_xds_list, ref_xds_list, ms_name, output_opts)
 
 
 @pytest.mark.data_handling
 def test_write_columns_present(written_xds_list):
     # Check that the column to be written is on the writable_xds.
-    assert np.all([hasattr(xds, "DATA") for xds in written_xds_list])
+    assert np.all([hasattr(xds, "TEST_RESIDUALS") for xds in written_xds_list])
 
 # -----------------------------------------------------------------------------
