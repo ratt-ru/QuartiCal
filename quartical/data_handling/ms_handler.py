@@ -146,8 +146,7 @@ def read_xds_list(model_columns, ms_opts):
         field_id = getattr(xds, "FIELD_ID", None)
         field_name = "UNKNOWN" if field_id is None else field_names[field_id]
 
-        _xds = _xds.assign_attrs({"WRITE_COLS": (),
-                                  "UTIME_CHUNKS": utime_chunks,
+        _xds = _xds.assign_attrs({"UTIME_CHUNKS": utime_chunks,
                                   "FIELD_NAME": field_name})
 
         _data_xds_list.append(_xds)
@@ -176,7 +175,7 @@ def read_xds_list(model_columns, ms_opts):
 
 
 def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
-    """Writes fields specified in the WRITE_COLS attribute to the MS.
+    """Writes fields specified in output.products and flags to the MS.
 
     Args:
         xds_list: A list of xarray datasets.
@@ -216,7 +215,7 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
 
     xds_list = _xds_list
 
-    output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
+    output_cols = ("FLAG", "FLAG_ROW") if output_opts.flags else ()
 
     if output_opts.products:
         # Drop variables from columns we intend to overwrite.
