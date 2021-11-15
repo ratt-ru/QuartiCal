@@ -67,8 +67,8 @@ else:
 
 setup(name='quartical',
       version=quartical.__version__,
-      description="""Fast calibration implementation exploiting complex
-                        optimisation.""",
+      description="Fast calibration implementation exploiting complex "
+                  "optimisation.""",
       url='https://github.com/JSKenyon/QuartiCal',
       classifiers=[
         "Development Status :: 3 - Alpha",
