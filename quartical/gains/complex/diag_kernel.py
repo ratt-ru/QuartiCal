@@ -33,9 +33,6 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
 
     coerce_literal(diag_complex_solver, ["corr_mode"])
 
-    get_jhj_dims = get_jhj_dims_factory(corr_mode)
-    get_jhr_dims = get_jhr_dims_factory(corr_mode)
-
     def impl(base_args, term_args, meta_args, corr_mode):
 
         model = base_args.model
@@ -66,8 +63,8 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
 
         cnv_perc = 0.
 
-        jhj = np.empty(get_jhj_dims(active_gain), dtype=active_gain.dtype)
-        jhr = np.empty(get_jhr_dims(active_gain), dtype=active_gain.dtype)
+        jhj = np.empty_like(active_gain)
+        jhr = np.empty_like(active_gain)
         update = np.zeros_like(active_gain)
 
         for i in range(iters):
@@ -402,7 +399,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             r_0, _, _, r_3 = unpack(res)  # NOTE: XX, XY, YX, YY
 
             jhr[0] += r_0
-            jhr[1] += r_3
+            jhr[3] += r_3
 
             jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[0])
             j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[0])
@@ -447,31 +444,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_00 = unpack(w)
 
             jhj[0] += jh_00*w_00*j_00
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
-def get_jhj_dims_factory(corr_mode):
-
-    if corr_mode.literal_value in (1, 2, 4):
-        def impl(gain):
-            return gain.shape
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
-def get_jhr_dims_factory(corr_mode):
-
-    if corr_mode.literal_value == 4:
-        def impl(gain):
-            return gain.shape[:4] + (2,)
-    elif corr_mode.literal_value in (1, 2):
-        def impl(gain):
-            return gain.shape
     else:
         raise ValueError("Unsupported number of correlations.")
 
