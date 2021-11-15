@@ -6,7 +6,7 @@ from quartical.calibration.calibrate import add_calibration_graph
 from testing.utils.gains import apply_gains, reference_gains
 
 
-@pytest.fixture(params=["complex", "approx_complex"], scope="module")
+@pytest.fixture(params=["diag_complex"], scope="module")
 def solver_type(request):
     return request.param
 
@@ -61,8 +61,8 @@ def true_gain_list(predicted_xds_list, solve_per):
                                   low=-np.pi/2,
                                   chunks=chunking)
 
-        if n_corr == 4:  # Reduce amplitude of leakage components.
-            amp *= da.array([1, 0.1, 0.1, 1])
+        if n_corr == 4:  # Set off-diagonals to zero.
+            amp *= da.array([1, 0, 0, 1])
 
         gains = amp*da.exp(1j*phase)
 
@@ -94,8 +94,8 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
         # TODO: Commenting out the below breaks tests. Why?
 
-        if n_corr == 4:  # Decrease magnitude of off-diagonal elements.
-            model *= da.array([1, 0.1, 0.1, 1])
+        if n_corr == 4:  # Set off-diagonals to zero.
+            model *= da.array([1, 0, 0, 1])
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
