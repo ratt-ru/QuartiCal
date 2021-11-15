@@ -64,7 +64,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         param_tup += (param,)
 
         results_dict[f"{term_name}-gain"] = gain
-        results_dict[f"{term_name}-flag"] = flag
+        results_dict[f"{term_name}-flags"] = flag
         results_dict[f"{term_name}-param"] = param
         results_dict[f"{term_name}-conviter"] = np.atleast_2d(0)   # int
         results_dict[f"{term_name}-convperc"] = np.atleast_2d(0.)  # float
