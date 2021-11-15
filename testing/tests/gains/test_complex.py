@@ -6,7 +6,7 @@ from quartical.calibration.calibrate import add_calibration_graph
 from testing.utils.gains import apply_gains, reference_gains
 
 
-@pytest.fixture(params=["complex", "slow_complex"], scope="module")
+@pytest.fixture(params=["complex", "approx_complex"], scope="module")
 def solver_type(request):
     return request.param
 

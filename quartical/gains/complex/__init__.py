@@ -1,6 +1,6 @@
 from quartical.gains.gain import Gain, gain_spec_tup
 from quartical.gains.complex.kernel import complex_solver, complex_args
-from quartical.gains.complex.slow_kernel import slow_complex_solver
+from quartical.gains.complex.approx_kernel import approx_complex_solver
 from quartical.gains.complex.diag_kernel import diag_complex_solver
 
 
@@ -41,9 +41,9 @@ class DiagComplex(Complex):
                          fipc)
 
 
-class SlowComplex(Complex):
+class ApproxComplex(Complex):
 
-    solver = slow_complex_solver
+    solver = approx_complex_solver
 
     def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
 
