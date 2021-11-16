@@ -56,7 +56,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
             gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
             is_initialised[term_name] = False
 
-        flag = np.zeros(term_shape[:-1], dtype=np.uint8)
+        flag = np.zeros(term_shape[:-1], dtype=np.int8)
         param = np.zeros(term_pshape, dtype=gain.real.dtype)
 
         gain_tup += (gain,)
