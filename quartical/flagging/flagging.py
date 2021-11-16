@@ -111,32 +111,6 @@ def _initialise_flags(data_col, weight_col, flag_col, flag_row_col):
     return flags
 
 
-def initialise_gainflags(gain, empty_intervals):
-    """Given input data, weights and flags, initialise the internal bitflags.
-
-    Populates the internal bitflag array based on existing flags and data
-    points/weights which appear invalid.
-
-    Args:
-        gain: A dask.array containing the gains.
-        empty_intervals: A dask.array containing intervals containing no data.
-
-    Returns:
-        A dask.array containing the initialized gainflags.
-    """
-
-    return da.map_blocks(_initialise_gainflags, gain, empty_intervals,
-                         dtype=np.uint8, name="gflags-" + uuid4().hex)
-
-
-def _initialise_gainflags(gain, empty_intervals):
-    """See docstring for initialise_gainflags."""
-
-    gainflags = np.zeros(gain.shape, dtype=np.uint8)
-
-    return gainflags
-
-
 def valid_median(arr):
     return np.median(arr[np.isfinite(arr) & (arr > 0)], keepdims=True)
 
