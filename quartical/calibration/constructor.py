@@ -114,7 +114,7 @@ def construct_solver(data_xds_list,
             blocker.add_output(f"{term_name}-flags",
                                "rfad",
                                term_xds.GAIN_SPEC[:-1],
-                               np.uint8)
+                               np.int8)
 
             # If there is a PARAM_SPEC on the gain xds, it is also an output.
             if hasattr(term_xds, "PARAM_SPEC"):
