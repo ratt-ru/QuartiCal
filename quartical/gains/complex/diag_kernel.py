@@ -128,6 +128,11 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
             if cnv_perc >= stop_frac:
                 break
 
+        # TODO: Figure out and update gain flags before returning. Gains which
+        # are exactly zero correspond to missing data. We should also flag the
+        # gains which failed to converge. Could even put clipping/something
+        # more sophisticated here.
+
         return jhj, term_conv_info(i + 1, cnv_perc)
 
     return impl
