@@ -305,19 +305,16 @@ def compute_convergence(gain, last_gain, criteria):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-    tmp_abs2 = 0
-    tmp_diff_abs2 = 0
-
     n_cnvgd = 0
 
     for ti in range(n_tint):
         for fi in range(n_fint):
-            for d in range(n_dir):
+            for a in range(n_ant):
+                for d in range(n_dir):
 
-                tmp_abs2 = 0
-                tmp_diff_abs2 = 0
+                    gain_abs2 = 0
+                    gain_diff_abs2 = 0
 
-                for a in range(n_ant):
                     for c in range(n_corr):
 
                         gsel = gain[ti, fi, a, d, c]
@@ -325,15 +322,15 @@ def compute_convergence(gain, last_gain, criteria):
 
                         diff = lgsel - gsel
 
-                        tmp_abs2 += gsel.real**2 + gsel.imag**2
-                        tmp_diff_abs2 += diff.real**2 + diff.imag**2
+                        gain_abs2 += gsel.real**2 + gsel.imag**2
+                        gain_diff_abs2 += diff.real**2 + diff.imag**2
 
-                if tmp_abs2 == 0:
-                    n_cnvgd += 1
-                else:
-                    n_cnvgd += tmp_diff_abs2/tmp_abs2 < criteria**2
+                    if gain_abs2 == 0:
+                        n_cnvgd += 1
+                    else:
+                        n_cnvgd += gain_diff_abs2/gain_abs2 < criteria**2
 
-    return n_cnvgd/(n_tint*n_fint*n_dir)
+    return n_cnvgd/(n_tint*n_fint*n_ant*n_dir)
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
