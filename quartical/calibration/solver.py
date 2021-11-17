@@ -86,6 +86,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     # to mutate the weights, as we may end up with an unwritable array.
     kwargs["weights"] = np.require(kwargs["weights"], requirements=['W', 'O'])
     results_dict["weights"] = kwargs["weights"]
+    kwargs["flags"] = np.require(kwargs["flags"], requirements=['W', 'O'])
+    results_dict["flags"] = kwargs["flags"]
 
     if solver_opts.robust:
         final_epoch = len(iter_recipe) // len(terms)

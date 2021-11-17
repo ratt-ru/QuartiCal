@@ -104,6 +104,11 @@ def construct_solver(data_xds_list,
                            weight_col.chunks,
                            weight_col.dtype)
 
+        blocker.add_output("flags",
+                           "rf",
+                           flag_col.chunks,
+                           flag_col.dtype)
+
         for term_name, term_xds in gain_terms.items():
 
             blocker.add_output(f"{term_name}-gain",
@@ -144,7 +149,8 @@ def construct_solver(data_xds_list,
 
         # Assign column results to the relevant data xarray.Dataset object.
         output_data_xds = data_xds.assign(
-            {"_WEIGHT": (data_xds.WEIGHT.dims, output_dict["weights"])}
+            {"_WEIGHT": (data_xds.WEIGHT.dims, output_dict["weights"]),
+             "_FLAG": (data_xds.FLAG.dims, output_dict["flags"])}
         )
         output_data_xds_list.append(output_data_xds)
 

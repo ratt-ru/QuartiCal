@@ -11,15 +11,14 @@ def init_gain_flags(term_shape, term_ind, **kwargs):
     ant2_col = kwargs["a2"]
     t_map_arr = kwargs["t_map_arr"]
     f_map_arr = kwargs["f_map_arr"]
-    row_map = kwargs["row_map"]
 
     return _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                            t_map_arr, f_map_arr, row_map)
+                            t_map_arr, f_map_arr)
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                     t_map_arr, f_map_arr, row_map):
+                     t_map_arr, f_map_arr):
     """Initialise the gain flags for a term using the various mappings."""
 
     # TODO: Consider what happens in the parameterised case.
@@ -127,3 +126,22 @@ def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
         conv_perc = 0.
 
     return conv_perc
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def apply_gain_flags(gain_flags, flag_col, term_ind, ant1_col, ant2_col,
+                     t_map_arr, f_map_arr):
+    """Apply gain_flags to flag_col."""
+
+    _, _, _, n_dir = gain_flags.shape
+
+    n_row, n_chan = flag_col.shape
+
+    for row in range(n_row):
+        a1, a2 = ant1_col[row], ant2_col[row]
+        ti = t_map_arr[row, term_ind]
+        for f in range(n_chan):
+            fi = f_map_arr[f, term_ind]
+            for d in range(n_dir):
+                flag_col[row, f] |= gain_flags[ti, fi, a1, d] == 1
+                flag_col[row, f] |= gain_flags[ti, fi, a2, d] == 1

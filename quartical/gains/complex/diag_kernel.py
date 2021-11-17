@@ -4,7 +4,8 @@ from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (compute_residual,
                                               per_array_jhj_jhr)
-from quartical.gains.general.flagging import update_gain_flags
+from quartical.gains.general.flagging import (update_gain_flags,
+                                              apply_gain_flags)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -126,6 +127,14 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
                                          rel_diffs,
                                          stop_crit,
                                          initial=(not i))
+
+            apply_gain_flags(active_gain_flags,
+                             flags,
+                             active_term,
+                             a1,
+                             a2,
+                             t_map_arr,
+                             f_map_arr)
 
             # Don't update the last gain if converged/on final iteration.
             if (cnv_perc >= stop_frac) or (i == iters - 1):
