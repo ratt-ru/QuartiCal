@@ -3,8 +3,8 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (compute_residual,
-                                              compute_convergence,
                                               per_array_jhj_jhr)
+from quartical.gains.general.flagging import update_gain_flags
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -56,11 +56,12 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
         solve_per = meta_args.solve_per
 
         active_gain = gains[active_term]
+        active_gain_flags = gain_flags[active_term]
 
         dd_term = np.any(d_map_arr[active_term])
 
         last_gain = active_gain.copy()
-
+        rel_diffs = np.empty_like(active_gain_flags, dtype=np.float64)
         cnv_perc = 0.
 
         jhj = np.empty_like(active_gain)
@@ -110,7 +111,7 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
                            corr_mode)
 
             finalize_update(update,
-                            gains[active_term],
+                            active_gain,
                             i,
                             dd_term,
                             corr_mode)
@@ -119,19 +120,21 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
             # weights. Currently unsure how or why, but using unity weights
             # leads to monotonic convergence in all solution intervals.
 
-            cnv_perc = compute_convergence(gains[active_term][:],
-                                           last_gain,
-                                           stop_crit)
+            cnv_perc = update_gain_flags(active_gain,
+                                         last_gain,
+                                         active_gain_flags,
+                                         rel_diffs,
+                                         stop_crit,
+                                         initial=(not i))
 
-            last_gain[:] = gains[active_term][:]
-
-            if cnv_perc >= stop_frac:
+            # Don't update the last gain if converged/on final iteration.
+            if (cnv_perc >= stop_frac) or (i == iters - 1):
                 break
+            else:
+                last_gain[:] = active_gain
 
-        # TODO: Figure out and update gain flags before returning. Gains which
-        # are exactly zero correspond to missing data. We should also flag the
-        # gains which failed to converge. Could even put clipping/something
-        # more sophisticated here.
+        # NOTE: This removes any lingering soft flags. Could be optimized.
+        active_gain_flags *= (active_gain_flags != -1)
 
         return jhj, term_conv_info(i + 1, cnv_perc)
 

@@ -44,7 +44,7 @@ def _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
-                      initial=False, final=False):
+                      initial=False):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
@@ -113,11 +113,11 @@ def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
                         if gain_flags[ti, fi, a, d] == -1:
                             gain_flags[ti, fi, a, d] = 1
                             n_flagged += 1
-                        elif final:
-                            # Discard soft flags raised on final call.
-                            gain_flags[ti, fi, a, d] = 0
                         else:
                             gain_flags[ti, fi, a, d] = -1
+                    else:
+                        # If the point took a good step, remove (soft) flags.
+                        gain_flags[ti, fi, a, d] = 0
 
     n_solvable = (n_tint*n_fint*n_ant*n_dir - n_flagged)
 
