@@ -6,6 +6,7 @@ from collections import namedtuple
 from itertools import cycle
 from quartical.gains import TERM_TYPES
 from quartical.weights.robust import robust_reweighting
+from quartical.gains.general.flagging import init_gain_flags
 
 
 meta_args_nt = namedtuple(
@@ -44,7 +45,9 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     results_dict = {}
     is_initialised = {}
 
-    for (term_name, term_type, term_shape, term_pshape) in term_spec_list:
+    for term_ind, term_spec in enumerate(term_spec_list):
+
+        (term_name, term_type, term_shape, term_pshape) = term_spec
 
         gain = np.zeros(term_shape, dtype=np.complex128)
 
@@ -56,7 +59,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
             gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
             is_initialised[term_name] = False
 
-        flag = np.zeros(term_shape[:-1], dtype=np.int8)
+        # Init gain flags by looking for intervals with no data.
+        flag = init_gain_flags(term_shape, term_ind, **kwargs)
         param = np.zeros(term_pshape, dtype=gain.real.dtype)
 
         gain_tup += (gain,)
