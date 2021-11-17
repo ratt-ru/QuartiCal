@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import jit
-from quartical.gains.general.convenience import get_row
 
 
 def init_gain_flags(term_shape, term_ind, **kwargs):
@@ -30,8 +29,7 @@ def _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
 
     n_row, n_chan = flag_col.shape
 
-    for row_ind in range(n_row):
-        row = get_row(row_ind, row_map)  # TODO: Is this correct?
+    for row in range(n_row):
         a1, a2 = ant1_col[row], ant2_col[row]
         ti = t_map_arr[0, row, term_ind]
         for f in range(n_chan):
@@ -77,7 +75,7 @@ def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
                         gain_abs2 += gsel.real**2 + gsel.imag**2
                         gain_diff_abs2 += diff.real**2 + diff.imag**2
 
-                    if gain_abs2 == 0:  # Missing data. TODO: Catch elsewhere.
+                    if gain_abs2 == 0:  # TODO: Precaution, not ideal.
                         gain_flags[ti, fi, a, d] = 1
                         n_flagged += 1
                         continue
@@ -105,10 +103,10 @@ def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
                         # Unflag points which converged.
                         gain_flags[ti, fi, a, d] = 0
                         n_cnvgd += 1
-                    elif final:
-                        # Flag points which didn't converge.
-                        gain_flags[ti, fi, a, d] = 1
-                        n_flagged += 1
+                    # elif final:
+                    #     # Flag points which didn't converge.
+                    #     gain_flags[ti, fi, a, d] = 1
+                    #     n_flagged += 1
                     elif old_rel_diff < new_rel_diff:
                         # Soft flag antennas which have a diverging rel_diff.
                         # Points which are soft flagged twice are hard flagged.
