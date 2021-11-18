@@ -137,6 +137,12 @@ def test_residual_magnitude(cmp_post_solve_data_xds_list):
         np.testing.assert_array_almost_equal(np.abs(xds._RESIDUAL.data), 0)
 
 
+def test_solver_flags(cmp_post_solve_data_xds_list):
+    # The solver should not add addiitonal flags to the test data.
+    for xds in cmp_post_solve_data_xds_list:
+        np.testing.assert_array_equal(xds._FLAG.data, xds.FLAG.data)
+
+
 def test_gains(gain_xds_lod, true_gain_list):
 
     for solved_gain_dict, true_gain in zip(gain_xds_lod, true_gain_list):
