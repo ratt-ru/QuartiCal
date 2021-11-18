@@ -89,23 +89,17 @@ def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
 
                     # This nasty if-else ladder aims to do the following:
                     # 1) If a point has converged, ensure it is unflagged.
-                    # 2) If a point is has failed to converge by the final
-                    #    iteration or has not converged when the stopping
-                    #    criteria is reached, it should be flagged.
-                    # 3) If a point is diverging, it should be soft flagged
-                    #    if this is the first time. It should be hard flagged
-                    #    if this is the second time. All soft flags should be
-                    #    discarded on the final iteration if they were not
-                    #    hardened due to divergence.
+                    # 2) If a point is diverging, it should be soft flagged.
+                    #    If it continues to diverge (twice in a row) it should
+                    #    be hard flagged.
+                    # 3) If a point was soft flagged due to divergence but
+                    #    then takes a step towards convergence, remove its
+                    #    its soft flag.
 
                     if new_rel_diff < criteria_sq:
                         # Unflag points which converged.
                         gain_flags[ti, fi, a, d] = 0
                         n_cnvgd += 1
-                    # elif final:
-                    #     # Flag points which didn't converge.
-                    #     gain_flags[ti, fi, a, d] = 1
-                    #     n_flagged += 1
                     elif old_rel_diff < new_rel_diff:
                         # Soft flag antennas which have a diverging rel_diff.
                         # Points which are soft flagged twice are hard flagged.
