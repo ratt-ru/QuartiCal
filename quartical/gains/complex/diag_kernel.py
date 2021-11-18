@@ -5,6 +5,7 @@ from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (compute_residual,
                                               per_array_jhj_jhr)
 from quartical.gains.general.flagging import (update_gain_flags,
+                                              finalize_gain_flags,
                                               apply_gain_flags)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
@@ -117,10 +118,9 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
                             dd_term,
                             corr_mode)
 
-            # Check for gain convergence. TODO: This can be affected by the
-            # weights. Currently unsure how or why, but using unity weights
-            # leads to monotonic convergence in all solution intervals.
-
+            # Check for gain convergence. Produced as a side effect of
+            # flagging. The converged percentage is based on unflagged
+            # intervals.
             cnv_perc = update_gain_flags(active_gain,
                                          last_gain,
                                          active_gain_flags,
@@ -142,8 +142,7 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
             else:
                 last_gain[:] = active_gain
 
-        # NOTE: This removes any lingering soft flags. Could be optimized.
-        active_gain_flags *= (active_gain_flags != -1)
+        finalize_gain_flags(active_gain_flags)  # NOTE: Removes soft flags.
 
         return jhj, term_conv_info(i + 1, cnv_perc)
 

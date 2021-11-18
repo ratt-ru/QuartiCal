@@ -123,6 +123,20 @@ def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+def finalize_gain_flags(gain_flags):
+    """Removes soft flags which were raised on the final iteration."""
+
+    n_tint, n_fint, n_ant, n_dir = gain_flags.shape
+
+    for ti in range(n_tint):
+        for fi in range(n_fint):
+            for a in range(n_ant):
+                for d in range(n_dir):
+                    if gain_flags[ti, fi, a, d] == -1:
+                        gain_flags[ti, fi, a, d] = 0
+
+
+@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def apply_gain_flags(gain_flags, flag_col, term_ind, ant1_col, ant2_col,
                      t_map_arr, f_map_arr):
     """Apply gain_flags to flag_col."""
