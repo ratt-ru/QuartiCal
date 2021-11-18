@@ -164,4 +164,18 @@ def test_gains(gain_xds_lod, true_gain_list):
         assert np.any(solved_gain), "All gains are zero!"
         np.testing.assert_array_almost_equal(true_gain, solved_gain)
 
+
+def test_gain_flags(gain_xds_lod):
+
+    for solved_gain_dict in gain_xds_lod:
+        solved_gain_xds = solved_gain_dict["G"]
+        solved_flags = solved_gain_xds.flags.values
+
+        frows, fchans, fants, f_dir = np.where(solved_flags)
+
+        # We know that these antennas are missing in the test data. No other
+        # antennas should have flags.
+        assert set(np.unique(fants)) == {18, 20}
+
+
 # -----------------------------------------------------------------------------
