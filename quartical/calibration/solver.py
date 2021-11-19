@@ -82,11 +82,11 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     iter_recipe = solver_opts.iter_recipe
     robust = solver_opts.robust
 
-    # TODO: Analyse the impact of the following. This is necessary if we want
-    # to mutate the weights, as we may end up with an unwritable array.
-    kwargs["weights"] = np.require(kwargs["weights"], requirements=['W', 'O'])
+    # NOTE: This is a necessary evil. We do not want to modify the inputs
+    # and copying is the best way to ensure that that cannot happen.
+    kwargs["weights"] = kwargs["weights"].copy()
     results_dict["weights"] = kwargs["weights"]
-    kwargs["flags"] = np.require(kwargs["flags"], requirements=['W', 'O'])
+    kwargs["flags"] = kwargs["flags"].copy()
     results_dict["flags"] = kwargs["flags"]
 
     if solver_opts.robust:
