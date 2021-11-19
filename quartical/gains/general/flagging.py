@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import jit
+from numba import jit, generated_jit
+import quartical.gains.general.factories as factories
+from quartical.utils.numba import coerce_literal
 
 
 def init_gain_flags(term_shape, term_ind, **kwargs):
@@ -41,85 +43,98 @@ def _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
     return gain_flags
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
 def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
-                      initial=False):
+                      corr_mode, initial=False):
 
-    n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
+    coerce_literal(update_gain_flags, ['corr_mode'])
 
-    criteria_sq = criteria**2
-    n_cnvgd = 0
-    n_flagged = 0
+    set_identity = factories.set_identity_factory(corr_mode)
 
-    for ti in range(n_tint):
-        for fi in range(n_fint):
-            for a in range(n_ant):
-                for d in range(n_dir):
+    def impl(gain, last_gain, gain_flags, rel_diffs, criteria,
+             corr_mode, initial=False):
 
-                    # If the gain is hard flagged, we can skip these checks.
-                    if gain_flags[ti, fi, a, d] == 1:
-                        n_flagged += 1
-                        continue
+        n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-                    gain_abs2 = 0
-                    gain_diff_abs2 = 0
+        criteria_sq = criteria**2
+        n_cnvgd = 0
+        n_flagged = 0
 
-                    for c in range(n_corr):
+        for ti in range(n_tint):
+            for fi in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
 
-                        gsel = gain[ti, fi, a, d, c]
-                        lgsel = last_gain[ti, fi, a, d, c]
-
-                        diff = lgsel - gsel
-
-                        gain_abs2 += gsel.real**2 + gsel.imag**2
-                        gain_diff_abs2 += diff.real**2 + diff.imag**2
-
-                    if gain_abs2 == 0:  # TODO: Precaution, not ideal.
-                        gain_flags[ti, fi, a, d] = 1
-                        n_flagged += 1
-                        continue
-
-                    new_rel_diff = gain_diff_abs2/gain_abs2
-                    old_rel_diff = rel_diffs[ti, fi, a, d]
-                    rel_diffs[ti, fi, a, d] = new_rel_diff
-
-                    # If initial is set, we don't want to flag on this run.
-                    if initial:
-                        continue
-
-                    # This nasty if-else ladder aims to do the following:
-                    # 1) If a point has converged, ensure it is unflagged.
-                    # 2) If a point is diverging, it should be soft flagged.
-                    #    If it continues to diverge (twice in a row) it should
-                    #    be hard flagged.
-                    # 3) If a point was soft flagged due to divergence but
-                    #    then takes a step towards convergence, remove its
-                    #    its soft flag.
-
-                    if new_rel_diff < criteria_sq:
-                        # Unflag points which converged.
-                        gain_flags[ti, fi, a, d] = 0
-                        n_cnvgd += 1
-                    elif old_rel_diff < new_rel_diff:
-                        # Soft flag antennas which have a diverging rel_diff.
-                        # Points which are soft flagged twice are hard flagged.
-                        if gain_flags[ti, fi, a, d] == -1:
-                            gain_flags[ti, fi, a, d] = 1
+                        # We can skip points which are already hard flagged.
+                        if gain_flags[ti, fi, a, d] == 1:
                             n_flagged += 1
+                            continue
+
+                        gain_abs2 = 0
+                        gain_diff_abs2 = 0
+
+                        for c in range(n_corr):
+
+                            gsel = gain[ti, fi, a, d, c]
+                            lgsel = last_gain[ti, fi, a, d, c]
+
+                            diff = lgsel - gsel
+
+                            gain_abs2 += gsel.real**2 + gsel.imag**2
+                            gain_diff_abs2 += diff.real**2 + diff.imag**2
+
+                        if gain_abs2 == 0:  # TODO: Precaution, not ideal.
+                            gain_flags[ti, fi, a, d] = 1
+                            set_identity(gain[ti, fi, a, d])
+                            n_flagged += 1
+                            continue
+
+                        new_rel_diff = gain_diff_abs2/gain_abs2
+                        old_rel_diff = rel_diffs[ti, fi, a, d]
+                        rel_diffs[ti, fi, a, d] = new_rel_diff
+
+                        # If initial is set, we don't want to flag on this run.
+                        if initial:
+                            continue
+
+                        # This nasty if-else ladder aims to do the following:
+                        # 1) If a point has converged, ensure it is unflagged.
+                        # 2) If a point is diverging, it should be soft
+                        #    flagged. If it continues to diverge (twice in a
+                        #    row) it should be hard flagged and reset.
+                        # 3) If a point was soft flagged due to divergence but
+                        #    then takes a step towards convergence, remove its
+                        #    its soft flag.
+
+                        if new_rel_diff < criteria_sq:
+                            # Unflag points which converged.
+                            gain_flags[ti, fi, a, d] = 0
+                            n_cnvgd += 1
+                        elif old_rel_diff < new_rel_diff:
+                            # Soft flag antennas which have a diverging
+                            # rel_diff. Points which are soft flagged twice
+                            # in a row are hard flagged. Reset flagged points.
+                            if gain_flags[ti, fi, a, d] == -1:
+                                gain_flags[ti, fi, a, d] = 1
+                                set_identity(gain[ti, fi, a, d])
+                                n_flagged += 1
+                            else:
+                                gain_flags[ti, fi, a, d] = -1
                         else:
-                            gain_flags[ti, fi, a, d] = -1
-                    else:
-                        # If the point took a good step, remove (soft) flags.
-                        gain_flags[ti, fi, a, d] = 0
+                            # Point started to converge, remove (soft) flags.
+                            gain_flags[ti, fi, a, d] = 0
 
-    n_solvable = (n_tint*n_fint*n_ant*n_dir - n_flagged)
+        n_solvable = (n_tint*n_fint*n_ant*n_dir - n_flagged)
 
-    if n_solvable:
-        conv_perc = n_cnvgd/n_solvable
-    else:
-        conv_perc = 0.
+        if n_solvable:
+            conv_perc = n_cnvgd/n_solvable
+        else:
+            conv_perc = 0.
 
-    return conv_perc
+        return conv_perc
+
+    return impl
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)

@@ -127,6 +127,7 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
                                          active_gain_flags,
                                          rel_diffs,
                                          stop_crit,
+                                         corr_mode,
                                          initial=(not i))
 
             apply_gain_flags(active_gain_flags,
