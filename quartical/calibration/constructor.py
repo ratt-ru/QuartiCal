@@ -148,9 +148,12 @@ def construct_solver(data_xds_list,
         output_dict = blocker.get_dask_outputs()
 
         # Assign column results to the relevant data xarray.Dataset object.
+        # NOTE: Only update FLAG if we are honouring solver flags.
+        flag_field = "FLAG" if solver_opts.propagate_flags else "_FLAG"
+
         output_data_xds = data_xds.assign(
             {"_WEIGHT": (data_xds.WEIGHT.dims, output_dict["weights"]),
-             "_FLAG": (data_xds.FLAG.dims, output_dict["flags"])}
+             flag_field: (data_xds.FLAG.dims, output_dict["flags"])}
         )
         output_data_xds_list.append(output_data_xds)
 

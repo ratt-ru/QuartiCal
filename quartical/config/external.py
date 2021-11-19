@@ -125,6 +125,7 @@ class MadFlags(Input):
 class Solver(Input):
     terms: List[str] = field(default_factory=lambda: ["G"])
     iter_recipe: List[int] = field(default_factory=lambda: [25])
+    propagate_flags: bool = True
     robust: bool = False
     threads: int = 1
     convergence_fraction: float = 0.99

@@ -21,6 +21,7 @@ def opts(base_opts, solver_type, select_corr, solve_per):
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [30]
+    _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-8
     _opts.G.type = solver_type
     _opts.G.solve_per = solve_per
@@ -171,7 +172,7 @@ def test_gain_flags(gain_xds_lod):
         solved_gain_xds = solved_gain_dict["G"]
         solved_flags = solved_gain_xds.flags.values
 
-        frows, fchans, fants, f_dir = np.where(solved_flags)
+        frows, fchans, fants, fdir = np.where(solved_flags)
 
         # We know that these antennas are missing in the test data. No other
         # antennas should have flags.
