@@ -150,6 +150,6 @@ def apply_gain_flags(gain_flags, flag_col, term_ind, ant1_col, ant2_col,
         ti = t_map_arr[row, term_ind]
         for f in range(n_chan):
             fi = f_map_arr[f, term_ind]
-            for d in range(n_dir):  # TODO: Dodgy - one direction flags all.
+            for d in range(1):  # NOTE: Only apply propagate DI flags.
                 flag_col[row, f] |= gain_flags[ti, fi, a1, d] == 1
                 flag_col[row, f] |= gain_flags[ti, fi, a2, d] == 1

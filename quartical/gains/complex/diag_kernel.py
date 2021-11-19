@@ -114,6 +114,7 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
 
             finalize_update(update,
                             active_gain,
+                            active_gain_flags,
                             i,
                             dd_term,
                             corr_mode)
@@ -371,17 +372,33 @@ def compute_update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, gain, i_num, dd_term, corr_mode):
+def finalize_update(update, gain, gain_flags, i_num, dd_term, corr_mode):
 
-    def impl(update, gain, i_num, dd_term, corr_mode):
-        if dd_term:
-            update /= 2
-            gain += update
-        elif i_num % 2 == 0:
-            gain[:] = update
-        else:
-            gain += update
-            gain /= 2
+    set_identity = factories.set_identity_factory(corr_mode)
+
+    def impl(update, gain, gain_flags, i_num, dd_term, corr_mode):
+
+        n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
+
+        for ti in range(n_tint):
+            for fi in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+
+                        g = gain[ti, fi, a, d]
+                        fl = gain_flags[ti, fi, a, d]
+                        upd = update[ti, fi, a, d]
+
+                        if fl == 1:
+                            set_identity(g)
+                        elif dd_term:
+                            upd /= 2
+                            g += upd
+                        elif i_num % 2 == 0:
+                            g[:] = upd
+                        else:
+                            g += upd
+                            g /= 2
 
     return impl
 
