@@ -46,14 +46,14 @@ def _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
 def update_gain_flags(gain, last_gain, gain_flags, abs_diffs_km1,
-                      abs_diffs_km2, criteria, corr_mode, iteration):
+                      abs2_diffs_trend, criteria, corr_mode, iteration):
 
     coerce_literal(update_gain_flags, ['corr_mode'])
 
     set_identity = factories.set_identity_factory(corr_mode)
 
     def impl(gain, last_gain, gain_flags, abs_diffs_km1,
-             abs_diffs_km2, criteria, corr_mode, iteration):
+             abs2_diffs_trend, criteria, corr_mode, iteration):
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
@@ -91,14 +91,17 @@ def update_gain_flags(gain, last_gain, gain_flags, abs_diffs_km1,
                             continue
 
                         km1_abs2_diff = abs_diffs_km1[ti, fi, a, d]
-                        km2_abs2_diff = abs_diffs_km2[ti, fi, a, d]
 
                         abs_diffs_km1[ti, fi, a, d] = km0_abs2_diff
-                        abs_diffs_km2[ti, fi, a, d] = km1_abs2_diff
 
                         # We cannot flag on the first few iterations.
-                        if iteration < 3:
+                        if iteration < 2:
                             continue
+
+                        km1_trend = abs2_diffs_trend[ti, fi, a, d]
+                        km0_trend = km1_trend + km0_abs2_diff - km1_abs2_diff
+
+                        abs2_diffs_trend[ti, fi, a, d] = km0_trend
 
                         # This nasty if-else ladder aims to do the following:
                         # 1) If a point has converged, ensure it is unflagged.
@@ -113,19 +116,11 @@ def update_gain_flags(gain, last_gain, gain_flags, abs_diffs_km1,
                             # Unflag points which converged.
                             gain_flags[ti, fi, a, d] = 0
                             n_cnvgd += 1
-                        elif km0_abs2_diff < km1_abs2_diff < km2_abs2_diff:
+                        elif km0_trend < km1_trend < 0:
                             gain_flags[ti, fi, a, d] = 0
-                        elif km0_abs2_diff > km1_abs2_diff > km2_abs2_diff:
+                        elif km0_trend > km1_trend > 0:
                             gain_flags[ti, fi, a, d] = \
                                 1 if gain_flags[ti, fi, a, d] else -1
-                        elif km0_abs2_diff < km1_abs2_diff > km2_abs2_diff:
-                            if km0_abs2_diff > km2_abs2_diff:
-                                gain_flags[ti, fi, a, d] = \
-                                    1 if gain_flags[ti, fi, a, d] else -1
-                        elif km0_abs2_diff > km1_abs2_diff < km2_abs2_diff:
-                            if km0_abs2_diff > km2_abs2_diff:
-                                gain_flags[ti, fi, a, d] = \
-                                    1 if gain_flags[ti, fi, a, d] else -1
 
                         if gain_flags[ti, fi, a, d] == 1:
                             n_flagged += 1
