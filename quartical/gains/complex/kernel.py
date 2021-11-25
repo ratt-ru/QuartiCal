@@ -65,7 +65,8 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         dd_term = np.any(d_map_arr[active_term])
 
         last_gain = active_gain.copy()
-        rel_diffs = np.empty_like(active_gain_flags, dtype=np.float64)
+        abs_diffs_km1 = np.empty_like(active_gain_flags, dtype=np.float64)
+        abs_diffs_km2 = np.empty_like(active_gain_flags, dtype=np.float64)
         cnv_perc = 0.
 
         jhj = np.empty(get_jhj_dims(active_gain), dtype=active_gain.dtype)
@@ -127,18 +128,20 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             cnv_perc = update_gain_flags(active_gain,
                                          last_gain,
                                          active_gain_flags,
-                                         rel_diffs,
+                                         abs_diffs_km1,
+                                         abs_diffs_km2,
                                          stop_crit,
                                          corr_mode,
-                                         initial=(not i))
+                                         i)
 
-            apply_gain_flags(active_gain_flags,
-                             flags,
-                             active_term,
-                             a1,
-                             a2,
-                             t_map_arr,
-                             f_map_arr)
+            if not dd_term:
+                apply_gain_flags(active_gain_flags,
+                                 flags,
+                                 active_term,
+                                 a1,
+                                 a2,
+                                 t_map_arr,
+                                 f_map_arr)
 
             # Don't update the last gain if converged/on final iteration.
             if (cnv_perc >= stop_frac) or (i == iters - 1):
@@ -395,7 +398,7 @@ def finalize_update(update, gain, gain_flags, i_num, dd_term, corr_mode):
                         if fl == 1:
                             set_identity(g)
                         elif dd_term:
-                            upd /= 2
+                            upd /= 2  # min(i_num+1, 10)
                             g += upd
                         elif i_num % 2 == 0:
                             g[:] = upd

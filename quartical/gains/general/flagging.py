@@ -45,15 +45,15 @@ def _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
-                      corr_mode, initial=False):
+def update_gain_flags(gain, last_gain, gain_flags, abs_diffs_km1,
+                      abs_diffs_km2, criteria, corr_mode, iteration):
 
     coerce_literal(update_gain_flags, ['corr_mode'])
 
     set_identity = factories.set_identity_factory(corr_mode)
 
-    def impl(gain, last_gain, gain_flags, rel_diffs, criteria,
-             corr_mode, initial=False):
+    def impl(gain, last_gain, gain_flags, abs_diffs_km1,
+             abs_diffs_km2, criteria, corr_mode, iteration):
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
@@ -71,8 +71,8 @@ def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
                             n_flagged += 1
                             continue
 
-                        gain_abs2 = 0
-                        gain_diff_abs2 = 0
+                        km0_abs2 = 0
+                        km0_abs2_diff = 0
 
                         for c in range(n_corr):
 
@@ -81,21 +81,23 @@ def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
 
                             diff = lgsel - gsel
 
-                            gain_abs2 += gsel.real**2 + gsel.imag**2
-                            gain_diff_abs2 += diff.real**2 + diff.imag**2
+                            km0_abs2 += lgsel.real**2 + lgsel.imag**2
+                            km0_abs2_diff += diff.real**2 + diff.imag**2
 
-                        if gain_abs2 == 0:  # TODO: Precaution, not ideal.
+                        if km0_abs2 == 0:  # TODO: Precaution, not ideal.
                             gain_flags[ti, fi, a, d] = 1
                             set_identity(gain[ti, fi, a, d])
                             n_flagged += 1
                             continue
 
-                        new_rel_diff = gain_diff_abs2/gain_abs2
-                        old_rel_diff = rel_diffs[ti, fi, a, d]
-                        rel_diffs[ti, fi, a, d] = new_rel_diff
+                        km1_abs2_diff = abs_diffs_km1[ti, fi, a, d]
+                        km2_abs2_diff = abs_diffs_km2[ti, fi, a, d]
 
-                        # If initial is set, we don't want to flag on this run.
-                        if initial:
+                        abs_diffs_km1[ti, fi, a, d] = km0_abs2_diff
+                        abs_diffs_km2[ti, fi, a, d] = km1_abs2_diff
+
+                        # We cannot flag on the first few iterations.
+                        if iteration < 3:
                             continue
 
                         # This nasty if-else ladder aims to do the following:
@@ -107,23 +109,27 @@ def update_gain_flags(gain, last_gain, gain_flags, rel_diffs, criteria,
                         #    then takes a step towards convergence, remove its
                         #    its soft flag.
 
-                        if new_rel_diff < criteria_sq:
+                        if km0_abs2_diff/km0_abs2 < criteria_sq:
                             # Unflag points which converged.
                             gain_flags[ti, fi, a, d] = 0
                             n_cnvgd += 1
-                        elif old_rel_diff < new_rel_diff:
-                            # Soft flag antennas which have a diverging
-                            # rel_diff. Points which are soft flagged twice
-                            # in a row are hard flagged. Reset flagged points.
-                            if gain_flags[ti, fi, a, d] == -1:
-                                gain_flags[ti, fi, a, d] = 1
-                                set_identity(gain[ti, fi, a, d])
-                                n_flagged += 1
-                            else:
-                                gain_flags[ti, fi, a, d] = -1
-                        else:
-                            # Point started to converge, remove (soft) flags.
+                        elif km0_abs2_diff < km1_abs2_diff < km2_abs2_diff:
                             gain_flags[ti, fi, a, d] = 0
+                        elif km0_abs2_diff > km1_abs2_diff > km2_abs2_diff:
+                            gain_flags[ti, fi, a, d] = \
+                                1 if gain_flags[ti, fi, a, d] else -1
+                        elif km0_abs2_diff < km1_abs2_diff > km2_abs2_diff:
+                            if km0_abs2_diff > km2_abs2_diff:
+                                gain_flags[ti, fi, a, d] = \
+                                    1 if gain_flags[ti, fi, a, d] else -1
+                        elif km0_abs2_diff > km1_abs2_diff < km2_abs2_diff:
+                            if km0_abs2_diff > km2_abs2_diff:
+                                gain_flags[ti, fi, a, d] = \
+                                    1 if gain_flags[ti, fi, a, d] else -1
+
+                        if gain_flags[ti, fi, a, d] == 1:
+                            n_flagged += 1
+                            set_identity(gain[ti, fi, a, d])
 
         n_solvable = (n_tint*n_fint*n_ant*n_dir - n_flagged)
 
