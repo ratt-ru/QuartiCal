@@ -63,7 +63,8 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
         dd_term = np.any(d_map_arr[active_term])
 
         last_gain = active_gain.copy()
-        rel_diffs = np.empty_like(active_gain_flags, dtype=np.float64)
+        flag_imdry_0 = np.zeros_like(active_gain_flags, dtype=np.float64)
+        flag_imdry_1 = np.zeros_like(active_gain_flags, dtype=np.float64)
         cnv_perc = 0.
 
         jhj = np.empty_like(active_gain)
@@ -125,18 +126,20 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
             cnv_perc = update_gain_flags(active_gain,
                                          last_gain,
                                          active_gain_flags,
-                                         rel_diffs,
+                                         flag_imdry_0,
+                                         flag_imdry_1,
                                          stop_crit,
                                          corr_mode,
-                                         initial=(not i))
+                                         i)
 
-            apply_gain_flags(active_gain_flags,
-                             flags,
-                             active_term,
-                             a1,
-                             a2,
-                             t_map_arr,
-                             f_map_arr)
+            if not dd_term:
+                apply_gain_flags(active_gain_flags,
+                                 flags,
+                                 active_term,
+                                 a1,
+                                 a2,
+                                 t_map_arr,
+                                 f_map_arr)
 
             # Don't update the last gain if converged/on final iteration.
             if (cnv_perc >= stop_frac) or (i == iters - 1):

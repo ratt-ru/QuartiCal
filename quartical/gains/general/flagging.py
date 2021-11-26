@@ -45,14 +45,14 @@ def _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def update_gain_flags(gain, last_gain, gain_flags, abs_diffs_km1,
+def update_gain_flags(gain, km1_gain, gain_flags, km1_abs2_diffs,
                       abs2_diffs_trend, criteria, corr_mode, iteration):
 
     coerce_literal(update_gain_flags, ['corr_mode'])
 
     set_identity = factories.set_identity_factory(corr_mode)
 
-    def impl(gain, last_gain, gain_flags, abs_diffs_km1,
+    def impl(gain, km1_gain, gain_flags, km1_abs2_diffs,
              abs2_diffs_trend, criteria, corr_mode, iteration):
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
@@ -71,48 +71,49 @@ def update_gain_flags(gain, last_gain, gain_flags, abs_diffs_km1,
                             n_flagged += 1
                             continue
 
-                        km0_abs2 = 0
+                        # Relative difference: (|g_k-1 - g_k|/|g_k-1|)^2.
+                        km1_abs2 = 0
                         km0_abs2_diff = 0
 
                         for c in range(n_corr):
 
-                            gsel = gain[ti, fi, a, d, c]
-                            lgsel = last_gain[ti, fi, a, d, c]
+                            km0_g = gain[ti, fi, a, d, c]
+                            km1_g = km1_gain[ti, fi, a, d, c]
 
-                            diff = lgsel - gsel
+                            diff = km1_g - km0_g
 
-                            km0_abs2 += lgsel.real**2 + lgsel.imag**2
+                            km1_abs2 += km1_g.real**2 + km1_g.imag**2
                             km0_abs2_diff += diff.real**2 + diff.imag**2
 
-                        if km0_abs2 == 0:  # TODO: Precaution, not ideal.
+                        if km1_abs2 == 0:  # TODO: Precaution, not ideal.
                             gain_flags[ti, fi, a, d] = 1
                             set_identity(gain[ti, fi, a, d])
                             n_flagged += 1
                             continue
 
-                        km1_abs2_diff = abs_diffs_km1[ti, fi, a, d]
-
-                        abs_diffs_km1[ti, fi, a, d] = km0_abs2_diff
+                        # Grab absolute difference squared at k-1 and update.
+                        km1_abs2_diff = km1_abs2_diffs[ti, fi, a, d]
+                        km1_abs2_diffs[ti, fi, a, d] = km0_abs2_diff
 
                         # We cannot flag on the first few iterations.
                         if iteration < 2:
                             continue
 
+                        # Grab trend at k-1 and update.
                         km1_trend = abs2_diffs_trend[ti, fi, a, d]
                         km0_trend = km1_trend + km0_abs2_diff - km1_abs2_diff
 
                         abs2_diffs_trend[ti, fi, a, d] = km0_trend
 
-                        # This nasty if-else ladder aims to do the following:
+                        # This if-else ladder aims to do the following:
                         # 1) If a point has converged, ensure it is unflagged.
-                        # 2) If a point is diverging, it should be soft
+                        # 2) If a point is strictly converging, it should have
+                        #    no flags.
+                        # 3) If a point strictly diverging, it should be soft
                         #    flagged. If it continues to diverge (twice in a
                         #    row) it should be hard flagged and reset.
-                        # 3) If a point was soft flagged due to divergence but
-                        #    then takes a step towards convergence, remove its
-                        #    its soft flag.
 
-                        if km0_abs2_diff/km0_abs2 < criteria_sq:
+                        if km0_abs2_diff/km1_abs2 < criteria_sq:
                             # Unflag points which converged.
                             gain_flags[ti, fi, a, d] = 0
                             n_cnvgd += 1

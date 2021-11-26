@@ -65,8 +65,8 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         dd_term = np.any(d_map_arr[active_term])
 
         last_gain = active_gain.copy()
-        abs_diffs_km1 = np.zeros_like(active_gain_flags, dtype=np.float64)
-        abs_diffs_km2 = np.zeros_like(active_gain_flags, dtype=np.float64)
+        flag_imdry_0 = np.zeros_like(active_gain_flags, dtype=np.float64)
+        flag_imdry_1 = np.zeros_like(active_gain_flags, dtype=np.float64)
         cnv_perc = 0.
 
         jhj = np.empty(get_jhj_dims(active_gain), dtype=active_gain.dtype)
@@ -128,8 +128,8 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             cnv_perc = update_gain_flags(active_gain,
                                          last_gain,
                                          active_gain_flags,
-                                         abs_diffs_km1,
-                                         abs_diffs_km2,
+                                         flag_imdry_0,
+                                         flag_imdry_1,
                                          stop_crit,
                                          corr_mode,
                                          i)
