@@ -88,7 +88,18 @@ def parse_sky_models(sky_models):
 
         groups = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
-        fallback_freq0 = sky_model.freq0
+        if sky_model.freq0 is None:
+            s0 = sources[0]
+            s0_spectrum = getattr(s0, "spectrum", _empty_spectrum)
+            fallback_freq0 = getattr(s0_spectrum, "freq0", None)
+            logger.info(f"No reference frequency found for {sky_model_name}. "
+                        f"Reference frequency for first source in the model "
+                        f"is {fallback_freq0}. If this is None, "
+                        f"all sources will be treated as flat spectrum.")
+        else:
+            fallback_freq0 = sky_model.freq0
+            logger.info(f"Setting the default reference frequency for "
+                        f"{sky_model_name} to {fallback_freq0}.")
 
         for source in sources:
 
@@ -106,18 +117,13 @@ def parse_sky_models(sky_models):
             # the skymodel reference frequency is used. If that still fails,
             # will error out. However, if the first source has a reference
             # frequency set, we will instead default to that.
-            ref_freq = getattr(spectrum, "freq0", fallback_freq0)
 
-            if ref_freq is None:
-                raise ValueError("Reference frequency not found for source {} "
-                                 "in {}. Please set reference frequency for "
-                                 "either this source or the entire file."
-                                 "".format(source.name, sky_model_name))
+            if fallback_freq0 is None:
+                ref_freq = 1e9  # Non-zero default.
+                spi = [[0]*4]  # Flat spectrum.
             else:
-                fallback_freq0 = fallback_freq0 or ref_freq
-
-            # Extract SPI for I, defaulting to 0 - flat spectrum.
-            spi = [[getattr(spectrum, "spi", 0)]*4]
+                ref_freq = getattr(spectrum, "freq0", fallback_freq0)
+                spi = [[getattr(spectrum, "spi", 0)]*4]
 
             if typecode == "gau":
                 emaj = source.shape.ex
