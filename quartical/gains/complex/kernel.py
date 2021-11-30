@@ -156,6 +156,17 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                             abs2_diffs_trend,
                             corr_mode)
 
+        # Call this one last time to ensure points flagged by finialize are
+        # propagated (in the DI case).
+        if not dd_term:
+            apply_gain_flags(active_gain_flags,
+                             flags,
+                             active_term,
+                             a1,
+                             a2,
+                             t_map_arr,
+                             f_map_arr)
+
         return jhj, term_conv_info(i + 1, cnv_perc)
 
     return impl
@@ -403,7 +414,7 @@ def finalize_update(update, gain, gain_flags, i_num, dd_term, corr_mode):
                         if fl == 1:
                             set_identity(g)
                         elif dd_term:
-                            upd /= 2  # min(i_num+1, 10)
+                            upd /= 2
                             g += upd
                         elif i_num % 2 == 0:
                             g[:] = upd

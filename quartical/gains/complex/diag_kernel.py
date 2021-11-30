@@ -154,6 +154,17 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
                             abs2_diffs_trend,
                             corr_mode)
 
+        # Call this one last time to ensure points flagged by finialize are
+        # propagated (in the DI case).
+        if not dd_term:
+            apply_gain_flags(active_gain_flags,
+                             flags,
+                             active_term,
+                             a1,
+                             a2,
+                             t_map_arr,
+                             f_map_arr)
+
         return jhj, term_conv_info(i + 1, cnv_perc)
 
     return impl
