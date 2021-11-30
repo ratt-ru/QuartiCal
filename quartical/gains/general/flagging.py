@@ -47,6 +47,25 @@ def _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
                nogil=True)
 def update_gain_flags(gain, km1_gain, gain_flags, km1_abs2_diffs,
                       abs2_diffs_trend, criteria, corr_mode, iteration):
+    """Update the current state of the gain flags.
+
+    Uses the current (km0) and previous (km1) gains to identify diverging
+    soultions. This implements trendy flagging - see overleaf document.
+    TODO: Add link.
+
+    Args:
+        gain: A (ti, fi, a, d, c) array of gain values.
+        km1_gain: A (ti, fi, a, d, c) array of gain values at prev iteration.
+        gain_flags: A (ti, fi, a, d) array of flag values.
+        km1_abs2_diffs: A (ti, fi, a, d) itemediary array to store the
+            previous absolute difference in the gains.
+        ab2_diffs_trends: A (ti, fi, a, d) itemediary array to store the
+            accumulated trend values of the differences between absolute
+            differences of the gains.
+        critera: A float value below which a gain is considered converged.
+        corr_mode: An int which controls how we handle coreelations.
+        iteration: An int containing the iteration number.
+    """
 
     coerce_literal(update_gain_flags, ['corr_mode'])
 
@@ -154,7 +173,7 @@ def finalize_gain_flags(gain, gain_flags, abs2_diffs_trend, mode):
         gain_flags: A (ti, fi, a, d) array of flag values.
         ab2_diffs_trends: An array containing the accumulated trend values of
             the absolute difference between gains at each iteration. Positive
-            values correspond to points which are nowhere near convergence. 
+            values correspond to points which are nowhere near convergence.
     """
 
     set_identity = factories.set_identity_factory(mode)
