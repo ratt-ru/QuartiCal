@@ -139,18 +139,41 @@ def update_gain_flags(gain, km1_gain, gain_flags, km1_abs2_diffs,
     return impl
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def finalize_gain_flags(gain_flags):
-    """Removes soft flags which were raised on the final iteration."""
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
+def finalize_gain_flags(gain, gain_flags, abs2_diffs_trend, mode):
+    """Removes soft flags and flags points which failed to converge.
 
-    n_tint, n_fint, n_ant, n_dir = gain_flags.shape
+    Given the gains, assosciated gain flags and the trend of abosolute
+    differences, remove soft flags which were never hardened and hard flag
+    points which have positive trend values. This corresponds to points
+    which have bad solutions when convergence/maximum iterations are reached.
 
-    for ti in range(n_tint):
-        for fi in range(n_fint):
-            for a in range(n_ant):
-                for d in range(n_dir):
-                    if gain_flags[ti, fi, a, d] == -1:
-                        gain_flags[ti, fi, a, d] = 0
+    Args:
+        gain: A (ti, fi, a, d, c) array of gain values.
+        gain_flags: A (ti, fi, a, d) array of flag values.
+        ab2_diffs_trends: An array containing the accumulated trend values of
+            the absolute difference between gains at each iteration. Positive
+            values correspond to points which are nowhere near convergence. 
+    """
+
+    set_identity = factories.set_identity_factory(mode)
+
+    def impl(gain, gain_flags, abs2_diffs_trend, mode):
+
+        n_tint, n_fint, n_ant, n_dir = gain_flags.shape
+
+        for ti in range(n_tint):
+            for fi in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+                        if abs2_diffs_trend[ti, fi, a, d] > 0:
+                            gain_flags[ti, fi, a, d] = 1
+                            set_identity(gain[ti, fi, a, d])
+                        elif gain_flags[ti, fi, a, d] == -1:
+                            gain_flags[ti, fi, a, d] = 0
+
+    return impl
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)

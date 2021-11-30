@@ -64,9 +64,10 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
 
         dd_term = np.any(d_map_arr[active_term])
 
+        # Set up some intemediaries used for flagging.
         last_gain = active_gain.copy()
-        flag_imdry_0 = np.zeros_like(active_gain_flags, dtype=np.float64)
-        flag_imdry_1 = np.zeros_like(active_gain_flags, dtype=np.float64)
+        km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
+        abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
         cnv_perc = 0.
 
         jhj = np.empty(get_jhj_dims(active_gain), dtype=active_gain.dtype)
@@ -128,8 +129,8 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             cnv_perc = update_gain_flags(active_gain,
                                          last_gain,
                                          active_gain_flags,
-                                         flag_imdry_0,
-                                         flag_imdry_1,
+                                         km1_abs2_diffs,
+                                         abs2_diffs_trend,
                                          stop_crit,
                                          corr_mode,
                                          i)
@@ -149,7 +150,11 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             else:
                 last_gain[:] = active_gain
 
-        finalize_gain_flags(active_gain_flags)  # NOTE: Removes soft flags.
+        # NOTE: Removes soft flags and flags points which have bad trends.
+        finalize_gain_flags(active_gain,
+                            active_gain_flags,
+                            abs2_diffs_trend,
+                            corr_mode)
 
         return jhj, term_conv_info(i + 1, cnv_perc)
 
