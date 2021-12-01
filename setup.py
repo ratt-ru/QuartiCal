@@ -93,4 +93,8 @@ setup(name='quartical',
       entry_points={'console_scripts':
                     ['goquartical = quartical.executor:execute',
                      'goquartical-config ='
-                        'quartical.config.parser:create_user_config']},)
+                        'quartical.config.parser:create_user_config',
+                     'goquartical-backup ='
+                        'quartical.apps.backup:backup',
+                     'goquartical-restore ='
+                        'quartical.apps.backup:restore']},)
