@@ -3,8 +3,10 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (compute_residual,
-                                              compute_convergence,
                                               per_array_jhj_jhr)
+from quartical.gains.general.flagging import (update_gain_flags,
+                                              finalize_gain_flags,
+                                              apply_gain_flags)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -21,7 +23,7 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
-amplitude_args = namedtuple("amplitude_args", ("params",))
+amplitude_args = namedtuple("amplitude_args", ("params", "param_flags"))
 
 
 @generated_jit(nopython=True,
@@ -56,25 +58,29 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
         is_init = meta_args.is_init
         solve_per = meta_args.solve_per
 
-        params = term_args.params[active_term]  # Params for this term.
+        active_params = term_args.params[active_term]  # Params for this term.
 
-        if not is_init:  # Set initial amplitudes to 1.
-            params[:] = 1
+        # Set initial amplitudes to 1. TODO: This should be in an initialiser.
+        if not is_init:
+            active_params[:] = 1
 
         n_term = len(gains)
 
         active_gain = gains[active_term]
+        active_gain_flags = gain_flags[active_term]
 
         dd_term = np.any(d_map_arr[active_term])
 
+        # Set up some intemediaries used for flagging.
         last_gain = active_gain.copy()
-
+        km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
+        abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
         cnv_perc = 0.
 
-        real_dtype = gains[active_term].real.dtype
+        real_dtype = active_gain.real.dtype
 
         jhj = np.empty(active_gain.shape, dtype=real_dtype)
-        jhr = np.empty(params.shape, dtype=real_dtype)
+        jhr = np.empty(active_params.shape, dtype=real_dtype)
         update = np.zeros_like(jhr)
 
         direct_update = not (dd_term or n_term > 1)
@@ -122,23 +128,55 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
                            corr_mode)
 
             finalize_update(update,
-                            params,
-                            gains[active_term],
+                            active_params,
+                            active_gain,
+                            active_gain_flags,
                             direct_update,
                             corr_mode)
 
-            # Check for gain convergence. TODO: This can be affected by the
-            # weights. Currently unsure how or why, but using unity weights
-            # leads to monotonic convergence in all solution intervals.
+            # Check for gain convergence. Produced as a side effect of
+            # flagging. The converged percentage is based on unflagged
+            # intervals.
+            cnv_perc = update_gain_flags(active_gain,
+                                         last_gain,
+                                         active_gain_flags,
+                                         km1_abs2_diffs,
+                                         abs2_diffs_trend,
+                                         stop_crit,
+                                         corr_mode,
+                                         i)
 
-            cnv_perc = compute_convergence(gains[active_term][:],
-                                           last_gain,
-                                           stop_crit)
+            if not dd_term:
+                apply_gain_flags(active_gain_flags,
+                                 flags,
+                                 active_term,
+                                 a1,
+                                 a2,
+                                 t_map_arr,
+                                 f_map_arr)
 
-            last_gain[:] = gains[active_term][:]
-
-            if cnv_perc >= stop_frac:
+            # Don't update the last gain if converged/on final iteration.
+            if (cnv_perc >= stop_frac) or (i == iters - 1):
                 break
+            else:
+                last_gain[:] = active_gain
+
+        # NOTE: Removes soft flags and flags points which have bad trends.
+        finalize_gain_flags(active_gain,
+                            active_gain_flags,
+                            abs2_diffs_trend,
+                            corr_mode)
+
+        # Call this one last time to ensure points flagged by finialize are
+        # propagated (in the DI case).
+        if not dd_term:
+            apply_gain_flags(active_gain_flags,
+                             flags,
+                             active_term,
+                             a1,
+                             a2,
+                             t_map_arr,
+                             f_map_arr)
 
         return update, term_conv_info(i + 1, cnv_perc)
 
@@ -367,37 +405,58 @@ def compute_update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, params, gain, direct_update, corr_mode):
+def finalize_update(update, params, gain, gain_flags, direct_update,
+                    corr_mode):
 
-    if corr_mode.literal_value in (1, 2, 4):
-        def impl(update, params, gain, direct_update, corr_mode):
+    set_identity = factories.set_identity_factory(corr_mode)
+    param_to_gain = param_to_gain_factory(corr_mode)
 
-            if direct_update:
-                params += update
-                params /= 2
-            else:
-                update /= 2
-                params += update
+    def impl(update, params, gain, gain_flags, direct_update, corr_mode):
 
-            n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
-            n_param = params.shape[-1]
+        n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-            g_inds = np.array((0, n_corr - 1))[:n_param]
-            p_inds = np.array((0, 1))[:n_param]
+        for ti in range(n_tint):
+            for fi in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
 
-            for t in range(n_tint):
-                for f in range(n_fint):
-                    for a in range(n_ant):
-                        for d in range(n_dir):
+                        p = params[ti, fi, a, d]
+                        g = gain[ti, fi, a, d]
+                        fl = gain_flags[ti, fi, a, d]
+                        upd = update[ti, fi, a, d]
 
-                            for gi, pi in zip(g_inds, p_inds):
+                        if fl == 1:
+                            p[:] = 1
+                            set_identity(g)
+                        elif direct_update:
+                            p += upd
+                            p /= 2
+                            param_to_gain(p, g)
+                        else:
+                            upd /= 2
+                            p += upd
+                            param_to_gain(p, g)
 
-                                amp = params[t, f, a, d, pi]
-                                gain[t, f, a, d, gi] = amp
+    return impl
+
+
+def param_to_gain_factory(corr_mode):
+
+    if corr_mode.literal_value == 4:
+        def impl(params, gain):
+            gain[0] = params[0]
+            gain[3] = params[1]
+    elif corr_mode.literal_value == 2:
+        def impl(params, gain):
+            gain[0] = params[0]
+            gain[1] = params[1]
+    elif corr_mode.literal_value == 1:
+        def impl(params, gain):
+            gain[0] = params[0]
     else:
         raise ValueError("Unsupported number of correlations.")
 
-    return impl
+    return factories.qcjit(impl)
 
 
 def compute_jhwj_jhwr_elem_factory(corr_mode):

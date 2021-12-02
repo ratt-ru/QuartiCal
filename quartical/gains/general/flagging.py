@@ -11,36 +11,47 @@ def init_gain_flags(term_shape, term_ind, **kwargs):
     flag_col = kwargs["flags"]
     ant1_col = kwargs["a1"]
     ant2_col = kwargs["a2"]
-    t_map_arr = kwargs["t_map_arr"]
-    f_map_arr = kwargs["f_map_arr"]
+    t_map_arr = kwargs["t_map_arr"][0]
+    f_map_arr = kwargs["f_map_arr"][0]
 
-    return _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                            t_map_arr, f_map_arr)
+    return _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
+                       t_map_arr, f_map_arr)
+
+
+def init_param_flags(term_shape, term_ind, **kwargs):
+    """Initialise the gain flags for a term using the various mappings."""
+
+    flag_col = kwargs["flags"]
+    ant1_col = kwargs["a1"]
+    ant2_col = kwargs["a2"]
+    t_map_arr = kwargs["t_map_arr"][1]
+    f_map_arr = kwargs["f_map_arr"][1]
+
+    return _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
+                       t_map_arr, f_map_arr)
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def _init_gain_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                     t_map_arr, f_map_arr):
-    """Initialise the gain flags for a term using the various mappings."""
+def _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
+                t_map_arr, f_map_arr):
+    """Initialise the flags for a term using the various mappings."""
 
-    # TODO: Consider what happens in the parameterised case.
-
-    gain_flags = np.ones(term_shape[:-1], dtype=np.int8)
+    flags = np.ones(term_shape[:-1], dtype=np.int8)
     _, _, _, n_dir, _ = term_shape
 
     n_row, n_chan = flag_col.shape
 
     for row in range(n_row):
         a1, a2 = ant1_col[row], ant2_col[row]
-        ti = t_map_arr[0, row, term_ind]
+        ti = t_map_arr[row, term_ind]
         for f in range(n_chan):
-            fi = f_map_arr[0, f, term_ind]
+            fi = f_map_arr[f, term_ind]
             flag = flag_col[row, f]
             for d in range(n_dir):
-                gain_flags[ti, fi, a1, d] &= flag
-                gain_flags[ti, fi, a2, d] &= flag
+                flags[ti, fi, a1, d] &= flag
+                flags[ti, fi, a2, d] &= flag
 
-    return gain_flags
+    return flags
 
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,

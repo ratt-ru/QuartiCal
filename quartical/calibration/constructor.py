@@ -116,7 +116,7 @@ def construct_solver(data_xds_list,
                                term_xds.GAIN_SPEC,
                                np.complex128)
 
-            blocker.add_output(f"{term_name}-flags",
+            blocker.add_output(f"{term_name}-gain_flags",
                                "rfad",
                                term_xds.GAIN_SPEC[:-1],
                                np.int8)
@@ -127,6 +127,11 @@ def construct_solver(data_xds_list,
                                    "rfadp",
                                    term_xds.PARAM_SPEC,
                                    np.float64)
+
+                blocker.add_output(f"{term_name}-param_flags",
+                                   "rfad",
+                                   term_xds.PARAM_SPEC[:-1],
+                                   np.int8)
 
             else:  # Only non-parameterised gains return a jhj (for now).
                 blocker.add_output(f"{term_name}-jhj",
@@ -167,8 +172,8 @@ def construct_solver(data_xds_list,
             gain = output_dict[f"{term_name}-gain"]
             result_vars["gains"] = (term_xds.GAIN_AXES, gain)
 
-            flags = output_dict[f"{term_name}-flags"]
-            result_vars["flags"] = (term_xds.GAIN_AXES[:-1], flags)
+            flags = output_dict[f"{term_name}-gain_flags"]
+            result_vars["gain_flags"] = (term_xds.GAIN_AXES[:-1], flags)
 
             convperc = output_dict[f"{term_name}-convperc"]
             result_vars["conv_perc"] = (("t_chunk", "f_chunk"), convperc)
@@ -179,6 +184,10 @@ def construct_solver(data_xds_list,
             if hasattr(term_xds, "PARAM_SPEC"):
                 params = output_dict[f"{term_name}-param"]
                 result_vars["params"] = (term_xds.PARAM_AXES, params)
+
+                param_flags = output_dict[f"{term_name}-param_flags"]
+                result_vars["param_flags"] = \
+                    (term_xds.PARAM_AXES[:-1], param_flags)
             else:
                 jhj = output_dict[f"{term_name}-jhj"]
                 result_vars["jhj"] = (term_xds.GAIN_AXES, jhj)
