@@ -52,7 +52,7 @@ else:
 
                     "codex-africanus[dask, scipy, astropy, python-casacore]"
                     "@git+https://github.com/ska-sa/codex-africanus.git"
-                    "@master",
+                    "@monolothic-rime",
 
                     "dask[array]",
                     "astro-tigger-lsm",
