@@ -149,7 +149,7 @@ def test_gains(gain_xds_lod, true_gain_list):
     for solved_gain_dict, true_gain in zip(gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
         solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
-                                               solved_gain_xds.flags.data)
+                                               solved_gain_xds.gain_flags.data)
         true_gain = true_gain.compute()  # TODO: This could be done elsewhere.
 
         n_corr = true_gain.shape[-1]
@@ -170,7 +170,7 @@ def test_gain_flags(gain_xds_lod):
 
     for solved_gain_dict in gain_xds_lod:
         solved_gain_xds = solved_gain_dict["G"]
-        solved_flags = solved_gain_xds.flags.values
+        solved_flags = solved_gain_xds.gain_flags.values
 
         frows, fchans, fants, fdir = np.where(solved_flags)
 

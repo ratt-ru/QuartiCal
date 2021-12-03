@@ -206,6 +206,43 @@ def finalize_gain_flags(gain, gain_flags, abs2_diffs_trend, mode):
     return impl
 
 
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
+def gain_flags_to_param_flags(gain_flags, param_flags, t_bin_arr, f_map_arr,
+                              d_map_arr):
+    """Propagate gain flags into parameter flags.
+
+    Given the gain flags, parameter flags and the relevant mappings, propagate
+    gain flags into parameter flags. NOTE: This may not be the best approach.
+    We could flag on the parameters directly but this is difficult due to
+    having a variable set of identitiy paramters and no reasol to believe that
+    the parameters live on the same scale.
+
+    Args:
+        gain_flags: A (gti, gfi, a, d) array of gain flags.
+        param_flags: A (pti, pfi, a, d) array of paramter flag values.
+        t_bin_arr: A (2, n_utime, n_term) array of utime to solint mappings.
+        f_map_arr: A (2, n_ufreq, n_term) array of ufreq to solint mappings.
+        d_map_arr: A (n_term, n_dir) array of direction mappings.
+        """
+
+    def impl(gain_flags, param_flags, t_bin_arr, f_map_arr, d_map_arr):
+
+        _, _, n_ant, n_dir = gain_flags.shape
+
+        param_flags[:] = 1
+
+        for gt, pt in zip(t_bin_arr[0], t_bin_arr[1]):
+            for gf, pf in zip(f_map_arr[0], f_map_arr[1]):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+
+                        flag = gain_flags[gt, gf, a, d] == 1
+                        param_flags[pt, pf, a, d] &= flag
+
+    return impl
+
+
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def apply_gain_flags(gain_flags, flag_col, term_ind, ant1_col, ant2_col,
                      t_map_arr, f_map_arr):

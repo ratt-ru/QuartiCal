@@ -6,7 +6,8 @@ from quartical.gains.general.generics import (compute_residual,
                                               per_array_jhj_jhr)
 from quartical.gains.general.flagging import (update_gain_flags,
                                               finalize_gain_flags,
-                                              apply_gain_flags)
+                                              apply_gain_flags,
+                                              gain_flags_to_param_flags)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -23,7 +24,14 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
-amplitude_args = namedtuple("amplitude_args", ("params", "param_flags"))
+amplitude_args = namedtuple(
+    "amplitude_args",
+    (
+        "params",
+        "param_flags",
+        "t_bin_arr"
+    )
+)
 
 
 @generated_jit(nopython=True,
@@ -43,8 +51,10 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
         a2 = base_args.a2
         weights = base_args.weights
         flags = base_args.flags
-        t_map_arr = base_args.t_map_arr[0]  # Don't need time param mappings.
-        f_map_arr = base_args.f_map_arr[0]  # Don't need freq param mappings.
+        t_map_arr = base_args.t_map_arr
+        g_t_map_arr = t_map_arr[0]  # Select out the gain mapping.
+        f_map_arr = base_args.f_map_arr
+        g_f_map_arr = f_map_arr[0]  # Select out the gain mapping.
         d_map_arr = base_args.d_map_arr
         gains = base_args.gains
         gain_flags = base_args.gain_flags
@@ -58,7 +68,9 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
         is_init = meta_args.is_init
         solve_per = meta_args.solve_per
 
+        t_bin_arr = term_args.t_bin_arr
         active_params = term_args.params[active_term]  # Params for this term.
+        active_param_flags = term_args.param_flags[active_term]
 
         # Set initial amplitudes to 1. TODO: This should be in an initialiser.
         if not is_init:
@@ -95,8 +107,8 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
                                             gains,
                                             a1,
                                             a2,
-                                            t_map_arr,
-                                            f_map_arr,
+                                            g_t_map_arr,
+                                            g_f_map_arr,
                                             d_map_arr,
                                             row_map,
                                             row_weights,
@@ -111,8 +123,8 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
                             a2,
                             weights,
                             flags,
-                            t_map_arr,
-                            f_map_arr,
+                            g_t_map_arr,
+                            g_f_map_arr,
                             d_map_arr,
                             row_map,
                             row_weights,
@@ -152,8 +164,8 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
                                  active_term,
                                  a1,
                                  a2,
-                                 t_map_arr,
-                                 f_map_arr)
+                                 g_t_map_arr,
+                                 g_f_map_arr)
 
             # Don't update the last gain if converged/on final iteration.
             if (cnv_perc >= stop_frac) or (i == iters - 1):
@@ -167,6 +179,14 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
                             abs2_diffs_trend,
                             corr_mode)
 
+        # Propagate gain flags to parameter flags. TODO: Verify that this
+        # is adequate. Do we need to consider setting the identity params.
+        gain_flags_to_param_flags(active_gain_flags,
+                                  active_param_flags,
+                                  t_bin_arr[:, :, active_term],
+                                  f_map_arr[:, :, active_term],
+                                  d_map_arr)
+
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
@@ -175,8 +195,8 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
                              active_term,
                              a1,
                              a2,
-                             t_map_arr,
-                             f_map_arr)
+                             g_t_map_arr,
+                             g_f_map_arr)
 
         return update, term_conv_info(i + 1, cnv_perc)
 
@@ -374,7 +394,6 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights, flags,
                nogil=True)
 def compute_update(update, jhj, jhr, corr_mode):
 
-    # TODO: Phase-only is special - we don't need the generalised inversion.
     inversion_buffer = inversion_buffer_factory()
     invert = invert_factory(corr_mode)
 
