@@ -416,6 +416,8 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
         chan_freq = clone(chan_freq)
         phase_dir = field_xds.PHASE_DIR.data[0][0]  # row, poly
         phase_dir = clone(da.from_array(phase_dir))
+        extras = {"phase_dir": phase_dir, "chan_freq": chan_freq}
+        convention = "casa" if model_opts.invert_uvw else "fourier"
 
         model_vis = defaultdict(list)
 
@@ -427,10 +429,6 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
 
                 # Generate visibilities per source type.
                 for source_type, sky_model in group_sources.items():
-                    unified_ds = data_xds.merge(sky_model).assign({
-                        "chan_freq": (("chan",), chan_freq),
-                        "phase_dir": (("phase_dir_comp",), phase_dir)})
-                    
                     if source_type == "point":
                         spec = RimeSpecification(f"(Kpq, Bpq): {stokes_corr}")
                     elif source_type == "gauss":
@@ -439,7 +437,8 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
                     else:
                         raise TypeError(f"Unhandled source type {source_type}")
 
-                    source_vis.append(rime(spec, unified_ds))
+                    source_vis.append(rime(spec, data_xds, sky_model, extras,
+                                           convention=convention))
 
                 vis = DataArray(da.stack(source_vis).sum(axis=0),
                                 dims=["row", "chan", "corr"],
