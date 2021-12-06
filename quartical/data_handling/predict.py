@@ -15,8 +15,8 @@ import Tigger
 from africanus.util.casa_types import STOKES_ID_MAP
 from africanus.util.beams import beam_filenames, beam_grids
 
-from africanus.rime.fused import RimeSpecification
-from africanus.rime.fused.dask import rime
+from africanus.experimental.rime.fused import RimeSpecification
+from africanus.experimental.rime.fused.dask import rime
 
 
 from quartical.utils.dask import blockwise_unique
