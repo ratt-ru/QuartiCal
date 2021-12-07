@@ -48,7 +48,8 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
         a2 = base_args.a2
         weights = base_args.weights
         flags = base_args.flags
-        t_map_arr = base_args.t_map_arr[0]  # Don't need time param mappings.
+        t_map_arr_g = base_args.t_map_arr[0]  # Don't need time param mappings.
+        f_map_arr = base_args.f_map_arr
         f_map_arr_g = base_args.f_map_arr[0]  # Gain mappings.
         f_map_arr_p = base_args.f_map_arr[1]  # Parameter mappings.
         d_map_arr = base_args.d_map_arr
@@ -64,7 +65,7 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
         solve_per = meta_args.solve_per
 
         params = term_args.params[active_term]  # Params for this term.
-        t_bin_arr = term_args.t_bin_arr[0]  # Don't need time param mappings.
+        t_bin_arr = term_args.t_bin_arr
         chan_freqs = term_args.chan_freqs
         lambda_sq = (299792458/chan_freqs)**2
 
@@ -93,7 +94,7 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
                                             gains,
                                             a1,
                                             a2,
-                                            t_map_arr,
+                                            t_map_arr_g,
                                             f_map_arr_g,
                                             d_map_arr,
                                             row_map,
@@ -112,7 +113,7 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
                             a2,
                             weights,
                             flags,
-                            t_map_arr,
+                            t_map_arr_g,
                             f_map_arr_g,
                             f_map_arr_p,
                             d_map_arr,
@@ -133,12 +134,11 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
             finalize_update(update,
                             params,
                             gains[active_term],
+                            gain_flags[active_term],
                             lambda_sq,
-                            t_bin_arr,
-                            f_map_arr_p,
-                            d_map_arr,
-                            dd_term,
-                            active_term,
+                            t_bin_arr[:, :, active_term],
+                            f_map_arr[:, :, active_term],
+                            d_map_arr[active_term, :],
                             corr_mode)
 
             # Check for gain convergence. TODO: This can be affected by the
@@ -396,19 +396,19 @@ def compute_update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, params, gain, lambda_sq, t_bin_arr, f_map_arr_p,
-                    d_map_arr, dd_term, active_term, corr_mode):
+def finalize_update(update, params, gain, gain_flags, lambda_sq, t_bin_arr,
+                    f_map_arr, d_map_arr, corr_mode):
+
+    set_identity = factories.set_identity_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(update, params, gain, lambda_sq, t_bin_arr, f_map_arr_p,
-                 d_map_arr, dd_term, active_term, corr_mode):
+        def impl(update, params, gain, gain_flags, lambda_sq, t_bin_arr,
+                 f_map_arr, d_map_arr, corr_mode):
 
             update /= 2
             params += update
 
-            n_tint, n_fint, n_ant, n_dir, n_param = params.shape
-
-            n_time, n_freq, _, _, _ = gain.shape
+            n_time, n_freq, n_ant, n_dir, _ = gain.shape
 
             for t in range(n_time):
                 for f in range(n_freq):
@@ -416,20 +416,24 @@ def finalize_update(update, params, gain, lambda_sq, t_bin_arr, f_map_arr_p,
                     for a in range(n_ant):
                         for d in range(n_dir):
 
-                            f_m = f_map_arr_p[f, active_term]
-                            d_m = d_map_arr[active_term, d]
+                            f_m = f_map_arr[1, f]
+                            d_m = d_map_arr[d]
+                            fl = gain_flags[t, f, a, d]
 
-                            rm = params[t, f_m, a, d_m, 0]
+                            if fl == 1:
+                                set_identity(gain[t, f, a, d])
+                            else:
+                                rm = params[t, f_m, a, d_m, 0]
 
-                            beta = lsq*rm
+                                beta = lsq*rm
 
-                            cos_beta = np.cos(beta)
-                            sin_beta = np.sin(beta)
+                                cos_beta = np.cos(beta)
+                                sin_beta = np.sin(beta)
 
-                            gain[t, f, a, d, 0] = cos_beta
-                            gain[t, f, a, d, 1] = -sin_beta
-                            gain[t, f, a, d, 2] = sin_beta
-                            gain[t, f, a, d, 3] = cos_beta
+                                gain[t, f, a, d, 0] = cos_beta
+                                gain[t, f, a, d, 1] = -sin_beta
+                                gain[t, f, a, d, 2] = sin_beta
+                                gain[t, f, a, d, 3] = cos_beta
     else:
         raise ValueError("Rotation measure can only be solved for with four "
                          "correlation data.")
