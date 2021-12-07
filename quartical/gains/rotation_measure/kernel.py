@@ -26,6 +26,7 @@ rm_args = namedtuple(
     (
         "params",
         "chan_freqs",
+        "param_flags",
         "t_bin_arr"
     )
 )
@@ -64,7 +65,8 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
         iters = meta_args.iters
         solve_per = meta_args.solve_per
 
-        params = term_args.params[active_term]  # Params for this term.
+        active_params = term_args.params[active_term]  # Params for this term.
+        active_param_flags = term_args.param_flags[active_term]
         t_bin_arr = term_args.t_bin_arr
         chan_freqs = term_args.chan_freqs
         lambda_sq = (299792458/chan_freqs)**2
@@ -72,6 +74,9 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
         n_term = len(gains)
 
         active_gain = gains[active_term]
+        active_gain_flags = gain_flags[active_term]
+
+        active_gain = active_gain
 
         dd_term = np.any(d_map_arr[active_term])
 
@@ -79,9 +84,9 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
 
         cnv_perc = 0.
 
-        real_dtype = gains[active_term].real.dtype
+        real_dtype = active_gain.real.dtype
 
-        pshape = params.shape
+        pshape = active_params.shape
         jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
         jhr = np.empty(pshape, dtype=real_dtype)
         update = np.zeros_like(jhr)
@@ -107,7 +112,7 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
                             jhr,
                             model,
                             gains,
-                            params,
+                            active_params,
                             residual,
                             a1,
                             a2,
@@ -132,9 +137,9 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
                            corr_mode)
 
             finalize_update(update,
-                            params,
-                            gains[active_term],
-                            gain_flags[active_term],
+                            active_params,
+                            active_gain,
+                            active_gain_flags,
                             lambda_sq,
                             t_bin_arr[:, :, active_term],
                             f_map_arr[:, :, active_term],
@@ -145,11 +150,11 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
             # weights. Currently unsure how or why, but using unity weights
             # leads to monotonic convergence in all solution intervals.
 
-            cnv_perc = compute_convergence(gains[active_term][:],
+            cnv_perc = compute_convergence(active_gain[:],
                                            last_gain,
                                            stop_crit)
 
-            last_gain[:] = gains[active_term][:]
+            last_gain[:] = active_gain[:]
 
             if cnv_perc >= stop_frac:
                 break
