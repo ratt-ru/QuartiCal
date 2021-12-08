@@ -50,10 +50,12 @@ def true_gain_list(predicted_xds_list, solve_per):
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
         tec_chunking = (utime_chunks, 1, n_ant, n_dir, n_corr)
 
+        bound = np.pi/4 if solve_per == "array" else np.pi/2
+
         da.random.seed(0)
         tec = da.random.uniform(size=(n_time, 1, n_ant, n_dir, n_corr),
-                                high=np.pi/2,
-                                low=-np.pi/2,
+                                high=bound,
+                                low=-bound,
                                 chunks=tec_chunking)
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
                       chunks=chunking)
