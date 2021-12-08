@@ -3,8 +3,11 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (compute_residual,
-                                              compute_convergence,
                                               per_array_jhj_jhr)
+from quartical.gains.general.flagging import (update_gain_flags,
+                                              finalize_gain_flags,
+                                              apply_gain_flags,
+                                              gain_flags_to_param_flags)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -68,6 +71,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
         active_params = term_args.params[active_term]  # Params for this term.
         active_param_flags = term_args.param_flags[active_term]
+        t_bin_arr = term_args.t_bin_arr
         chan_freqs = term_args.chan_freqs.copy()  # Don't mutate orginal.
         min_freq = np.min(chan_freqs)
         chan_freqs /= min_freq  # Scale freqs to avoid precision.
@@ -146,18 +150,57 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
                             d_map_arr[active_term, :],
                             corr_mode)
 
-            # Check for gain convergence. TODO: This can be affected by the
-            # weights. Currently unsure how or why, but using unity weights
-            # leads to monotonic convergence in all solution intervals.
+            # Check for gain convergence. Produced as a side effect of
+            # flagging. The converged percentage is based on unflagged
+            # intervals.
+            cnv_perc = update_gain_flags(active_gain,
+                                         last_gain,
+                                         active_gain_flags,
+                                         km1_abs2_diffs,
+                                         abs2_diffs_trend,
+                                         stop_crit,
+                                         corr_mode,
+                                         i)
 
-            cnv_perc = compute_convergence(gains[active_term][:],
-                                           last_gain,
-                                           stop_crit)
+            if not dd_term:
+                apply_gain_flags(active_gain_flags,
+                                 flags,
+                                 active_term,
+                                 a1,
+                                 a2,
+                                 t_map_arr_g,
+                                 f_map_arr_g)
 
-            last_gain[:] = gains[active_term][:]
-
-            if cnv_perc >= stop_frac:
+            # Don't update the last gain if converged/on final iteration.
+            if (cnv_perc >= stop_frac) or (i == iters - 1):
                 break
+            else:
+                last_gain[:] = active_gain
+
+        # NOTE: Removes soft flags and flags points which have bad trends.
+        finalize_gain_flags(active_gain,
+                            active_gain_flags,
+                            abs2_diffs_trend,
+                            corr_mode)
+
+        # Propagate gain flags to parameter flags. TODO: Verify that this
+        # is adequate. Do we need to consider setting the identity params.
+        gain_flags_to_param_flags(active_gain_flags,
+                                  active_param_flags,
+                                  t_bin_arr[:, :, active_term],
+                                  f_map_arr[:, :, active_term],
+                                  d_map_arr)
+
+        # Call this one last time to ensure points flagged by finialize are
+        # propagated (in the DI case).
+        if not dd_term:
+            apply_gain_flags(active_gain_flags,
+                             flags,
+                             active_term,
+                             a1,
+                             a2,
+                             t_map_arr_g,
+                             f_map_arr_g)
 
         active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
 
