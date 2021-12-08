@@ -68,7 +68,6 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
         active_params = term_args.params[active_term]  # Params for this term.
         active_param_flags = term_args.param_flags[active_term]
-        t_bin_arr = term_args.t_bin_arr  # Don't need time param mappings.
         chan_freqs = term_args.chan_freqs.copy()  # Don't mutate orginal.
         min_freq = np.min(chan_freqs)
         chan_freqs /= min_freq  # Scale freqs to avoid precision.
@@ -141,12 +140,10 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
             finalize_update(update,
                             active_params,
                             active_gain,
+                            active_gain_flags,
                             chan_freqs,
-                            t_bin_arr,
-                            f_map_arr_p,
-                            d_map_arr,
-                            dd_term,
-                            active_term,
+                            f_map_arr[:, :, active_term],
+                            d_map_arr[active_term, :],
                             corr_mode)
 
             # Check for gain convergence. TODO: This can be affected by the
@@ -397,43 +394,60 @@ def compute_update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, params, gain, chan_freqs, t_bin_arr, f_map_arr_p,
-                    d_map_arr, dd_term, active_term, corr_mode):
+def finalize_update(update, params, gain, gain_flags, chan_freqs, f_map_arr,
+                    d_map_arr, corr_mode):
+
+    set_identity = factories.set_identity_factory(corr_mode)
+    param_to_gain = param_to_gain_factory(corr_mode)
 
     if corr_mode.literal_value in (1, 2, 4):
-        def impl(update, params, gain, chan_freqs, t_bin_arr, f_map_arr_p,
-                 d_map_arr, dd_term, active_term, corr_mode):
+        def impl(update, params, gain, gain_flags, chan_freqs, f_map_arr,
+                 d_map_arr, corr_mode):
 
             update /= 2
             params += update
 
-            n_tint, n_fint, n_ant, n_dir, n_param = params.shape
-
-            n_time, n_freq, _, _, n_corr = gain.shape
-
-            g_inds = np.array((0, n_corr - 1))[:(n_param // 2)]
-            p_inds = np.array((0, 2))[:(n_param // 2)]
+            n_time, n_freq, n_ant, n_dir, _ = gain.shape
 
             for t in range(n_time):
                 for f in range(n_freq):
                     cf = chan_freqs[f]
-                    f_m = f_map_arr_p[f, active_term]
+                    f_m = f_map_arr[1, f]
                     for a in range(n_ant):
                         for d in range(n_dir):
 
-                            d_m = d_map_arr[active_term, d]
+                            d_m = d_map_arr[d]
+                            g = gain[t, f, a, d]
+                            fl = gain_flags[t, f, a, d]
+                            p = params[t, f_m, a, d_m]
 
-                            for gi, pi in zip(g_inds, p_inds):
-
-                                inter = params[t, f_m, a, d_m, pi]
-                                delay = params[t, f_m, a, d_m, pi + 1]
-
-                                gain[t, f, a, d, gi] = \
-                                    np.exp(1j*(cf*delay + inter))
+                            if fl == 1:
+                                set_identity(g)
+                            else:
+                                param_to_gain(p, cf, g)
     else:
         raise ValueError("Unsupported number of correlations.")
 
     return impl
+
+
+def param_to_gain_factory(corr_mode):
+
+    if corr_mode.literal_value == 4:
+        def impl(params, chanfreq, gain):
+            gain[0] = np.exp(1j*(chanfreq*params[1] + params[0]))
+            gain[3] = np.exp(1j*(chanfreq*params[3] + params[2]))
+    elif corr_mode.literal_value == 2:
+        def impl(params, chanfreq, gain):
+            gain[0] = np.exp(1j*(chanfreq*params[1] + params[0]))
+            gain[1] = np.exp(1j*(chanfreq*params[3] + params[2]))
+    elif corr_mode.literal_value == 1:
+        def impl(params, chanfreq, gain):
+            gain[0] = np.exp(1j*(chanfreq*params[1] + params[0]))
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return factories.qcjit(impl)
 
 
 def compute_jhwj_jhwr_elem_factory(corr_mode):
