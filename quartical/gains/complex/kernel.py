@@ -2,7 +2,7 @@
 import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.generics import (compute_residual,
+from quartical.gains.general.generics import (compute_residual_solver,
                                               per_array_jhj_jhr)
 from quartical.gains.general.flagging import (update_gain_flags,
                                               finalize_gain_flags,
@@ -62,17 +62,9 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
 
     def impl(base_args, term_args, meta_args, corr_mode):
 
-        model = base_args.model
         data = base_args.data
-        a1 = base_args.a1
-        a2 = base_args.a2
-        t_map_arr = base_args.t_map_arr[0]  # Ignore parameter mappings.
-        f_map_arr = base_args.f_map_arr[0]  # Ignore parameter mappings.
-        d_map_arr = base_args.d_map_arr
         gains = base_args.gains
         gain_flags = base_args.gain_flags
-        row_map = base_args.row_map
-        row_weights = base_args.row_weights
 
         stop_frac = meta_args.stop_frac
         active_term = meta_args.active_term
@@ -95,26 +87,16 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
 
         jhj = np.empty(get_jhj_dims(active_gain), dtype=active_gain.dtype)
         jhr = np.empty_like(active_gain)
-        residual = data.copy()  # TODO: Resuse inside residual code.
+        residual = np.empty_like(data) if dd_term else data
         update = np.zeros_like(active_gain)
         solver_imdry = solver_intermediaries(jhj, jhr, residual, update)
 
         for loop_idx in range(iters):
 
             if dd_term:
-                residual = compute_residual(data,
-                                            model,
-                                            gains,
-                                            a1,
-                                            a2,
-                                            t_map_arr,
-                                            f_map_arr,
-                                            d_map_arr,
-                                            row_map,
-                                            row_weights,
-                                            corr_mode)
-            else:
-                residual = data
+                compute_residual_solver(base_args,
+                                        solver_imdry,
+                                        corr_mode)
 
             compute_jhj_jhr(base_args,
                             term_args,
@@ -156,9 +138,9 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                 km1_gain[:] = active_gain
 
         # NOTE: Removes soft flags and flags points which have bad trends.
-        finalize_gain_flags(active_gain,
-                            active_gain_flags,
-                            abs2_diffs_trend,
+        finalize_gain_flags(base_args,
+                            meta_args,
+                            flag_imdry,
                             corr_mode)
 
         # Call this one last time to ensure points flagged by finialize are

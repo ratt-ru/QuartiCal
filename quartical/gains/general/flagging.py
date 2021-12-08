@@ -179,7 +179,7 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_gain_flags(gain, gain_flags, abs2_diffs_trend, mode):
+def finalize_gain_flags(base_args, meta_args, flag_imdry, corr_mode):
     """Removes soft flags and flags points which failed to converge.
 
     Given the gains, assosciated gain flags and the trend of abosolute
@@ -195,9 +195,16 @@ def finalize_gain_flags(gain, gain_flags, abs2_diffs_trend, mode):
             values correspond to points which are nowhere near convergence.
     """
 
-    set_identity = factories.set_identity_factory(mode)
+    set_identity = factories.set_identity_factory(corr_mode)
 
-    def impl(gain, gain_flags, abs2_diffs_trend, mode):
+    def impl(base_args, meta_args, flag_imdry, corr_mode):
+
+        active_term = meta_args.active_term
+
+        gain = base_args.gains[active_term]
+        gain_flags = base_args.gain_flags[active_term]
+
+        abs2_diffs_trend = flag_imdry.abs2_diffs_trend
 
         n_tint, n_fint, n_ant, n_dir = gain_flags.shape
 
