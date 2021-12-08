@@ -25,6 +25,7 @@ delay_args = namedtuple(
     "delay_args",
     (
         "params",
+        "param_flags",
         "chan_freqs",
         "t_bin_arr"
     )
@@ -48,9 +49,11 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
         a2 = base_args.a2
         weights = base_args.weights
         flags = base_args.flags
-        t_map_arr = base_args.t_map_arr[0]  # Don't need time param mappings.
-        f_map_arr_g = base_args.f_map_arr[0]  # Gain mappings.
-        f_map_arr_p = base_args.f_map_arr[1]  # Parameter mappings.
+        t_map_arr = base_args.t_map_arr
+        t_map_arr_g = t_map_arr[0]
+        f_map_arr = base_args.f_map_arr
+        f_map_arr_g = f_map_arr[0]  # Gain mappings.
+        f_map_arr_p = f_map_arr[1]  # Parameter mappings.
         d_map_arr = base_args.d_map_arr
         gains = base_args.gains
         gain_flags = base_args.gain_flags
@@ -63,26 +66,30 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
         iters = meta_args.iters
         solve_per = meta_args.solve_per
 
-        params = term_args.params[active_term]  # Params for this term.
-        t_bin_arr = term_args.t_bin_arr[0]  # Don't need time param mappings.
+        active_params = term_args.params[active_term]  # Params for this term.
+        active_param_flags = term_args.param_flags[active_term]
+        t_bin_arr = term_args.t_bin_arr  # Don't need time param mappings.
         chan_freqs = term_args.chan_freqs.copy()  # Don't mutate orginal.
         min_freq = np.min(chan_freqs)
         chan_freqs /= min_freq  # Scale freqs to avoid precision.
-        params[..., 1::2] *= min_freq  # Scale delay consistently with freq.
+        active_params[..., 1::2] *= min_freq  # Scale delay consistently.
 
         n_term = len(gains)
 
         active_gain = gains[active_term]
+        active_gain_flags = gain_flags[active_term]
 
         dd_term = np.any(d_map_arr[active_term])
 
+        # Set up some intemediaries used for flagging.
         last_gain = active_gain.copy()
-
+        km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
+        abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
         cnv_perc = 0.
 
         real_dtype = gains[active_term].real.dtype
 
-        pshape = params.shape
+        pshape = active_params.shape
         jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
         jhr = np.empty(pshape, dtype=real_dtype)
         update = np.zeros_like(jhr)
@@ -95,7 +102,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
                                             gains,
                                             a1,
                                             a2,
-                                            t_map_arr,
+                                            t_map_arr_g,
                                             f_map_arr_g,
                                             d_map_arr,
                                             row_map,
@@ -113,7 +120,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
                             a2,
                             weights,
                             flags,
-                            t_map_arr,
+                            t_map_arr_g,
                             f_map_arr_g,
                             f_map_arr_p,
                             d_map_arr,
@@ -132,8 +139,8 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
                            corr_mode)
 
             finalize_update(update,
-                            params,
-                            gains[active_term],
+                            active_params,
+                            active_gain,
                             chan_freqs,
                             t_bin_arr,
                             f_map_arr_p,
@@ -155,7 +162,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
             if cnv_perc >= stop_frac:
                 break
 
-        params[..., 1::2] /= min_freq  # Undo scaling so units are clear.
+        active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
 
         return jhj, term_conv_info(i + 1, cnv_perc)
 
