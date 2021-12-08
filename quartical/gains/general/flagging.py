@@ -56,8 +56,8 @@ def _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def update_gain_flags(gain, km1_gain, gain_flags, km1_abs2_diffs,
-                      abs2_diffs_trend, criteria, corr_mode, iteration):
+def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
+                      corr_mode):
     """Update the current state of the gain flags.
 
     Uses the current (km0) and previous (km1) gains to identify diverging
@@ -82,12 +82,20 @@ def update_gain_flags(gain, km1_gain, gain_flags, km1_abs2_diffs,
 
     set_identity = factories.set_identity_factory(corr_mode)
 
-    def impl(gain, km1_gain, gain_flags, km1_abs2_diffs,
-             abs2_diffs_trend, criteria, corr_mode, iteration):
+    def impl(base_args, term_args, meta_args, flag_imdry, loop_idx, corr_mode):
+
+        active_term = meta_args.active_term
+
+        gain = base_args.gains[active_term]
+        gain_flags = base_args.gain_flags[active_term]
+
+        km1_gain = flag_imdry.km1_gain
+        km1_abs2_diffs = flag_imdry.km1_abs2_diffs
+        abs2_diffs_trend = flag_imdry.abs2_diffs_trend
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-        criteria_sq = criteria**2
+        criteria_sq = meta_args.stop_crit**2
         n_cnvgd = 0
         n_flagged = 0
 
@@ -126,7 +134,7 @@ def update_gain_flags(gain, km1_gain, gain_flags, km1_abs2_diffs,
                         km1_abs2_diffs[ti, fi, a, d] = km0_abs2_diff
 
                         # We cannot flag on the first few iterations.
-                        if iteration < 2:
+                        if loop_idx < 2:
                             continue
 
                         # Grab trend at k-1 and update.
@@ -244,19 +252,28 @@ def gain_flags_to_param_flags(gain_flags, param_flags, t_bin_arr, f_map_arr,
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def apply_gain_flags(gain_flags, flag_col, term_ind, ant1_col, ant2_col,
-                     t_map_arr, f_map_arr):
+def apply_gain_flags(base_args, meta_args):
     """Apply gain_flags to flag_col."""
 
-    _, _, _, n_dir = gain_flags.shape
+    active_term = meta_args.active_term
+
+    gain_flags = base_args.gain_flags[active_term]
+    flag_col = base_args.flags
+    ant1_col = base_args.a1
+    ant2_col = base_args.a2
+
+    # Select out just the mappings we need.
+    t_map_arr = base_args.t_map_arr[0, :, active_term]
+    f_map_arr = base_args.f_map_arr[0, :, active_term]
 
     n_row, n_chan = flag_col.shape
 
     for row in range(n_row):
         a1, a2 = ant1_col[row], ant2_col[row]
-        ti = t_map_arr[row, term_ind]
+        t_m = t_map_arr[row]
         for f in range(n_chan):
-            fi = f_map_arr[f, term_ind]
-            for d in range(1):  # NOTE: Only apply propagate DI flags.
-                flag_col[row, f] |= gain_flags[ti, fi, a1, d] == 1
-                flag_col[row, f] |= gain_flags[ti, fi, a2, d] == 1
+            f_m = f_map_arr[f]
+
+            # NOTE: We only care about the DI case for now.
+            flag_col[row, f] |= gain_flags[t_m, f_m, a1, 0] == 1
+            flag_col[row, f] |= gain_flags[t_m, f_m, a2, 0] == 1

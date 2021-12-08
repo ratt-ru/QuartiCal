@@ -66,7 +66,6 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         data = base_args.data
         a1 = base_args.a1
         a2 = base_args.a2
-        flags = base_args.flags
         t_map_arr = base_args.t_map_arr[0]  # Ignore parameter mappings.
         f_map_arr = base_args.f_map_arr[0]  # Ignore parameter mappings.
         d_map_arr = base_args.d_map_arr
@@ -76,7 +75,6 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         row_weights = base_args.row_weights
 
         stop_frac = meta_args.stop_frac
-        stop_crit = meta_args.stop_crit
         active_term = meta_args.active_term
         iters = meta_args.iters
         solve_per = meta_args.solve_per
@@ -127,7 +125,8 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             if solve_per == "array":
                 per_array_jhj_jhr(jhj, jhr)
 
-            compute_update(solver_imdry, corr_mode)
+            compute_update(solver_imdry,
+                           corr_mode)
 
             finalize_update(base_args,
                             term_args,
@@ -139,23 +138,16 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             # Check for gain convergence. Produced as a side effect of
             # flagging. The converged percentage is based on unflagged
             # intervals.
-            cnv_perc = update_gain_flags(active_gain,
-                                         km1_gain,
-                                         active_gain_flags,
-                                         km1_abs2_diffs,
-                                         abs2_diffs_trend,
-                                         stop_crit,
-                                         corr_mode,
-                                         loop_idx)
+            cnv_perc = update_gain_flags(base_args,
+                                         term_args,
+                                         meta_args,
+                                         flag_imdry,
+                                         loop_idx,
+                                         corr_mode)
 
             if not dd_term:
-                apply_gain_flags(active_gain_flags,
-                                 flags,
-                                 active_term,
-                                 a1,
-                                 a2,
-                                 t_map_arr,
-                                 f_map_arr)
+                apply_gain_flags(base_args,
+                                 meta_args)
 
             # Don't update the last gain if converged/on final iteration.
             if (cnv_perc >= stop_frac) or (loop_idx == iters - 1):
@@ -172,13 +164,8 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
-            apply_gain_flags(active_gain_flags,
-                             flags,
-                             active_term,
-                             a1,
-                             a2,
-                             t_map_arr,
-                             f_map_arr)
+            apply_gain_flags(base_args,
+                             meta_args)
 
         return jhj, term_conv_info(loop_idx + 1, cnv_perc)
 
