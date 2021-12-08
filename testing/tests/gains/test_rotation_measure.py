@@ -50,10 +50,12 @@ def true_gain_list(predicted_xds_list, solve_per):
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
+        bound = 8 if solve_per == "array" else 10
+
         da.random.seed(0)
         rm = da.random.normal(size=(n_time, 1, n_ant, n_dir),
                               loc=0,
-                              scale=8)
+                              scale=bound)
         betas = rm * lambda_sq[None, :, None, None]
 
         gains = da.zeros((n_time, n_chan, n_ant, n_dir, n_corr),

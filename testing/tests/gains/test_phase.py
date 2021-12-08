@@ -47,12 +47,14 @@ def true_gain_list(predicted_xds_list, solve_per):
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
+        bound = np.pi/4 if solve_per == "array" else np.pi/2
+
         da.random.seed(0)
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
                       chunks=chunking)
         phase = da.random.uniform(size=(n_time, n_chan, n_ant, n_dir, n_corr),
-                                  high=np.pi/4,
-                                  low=-np.pi/4,
+                                  high=bound,
+                                  low=-bound,
                                   chunks=chunking)
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
