@@ -85,6 +85,9 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
     def impl(base_args, term_args, meta_args, flag_imdry, loop_idx, corr_mode):
 
         active_term = meta_args.active_term
+        max_iter = meta_args.iters
+        stop_frac = meta_args.stop_frac
+        stop_crit2 = meta_args.stop_crit**2
 
         gain = base_args.gains[active_term]
         gain_flags = base_args.gain_flags[active_term]
@@ -95,7 +98,6 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-        criteria_sq = meta_args.stop_crit**2
         n_cnvgd = 0
         n_flagged = 0
 
@@ -151,7 +153,7 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
                         #    flagged. If it continues to diverge (twice in a
                         #    row) it should be hard flagged and reset.
 
-                        if km0_abs2_diff/km1_abs2 < criteria_sq:
+                        if km0_abs2_diff/km1_abs2 < stop_crit2:
                             # Unflag points which converged.
                             gain_flags[ti, fi, a, d] = 0
                             n_cnvgd += 1
@@ -171,6 +173,10 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
             conv_perc = n_cnvgd/n_solvable
         else:
             conv_perc = 0.
+
+        # Update the k-1 gain if not converged/on final iteration.
+        if (conv_perc < stop_frac) and (loop_idx < max_iter - 1):
+            km1_gain[:] = gain
 
         return conv_perc
 

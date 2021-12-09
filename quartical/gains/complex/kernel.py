@@ -26,8 +26,8 @@ term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 complex_args = namedtuple("complex_args", ())
 
 
-flagging_intermediaries = namedtuple(
-    "flagging_intermediaries",
+flag_intermediaries = namedtuple(
+    "flag_intermediaries",
     (
         "km1_gain",
         "km1_abs2_diffs",
@@ -66,32 +66,29 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         gains = base_args.gains
         gain_flags = base_args.gain_flags
 
-        stop_frac = meta_args.stop_frac
         active_term = meta_args.active_term
-        iters = meta_args.iters
+        max_iter = meta_args.iters
         solve_per = meta_args.solve_per
+        dd_term = meta_args.dd_term
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
 
-        dd_term = meta_args.dd_term
-
-        # Set up some intemediaries used for flagging.
+        # Set up some intemediaries used for flagging. TODO: Move?
         km1_gain = active_gain.copy()
         km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
         abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
         flag_imdry = \
-            flagging_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
+            flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
 
-        cnv_perc = 0.
-
+        # Set up some intemediaries used for solving. TODO: Move?
         jhj = np.empty(get_jhj_dims(active_gain), dtype=active_gain.dtype)
         jhr = np.empty_like(active_gain)
         residual = np.empty_like(data) if dd_term else data
         update = np.zeros_like(active_gain)
         solver_imdry = solver_intermediaries(jhj, jhr, residual, update)
 
-        for loop_idx in range(iters):
+        for loop_idx in range(max_iter):
 
             if dd_term:
                 compute_residual_solver(base_args,
@@ -120,22 +117,19 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             # Check for gain convergence. Produced as a side effect of
             # flagging. The converged percentage is based on unflagged
             # intervals.
-            cnv_perc = update_gain_flags(base_args,
-                                         term_args,
-                                         meta_args,
-                                         flag_imdry,
-                                         loop_idx,
-                                         corr_mode)
+            conv_perc = update_gain_flags(base_args,
+                                          term_args,
+                                          meta_args,
+                                          flag_imdry,
+                                          loop_idx,
+                                          corr_mode)
 
             if not dd_term:
                 apply_gain_flags(base_args,
                                  meta_args)
 
-            # Don't update the last gain if converged/on final iteration.
-            if (cnv_perc >= stop_frac) or (loop_idx == iters - 1):
+            if conv_perc > meta_args.stop_frac:
                 break
-            else:
-                km1_gain[:] = active_gain
 
         # NOTE: Removes soft flags and flags points which have bad trends.
         finalize_gain_flags(base_args,
@@ -149,7 +143,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
             apply_gain_flags(base_args,
                              meta_args)
 
-        return jhj, term_conv_info(loop_idx + 1, cnv_perc)
+        return jhj, term_conv_info(loop_idx + 1, conv_perc)
 
     return impl
 
