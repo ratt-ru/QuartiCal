@@ -451,10 +451,13 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def per_array_jhj_jhr(jhj, jhr):
+def per_array_jhj_jhr(solver_imdry):
     """This manipulates the entries of jhj and jhr to be over all antennas."""
 
-    def impl(jhj, jhr):
+    def impl(solver_imdry):
+
+        jhj = solver_imdry.jhj
+        jhr = solver_imdry.jhr
 
         n_tint, n_fint, n_ant = jhj.shape[:3]
 

@@ -102,7 +102,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                             corr_mode)
 
             if solve_per == "array":
-                per_array_jhj_jhr(jhj, jhr)
+                per_array_jhj_jhr(solver_imdry)
 
             compute_update(solver_imdry,
                            corr_mode)
