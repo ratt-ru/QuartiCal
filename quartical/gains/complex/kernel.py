@@ -124,10 +124,6 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
                                           loop_idx,
                                           corr_mode)
 
-            if not dd_term:
-                apply_gain_flags(base_args,
-                                 meta_args)
-
             if conv_perc > meta_args.stop_frac:
                 break
 
@@ -173,6 +169,8 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
 
     def impl(base_args, term_args, meta_args, solver_imdry, corr_mode):
 
+        active_term = meta_args.active_term
+
         model = base_args.model
         weights = base_args.weights
         flags = base_args.flags
@@ -189,8 +187,6 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
         jhj = solver_imdry.jhj
         jhr = solver_imdry.jhr
         residual = solver_imdry.residual
-
-        active_term = meta_args.active_term
 
         _, n_chan, n_dir, n_corr = model.shape
 
