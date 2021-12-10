@@ -148,7 +148,9 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
                         # This if-else ladder aims to do the following:
                         # 1) If a point has converged, ensure it is unflagged.
                         # 2) If a point is strictly converging, it should have
-                        #    no flags.
+                        #    no flags. Note we allow a small epsilon (1e-6) of
+                        #    "numbness" - this is important if our initial
+                        #    estimate is very close to the solution.
                         # 3) If a point strictly diverging, it should be soft
                         #    flagged. If it continues to diverge (twice in a
                         #    row) it should be hard flagged and reset.
@@ -157,9 +159,9 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
                             # Unflag points which converged.
                             gain_flags[ti, fi, a, d] = 0
                             n_cnvgd += 1
-                        elif km0_trend < km1_trend < 0:
+                        elif km0_trend < km1_trend < 1e-6:
                             gain_flags[ti, fi, a, d] = 0
-                        elif km0_trend > km1_trend > 0:
+                        elif km0_trend > km1_trend > 1e-6:
                             gain_flags[ti, fi, a, d] = \
                                 1 if gain_flags[ti, fi, a, d] else -1
 
@@ -218,7 +220,7 @@ def finalize_gain_flags(base_args, meta_args, flag_imdry, corr_mode):
             for fi in range(n_fint):
                 for a in range(n_ant):
                     for d in range(n_dir):
-                        if abs2_diffs_trend[ti, fi, a, d] > 0:
+                        if abs2_diffs_trend[ti, fi, a, d] > 1e-6:
                             gain_flags[ti, fi, a, d] = 1
                             set_identity(gain[ti, fi, a, d])
                         elif gain_flags[ti, fi, a, d] == -1:
