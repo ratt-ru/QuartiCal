@@ -2,7 +2,7 @@
 import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.generics import (compute_residual,
+from quartical.gains.general.generics import (compute_residual_solver,
                                               per_array_jhj_jhr)
 from quartical.gains.general.flagging import (update_gain_flags,
                                               finalize_gain_flags,
@@ -34,6 +34,28 @@ phase_args = namedtuple(
 )
 
 
+flag_intermediaries = namedtuple(
+    "flag_intermediaries",
+    (
+        "km1_gain",
+        "km1_abs2_diffs",
+        "abs2_diffs_trend"
+    )
+
+)
+
+
+solver_intermediaries = namedtuple(
+    "solver_intermediaries",
+    (
+        "jhj",
+        "jhr",
+        "residual",
+        "update"
+    )
+)
+
+
 @generated_jit(nopython=True,
                fastmath=True,
                parallel=False,
@@ -45,152 +67,92 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
 
     def impl(base_args, term_args, meta_args, corr_mode):
 
-        model = base_args.model
         data = base_args.data
-        a1 = base_args.a1
-        a2 = base_args.a2
-        weights = base_args.weights
-        flags = base_args.flags
-        t_map_arr = base_args.t_map_arr
-        g_t_map_arr = t_map_arr[0]  # Select out the gain mapping.
-        f_map_arr = base_args.f_map_arr
-        g_f_map_arr = f_map_arr[0]  # Select out the gain mapping.
-        d_map_arr = base_args.d_map_arr
         gains = base_args.gains
         gain_flags = base_args.gain_flags
-        row_map = base_args.row_map
-        row_weights = base_args.row_weights
 
-        stop_frac = meta_args.stop_frac
-        stop_crit = meta_args.stop_crit
         active_term = meta_args.active_term
-        iters = meta_args.iters
+        max_iter = meta_args.iters
         solve_per = meta_args.solve_per
-
-        t_bin_arr = term_args.t_bin_arr
-        active_params = term_args.params[active_term]  # Params for this term.
-        active_param_flags = term_args.param_flags[active_term]
-
-        n_term = len(gains)
+        dd_term = meta_args.dd_term
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
+        active_params = term_args.params[active_term]
 
-        dd_term = np.any(d_map_arr[active_term])
-
-        # Set up some intemediaries used for flagging.
-        last_gain = active_gain.copy()
+        # Set up some intemediaries used for flagging. TODO: Move?
+        km1_gain = active_gain.copy()
         km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
         abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
-        cnv_perc = 0.
+        flag_imdry = \
+            flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
 
+        # Set up some intemediaries used for solving. TODO: Move?
         real_dtype = active_gain.real.dtype
-
-        jhj = np.empty(active_gain.shape, dtype=real_dtype)
-        jhr = np.empty(active_params.shape, dtype=real_dtype)
+        jhj = np.empty_like(active_gain, dtype=real_dtype)
+        jhr = np.empty_like(active_params, dtype=real_dtype)
+        residual = np.empty_like(data) if dd_term else data
         update = np.zeros_like(jhr)
+        solver_imdry = solver_intermediaries(jhj, jhr, residual, update)
 
-        for i in range(iters):
+        for loop_idx in range(max_iter):
 
-            if dd_term or n_term > 1:
-                residual = compute_residual(data,
-                                            model,
-                                            gains,
-                                            a1,
-                                            a2,
-                                            g_t_map_arr,
-                                            g_f_map_arr,
-                                            d_map_arr,
-                                            row_map,
-                                            row_weights,
-                                            corr_mode)
-            else:
-                residual = data
+            if dd_term or len(gains) > 1:
+                compute_residual_solver(base_args,
+                                        solver_imdry,
+                                        corr_mode)
 
-            compute_jhj_jhr(jhj,
-                            jhr,
-                            model,
-                            gains,
-                            residual,
-                            a1,
-                            a2,
-                            weights,
-                            flags,
-                            g_t_map_arr,
-                            g_f_map_arr,
-                            d_map_arr,
-                            row_map,
-                            row_weights,
-                            active_term,
+            compute_jhj_jhr(base_args,
+                            term_args,
+                            meta_args,
+                            solver_imdry,
                             corr_mode)
 
             if solve_per == "array":
-                per_array_jhj_jhr(jhj, jhr)
+                per_array_jhj_jhr(solver_imdry)
 
-            compute_update(update,
-                           jhj,
-                           jhr,
+            compute_update(solver_imdry,
                            corr_mode)
 
-            finalize_update(update,
-                            active_params,
-                            active_gain,
-                            active_gain_flags,
+            finalize_update(base_args,
+                            term_args,
+                            meta_args,
+                            solver_imdry,
+                            loop_idx,
                             corr_mode)
 
             # Check for gain convergence. Produced as a side effect of
             # flagging. The converged percentage is based on unflagged
             # intervals.
-            cnv_perc = update_gain_flags(active_gain,
-                                         last_gain,
-                                         active_gain_flags,
-                                         km1_abs2_diffs,
-                                         abs2_diffs_trend,
-                                         stop_crit,
-                                         corr_mode,
-                                         i)
+            conv_perc = update_gain_flags(base_args,
+                                          term_args,
+                                          meta_args,
+                                          flag_imdry,
+                                          loop_idx,
+                                          corr_mode)
 
-            if not dd_term:
-                apply_gain_flags(active_gain_flags,
-                                 flags,
-                                 active_term,
-                                 a1,
-                                 a2,
-                                 g_t_map_arr,
-                                 g_f_map_arr)
-
-            # Don't update the last gain if converged/on final iteration.
-            if (cnv_perc >= stop_frac) or (i == iters - 1):
+            if conv_perc > meta_args.stop_frac:
                 break
-            else:
-                last_gain[:] = active_gain
 
         # NOTE: Removes soft flags and flags points which have bad trends.
-        finalize_gain_flags(active_gain,
-                            active_gain_flags,
-                            abs2_diffs_trend,
+        finalize_gain_flags(base_args,
+                            meta_args,
+                            flag_imdry,
                             corr_mode)
 
         # Propagate gain flags to parameter flags. TODO: Verify that this
         # is adequate. Do we need to consider setting the identity params.
-        gain_flags_to_param_flags(active_gain_flags,
-                                  active_param_flags,
-                                  t_bin_arr[:, :, active_term],
-                                  f_map_arr[:, :, active_term],
-                                  d_map_arr)
+        gain_flags_to_param_flags(base_args,
+                                  term_args,
+                                  meta_args)
 
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
-            apply_gain_flags(active_gain_flags,
-                             flags,
-                             active_term,
-                             a1,
-                             a2,
-                             g_t_map_arr,
-                             g_f_map_arr)
+            apply_gain_flags(base_args,
+                             meta_args)
 
-        return update, term_conv_info(i + 1, cnv_perc)
+        return jhj, term_conv_info(loop_idx + 1, conv_perc)
 
     return impl
 
@@ -200,9 +162,10 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
                parallel=True,
                cache=True,
                nogil=True)
-def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights, flags,
-                    t_map_arr, f_map_arr, d_map_arr, row_map, row_weights,
-                    active_term, corr_mode):
+def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
+
+    # We want to dispatch based on this field so we need its type.
+    row_weights = base_args[base_args.fields.index('row_weights')]
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -217,9 +180,27 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights, flags,
     set_identity = factories.set_identity_factory(corr_mode)
     compute_jhwj_jhwr_elem = compute_jhwj_jhwr_elem_factory(corr_mode)
 
-    def impl(jhj, jhr, model, gains, residual, a1, a2, weights, flags,
-             t_map_arr, f_map_arr, d_map_arr, row_map, row_weights,
-             active_term, corr_mode):
+    def impl(base_args, term_args, meta_args, solver_imdry, corr_mode):
+
+        active_term = meta_args.active_term
+
+        model = base_args.model
+        weights = base_args.weights
+        flags = base_args.flags
+        a1 = base_args.a1
+        a2 = base_args.a2
+        row_map = base_args.row_map
+        row_weights = base_args.row_weights
+
+        gains = base_args.gains
+        t_map_arr = base_args.t_map_arr[0]  # We only need the gain mappings.
+        f_map_arr = base_args.f_map_arr[0]  # We only need the gain mappings.
+        d_map_arr = base_args.d_map_arr
+
+        jhj = solver_imdry.jhj
+        jhr = solver_imdry.jhr
+        residual = solver_imdry.residual
+
         _, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
@@ -386,12 +367,21 @@ def compute_jhj_jhr(jhj, jhr, model, gains, residual, a1, a2, weights, flags,
                parallel=True,
                cache=True,
                nogil=True)
-def compute_update(update, jhj, jhr, corr_mode):
+def compute_update(solver_imdry, corr_mode):
 
-    inversion_buffer = inversion_buffer_factory()
-    invert = invert_factory(corr_mode)
+    # We want to dispatch based on this field so we need its type.
+    jhj = solver_imdry[solver_imdry.fields.index('jhj')]
 
-    def impl(update, jhj, jhr, corr_mode):
+    generalised = jhj.ndim == 6
+    inversion_buffer = inversion_buffer_factory(generalised=generalised)
+    invert = invert_factory(corr_mode, generalised=generalised)
+
+    def impl(solver_imdry, corr_mode):
+
+        jhj = solver_imdry.jhj
+        jhr = solver_imdry.jhr
+        update = solver_imdry.update
+
         n_tint, n_fint, n_ant, n_dir, n_param = jhr.shape
 
         n_int = n_tint * n_fint
@@ -418,12 +408,23 @@ def compute_update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, params, gain, gain_flags, corr_mode):
+def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
+                    corr_mode):
 
     set_identity = factories.set_identity_factory(corr_mode)
     param_to_gain = param_to_gain_factory(corr_mode)
 
-    def impl(update, params, gain, gain_flags, corr_mode):
+    def impl(base_args, term_args, meta_args, solver_imdry, loop_idx,
+             corr_mode):
+
+        active_term = meta_args.active_term
+
+        gain = base_args.gains[active_term]
+        gain_flags = base_args.gain_flags[active_term]
+
+        params = term_args.params[active_term]
+
+        update = solver_imdry.update
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
