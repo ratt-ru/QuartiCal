@@ -231,14 +231,13 @@ def finalize_gain_flags(base_args, meta_args, flag_imdry, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def gain_flags_to_param_flags(gain_flags, param_flags, t_bin_arr, f_map_arr,
-                              d_map_arr):
+def gain_flags_to_param_flags(base_args, term_args, meta_args):
     """Propagate gain flags into parameter flags.
 
     Given the gain flags, parameter flags and the relevant mappings, propagate
     gain flags into parameter flags. NOTE: This may not be the best approach.
     We could flag on the parameters directly but this is difficult due to
-    having a variable set of identitiy paramters and no reasol to believe that
+    having a variable set of identitiy paramters and no reason to believe that
     the parameters live on the same scale.
 
     Args:
@@ -249,7 +248,15 @@ def gain_flags_to_param_flags(gain_flags, param_flags, t_bin_arr, f_map_arr,
         d_map_arr: A (n_term, n_dir) array of direction mappings.
         """
 
-    def impl(gain_flags, param_flags, t_bin_arr, f_map_arr, d_map_arr):
+    def impl(base_args, term_args, meta_args):
+
+        active_term = meta_args.active_term
+
+        t_bin_arr = term_args.t_bin_arr[:, :, active_term]
+        f_map_arr = base_args.f_map_arr[:, :, active_term]
+
+        gain_flags = base_args.gain_flags[active_term]
+        param_flags = term_args.param_flags[active_term]
 
         _, _, n_ant, n_dir = gain_flags.shape
 

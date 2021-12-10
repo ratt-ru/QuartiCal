@@ -45,7 +45,6 @@ solver_intermediaries = namedtuple(
         "residual",
         "update"
     )
-
 )
 
 
