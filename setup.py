@@ -63,7 +63,8 @@ else:
                     "pytest",
                     "omegaconf",
                     "colorama",
-                    "bokeh"]
+                    "bokeh",
+                    "xarray>=0.20.0"]
 
 setup(name='quartical',
       version=quartical.__version__,
