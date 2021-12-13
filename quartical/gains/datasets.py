@@ -379,11 +379,19 @@ def write_gain_datasets(gain_xds_lod, net_xds_list, output_opts):
         # that the chunks are regular and <2GB, which is necessary for zarr.
 
         for xds in term_xds_list:
-            rechunk_axes = xds.GAIN_AXES[:2]
-            if hasattr(xds, "PARAM_AXES"):
-                rechunk_axes += xds.PARAM_AXES[:2]
 
-            rechunked_xds = xds.chunk({ax: "auto" for ax in rechunk_axes})
+            target_chunks = {}
+
+            if hasattr(xds, "PARAM_AXES"):
+                rechunked_params = \
+                    xds.params.chunk({ax: "auto" for ax in xds.PARAM_AXES[:2]})
+                target_chunks.update(rechunked_params.chunksizes)
+
+            rechunked_gains = \
+                xds.gains.chunk({ax: "auto" for ax in xds.GAIN_AXES[:2]})
+            target_chunks.update(rechunked_gains.chunksizes)
+
+            rechunked_xds = xds.chunk(target_chunks)
 
             term_write_xds_list.append(rechunked_xds)
 
