@@ -103,7 +103,7 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
         real_dtype = active_gain.real.dtype
         jhj = np.empty_like(active_gain, dtype=real_dtype)
         jhr = np.empty_like(active_params, dtype=real_dtype)
-        residual = np.empty_like(data) if dd_term else data
+        residual = np.empty_like(data) if dd_term or len(gains) > 1 else data
         update = np.zeros_like(jhr)
         solver_imdry = solver_intermediaries(jhj, jhr, residual, update)
 
