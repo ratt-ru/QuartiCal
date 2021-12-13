@@ -449,6 +449,38 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
     return impl
 
 
+@qcgjit
+def combine_flags(t_bin_arr, f_map_arr, d_map_arr, net_shape, *flags):
+
+    def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, *flags):
+        t_bin_arr = t_bin_arr[0]
+        f_map_arr = f_map_arr[0]
+
+        n_time = t_bin_arr.shape[0]
+        n_freq = f_map_arr.shape[0]
+
+        _, _, n_ant, n_dir = net_shape
+
+        net_flags = np.zeros((n_time, n_freq, n_ant, n_dir), dtype=np.int8)
+
+        n_term = len(flags)
+
+        for t in range(n_time):
+            for f in range(n_freq):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+                        for gi in range(n_term):
+                            tm = t_bin_arr[t, gi]
+                            fm = f_map_arr[f, gi]
+                            dm = d_map_arr[gi, d]
+
+                            net_flags[t, f, a, d] |= flags[gi][tm, fm, a, dm]
+
+        return net_flags
+
+    return impl
+
+
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
 def per_array_jhj_jhr(solver_imdry):

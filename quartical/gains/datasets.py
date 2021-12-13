@@ -10,7 +10,7 @@ from daskms.experimental.zarr import xds_to_zarr
 from quartical.gains import TERM_TYPES
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
-from quartical.gains.general.generics import combine_gains
+from quartical.gains.general.generics import combine_gains, combine_flags
 
 
 def make_gain_xds_lod(data_xds_list,
@@ -234,6 +234,14 @@ def combine_gains_wrapper(t_bin_arr, f_map_arr, d_map_arr, net_shape,
                          corr_mode, *gains)
 
 
+def combine_flags_wrapper(t_bin_arr, f_map_arr, d_map_arr, net_shape,
+                          corr_mode, *flags):
+    """Wrapper to stop dask from getting confused. See issue #99."""
+
+    return combine_flags(t_bin_arr, f_map_arr, d_map_arr, net_shape,
+                         corr_mode, *flags)
+
+
 def populate_net_xds_list(net_gain_xds_list,
                           solved_gain_xds_lod,
                           t_bin_list,
@@ -275,6 +283,10 @@ def populate_net_xds_list(net_gain_xds_list,
             [xds.gains.dtype for xds in terms.values()], []
         )
 
+        identity_elements = {1: np.ones(1, dtype=dtype),
+                             2: np.ones(2, dtype=dtype),
+                             4: np.array((1, 0, 0, 1), dtype=dtype)}
+
         net_gain = da.blockwise(
             combine_gains_wrapper, ("time", "chan", "ant", "dir", "corr"),
             t_bin_list[ind], ("param", "time", "term"),
@@ -291,7 +303,39 @@ def populate_net_xds_list(net_gain_xds_list,
                            "dir": net_xds.GAIN_SPEC.dchunk}
         )
 
-        net_xds = net_xds.assign({"gains": (net_xds.GAIN_AXES, net_gain)})
+        flag_schema = ("time", "chan", "ant", "dir")
+
+        flags = [x for xds in terms.values()
+                 for x in (xds.gain_flags.data, flag_schema)]
+        dtype = np.find_common_type(
+            [xds.gain_flags.dtype for xds in terms.values()], []
+        )
+
+        net_flags = da.blockwise(
+            combine_flags_wrapper, ("time", "chan", "ant", "dir"),
+            t_bin_list[ind], ("param", "time", "term"),
+            f_map_list[ind], ("param", "chan", "term"),
+            d_map_list[ind], None,
+            net_shape[:-1], None,
+            *flags,
+            dtype=dtype,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"time": net_xds.GAIN_SPEC.tchunk,
+                           "chan": net_xds.GAIN_SPEC.fchunk,
+                           "dir": net_xds.GAIN_SPEC.dchunk}
+        )
+
+        net_gain = da.where(net_flags[..., None],
+                            identity_elements[corr_mode],
+                            net_gain)
+
+        net_xds = net_xds.assign(
+            {
+                "gains": (net_xds.GAIN_AXES, net_gain),
+                "gain_flags": (net_xds.GAIN_AXES[:-1], net_flags)
+            }
+        )
 
         populated_net_gain_xds_list.append(net_xds)
 
