@@ -231,7 +231,7 @@ def finalize_gain_flags(base_args, meta_args, flag_imdry, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def gain_flags_to_param_flags(base_args, term_args, meta_args):
+def update_param_flags(base_args, term_args, meta_args, identity_params):
     """Propagate gain flags into parameter flags.
 
     Given the gain flags, parameter flags and the relevant mappings, propagate
@@ -248,15 +248,18 @@ def gain_flags_to_param_flags(base_args, term_args, meta_args):
         d_map_arr: A (n_term, n_dir) array of direction mappings.
         """
 
-    def impl(base_args, term_args, meta_args):
+    def impl(base_args, term_args, meta_args, identity_params):
 
         active_term = meta_args.active_term
 
+        # NOTE: We don't yet let params and gains have different direction
+        # maps but this will eventually be neccessary.
         t_bin_arr = term_args.t_bin_arr[:, :, active_term]
         f_map_arr = base_args.f_map_arr[:, :, active_term]
 
         gain_flags = base_args.gain_flags[active_term]
         param_flags = term_args.param_flags[active_term]
+        params = term_args.params[active_term]
 
         _, _, n_ant, n_dir = gain_flags.shape
 
@@ -269,6 +272,15 @@ def gain_flags_to_param_flags(base_args, term_args, meta_args):
 
                         flag = gain_flags[gt, gf, a, d] == 1
                         param_flags[pt, pf, a, d] &= flag
+
+        n_tint, n_fint, n_ant, n_dir = param_flags.shape
+
+        for ti in range(n_tint):
+            for fi in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+                        if param_flags[ti, fi, a, d] == 1:
+                            params[ti, fi, a, d] = identity_params
 
     return impl
 

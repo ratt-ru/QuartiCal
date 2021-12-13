@@ -7,7 +7,7 @@ from quartical.gains.general.generics import (compute_residual_solver,
 from quartical.gains.general.flagging import (update_gain_flags,
                                               finalize_gain_flags,
                                               apply_gain_flags,
-                                              gain_flags_to_param_flags)
+                                              update_param_flags)
 from quartical.gains.delay.kernel import (compute_jhj_jhr,
                                           compute_update,
                                           finalize_update)
@@ -54,6 +54,16 @@ solver_intermediaries = namedtuple(
 )
 
 
+def get_identity_params(corr_mode):
+
+    if corr_mode.literal_value in (2, 4):
+        return np.zeros((4,), dtype=np.float64)
+    elif corr_mode.literal_value == 1:
+        return np.zeros((2,), dtype=np.float64)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+
 @generated_jit(nopython=True,
                fastmath=True,
                parallel=False,
@@ -64,6 +74,8 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
     # NOTE: This just reuses delay solver functionality.
 
     coerce_literal(tec_solver, ["corr_mode"])
+
+    identity_params = get_identity_params(corr_mode)
 
     def impl(base_args, term_args, meta_args, corr_mode):
 
@@ -139,6 +151,12 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
                                           loop_idx,
                                           corr_mode)
 
+            # Propagate gain flags to parameter flags.
+            update_param_flags(base_args,
+                               term_args,
+                               meta_args,
+                               identity_params)
+
             if conv_perc > meta_args.stop_frac:
                 break
 
@@ -147,12 +165,6 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
                             meta_args,
                             flag_imdry,
                             corr_mode)
-
-        # Propagate gain flags to parameter flags. TODO: Verify that this
-        # is adequate. Do we need to consider setting the identity params.
-        gain_flags_to_param_flags(base_args,
-                                  term_args,
-                                  meta_args)
 
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
