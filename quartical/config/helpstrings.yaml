@@ -51,19 +51,34 @@ input_ms:
 
 input_model:
   recipe:
-    Input model recipe. Add syntactic examples.
+    Input model recipe. This is a string which describes how the model data
+    should be constructed. Currently, measurement set columns and Tigger lsms
+    are supported. Multiple columns and lsms can be specified and combined
+    using colons (:), addition (+) and negation (~). As an example consider
+    COL1, COL2 and LSM1. "COL1" will simply use a single MS column as input.
+    "COL1:COL2" will create a direction dependent model with COL1 as the
+    first direction and COL2 as the second. "COL1~COL2" will create a model
+    with a single direction by subtracting COL2 from COL1. "COL1+COL2" will
+    create a model with a single direction by adding COL1 and COL2. Tigger
+    lsms can be used interchangeably with columns (using the same syntax) but
+    also support the use of tagged directions. "LSM1" will create a model with
+    a single direction from the sky model. "LSM1@dE" will create a model with
+    multiple directions, one for each cluster tagged with dE in the lsm.
+    Combining all of the above it is possible to do things like
+    "COL1~LSM1:LSM1@dE" which will create a model with multiple
+    directions, the first given by COL1 minus LSM1 and the remainder given
+    given by the dE tagged clusters in LSM1.
   beam:
     Path to beams. Apply beams during predict if specified eg.
     'beam_$(corr)_$(reim).fits' or 'beam_$(CORR)_$(REIM).fits'.
   beam_l_axis:
-    Determines the orientation of the beam l-axis. Choose from [X, ~X,
-    Y, ~Y, L, ~L, M, ~M] where ~ indicates flipping the
-    orientation of the axis.
+    Determines the orientation of the beam l-axis. Note that ~ indicates
+    flipping the orientation of the axis.
   beam_m_axis:
     Determines the orientation of the beam m-axis. See beam_l_axis.
   invert_uvw:
     The UVW coordinates will be negated if this option is specified. Enabled
-    by default.
+    by default to match the Casa convention.
   source_chunks:
     The number of sources to predict simultaneously. Has a large impact on
     memory footprint.
@@ -104,8 +119,6 @@ output:
     Which model directions to subtract when generating residuals. Must be
     specified as a list of integers e.g. [0, 5, 7]. The default will subtract
     all directions.
-  # solver_flags:
-  #   Apply solver flags when writing data to measurement set.
 
 
 mad_flags:
@@ -146,7 +159,9 @@ solver:
     and ultimately written to the FLAG column. This should almost always be
     enabled so that data associated with diverging gains is properly flagged.
   robust:
-    Enable robust reweighting in solvers.
+    Enable robust reweighting in solvers. Note that this only works when the
+    solver.iter_recipe loops through the chain multiple times. The reweighting
+    step only happens once per traversal of the chain.
   threads:
     Number of Numba threads per Dask thread (enables nested parallelism) to
     be used when running the solvers. The total number of threads used will be
@@ -159,9 +174,6 @@ solver:
   convergence_fraction:
     The fraction of gain values which must converge before a solver will exit
     prematurely.
-  # chisq_interval:
-  #   Number of iterations to perform between chi-squared checks. This is done
-  #   to avoid computing the expensive chi-squared test every iteration.
 
 
 dask:
