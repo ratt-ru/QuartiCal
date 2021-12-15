@@ -19,7 +19,7 @@ def init_gain_flags(term_shape, term_ind, **kwargs):
 
 
 def init_param_flags(term_shape, term_ind, **kwargs):
-    """Initialise the gain flags for a term using the various mappings."""
+    """Initialise the param flags for a term using the various mappings."""
 
     flag_col = kwargs["flags"]
     ant1_col = kwargs["a1"]

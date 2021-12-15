@@ -158,7 +158,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
                                meta_args,
                                identity_params)
 
-            if conv_perc > meta_args.stop_frac:
+            if conv_perc >= meta_args.stop_frac:
                 break
 
         # NOTE: Removes soft flags and flags points which have bad trends.

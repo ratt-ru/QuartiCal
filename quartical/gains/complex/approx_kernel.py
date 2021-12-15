@@ -124,7 +124,7 @@ def approx_complex_solver(base_args, term_args, meta_args, corr_mode):
                                           loop_idx,
                                           corr_mode)
 
-            if conv_perc > meta_args.stop_frac:
+            if conv_perc >= meta_args.stop_frac:
                 break
 
         # NOTE: Removes soft flags and flags points which have bad trends.
