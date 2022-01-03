@@ -6,6 +6,7 @@ from collections import namedtuple
 from itertools import cycle
 from quartical.gains import TERM_TYPES
 from quartical.weights.robust import robust_reweighting
+from quartical.gains.general.flagging import init_gain_flags, init_param_flags
 
 
 meta_args_nt = namedtuple(
@@ -15,6 +16,7 @@ meta_args_nt = namedtuple(
         "is_init",
         "stop_frac",
         "stop_crit",
+        "dd_term",
         "solve_per",
         "robust"
         )
@@ -40,11 +42,14 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
 
     gain_tup = ()
     param_tup = ()
-    flag_tup = ()
+    gain_flags_tup = ()
+    param_flags_tup = ()
     results_dict = {}
     is_initialised = {}
 
-    for (term_name, term_type, term_shape, term_pshape) in term_spec_list:
+    for term_ind, term_spec in enumerate(term_spec_list):
+
+        (term_name, term_type, term_shape, term_pshape) = term_spec
 
         gain = np.zeros(term_shape, dtype=np.complex128)
 
@@ -56,32 +61,39 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
             gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
             is_initialised[term_name] = False
 
-        flag = np.zeros(term_shape, dtype=np.uint8)
+        # Init gain flags by looking for intervals with no data.
+        gain_flags = init_gain_flags(term_shape, term_ind, **kwargs)
         param = np.zeros(term_pshape, dtype=gain.real.dtype)
+        param_flags = init_param_flags(term_pshape, term_ind, **kwargs)
 
         gain_tup += (gain,)
-        flag_tup += (flag,)
+        gain_flags_tup += (gain_flags,)
         param_tup += (param,)
+        param_flags_tup += (param_flags,)
 
         results_dict[f"{term_name}-gain"] = gain
-        results_dict[f"{term_name}-flag"] = flag
+        results_dict[f"{term_name}-gain_flags"] = gain_flags
         results_dict[f"{term_name}-param"] = param
+        results_dict[f"{term_name}-param_flags"] = param_flags
         results_dict[f"{term_name}-conviter"] = np.atleast_2d(0)   # int
         results_dict[f"{term_name}-convperc"] = np.atleast_2d(0.)  # float
 
     kwargs["gains"] = gain_tup
-    kwargs["gain_flags"] = flag_tup
+    kwargs["gain_flags"] = gain_flags_tup
     kwargs["inverse_gains"] = tuple([np.empty_like(g) for g in gain_tup])
     kwargs["params"] = param_tup
+    kwargs["param_flags"] = param_flags_tup
 
     terms = solver_opts.terms
     iter_recipe = solver_opts.iter_recipe
     robust = solver_opts.robust
 
-    # TODO: Analyse the impact of the following. This is necessary if we want
-    # to mutate the weights, as we may end up with an unwritable array.
-    kwargs["weights"] = np.require(kwargs["weights"], requirements=['W', 'O'])
+    # NOTE: This is a necessary evil. We do not want to modify the inputs
+    # and copying is the best way to ensure that that cannot happen.
+    kwargs["weights"] = kwargs["weights"].copy()
     results_dict["weights"] = kwargs["weights"]
+    kwargs["flags"] = kwargs["flags"].copy()
+    results_dict["flags"] = kwargs["flags"]
 
     if solver_opts.robust:
         final_epoch = len(iter_recipe) // len(terms)
@@ -112,6 +124,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                  is_initialised[term_name],
                                  solver_opts.convergence_fraction,
                                  solver_opts.convergence_criteria,
+                                 term_opts.direction_dependent,
                                  term_opts.solve_per,
                                  robust)
 

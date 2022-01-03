@@ -51,26 +51,41 @@ input_ms:
 
 input_model:
   recipe:
-    Input model recipe. Add syntactic examples.
+    Input model recipe. This is a string which describes how the model data
+    should be constructed. Currently, measurement set columns and Tigger lsms
+    are supported. Multiple columns and lsms can be specified and combined
+    using colons (:), addition (+) and negation (~). As an example consider
+    COL1, COL2 and LSM1. "COL1" will simply use a single MS column as input.
+    "COL1:COL2" will create a direction dependent model with COL1 as the
+    first direction and COL2 as the second. "COL1~COL2" will create a model
+    with a single direction by subtracting COL2 from COL1. "COL1+COL2" will
+    create a model with a single direction by adding COL1 and COL2. Tigger
+    lsms can be used interchangeably with columns (using the same syntax) but
+    also support the use of tagged directions. "LSM1" will create a model with
+    a single direction from the sky model. "LSM1@dE" will create a model with
+    multiple directions, one for each cluster tagged with dE in the lsm.
+    Combining all of the above it is possible to do things like
+    "COL1~LSM1:LSM1@dE" which will create a model with multiple
+    directions, the first given by COL1 minus LSM1 and the remainder given
+    given by the dE tagged clusters in LSM1.
   beam:
     Path to beams. Apply beams during predict if specified eg.
     'beam_$(corr)_$(reim).fits' or 'beam_$(CORR)_$(REIM).fits'.
   beam_l_axis:
-    Determines the orientation of the beam l-axis. Choose from [X, ~X,
-    Y, ~Y, L, ~L, M, ~M] where ~ indicates flipping the
-    orientation of the axis.
+    Determines the orientation of the beam l-axis. Note that ~ indicates
+    flipping the orientation of the axis.
   beam_m_axis:
     Determines the orientation of the beam m-axis. See beam_l_axis.
   invert_uvw:
     The UVW coordinates will be negated if this option is specified. Enabled
-    by default.
+    by default to match the Casa convention.
   source_chunks:
     The number of sources to predict simultaneously. Has a large impact on
     memory footprint.
   apply_p_jones:
     Determines whether P-Jones (parallactic angle rotation) is applied to the
     model. This affects both measurement set columns and predicted components.
-    Care must taken when using this option and output.apply_p_jones_inv. 
+    Care must taken when using this option and output.apply_p_jones_inv.
 
 
 output:
@@ -91,10 +106,10 @@ output:
     If True, write out flags to FLAG and FLAG_ROW. This can be disabled if
     you want QuartiCal to leave the measurement set flags unaltered.
   apply_p_jones_inv:
-    Determines whether the inverse of P-Jones (parallactic angle rotation) is 
-    applied to the output visibilitites. This has the effect of derotating 
+    Determines whether the inverse of P-Jones (parallactic angle rotation) is
+    applied to the output visibilitites. This has the effect of derotating
     the output visibilities into the sky frame. Care must taken when using
-    this option and input_model.apply_p_jones. 
+    this option and input_model.apply_p_jones.
   net_gain:
     Output the effective/net gain per antenna per time per channel. This
     is formed by multiplying all the gain terms together. This can be used
@@ -104,8 +119,6 @@ output:
     Which model directions to subtract when generating residuals. Must be
     specified as a list of integers e.g. [0, 5, 7]. The default will subtract
     all directions.
-  # solver_flags:
-  #   Apply solver flags when writing data to measurement set.
 
 
 mad_flags:
@@ -123,7 +136,7 @@ mad_flags:
     Multiplicative factor which determines whether or not the MAD estimate
     on a given baseline is considered to deviate too much from the global
     MAD estimate. If the MAD estimate over all baselines is X, and the MAD
-    estimate on a specific baseline is X_bl, baselines for which 
+    estimate on a specific baseline is X_bl, baselines for which
     X_bl > max_deviation*X will be flagged.
 
 
@@ -141,8 +154,14 @@ solver:
     the first example but then do an additional 15 iterations for K, 5 for G
     and skip B. Setting to zero effectively disables solving for that term
     and can be used in conjunction with iterpolation.
+  propagate_flags:
+    Controls whether gain flags/flags raised inside the solver are propagated
+    and ultimately written to the FLAG column. This should almost always be
+    enabled so that data associated with diverging gains is properly flagged.
   robust:
-    Enable robust reweighting in solvers.
+    Enable robust reweighting in solvers. Note that this only works when the
+    solver.iter_recipe loops through the chain multiple times. The reweighting
+    step only happens once per traversal of the chain.
   threads:
     Number of Numba threads per Dask thread (enables nested parallelism) to
     be used when running the solvers. The total number of threads used will be
@@ -155,9 +174,6 @@ solver:
   convergence_fraction:
     The fraction of gain values which must converge before a solver will exit
     prematurely.
-  # chisq_interval:
-  #   Number of iterations to perform between chi-squared checks. This is done
-  #   to avoid computing the expensive chi-squared test every iteration.
 
 
 dask:

@@ -2,9 +2,14 @@
 import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.generics import (compute_residual,
-                                              compute_convergence,
+from quartical.gains.general.generics import (solver_intermediaries,
+                                              compute_residual_solver,
                                               per_array_jhj_jhr)
+from quartical.gains.general.flagging import (flag_intermediaries,
+                                              update_gain_flags,
+                                              finalize_gain_flags,
+                                              apply_gain_flags,
+                                              update_param_flags)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
                                                  get_row_extents)
@@ -26,9 +31,18 @@ rm_args = namedtuple(
     (
         "params",
         "chan_freqs",
+        "param_flags",
         "t_bin_arr"
     )
 )
+
+
+def get_identity_params(corr_mode):
+
+    if corr_mode.literal_value == 4:
+        return np.zeros((1,), dtype=np.float64)
+    else:
+        raise ValueError("Unsupported number of correlations.")
 
 
 @generated_jit(nopython=True,
@@ -40,121 +54,102 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
 
     coerce_literal(rm_solver, ["corr_mode"])
 
+    identity_params = get_identity_params(corr_mode)
+
     def impl(base_args, term_args, meta_args, corr_mode):
 
-        model = base_args.model
         data = base_args.data
-        a1 = base_args.a1
-        a2 = base_args.a2
-        weights = base_args.weights
-        flags = base_args.flags
-        t_map_arr = base_args.t_map_arr[0]  # Don't need time param mappings.
-        f_map_arr_g = base_args.f_map_arr[0]  # Gain mappings.
-        f_map_arr_p = base_args.f_map_arr[1]  # Parameter mappings.
-        d_map_arr = base_args.d_map_arr
         gains = base_args.gains
         gain_flags = base_args.gain_flags
-        row_map = base_args.row_map
-        row_weights = base_args.row_weights
 
-        stop_frac = meta_args.stop_frac
-        stop_crit = meta_args.stop_crit
         active_term = meta_args.active_term
-        iters = meta_args.iters
+        max_iter = meta_args.iters
         solve_per = meta_args.solve_per
+        dd_term = meta_args.dd_term
 
-        params = term_args.params[active_term]  # Params for this term.
-        t_bin_arr = term_args.t_bin_arr[0]  # Don't need time param mappings.
+        active_gain = gains[active_term]
+        active_gain_flags = gain_flags[active_term]
+        active_params = term_args.params[active_term]
+
+        # Set up some intemediaries used for flagging. TODO: Move?
+        km1_gain = active_gain.copy()
+        km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
+        abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
+        flag_imdry = \
+            flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
+
+        # Set up some intemediaries used for solving. TODO: Move?
+        real_dtype = active_gain.real.dtype
+        pshape = active_params.shape
+        jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
+        jhr = np.empty(pshape, dtype=real_dtype)
+        residual = data.astype(np.complex128)  # Make a high precision copy.
+        update = np.zeros_like(jhr)
+        solver_imdry = solver_intermediaries(jhj, jhr, residual, update)
+
         chan_freqs = term_args.chan_freqs
         lambda_sq = (299792458/chan_freqs)**2
 
-        n_term = len(gains)
+        for loop_idx in range(max_iter):
 
-        active_gain = gains[active_term]
+            if dd_term or len(gains) > 1:
+                compute_residual_solver(base_args,
+                                        solver_imdry,
+                                        corr_mode)
 
-        dd_term = np.any(d_map_arr[active_term])
-
-        last_gain = active_gain.copy()
-
-        cnv_perc = 0.
-
-        real_dtype = gains[active_term].real.dtype
-
-        pshape = params.shape
-        jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
-        jhr = np.empty(pshape, dtype=real_dtype)
-        update = np.zeros_like(jhr)
-
-        for i in range(iters):
-
-            if dd_term or n_term > 1:
-                residual = compute_residual(data,
-                                            model,
-                                            gains,
-                                            a1,
-                                            a2,
-                                            t_map_arr,
-                                            f_map_arr_g,
-                                            d_map_arr,
-                                            row_map,
-                                            row_weights,
-                                            corr_mode)
-            else:
-                residual = data
-
-            compute_jhj_jhr(jhj,
-                            jhr,
-                            model,
-                            gains,
-                            params,
-                            residual,
-                            a1,
-                            a2,
-                            weights,
-                            flags,
-                            t_map_arr,
-                            f_map_arr_g,
-                            f_map_arr_p,
-                            d_map_arr,
+            compute_jhj_jhr(base_args,
+                            term_args,
+                            meta_args,
+                            solver_imdry,
                             lambda_sq,
-                            row_map,
-                            row_weights,
-                            active_term,
                             corr_mode)
 
             if solve_per == "array":
-                per_array_jhj_jhr(jhj, jhr)
+                per_array_jhj_jhr(solver_imdry)
 
-            compute_update(update,
-                           jhj,
-                           jhr,
+            compute_update(solver_imdry,
                            corr_mode)
 
-            finalize_update(update,
-                            params,
-                            gains[active_term],
+            finalize_update(base_args,
+                            term_args,
+                            meta_args,
+                            solver_imdry,
                             lambda_sq,
-                            t_bin_arr,
-                            f_map_arr_p,
-                            d_map_arr,
-                            dd_term,
-                            active_term,
+                            loop_idx,
                             corr_mode)
 
-            # Check for gain convergence. TODO: This can be affected by the
-            # weights. Currently unsure how or why, but using unity weights
-            # leads to monotonic convergence in all solution intervals.
+            # Check for gain convergence. Produced as a side effect of
+            # flagging. The converged percentage is based on unflagged
+            # intervals.
+            conv_perc = update_gain_flags(base_args,
+                                          term_args,
+                                          meta_args,
+                                          flag_imdry,
+                                          loop_idx,
+                                          corr_mode)
 
-            cnv_perc = compute_convergence(gains[active_term][:],
-                                           last_gain,
-                                           stop_crit)
+            # Propagate gain flags to parameter flags.
+            update_param_flags(base_args,
+                               term_args,
+                               meta_args,
+                               identity_params)
 
-            last_gain[:] = gains[active_term][:]
-
-            if cnv_perc >= stop_frac:
+            if conv_perc >= meta_args.stop_frac:
                 break
 
-        return jhj, term_conv_info(i + 1, cnv_perc)
+        # NOTE: Removes soft flags and flags points which have bad trends.
+        finalize_gain_flags(base_args,
+                            meta_args,
+                            flag_imdry,
+                            corr_mode)
+
+        # Call this one last time to ensure points flagged by finialize are
+        # propagated (in the DI case).
+        if not dd_term:
+            apply_gain_flags(base_args,
+                             meta_args)
+
+        return jhj, term_conv_info(loop_idx + 1, conv_perc)
 
     return impl
 
@@ -164,9 +159,11 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
                parallel=True,
                cache=True,
                nogil=True)
-def compute_jhj_jhr(jhj, jhr, model, gains, params, residual, a1, a2, weights,
-                    flags, t_map_arr, f_map_arr_g, f_map_arr_p, d_map_arr,
-                    lambda_sq, row_map, row_weights, active_term, corr_mode):
+def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, lambda_sq,
+                    corr_mode):
+
+    # We want to dispatch based on this field so we need its type.
+    row_weights = base_args[base_args.fields.index('row_weights')]
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -181,9 +178,30 @@ def compute_jhj_jhr(jhj, jhr, model, gains, params, residual, a1, a2, weights,
     set_identity = factories.set_identity_factory(corr_mode)
     compute_jhwj_jhwr_elem = compute_jhwj_jhwr_elem_factory(corr_mode)
 
-    def impl(jhj, jhr, model, gains, params, residual, a1, a2, weights,
-             flags, t_map_arr, f_map_arr_g, f_map_arr_p, d_map_arr,
-             lambda_sq, row_map, row_weights, active_term, corr_mode):
+    def impl(base_args, term_args, meta_args, solver_imdry, lambda_sq,
+             corr_mode):
+
+        active_term = meta_args.active_term
+
+        model = base_args.model
+        weights = base_args.weights
+        flags = base_args.flags
+        a1 = base_args.a1
+        a2 = base_args.a2
+        row_map = base_args.row_map
+        row_weights = base_args.row_weights
+
+        gains = base_args.gains
+        params = term_args.params[active_term]
+        t_map_arr = base_args.t_map_arr[0]  # We only need the gain mappings.
+        f_map_arr_g = base_args.f_map_arr[0]
+        f_map_arr_p = base_args.f_map_arr[1]
+        d_map_arr = base_args.d_map_arr
+
+        jhj = solver_imdry.jhj
+        jhr = solver_imdry.jhr
+        residual = solver_imdry.residual
+
         _, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
@@ -363,13 +381,21 @@ def compute_jhj_jhr(jhj, jhr, model, gains, params, residual, a1, a2, weights,
                parallel=True,
                cache=True,
                nogil=True)
-def compute_update(update, jhj, jhr, corr_mode):
+def compute_update(solver_imdry, corr_mode):
+
+    # We want to dispatch based on this field so we need its type.
+    jhj = solver_imdry[solver_imdry.fields.index('jhj')]
 
     generalised = jhj.ndim == 6
     inversion_buffer = inversion_buffer_factory(generalised=generalised)
     invert = invert_factory(corr_mode, generalised=generalised)
 
-    def impl(update, jhj, jhr, corr_mode):
+    def impl(solver_imdry, corr_mode):
+
+        jhj = solver_imdry.jhj
+        jhr = solver_imdry.jhr
+        update = solver_imdry.update
+
         n_tint, n_fint, n_ant, n_dir, n_param = jhr.shape
 
         n_int = n_tint * n_fint
@@ -396,19 +422,30 @@ def compute_update(update, jhj, jhr, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(update, params, gain, lambda_sq, t_bin_arr, f_map_arr_p,
-                    d_map_arr, dd_term, active_term, corr_mode):
+def finalize_update(base_args, term_args, meta_args, solver_imdry, lambda_sq,
+                    loop_idx, corr_mode):
+
+    set_identity = factories.set_identity_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(update, params, gain, lambda_sq, t_bin_arr, f_map_arr_p,
-                 d_map_arr, dd_term, active_term, corr_mode):
+        def impl(base_args, term_args, meta_args, solver_imdry, lambda_sq,
+                 loop_idx, corr_mode):
+
+            active_term = meta_args.active_term
+
+            gain = base_args.gains[active_term]
+            gain_flags = base_args.gain_flags[active_term]
+            f_map_arr_p = base_args.f_map_arr[1, :, active_term]
+            d_map_arr = base_args.d_map_arr[active_term, :]
+
+            params = term_args.params[active_term]
+
+            update = solver_imdry.update
 
             update /= 2
             params += update
 
-            n_tint, n_fint, n_ant, n_dir, n_param = params.shape
-
-            n_time, n_freq, _, _, _ = gain.shape
+            n_time, n_freq, n_ant, n_dir, _ = gain.shape
 
             for t in range(n_time):
                 for f in range(n_freq):
@@ -416,20 +453,24 @@ def finalize_update(update, params, gain, lambda_sq, t_bin_arr, f_map_arr_p,
                     for a in range(n_ant):
                         for d in range(n_dir):
 
-                            f_m = f_map_arr_p[f, active_term]
-                            d_m = d_map_arr[active_term, d]
+                            f_m = f_map_arr_p[f]
+                            d_m = d_map_arr[d]
+                            fl = gain_flags[t, f, a, d]
 
-                            rm = params[t, f_m, a, d_m, 0]
+                            if fl == 1:
+                                set_identity(gain[t, f, a, d])
+                            else:
+                                rm = params[t, f_m, a, d_m, 0]
 
-                            beta = lsq*rm
+                                beta = lsq*rm
 
-                            cos_beta = np.cos(beta)
-                            sin_beta = np.sin(beta)
+                                cos_beta = np.cos(beta)
+                                sin_beta = np.sin(beta)
 
-                            gain[t, f, a, d, 0] = cos_beta
-                            gain[t, f, a, d, 1] = -sin_beta
-                            gain[t, f, a, d, 2] = sin_beta
-                            gain[t, f, a, d, 3] = cos_beta
+                                gain[t, f, a, d, 0] = cos_beta
+                                gain[t, f, a, d, 1] = -sin_beta
+                                gain[t, f, a, d, 2] = sin_beta
+                                gain[t, f, a, d, 3] = cos_beta
     else:
         raise ValueError("Rotation measure can only be solved for with four "
                          "correlation data.")
