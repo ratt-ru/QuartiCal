@@ -136,6 +136,9 @@ class Solver(Input):
         assert len(self.iter_recipe) >= len(self.terms), \
                "User has specified solver.iter_recipe with too few elements."
 
+        assert self.convergence_criteria >= 1e-8, \
+               "User has specified solver.convergence_criteria below 1e-8."
+
 
 @dataclass
 class Dask(Input):
