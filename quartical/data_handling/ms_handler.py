@@ -325,7 +325,7 @@ def preprocess_xds_list(xds_list, ms_opts):
         # issues with dynamic range. This should instead be changed when
         # allcating the residual array.
         output_xds = output_xds.assign(
-            {"DATA": (("row", "chan", "corr"), data_col.astype(np.complex128)),
+            {"DATA": (("row", "chan", "corr"), data_col),
              "WEIGHT": (("row", "chan", "corr"), weight_col),
              "FLAG": (("row", "chan"), flag_col)})
 

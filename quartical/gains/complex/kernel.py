@@ -83,7 +83,7 @@ def complex_solver(base_args, term_args, meta_args, corr_mode):
         # Set up some intemediaries used for solving. TODO: Move?
         jhj = np.empty(get_jhj_dims(active_gain), dtype=active_gain.dtype)
         jhr = np.empty_like(active_gain)
-        residual = np.empty_like(data) if dd_term else data
+        residual = data.astype(np.complex128)  # Make a high precision copy.
         update = np.zeros_like(active_gain)
         solver_imdry = solver_intermediaries(jhj, jhr, residual, update)
 

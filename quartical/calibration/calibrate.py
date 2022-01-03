@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
-import numpy as np
 from quartical.gains.general.generics import (compute_residual,
                                               compute_corrected_residual,
                                               compute_corrected_weights)
@@ -322,10 +321,10 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
         # underscore prefixed data vars. This is done to avoid overwriting
         # input data prematurely.
         visibility_outputs = {
-            "_RESIDUAL": residual.astype(np.complex64),
-            "_CORRECTED_RESIDUAL": corrected_residual.astype(np.complex64),
-            "_CORRECTED_DATA": corrected_data.astype(np.complex64),
-            "_CORRECTED_WEIGHT": corrected_weight.astype(np.float32)
+            "_RESIDUAL": residual,
+            "_CORRECTED_RESIDUAL": corrected_residual,
+            "_CORRECTED_DATA": corrected_data,
+            "_CORRECTED_WEIGHT": corrected_weight,
         }
 
         dims = data_xds.DATA.dims  # All visiblity columns share these dims.
