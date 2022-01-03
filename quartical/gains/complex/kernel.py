@@ -2,9 +2,11 @@
 import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.generics import (compute_residual_solver,
+from quartical.gains.general.generics import (solver_intermediaries,
+                                              compute_residual_solver,
                                               per_array_jhj_jhr)
-from quartical.gains.general.flagging import (update_gain_flags,
+from quartical.gains.general.flagging import (flag_intermediaries,
+                                              update_gain_flags,
                                               finalize_gain_flags,
                                               apply_gain_flags)
 from quartical.gains.general.convenience import (get_row,
@@ -24,28 +26,6 @@ stat_fields = {"conv_iters": np.int64,
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 complex_args = namedtuple("complex_args", ())
-
-
-flag_intermediaries = namedtuple(
-    "flag_intermediaries",
-    (
-        "km1_gain",
-        "km1_abs2_diffs",
-        "abs2_diffs_trend"
-    )
-
-)
-
-
-solver_intermediaries = namedtuple(
-    "solver_intermediaries",
-    (
-        "jhj",
-        "jhr",
-        "residual",
-        "update"
-    )
-)
 
 
 @generated_jit(nopython=True,

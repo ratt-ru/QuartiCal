@@ -1,8 +1,20 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import jit, generated_jit
+from collections import namedtuple
 import quartical.gains.general.factories as factories
 from quartical.utils.numba import coerce_literal
+
+
+flag_intermediaries = namedtuple(
+    "flag_intermediaries",
+    (
+        "km1_gain",
+        "km1_abs2_diffs",
+        "abs2_diffs_trend"
+    )
+
+)
 
 
 def init_gain_flags(term_shape, term_ind, **kwargs):

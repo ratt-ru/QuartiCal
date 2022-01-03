@@ -2,9 +2,21 @@
 import numpy as np
 from numba import prange, generated_jit, jit
 from numba.typed import List
+from collections import namedtuple
 from quartical.utils.numba import coerce_literal
 import quartical.gains.general.factories as factories
 from quartical.gains.general.convenience import get_dims, get_row
+
+
+solver_intermediaries = namedtuple(
+    "solver_intermediaries",
+    (
+        "jhj",
+        "jhr",
+        "residual",
+        "update"
+    )
+)
 
 
 qcgjit = generated_jit(nopython=True,
