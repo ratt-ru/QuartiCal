@@ -326,9 +326,7 @@ def get_support_tables(ms_path):
 
 
 def build_rime_spec(stokes, corrs, source_type, model_opts):
-    base = ["Kpq", "Bpq"]
-    left = []
-    right = []
+    left, middle, right = [], ["Kpq", "Bpq"], []
     terms = {}
 
     if source_type == "point":
@@ -348,7 +346,7 @@ def build_rime_spec(stokes, corrs, source_type, model_opts):
         right.append("Eq")
 
 
-    onion = ",".join(left + base + right)
+    onion = ",".join(left + middle + right)
     bits = ["(", onion, "): ",
             "[", ",".join(stokes), "] -> [", ",".join(corrs), "]"]
     return RimeSpecification("".join(bits), terms=terms)
