@@ -23,7 +23,7 @@ from quartical.gains.datasets import write_gain_datasets
 # from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 
 
-@logger.catch(onerror=lambda _: sys.exit(1))
+# @logger.catch(onerror=lambda _: sys.exit(1))
 def execute():
     with ExitStack() as stack:
         _execute(stack)

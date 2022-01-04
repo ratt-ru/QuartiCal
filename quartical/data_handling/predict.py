@@ -154,7 +154,7 @@ def daskify_sky_model_dict(sky_model_dict, chunk_size):
                                    darray("stokes", (chunk_size, -1))),
                         "spi": (("source", "spec_idx", "corr"),
                                 darray("spi", (chunk_size, 1, -1))),
-                        "ref_freq": (("source",), 
+                        "ref_freq": (("source",),
                                 darray("ref_freq", chunk_size))})
             if "gauss" in group_sources:
                 arrays = group_sources["gauss"]
@@ -169,7 +169,7 @@ def daskify_sky_model_dict(sky_model_dict, chunk_size):
                                    darray("stokes", (chunk_size, -1))),
                         "spi": (("source", "spec_idx", "corr"),
                                 darray("spi", (chunk_size, 1, -1))),
-                        "ref_freq": (("source",), 
+                        "ref_freq": (("source",),
                                 darray("ref_freq", chunk_size)),
                         "gauss_shape": (("source", "gauss_comp"),
                                 darray("shape", (chunk_size, -1)))})
@@ -325,47 +325,33 @@ def get_support_tables(ms_path):
     return lazy_tables
 
 
-def compute_p_jones(parallactic_angles, feed_xds):
-    """Compte the P-Jones (parallactic angle + receptor angle) matrix.
+def build_rime_spec(stokes, corrs, source_type, model_opts):
+    base = ["Kpq", "Bpq"]
+    left = []
+    right = []
+    terms = {}
 
-    Args:
-        parallactic_angles: Dask array of parallactic angles.
-        feed_xds: xarray datset containing feed information.
-
-    Returns:
-        A dask array of feed rotations per antenna per time.
-    """
-    # This is a DI term when there are no DD terms, otherwise it needs to be
-    # applied before the beam. This currently makes assumes identical
-    # receptor angles. TODO: Remove assumption when Codex gains functionality.
-
-    receptor_angles = clone(feed_xds.RECEPTOR_ANGLE.data)
-
-    # Determine the feed types present in the measurement set. TODO: This will
-    # cause the POLARIZATION_TYPE to be read many times. Think about improving
-    # when I tidy up the predict.
-
-    feeds = feed_xds.POLARIZATION_TYPE.values
-    unique_feeds = np.unique(feeds)
-
-    if np.all([feed in "XxYy" for feed in unique_feeds]):
-        feed_type = "linear"
-    elif np.all([feed in "LlRr" for feed in unique_feeds]):
-        feed_type = "circular"
+    if source_type == "point":
+        pass
+    elif source_type == "gauss":
+        left.append("Cpq")
+        terms["C"] = "Gaussian"
     else:
-        raise ValueError("Unsupported feed type/configuration.")
+        raise ValueError(f"Unhandled source_type {source_type}")
 
-    logger.debug("Feed table indicates {} ({}) feeds are present in the "
-                 "measurement set.", unique_feeds, feed_type)
+    if model_opts.apply_p_jones:
+        left.append("Lp")
+        right.append("Lq")
 
-    if not da.all(receptor_angles[:, 0] == receptor_angles[:, 1]):
-        logger.warning("RECEPTOR_ANGLE indicates non-orthoganal "
-                       "receptors. Currently, P-Jones cannot account "
-                       "for non-uniform offsets. Using 0.")
-        return compute_feed_rotation(parallactic_angles, feed_type)
-    else:
-        return compute_feed_rotation(
-            parallactic_angles + receptor_angles[None, :, 0], feed_type)
+    if model_opts.beam:
+        left.append("Ep")
+        right.append("Eq")
+
+
+    onion = ",".join(left + base + right)
+    bits = ["(", onion, "): ",
+            "[", ",".join(stokes), "] -> [", ",".join(corrs), "]"]
+    return RimeSpecification("".join(bits), terms=terms)
 
 
 def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
@@ -398,17 +384,22 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
     # Get the support tables (as lists), and give them sensible names.
     tables = get_support_tables(ms_path)
 
+    ant_xds_list = tables["ANTENNA"]
     field_xds_list = tables["FIELD"]
     ddid_xds_list = tables["DATA_DESCRIPTION"]
     spw_xds_list = tables["SPECTRAL_WINDOW"]
     pol_xds_list = tables["POLARIZATION"]
     feed_xds_list = tables["FEED"]
 
+    assert len(ant_xds_list) == 1
+    assert len(feed_xds_list) == 1
+
     # List of predict operations
     predict_list = []
 
     for data_xds in data_xds_list:
         # Perform subtable joins.
+        ant_xds = ant_xds_list[0]
         feed_xds = feed_xds_list[0]
         field_xds = field_xds_list[data_xds.attrs['FIELD_ID']]
         ddid_xds = ddid_xds_list[data_xds.attrs['DATA_DESC_ID']]
@@ -416,13 +407,15 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
         pol_xds = pol_xds_list[ddid_xds.POLARIZATION_ID.data[0]]
         corr_schema = [STOKES_ID_MAP[ct] for ct in pol_xds.CORR_TYPE.values[0]]
         stokes_schema = ["I", "Q", "U", "V"]
-        stokes_corr = "".join(("[", ",".join(stokes_schema), "] -> [",
-                               ",".join(corr_schema), "]"))
         chan_freq = da.from_array(spw_xds.CHAN_FREQ.data[0], chunks=data_xds.chunks['chan'])
         chan_freq = clone(chan_freq)
         phase_dir = field_xds.PHASE_DIR.data[0][0]  # row, poly
         phase_dir = clone(da.from_array(phase_dir))
-        extras = {"phase_dir": phase_dir, "chan_freq": chan_freq}
+        extras = {
+            "phase_dir": phase_dir,
+            "chan_freq": chan_freq,
+            "antenna_position": ant_xds.POSITION.data,
+            "receptor_angle": feed_xds.RECEPTOR_ANGLE.data}
         convention = "casa" if model_opts.invert_uvw else "fourier"
 
         model_vis = defaultdict(list)
@@ -435,14 +428,8 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
 
                 # Generate visibilities per source type.
                 for source_type, sky_model in group_sources.items():
-                    if source_type == "point":
-                        spec = RimeSpecification(f"(Kpq, Bpq): {stokes_corr}")
-                    elif source_type == "gauss":
-                        spec = RimeSpecification(f"(Cpq, Kpq, Bpq): {stokes_corr}", 
-                                                 terms={"Cpq": "Gaussian"})
-                    else:
-                        raise TypeError(f"Unhandled source type {source_type}")
-
+                    spec = build_rime_spec(stokes_schema, corr_schema,
+                                           source_type, model_opts)
                     source_vis.append(rime(spec, data_xds, sky_model, extras,
                                            convention=convention))
 
