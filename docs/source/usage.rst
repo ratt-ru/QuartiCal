@@ -94,4 +94,43 @@ flexible as possible.
         goquartical-config configname.yaml
 
     This will produce a .yaml file with the given name and all available
-    fields. 
+    fields.
+
+
+Dynamic Fields
+~~~~~~~~~~~~~~
+
+QuartiCal is exceptionally flexible when it comes to gain calibration. To
+avoid having too many options, it makes use of dynamically created config
+fields. This applies to specifying gain terms. 
+
+As an example, consider solving for a gain and bandpass (following their
+usual definitions). To do so, a user would need to tell QuartiCal that there
+are two gain terms and then provide the relevant arguments for those gains.
+
+The contents of the .yaml would look as follows for this case:
+
+.. code-block:: yaml
+
+    solver:
+        terms:
+            - G
+            - B
+        iter_recipe:
+            - 25
+            - 25
+    
+    G:
+        freq_interval: 0
+    B:
+        time_interval: 0
+
+QuartiCal will automatically know that each term has its own dynamically
+generated section in the config, labelled by the term name (G or B in this
+example).
+
+The above can also be specified on the command line using:
+
+.. code-block:: bash
+
+    solver.terms="[G,B]" solver.iter_recipe="[25,25]" G.freq_interval=0 B.time_interval=0
