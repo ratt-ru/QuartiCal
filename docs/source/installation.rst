@@ -1,6 +1,5 @@
-************
 Installation
-************
+============
 
 This page details QaurtiCal's recommended installation procedure.
 

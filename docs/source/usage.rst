@@ -1,6 +1,5 @@
-*****
 Usage
-*****
+=====
 
 This page details running QuartiCal for the first time, including navigating
 the help and specifying input arguments.
@@ -134,3 +133,22 @@ The above can also be specified on the command line using:
 .. code-block:: bash
 
     solver.terms="[G,B]" solver.iter_recipe="[25,25]" G.freq_interval=0 B.time_interval=0
+
+
+.. note::
+
+    Lists in .yaml files can be specified in two ways:
+
+    .. code-block:: yaml
+
+        solver:
+            terms:
+                - G
+                - B
+
+    or 
+
+    .. code-block:: yaml
+
+        solver:
+            terms: [G,B]

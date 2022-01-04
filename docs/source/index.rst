@@ -12,11 +12,11 @@ this documentation does not include a module reference or detailed description
 of QuartiCal's interfaces. 
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    
    installation
    usage
-   .. parset
+   options
    .. examples
    .. performance
    .. licence
