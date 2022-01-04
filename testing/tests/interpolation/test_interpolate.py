@@ -64,9 +64,13 @@ def mock_gain_xds_list(start_time,
                          dtype=np.complex128)
         gains += da.array([1, 0, 0, 1])
 
+        flags = da.zeros((n_time, n_freq, n_ant, n_dir),
+                         dtype=np.int8)
+
         # Include a dummy data_var to check that it doesn't break anything.
         data_vars = {
             "gains": (("gain_t", "gain_f", "ant", "dir", "corr"), gains),
+            "gain_flags": (("gain_t", "gain_f", "ant", "dir"), flags),
             "dummy": (("ant",), np.arange(n_ant))
         }
 
@@ -151,7 +155,10 @@ def converted_xds_list(load_xds_list, interp_mode):
 
 
 def test_data_vars(converted_xds_list, interp_mode):
-    expected_keys = {"re", "im"} if interp_mode == "reim" else {"amp", "phase"}
+    reim_keys = {"gain_flags", "re", "im"}
+    ampphase_keys = {"gain_flags", "amp", "phase"}
+
+    expected_keys = reim_keys if interp_mode == "reim" else ampphase_keys
 
     assert all([set(xds.keys()) ^ expected_keys == set()
                 for xds in converted_xds_list])

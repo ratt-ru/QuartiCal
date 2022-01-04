@@ -63,7 +63,8 @@ else:
                     "pytest",
                     "omegaconf",
                     "colorama",
-                    "bokeh"]
+                    "bokeh",
+                    "xarray>=0.20.0"]
 
 setup(name='quartical',
       version=quartical.__version__,
@@ -93,4 +94,8 @@ setup(name='quartical',
       entry_points={'console_scripts':
                     ['goquartical = quartical.executor:execute',
                      'goquartical-config ='
-                        'quartical.config.parser:create_user_config']},)
+                        'quartical.config.parser:create_user_config',
+                     'goquartical-backup ='
+                        'quartical.apps.backup:backup',
+                     'goquartical-restore ='
+                        'quartical.apps.backup:restore']},)

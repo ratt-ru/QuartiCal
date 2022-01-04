@@ -321,7 +321,9 @@ def preprocess_xds_list(xds_list, ms_opts):
 
         # Hereafter, DATA is whatever the user specified with data_column.
         # Hereafter, WEIGHT is is whatever the user spcified with
-        # weight_column.
+        # weight_column. TODO: We cast the data to double precision to avoid
+        # issues with dynamic range. This should instead be changed when
+        # allcating the residual array.
         output_xds = output_xds.assign(
             {"DATA": (("row", "chan", "corr"), data_col),
              "WEIGHT": (("row", "chan", "corr"), weight_col),
