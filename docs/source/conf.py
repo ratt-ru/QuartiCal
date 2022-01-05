@@ -1,3 +1,12 @@
+from omegaconf import OmegaConf as oc
+from pathlib import Path
+
+path = Path(__file__).resolve()
+path_to_helpstrings = \
+    path.parents[2].joinpath("quartical/config/helpstrings.yaml")
+HELPSTRINGS = oc.load(path_to_helpstrings)
+
+
 # Configuration file for the Sphinx documentation builder.
 #
 # This file only contains a selection of the most common options. For a full
@@ -28,7 +37,16 @@ author = 'Jonathan Kenyon'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    'sphinxcontrib.jinja'
 ]
+
+jinja_contexts = {
+    k: {k: v} for k, v in HELPSTRINGS.items()
+}
+
+jinja_filters = {
+    'bold': lambda value: f'**{value}**',
+}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

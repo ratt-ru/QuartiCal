@@ -16,10 +16,9 @@ of QuartiCal's interfaces.
    
    installation
    usage
+   utilities
    options
-   .. examples
-   .. performance
-   .. licence
+   examples
 
 
 Indices and tables
