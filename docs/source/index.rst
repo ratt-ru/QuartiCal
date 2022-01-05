@@ -19,6 +19,7 @@ of QuartiCal's interfaces.
    utilities
    options
    examples
+   distribution
 
 
 Indices and tables
