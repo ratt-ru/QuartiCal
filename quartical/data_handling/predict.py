@@ -403,7 +403,8 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
         ddid_xds = ddid_xds_list[data_xds.attrs['DATA_DESC_ID']]
         spw_xds = spw_xds_list[ddid_xds.SPECTRAL_WINDOW_ID.data[0]]
         pol_xds = pol_xds_list[ddid_xds.POLARIZATION_ID.data[0]]
-        corr_schema = [STOKES_ID_MAP[ct] for ct in pol_xds.CORR_TYPE.values[0]]
+        corr_type = tuple(pol_xds.CORR_TYPE.data[0])
+        corr_schema = [STOKES_ID_MAP[ct] for ct in corr_type]
         stokes_schema = ["I", "Q", "U", "V"]
         chan_freq = da.from_array(spw_xds.CHAN_FREQ.data[0], chunks=data_xds.chunks['chan'])
         chan_freq = clone(chan_freq)
@@ -413,8 +414,19 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
             "phase_dir": phase_dir,
             "chan_freq": chan_freq,
             "antenna_position": ant_xds.POSITION.data,
-            "receptor_angle": feed_xds.RECEPTOR_ANGLE.data}
-        convention = "casa" if model_opts.invert_uvw else "fourier"
+            "receptor_angle": feed_xds.RECEPTOR_ANGLE.data,
+            "convention": "casa" if model_opts.invert_uvw else "fourier"
+        }
+
+        if model_opts.beam:
+            beam, lm_ext, freq_map = load_beams(model_opts.beam,
+                                                corr_type,
+                                                model_opts.beam_l_axis,
+                                                model_opts.beam_m_axis)
+
+            extras["beam"] = beam
+            extras["beam_lm_extents"] = lm_ext
+            extras["beam_freq_map"] = freq_map
 
         model_vis = defaultdict(list)
 
@@ -428,8 +440,7 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
                 for source_type, sky_model in group_sources.items():
                     spec = build_rime_spec(stokes_schema, corr_schema,
                                            source_type, model_opts)
-                    source_vis.append(rime(spec, data_xds, sky_model, extras,
-                                           convention=convention))
+                    source_vis.append(rime(spec, data_xds, sky_model, extras))
 
                 vis = DataArray(da.stack(source_vis).sum(axis=0),
                                 dims=["row", "chan", "corr"],
