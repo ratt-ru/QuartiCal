@@ -18,6 +18,7 @@ of QuartiCal's interfaces.
    usage
    utilities
    options
+   gain_types
    examples
    distribution
 
