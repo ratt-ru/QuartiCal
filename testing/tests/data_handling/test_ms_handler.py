@@ -2,6 +2,7 @@ from copy import deepcopy
 import pytest
 from quartical.data_handling.ms_handler import write_xds_list
 import numpy as np
+import dask.array as da
 
 
 @pytest.fixture(scope="module")
@@ -15,6 +16,7 @@ def opts(base_opts, weight_column, freq_chunk, time_chunk, select_corr):
     _opts.input_ms.freq_chunk = freq_chunk
     _opts.input_ms.time_chunk = time_chunk
     _opts.input_ms.select_corr = select_corr
+    _opts.input_ms.select_uv_range = [100, 500]
 
     return _opts
 
@@ -66,6 +68,37 @@ def test_read_ms_freq_chunks(raw_xds_list, ms_opts):
     assert np.all([chunk <= expected_f_dim
                    for xds in raw_xds_list
                    for chunk in xds.chunks["chan"]])
+
+
+# -----------------------------preprocess_xds_list-----------------------------
+
+
+@pytest.mark.data_handling
+def test_uv_range(preprocessed_xds_list, ms_opts):
+    # Check that the appropriate values have soft flags.
+
+    condition_list = [] 
+
+    for xds in preprocessed_xds_list:
+
+        uvw = xds.UVW.data
+        flags = da.any(xds.FLAG.data, axis=1)  # Drop chan axis.
+
+        uv_dist = da.sqrt(da.square(uvw[:, 0]) + da.square(uvw[:, 1]))
+
+        lower, upper = ms_opts.select_uv_range
+
+        expected_flags = da.where((uv_dist < lower) | (uv_dist > upper),
+                                  True,
+                                  False)
+
+        # Indirect check, these numbers should be equal even if other flags
+        # exist in flags.
+        condition = expected_flags.sum() == (expected_flags & flags).sum()
+
+        condition_list.append(condition)
+
+    assert all(*da.compute(condition_list))
 
 
 # -------------------------------write_xds_list--------------------------------
