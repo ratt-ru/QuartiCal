@@ -11,3 +11,4 @@ user_config.yaml
 *.pyc
 .tdl.conf
 dask-worker-space
+.coverage

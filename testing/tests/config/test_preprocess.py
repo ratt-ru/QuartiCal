@@ -1,7 +1,11 @@
 import pytest
-from quartical.config.preprocess import transcribe_recipe, sky_model_nt
+from quartical.config.preprocess import (transcribe_recipe,
+                                         sky_model_nt,
+                                         prepare_output_directory)
 import dask.array as da
+from pathlib import Path
 import os.path
+import os
 
 
 # A dictionary mapping valid recipe inputs to expected outputs.
@@ -88,3 +92,23 @@ def test_transcribe_recipe_invalid(invalid_recipe):
 
     with pytest.raises(expected_output):
         transcribe_recipe(input_recipe)
+
+
+@pytest.mark.preprocess
+def test_prepare_output_directory():
+
+    test_dir_path = Path(__file__).absolute().parent
+
+    tmp_dir_path = test_dir_path / "tmp_dir.qc"
+
+    os.mkdir(tmp_dir_path)
+
+    open(tmp_dir_path / "tmp.qc", "x")
+
+    # This verifies that the .qc files get cleaned out.
+
+    prepare_output_directory(tmp_dir_path)
+
+    assert not list(tmp_dir_path.iterdir()), ".qc files were not removed."
+
+    tmp_dir_path.rmdir()  # Remove temp directory.
