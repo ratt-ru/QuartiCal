@@ -332,7 +332,7 @@ def build_rime_spec(stokes, corrs, source_type, model_opts):
     if source_type == "point":
         pass
     elif source_type == "gauss":
-        left.insert(0, "Cpq")
+        middle.insert(0, "Cpq")
         terms["C"] = "Gaussian"
     else:
         raise ValueError(f"Unhandled source_type {source_type}")
