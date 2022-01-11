@@ -77,7 +77,7 @@ def test_read_ms_freq_chunks(raw_xds_list, ms_opts):
 def test_uv_range(preprocessed_xds_list, ms_opts):
     # Check that the appropriate values have soft flags.
 
-    condition_list = [] 
+    condition_list = []
 
     for xds in preprocessed_xds_list:
 

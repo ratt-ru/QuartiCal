@@ -4,12 +4,17 @@ import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
 from dask.graph_manipulation import clone
 from loguru import logger
-from quartical.weights.weights import initialize_weights
-from quartical.flagging.flagging import initialise_flags
+from quartical.weights.weights import (initialize_unity_weights,
+                                       initialize_weights_from_column)
+from quartical.flagging.flagging import (flag_zeros,
+                                         flag_row_to_flag,
+                                         combine_corr_flags,
+                                         flag_autocorrelations,
+                                         flag_uv_range)
 from quartical.data_handling import CORR_TYPES
 from quartical.data_handling.chunking import compute_chunking
 from quartical.data_handling.bda import process_bda_input, process_bda_output
-from quartical.data_handling.selection import filter_xds_list
+from quartical.data_handling.selection import filter_xds_list, zero_nonfinite
 from quartical.data_handling.angles import apply_parangles
 
 
@@ -281,65 +286,34 @@ def preprocess_xds_list(xds_list, ms_opts):
             with preprocessing operations applied.
     """
 
-    output_xds_list = []
+    data_field = ms_opts.data_column
+    weight_field = ms_opts.weight_column
+    sigma_field = ms_opts.sigma_column
+    min_uv, max_uv = ms_opts.select_uv_range
 
-    for xds in xds_list:
+    xds_list = zero_nonfinite(xds_list, input_field=data_field)
+    if weight_field:
+        xds_list = \
+            initialize_weights_from_column(xds_list, weight_field)
+    elif sigma_field:
+        xds_list = \
+            initialize_weights_from_column(xds_list, sigma_field, sigma=True)
+    else:
+        xds_list = \
+            initialize_unity_weights(xds_list)
 
-        # Unpack the data on the xds into variables with understandable names.
-        data_col = xds[ms_opts.data_column].data
-        flag_col = xds.FLAG.data
-        flag_row_col = xds.FLAG_ROW.data
-        uvw_col = xds.UVW.data
-        ant1_col = xds.ANTENNA1.data
-        ant2_col = xds.ANTENNA2.data
+    xds_list = flag_row_to_flag(xds_list)
+    xds_list = flag_zeros(xds_list, "DATA")  # NOTE: Only consider XX,YY,RR,LL?
+    xds_list = flag_zeros(xds_list, "WEIGHT")
+    xds_list = combine_corr_flags(xds_list)
 
-        # Anywhere we have a broken datapoint, zero it. These points will
-        # be flagged below. TODO: This can be optimized.
+    # The following will promote the flags to int8 so that we can do ternary
+    # flagging. TODO: Make this promotion/dtyping optional?
 
-        data_col = da.where(da.isfinite(data_col), data_col, 0)
+    xds_list = flag_autocorrelations(xds_list)  # Promotes dtype.
+    xds_list = flag_uv_range(xds_list, min_uv, max_uv)
 
-        weight_col = initialize_weights(xds,
-                                        data_col,
-                                        ms_opts.weight_column,
-                                        ms_opts.sigma_column)
-
-        flag_col = initialise_flags(data_col,
-                                    weight_col,
-                                    flag_col,
-                                    flag_row_col)
-
-        # Set the temporary flags on unflagged autocorrelations.
-        flag_col = da.where((ant1_col == ant2_col)[:, None] & ~flag_col,
-                            np.int8(-1), flag_col)
-
-        # Set the temporary flags on points outside the UV-range.
-        uv_cut_l, uv_cut_u = ms_opts.select_uv_range
-
-        if uv_cut_l or uv_cut_u:
-            uv = da.sqrt(da.sum(uvw_col[:, :2] ** 2, axis=1))
-
-            uv_sel = (uv_cut_l < uv) & (uv < (uv_cut_u or np.inf))
-
-            flag_col = da.where(~uv_sel[:, None] & ~flag_col,
-                                np.int8(-1), flag_col)
-
-        # Drop the variables which held the original weights and data -
-        # hereafter there are always in DATA and WEIGHT.
-        output_xds = xds.drop_vars((ms_opts.data_column,
-                                    ms_opts.weight_column),
-                                   errors="ignore")
-
-        # Hereafter, DATA is whatever the user specified with data_column.
-        # Hereafter, WEIGHT is is whatever the user spcified with
-        # weight_column.
-        output_xds = output_xds.assign(
-            {"DATA": (("row", "chan", "corr"), data_col),
-             "WEIGHT": (("row", "chan", "corr"), weight_col),
-             "FLAG": (("row", "chan"), flag_col)})
-
-        output_xds_list.append(output_xds)
-
-    return output_xds_list
+    return xds_list
 
 
 def postprocess_xds_list(data_xds_list, parangle_xds_list, output_opts):

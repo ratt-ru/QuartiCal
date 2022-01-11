@@ -1,7 +1,7 @@
 import dask.array as da
 import numpy as np
-from uuid import uuid4
 from loguru import logger  # noqa
+from quartical.utils.xarray import check_fields, check_dims
 from quartical.flagging.flagging_kernels import (compute_bl_mad_and_med,
                                                  compute_gbl_mad_and_med,
                                                  compute_chisq,
@@ -54,61 +54,210 @@ def finalise_flags(xds_list):
     return writable_xds
 
 
-def initialise_flags(data_col, weight_col, flag_col, flag_row_col):
-    """Given input data, weights and flags, initialise the aggregate flags.
-
-    Populates the internal flag array based on existing flags and data
-    points/weights which appear invalid.
+def flag_row_to_flag(input_xds_list,
+                     flag_row_field="FLAG_ROW",
+                     input_flag_field="FLAG",
+                     output_flag_field="FLAG"):
+    """Combine FLAG_ROW with FLAG.
 
     Args:
-        data_col: A dask.array containing the data.
-        weight_col: A dask.array containing the weights.
-        flag_col: A dask.array containing the conventional flags.
-        flag_row_col: A dask.array containing the conventional row flags.
+        input_xds_list: A list of xarray.Dataset objects.
+        flag_row_field: A str corresponding to FLAG_ROW or equivalent.
+        input_flag_field: A str corresponding to input flag field e.g. FLAG.
+        output_flag_field: A str corresponding to desired output flag field.
 
     Returns:
-        flags: A dask.array containing the initialized aggregate flags.
+        output_xds_list: A list of xarray.DataSet objects with flag row
+            applied to flags and assinged to a existing/new field.
     """
 
-    return da.blockwise(_initialise_flags, ("rowlike", "chan"),
-                        data_col, ("rowlike", "chan", "corr"),
-                        weight_col, ("rowlike", "chan", "corr"),
-                        flag_col, ("rowlike", "chan", "corr"),
-                        flag_row_col, ("rowlike",),
-                        dtype=np.int8,
-                        name="init_flags-" + uuid4().hex,
-                        adjust_chunks=data_col.chunks,
-                        align_arrays=False,
-                        concatenate=True)
+    output_dims = ('row', 'chan', 'corr')
+
+    check_fields(input_xds_list, (flag_row_field, input_flag_field))
+    check_dims(input_xds_list, output_dims)
+
+    output_xds_list = []
+
+    for input_xds in input_xds_list:
+
+        input_flag_row = input_xds[flag_row_field].data
+        input_flags = input_xds[input_flag_field].data
+
+        output_flags = da.logical_or(input_flags,
+                                     input_flag_row[:, None,  None])
+
+        output_xds = \
+            input_xds.assign({output_flag_field: (output_dims, output_flags)})
+
+        output_xds_list.append(output_xds)
+
+    return output_xds_list
 
 
-def _initialise_flags(data_col, weight_col, flag_col, flag_row_col):
-    """See docstring for initialise_flags."""
+def flag_zeros(input_xds_list,
+               target_field,
+               input_flag_field="FLAG",
+               output_flag_field="FLAG"):
+    """Raise flags on points which are zero.
 
-    # Combine the flags from both the flag and flag_row columns.
-    flags = flag_col | flag_row_col[:, None, None]
+    Args:
+        input_xds_list: A list of xarray.Dataset objects.
+        target_field: A str corresponding to fields to check for zeroes.
+        input_flag_field: A str corresponding to input flag field e.g. FLAG.
+        output_flag_field: A str corresponding to desired output flag field.
 
-    # The following does some sanity checking on the input data and
-    # weights. Specifically, we look for points with missing/broken data, and
-    # points with null weights. TODO: We can do this with a much smaller
-    # memory footprint by passing this into a numba loop which makes these
-    # decisions per element.
+    Returns:
+        output_xds_list: A list of xarray.DataSet objects with zero values
+            flagged and the results assigned to a new/existing field.
+    """
 
-    # We assume that the first and last entries of the correlation axis
-    # are the on-diagonal terms. TODO: This should be safe provided we don't
-    # have off-diagonal only data, although in that case the flagging
-    # logic is probablly equally applicable.
+    output_dims = ('row', 'chan', 'corr')
 
-    missing_points = np.any(data_col[..., (0, -1)] == 0, axis=-1)
-    flags[missing_points] = True
+    check_fields(input_xds_list, (target_field, input_flag_field))
+    check_dims(input_xds_list, output_dims)
 
-    noweight_points = np.any(weight_col[..., (0, -1)] == 0, axis=-1)
-    flags[noweight_points] = True
+    output_xds_list = []
 
-    # At this point, if any correlation is flagged, flag other correlations.
-    flags = np.any(flags, axis=-1).astype(np.int8)
+    for input_xds in input_xds_list:
 
-    return flags
+        data = input_xds[target_field].data
+        input_flags = input_xds[input_flag_field].data
+
+        output_flags = da.where(data == 0, True, input_flags)
+
+        output_xds = \
+            input_xds.assign({output_flag_field: (output_dims, output_flags)})
+
+        output_xds_list.append(output_xds)
+
+    return output_xds_list
+
+
+def combine_corr_flags(input_xds_list,
+                       input_flag_field="FLAG",
+                       output_flag_field="FLAG"):
+    """Combine flags along the correlation axis.
+
+    Args:
+        input_xds_list: A list of xarray.Dataset objects.
+        input_flag_field: A str corresponding to input flag field e.g. FLAG.
+        output_flag_field: A str corresponding to desired output flag field.
+
+    Returns:
+        output_xds_list: A list of xarray.DataSet objects with flag values
+            collapsed along correlation using a logical or.
+    """
+
+    output_dims = ('row', 'chan')
+
+    check_fields(input_xds_list, (input_flag_field,))
+    check_dims(input_xds_list, output_dims)
+
+    output_xds_list = []
+
+    for input_xds in input_xds_list:
+
+        input_flags = input_xds[input_flag_field].data
+
+        output_flags = da.any(input_flags, axis=-1)
+
+        output_xds = \
+            input_xds.assign({output_flag_field: (output_dims, output_flags)})
+
+        output_xds_list.append(output_xds)
+
+    return output_xds_list
+
+
+def flag_autocorrelations(input_xds_list,
+                          flag_value=-1,
+                          input_flag_field="FLAG",
+                          output_flag_field="FLAG"):
+    """Flag autocorrelation values - this will promote flag dtype to int8.
+
+    Args:
+        input_xds_list: A list of xarray.Dataset objects.
+        flag_value: An int to use as a flag value - necessary for temporary
+            flagging.
+        input_flag_field: A str corresponding to input flag field e.g. FLAG.
+        output_flag_field: A str corresponding to desired output flag field.
+
+    Returns:
+        output_xds_list: A list of xarray.DataSet objects with autocorrelation
+            values flagged and assigned to a new/existing field.
+    """
+
+    output_dims = ('row', 'chan')
+
+    check_fields(input_xds_list, (input_flag_field, "ANTENNA1", "ANTENNA2"))
+    check_dims(input_xds_list, output_dims)
+
+    output_xds_list = []
+
+    for input_xds in input_xds_list:
+
+        antenna1 = input_xds.ANTENNA1.data
+        antenna2 = input_xds.ANTENNA2.data
+        input_flags = input_xds[input_flag_field].data
+
+        output_flags = da.where((antenna1 == antenna2)[:, None] & ~input_flags,
+                                np.int8(flag_value), input_flags)
+
+        output_xds = \
+            input_xds.assign({output_flag_field: (output_dims, output_flags)})
+
+        output_xds_list.append(output_xds)
+
+    return output_xds_list
+
+
+def flag_uv_range(input_xds_list,
+                  uv_min,
+                  uv_max,
+                  flag_value=-1,
+                  input_flag_field="FLAG",
+                  output_flag_field="FLAG"):
+    """Flag values falling outside of a uv range.
+
+    Args:
+        input_xds_list: A list of xarray.Dataset objects.
+        uv_min: Float corresponding to minimum of admissable uv range.
+        uv_max: Float corresponding to maximum of admissable uv range.
+        flag_value: An int to use as a flag value - necessary for temporary
+            flagging.
+        input_flag_field: A str corresponding to input flag field e.g. FLAG.
+        output_flag_field: A str corresponding to desired output flag field.
+
+    Returns:
+        output_xds_list: A list of xarray.DataSet objects with values outside
+            the uv range flagged and assigned to a new/existing field.
+    """
+
+    output_dims = ('row', 'chan')
+
+    check_fields(input_xds_list, (input_flag_field, "UVW"))
+    check_dims(input_xds_list, output_dims)
+
+    output_xds_list = []
+
+    for input_xds in input_xds_list:
+
+        uvw = input_xds.UVW.data
+        input_flags = input_xds[input_flag_field].data
+
+        uv = da.sqrt(da.sum(uvw[:, :2] ** 2, axis=1))
+
+        uv_sel = (uv_min < uv) & (uv < (uv_max or np.inf))
+
+        output_flags = da.where(~uv_sel[:, None] & ~input_flags,
+                                np.int8(flag_value), input_flags)
+
+        output_xds = \
+            input_xds.assign({output_flag_field: (output_dims, output_flags)})
+
+        output_xds_list.append(output_xds)
+
+    return output_xds_list
 
 
 def valid_median(arr):
