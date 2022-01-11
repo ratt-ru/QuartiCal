@@ -211,6 +211,16 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
         if xds.dims["corr"] < ms_n_corr:
             xds = xds.reindex(corr=corr_types, fill_value=0)
 
+            # Do some special handling on the flag column if we reindexed -
+            # we need a value dependent fill value.
+
+            reindexed_flags = xds.FLAG.data
+
+            flags = da.any(reindexed_flags, axis=-1, keepdims=True)
+            flags = da.broadcast_to(flags, reindexed_flags.shape)
+
+            xds = xds.assign({"FLAG": (xds.FLAG.dims, flags)})
+
         _xds_list.append(xds)
 
     xds_list = _xds_list
