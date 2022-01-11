@@ -1,4 +1,4 @@
-from collections import namedtuple, defaultdict
+from collections import defaultdict
 from functools import lru_cache
 import weakref
 
@@ -18,11 +18,10 @@ from africanus.util.beams import beam_filenames, beam_grids
 from africanus.experimental.rime.fused import RimeSpecification
 from africanus.experimental.rime.fused.dask import rime
 
-
-from quartical.utils.dask import blockwise_unique
 from quartical.utils.collections import freeze_default_dict
 
 _empty_spectrum = object()
+
 
 def parse_sky_models(sky_models):
     """Parses a Tigger sky model.
@@ -143,6 +142,7 @@ def daskify_sky_model_dict(sky_model_dict, chunk_size):
         for group_name, group_sources in model_group.items():
             if "point" in group_sources:
                 arrays = group_sources["point"]
+
                 def darray(name, chunks):
                     return da.from_array(arrays[name], chunks=chunks)
 
@@ -155,9 +155,10 @@ def daskify_sky_model_dict(sky_model_dict, chunk_size):
                         "spi": (("source", "spec_idx", "corr"),
                                 darray("spi", (chunk_size, 1, -1))),
                         "ref_freq": (("source",),
-                                darray("ref_freq", chunk_size))})
+                                     darray("ref_freq", chunk_size))})
             if "gauss" in group_sources:
                 arrays = group_sources["gauss"]
+
                 def darray(name, chunks):
                     return da.from_array(arrays[name], chunks=chunks)
 
@@ -170,10 +171,9 @@ def daskify_sky_model_dict(sky_model_dict, chunk_size):
                         "spi": (("source", "spec_idx", "corr"),
                                 darray("spi", (chunk_size, 1, -1))),
                         "ref_freq": (("source",),
-                                darray("ref_freq", chunk_size)),
+                                     darray("ref_freq", chunk_size)),
                         "gauss_shape": (("source", "gauss_comp"),
-                                darray("shape", (chunk_size, -1)))})
-
+                                        darray("shape", (chunk_size, -1)))})
 
     return dask_sky_model_dict
 
@@ -345,7 +345,6 @@ def build_rime_spec(stokes, corrs, source_type, model_opts):
         left.insert(0, "Ep")
         right.append("Eq")
 
-
     onion = ",".join(left + middle + right)
     bits = ["(", onion, "): ",
             "[", ",".join(stokes), "] -> [", ",".join(corrs), "]"]
@@ -406,15 +405,14 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
         corr_type = tuple(pol_xds.CORR_TYPE.data[0])
         corr_schema = [STOKES_ID_MAP[ct] for ct in corr_type]
         stokes_schema = ["I", "Q", "U", "V"]
-        chan_freq = da.from_array(spw_xds.CHAN_FREQ.data[0], chunks=data_xds.chunks['chan'])
-        chan_freq = clone(chan_freq)
-        phase_dir = field_xds.PHASE_DIR.data[0][0]  # row, poly
-        phase_dir = clone(da.from_array(phase_dir))
+        chan_freq = da.from_array(spw_xds.CHAN_FREQ.data[0],
+                                  chunks=data_xds.chunks['chan'])
+        phase_dir = da.from_array(field_xds.PHASE_DIR.data[0][0])  # row, poly
         extras = {
-            "phase_dir": phase_dir,
-            "chan_freq": chan_freq,
-            "antenna_position": ant_xds.POSITION.data,
-            "receptor_angle": feed_xds.RECEPTOR_ANGLE.data,
+            "phase_dir": clone(phase_dir),
+            "chan_freq": clone(chan_freq),
+            "antenna_position": clone(ant_xds.POSITION.data),
+            "receptor_angle": clone(feed_xds.RECEPTOR_ANGLE.data),
             "convention": "casa" if model_opts.invert_uvw else "fourier"
         }
 
@@ -440,7 +438,10 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
                 for source_type, sky_model in group_sources.items():
                     spec = build_rime_spec(stokes_schema, corr_schema,
                                            source_type, model_opts)
-                    source_vis.append(rime(spec, data_xds, sky_model, extras))
+
+                    source_vis.append(
+                        rime(spec, data_xds, clone(sky_model), extras)
+                    )
 
                 vis = DataArray(da.stack(source_vis).sum(axis=0),
                                 dims=["row", "chan", "corr"],
