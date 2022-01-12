@@ -439,6 +439,8 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
                     spec = build_rime_spec(stokes_schema, corr_schema,
                                            source_type, model_opts)
 
+                    logger.info(f"Predicting {spec}")
+
                     source_vis.append(
                         rime(spec, data_xds, clone(sky_model), extras)
                     )
