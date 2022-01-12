@@ -71,7 +71,7 @@ def read_xds_list(model_columns, ms_opts):
     # up an xarray data set for the data. Note that we will reload certain
     # indexing columns so that they are consistent with the chunking strategy.
 
-    columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2",
+    columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "FEED1", "FEED2",
                "FLAG", "FLAG_ROW", "UVW")
     columns += (ms_opts.data_column,)
     columns += (ms_opts.weight_column,) if ms_opts.weight_column else ()
