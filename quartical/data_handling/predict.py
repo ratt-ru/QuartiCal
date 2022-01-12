@@ -393,6 +393,7 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
 
     # List of predict operations
     predict_list = []
+    messages = set()
 
     for data_xds in data_xds_list:
         # Perform subtable joins.
@@ -439,7 +440,9 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
                     spec = build_rime_spec(stokes_schema, corr_schema,
                                            source_type, model_opts)
 
-                    logger.info(f"Predicting {source_type} {spec}")
+                    messages.add(
+                        f"Predicting {source_type} sources using {spec}."
+                    )
 
                     source_vis.append(
                         rime(spec, data_xds, clone(sky_model), extras)
@@ -455,5 +458,8 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
                 model_vis[model_name].append(vis.data)
 
         predict_list.append(freeze_default_dict(model_vis))
+
+    for message in messages:
+        logger.info(message)
 
     return predict_list
