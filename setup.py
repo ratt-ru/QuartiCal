@@ -23,55 +23,37 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import os
 import quartical
 from setuptools import setup, find_packages
 
 with open('README.md') as f:
     long_description = f.read()
 
-# Check for readthedocs environment variable.
+requirements = [
+    "ruamel.yaml",
+    "numpy",
+    "dask-ms[xarray, zarr]",
+    "codex-africanus[dask, scipy, astropy, python-casacore]",
+    "dask[array]",
+    "astro-tigger-lsm",
+    "loguru",
+    "numba==0.53.1",  # TODO: Pin to >0.55.0 after release.
+    "distributed",
+    "requests",
+    "pytest",
+    "omegaconf",
+    "colorama",
+    "bokeh",
+    "xarray>=0.20.0"
+]
 
-on_rtd = os.environ.get('READTHEDOCS') == 'True'
-
-if on_rtd:
-    requirements = ["ruamel.yaml",
-                    "numpy",
-                    "dask-ms[xarray, zarr]"
-                    "@git+https://github.com/ska-sa/dask-ms.git"
-                    "@master",
-                    "loguru",
-                    "numba"]
-else:
-    requirements = ["ruamel.yaml",
-                    "numpy",
-
-                    "dask-ms[xarray, zarr]"
-                    "@git+https://github.com/ska-sa/dask-ms.git"
-                    "@master",
-
-                    "codex-africanus[dask, scipy, astropy, python-casacore]"
-                    "@git+https://github.com/ska-sa/codex-africanus.git"
-                    "@master",
-
-                    "dask[array]",
-                    "astro-tigger-lsm",
-                    "loguru",
-                    "numba",
-                    "distributed",
-                    "requests",
-                    "pytest",
-                    "omegaconf",
-                    "colorama",
-                    "bokeh",
-                    "xarray>=0.20.0"]
-
-setup(name='quartical',
-      version=quartical.__version__,
-      description="Fast calibration implementation exploiting complex "
-                  "optimisation.",
-      url='https://github.com/JSKenyon/QuartiCal',
-      classifiers=[
+setup(
+    name='quartical',
+    version=quartical.__version__,
+    description="Fast calibration implementation exploiting complex "
+                "optimisation.",
+    url='https://github.com/JSKenyon/QuartiCal',
+    classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
@@ -80,22 +62,24 @@ setup(name='quartical',
         "Programming Language :: Python :: 3.7"
         "Programming Language :: Python :: 3.8"
         "Programming Language :: Python :: 3.9",
-        "Topic :: Scientific/Engineering :: Astronomy"],
-      author='Jonathan Kenyon',
-      author_email='jonosken@gmail.com',
-      license='GNU GPL v3',
-      long_description=long_description,
-      long_description_content_type='text/markdown',
-      packages=find_packages(),
-      python_requires=">=3.7",
-      install_requires=requirements,
-      include_package_data=True,
-      zip_safe=False,
-      entry_points={'console_scripts':
-                    ['goquartical = quartical.executor:execute',
-                     'goquartical-config ='
-                        'quartical.config.parser:create_user_config',
-                     'goquartical-backup ='
-                        'quartical.apps.backup:backup',
-                     'goquartical-restore ='
-                        'quartical.apps.backup:restore']},)
+        "Topic :: Scientific/Engineering :: Astronomy"
+    ],
+    author='Jonathan Kenyon',
+    author_email='jonosken@gmail.com',
+    license='GNU GPL v3',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    packages=find_packages(),
+    python_requires=">=3.7",
+    install_requires=requirements,
+    include_package_data=True,
+    zip_safe=False,
+    entry_points={
+        'console_scripts': [
+            'goquartical = quartical.executor:execute',
+            'goquartical-config = quartical.config.parser:create_user_config',
+            'goquartical-backup = quartical.apps.backup:backup',
+            'goquartical-restore = quartical.apps.backup:restore'
+        ]
+    },
+)
