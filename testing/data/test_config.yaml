@@ -18,7 +18,7 @@ input_model:
   beam_l_axis: X
   beam_m_axis: Y
   invert_uvw: true
-  source_chunks: 10
+  source_chunks: 500
   apply_p_jones: true
 solver:
   threads: 1
