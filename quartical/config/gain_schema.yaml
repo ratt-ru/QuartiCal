@@ -1,0 +1,103 @@
+gain:
+  type:
+    default: complex
+    choices: [ "complex",
+                "approx_complex",
+                "diag_complex",
+                "amplitude",
+                "delay",
+                "phase",
+                "tec",
+                "rotation_measure"]
+    info:
+      Type of gain to solve for.
+
+  solve_per:
+    default: antenna
+    choices: [antenna, array]
+    info:
+      Determines whether this term should be solved per antenna (conventional)
+      or over the entire array (doesn't vary with antenna).
+
+  direction_dependent: 
+    dtype: bool
+    default: False
+    info:
+      Determines whether this term is treated as direction dependent.
+
+  time_interval: 
+    default: "1"
+    info:
+      Number of timeslots/amount of time to include in a single solution.
+      Specify as an integer number of timeslots, or a value with a unit
+      (e.g. '300s'). 0 means use full time axis.
+
+  freq_interval: 
+    default: "1"
+    info:
+      Number of channels/bandwidth to include in a single solution. Specify as
+      an integer number of channels, or a value with a unit (e.g. '128MHz').
+      0 means use full frequency axis.
+
+  load_from: 
+    default: none
+    info:
+      Load solutions from given database.
+
+  interp_mode: 
+    default: reim
+    choices: [reim, ampphase]
+    info:
+      Set interpolation mode.
+
+  interp_method: 
+    default: "2dlinear"
+    choices: ["2dlinear", "2dspline"]
+    info:
+      Set interpolation method.
+
+
+  ### OMS: copied these across from helpstrings.yaml. Future or deprecated parameters?
+
+  #   restrict-update:
+  #       type: str
+  #       help: Determines update restrictions. This does not change the solver
+  #             type, but instead restricts the update rule.
+  #       choices:
+  #             - default
+  #             - diagonal
+  #             - diagonal-phase
+  #             - diagonal-amp
+  #       default: default
+  #   exclude-directions:
+  #       nargs: +
+  #       type: int
+  #       help: For direction-dependent terms, makes the listed directions
+  #             (specified by index) non-solvable. -1 disables.
+  #       default: -1
+  #   chisq-threshold:
+  #       type: float
+  #       help: Threshold for solution stagnancy - if the relative improvement in
+  #             the chi-squared is less than this value, then the solution is
+  #             marked as stalled.
+  #       default: 1e-6
+  #   reference-antenna:
+  #       type: int
+  #       help: Reference antenna - its phase is guaranteed to be zero.
+  #             -1 disables.
+  #       default: -1
+  #   upper-clip:
+  #       type: float
+  #       help: Amplitude clipping - flag solutions with amplitudes above this
+  #             value. 0 disables. Disabled by default.
+  #       default: 0
+  #   lower-clip:
+  #       type: float
+  #       help: Amplitude clipping - flag solutions with any amplitudes below
+  #             this value. 0 disables. Disabled by default.
+  #       default: 0
+  #   clip-interval:
+  #       type: int
+  #       help: Number of iterations to perform between clips.
+  #       default: 5
+    

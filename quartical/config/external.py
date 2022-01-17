@@ -1,10 +1,17 @@
+import os.path
+from collections import OrderedDict
 from dataclasses import dataclass, field, make_dataclass, fields
 from omegaconf import OmegaConf as oc
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from quartical.config.converters import as_time, as_freq
+from scabha import schema_utils, configuratt
+from scabha.cargo import Parameter
 
 
 class Input:
+    """Base class for config dataclasses. Also implements specific post-init methods for them"""
+    def __post_init__ (self):
+        self.validate_choice_fields()
 
     def validate_choice_fields(self):
         choice_fields = {f.name: f.metadata["choices"]
@@ -24,34 +31,8 @@ class Input:
                        f"User specified '{args}'. " \
                        f"Valid choices are {field_choices}."
 
-
-@dataclass
-class MSInputs(Input):
-    path: str = "???"
-    data_column: str = "DATA"
-    sigma_column: Optional[str] = None
-    weight_column: Optional[str] = None
-    time_chunk: str = "0"
-    freq_chunk: str = "0"
-    is_bda: bool = False
-    group_by: Optional[List[str]] = field(
-        default_factory=lambda: ["SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID"]
-    )
-    select_corr: Optional[List[int]] = field(
-        default=None,
-        metadata=dict(choices=[0, 1, 2, 3])
-    )
-    select_fields: List[int] = field(
-        default_factory=lambda: []
-    )
-    select_ddids: List[int] = field(
-        default_factory=lambda: []
-    )
-    select_uv_range: List[float] = field(
-        default_factory=lambda: [0, 0]
-    )
-
-    def __post_init__(self):
+    def __msinput_post_init__(self):
+        """__post_init__ method attached to MSInput dataclass when it is dynamically created"""
         self.validate_choice_fields()
         self.time_chunk = as_time(self.time_chunk)
         self.freq_chunk = as_freq(self.freq_chunk)
@@ -63,146 +44,69 @@ class MSInputs(Input):
             "sigma_column and weight_column are mutually exclusive."
 
 
-@dataclass
-class ModelInputs(Input):
-    recipe: str = "???"
-    beam: Optional[str] = None
-    beam_l_axis: str = field(
-        default="X",
-        metadata=dict(choices=["X", "~X", "Y", "~Y", "L", "~L", "M", "~M"])
-    )
-    beam_m_axis: str = field(
-        default="Y",
-        metadata=dict(choices=["X", "~X", "Y", "~Y", "L", "~L", "M", "~M"])
-    )
-    invert_uvw: bool = True
-    source_chunks: int = 500
-    apply_p_jones: bool = True
-
-    def __post_init__(self):
-        self.validate_choice_fields()
-
-
-@dataclass
-class Outputs(Input):
-    directory: str = "outputs.qc"
-    overwrite: bool = False
-    products: Optional[List[str]] = field(
-        default=None,
-        metadata=dict(choices=["corrected_data",
-                               "corrected_residual",
-                               "residual",
-                               "weight",
-                               "corrected_weight"])
-    )
-    columns: Optional[List[str]] = None
-    flags: bool = True
-    apply_p_jones_inv: bool = True
-    subtract_directions: Optional[List[int]] = None
-    net_gain: bool = False
-
-    def __post_init__(self):
+    def __output_post_init__(self):
         self.validate_choice_fields()
         assert not(bool(self.products) ^ bool(self.columns)), \
             "Neither or both of products and columns must be specified."
         if self.products:
             assert len(self.products) == len(self.columns), \
-                   "Number of products not equal to number of columns."
+                    "Number of products not equal to number of columns."
 
 
-@dataclass
-class MadFlags(Input):
-    enable: bool = False
-    threshold_bl: float = 5
-    threshold_global: float = 5
-    max_deviation: float = 5
-
-    def __post_init__(self):
-        self.validate_choice_fields()
-
-
-@dataclass
-class Solver(Input):
-    terms: List[str] = field(default_factory=lambda: ["G"])
-    iter_recipe: List[int] = field(default_factory=lambda: [25])
-    propagate_flags: bool = True
-    robust: bool = False
-    threads: int = 1
-    convergence_fraction: float = 0.99
-    convergence_criteria: float = 1e-6
-
-    def __post_init__(self):
+    def __solver_post_init__(self):
         self.validate_choice_fields()
         assert len(self.iter_recipe) >= len(self.terms), \
-               "User has specified solver.iter_recipe with too few elements."
+                "User has specified solver.iter_recipe with too few elements."
 
         assert self.convergence_criteria >= 1e-8, \
-               "User has specified solver.convergence_criteria below 1e-8."
+                "User has specified solver.convergence_criteria below 1e-8."
 
-
-@dataclass
-class Dask(Input):
-    threads: int = 0
-    workers: int = 1
-    address: Optional[str] = None
-    scheduler: str = field(
-        default="threads",
-        metadata=dict(choices=["threads",
-                               "single-threaded",
-                               "distributed"])
-    )
-
-    def __post_init__(self):
-        self.validate_choice_fields()
-
-
-@dataclass
-class Gain(Input):
-    type: str = field(
-        default="complex",
-        metadata=dict(choices=["complex",
-                               "approx_complex",
-                               "diag_complex",
-                               "amplitude",
-                               "delay",
-                               "phase",
-                               "tec",
-                               "rotation_measure"])
-    )
-    solve_per: str = field(
-        default="antenna",
-        metadata=dict(choices=["antenna",
-                               "array"])
-    )
-    direction_dependent: bool = False
-    time_interval: str = "1"
-    freq_interval: str = "1"
-    load_from: Optional[str] = None
-    interp_mode: str = field(
-        default="reim",
-        metadata=dict(choices=["reim",
-                               "ampphase"])
-    )
-    interp_method: str = field(
-        default="2dlinear",
-        metadata=dict(choices=["2dlinear",
-                               "2dspline"])
-    )
-
-    def __post_init__(self):
+    def __gain_post_init__(self):
         self.validate_choice_fields()
         self.time_interval = as_time(self.time_interval)
         self.freq_interval = as_freq(self.freq_interval)
 
 
 @dataclass
-class BaseConfig:
-    input_ms: MSInputs = MSInputs()
-    input_model: ModelInputs = ModelInputs()
-    solver: Solver = Solver()
-    output: Outputs = Outputs()
-    mad_flags: MadFlags = MadFlags()
-    dask: Dask = Dask()
+class _GainSchema(object):
+    gain: Dict[str, Parameter]
+
+# load schema files
+_schema = _gain_schema = None
+_config_dataclasses = OrderedDict()
+
+if _schema is None:
+    dirname = os.path.dirname(__file__)
+
+    _schema = oc.load(f"{dirname}/argument_schema.yaml")
+    # make dataclass based on schema contents
+    _ArgumentSchemas = make_dataclass("_ArgumentSchemas", [(name, Dict[str, Parameter]) for name in _schema.keys()])
+    # turn into a structured config
+    _schema = oc.merge(oc.structured(_ArgumentSchemas), _schema)
+
+    # the gain section is loaded explicitly, since we need to form up multiple instances
+    _gain_schema = oc.merge(oc.structured(_GainSchema), oc.load(f"{dirname}/gain_schema.yaml"))
+
+    # convert schemas into dataclasses
+    for section, content in _schema.items():
+        # if Input has a corresponding post_init method, use it as "__post_init__" in the created dataclass 
+        post_init = getattr(Input, f"_{section}_post_init__", None)
+        namespace = post_init and dict(__post_init__=post_init)
+
+        # create dataclass per se
+        _config_dataclasses[section], _, _ = schema_utils.schema_to_dataclass(content, f"config_{section}", bases=(Input,), namespace=namespace)
+
+    # create gain dataclass
+    Gain, _, _  = schema_utils.schema_to_dataclass(_gain_schema.gain, "config_Gain", bases=(Input,), namespace=dict(__post_init__=Input.__gain_post_init__))
+
+
+    # create BaseConfig dataclass
+    BaseConfig = make_dataclass("BaseConfig", [(name, _config_dataclasses[name], field(default=_config_dataclasses[name]())) for name in _config_dataclasses])
+
+def get_config_sections():
+    """returns list of known config sections
+    """
+    return list(_config_dataclasses.keys()) + ["gain"]
 
 
 def finalize_structure(additional_config):
@@ -215,7 +119,7 @@ def finalize_structure(additional_config):
             break
 
     # Use the default terms if no alternative is specified.
-    terms = terms or Solver().terms
+    terms = terms or _config_dataclasses["solver"].terms
 
     FinalConfig = make_dataclass(
         "FinalConfig",
@@ -224,3 +128,18 @@ def finalize_structure(additional_config):
     )
 
     return FinalConfig
+
+
+def make_stimela_schema(params: Dict[str, Any], inputs: Dict[str, Parameter], outputs: Dict[str, Parameter]):
+    """Augments a schema for stimela based on solver.terms"""
+    inputs = inputs.copy()
+
+    terms = params.get('solver.terms', None)
+    if terms is None:
+        terms  = _config_dataclasses["solver"].terms
+
+    for jones in terms:
+        for key, value in _gain_schema['gain'].items():
+            inputs[f"{jones}.{key}"] = value
+
+    return inputs, outputs

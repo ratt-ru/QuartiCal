@@ -1,0 +1,20 @@
+cabs:
+  quartical:
+    command: goquartical
+    policies:
+      key_value: true
+    inputs:
+      _include: (quartical.config)nested_schema.yaml
+      _flatten: 1
+    dynamic_schema: quartical.config.external.make_stimela_schema
+
+
+test_recipe:
+  steps:
+    qc:
+      cab: quartical
+      params:
+        input_ms.path: 'test.ms'
+        input_model.recipe: MODEL_DATA
+        solver.terms: [B,G]
+

@@ -44,7 +44,8 @@ requirements = [
     "omegaconf",
     "colorama",
     "bokeh",
-    "xarray>=0.20.0"
+    "xarray>=0.20.0",
+    "scabha>=0.6.0"
 ]
 
 setup(
