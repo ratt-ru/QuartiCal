@@ -4,7 +4,7 @@ cabs:
     policies:
       key_value: true
     inputs:
-      _include: (quartical.config)nested_schema.yaml
+      _include: (quartical.config)argument_schema.yaml
       _flatten: 1
     dynamic_schema: quartical.config.external.make_stimela_schema
 
