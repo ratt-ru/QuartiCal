@@ -1,6 +1,8 @@
+from lib2to3.pytree import Base
 import os.path
 from collections import OrderedDict
 from dataclasses import dataclass, field, make_dataclass, fields
+from urllib.request import OpenerDirector
 from omegaconf import OmegaConf as oc
 from typing import List, Optional, Dict, Any
 from quartical.config.converters import as_time, as_freq
@@ -8,7 +10,7 @@ from scabha import schema_utils, configuratt
 from scabha.cargo import Parameter
 
 
-class Input:
+class BaseConfigSection:
     """Base class for config dataclasses. Also implements specific post-init methods for them"""
     def __post_init__ (self):
         self.validate_choice_fields()
@@ -73,35 +75,35 @@ class _GainSchema(object):
 
 # load schema files
 _schema = _gain_schema = None
-_config_dataclasses = OrderedDict()
 
 if _schema is None:
     dirname = os.path.dirname(__file__)
 
+    # make dataclass based on argument schema
     _schema = oc.load(f"{dirname}/argument_schema.yaml")
-    # make dataclass based on schema contents
-    _ArgumentSchemas = make_dataclass("_ArgumentSchemas", [(name, Dict[str, Parameter]) for name in _schema.keys()])
-    # turn into a structured config
-    _schema = oc.merge(oc.structured(_ArgumentSchemas), _schema)
 
+    # make map of post_init methods from BaseConfigSection class
+    post_init_map = {}
+    for section in _schema.keys():
+        post_init = getattr(BaseConfigSection, f"_{section}_post_init__", None)
+        if post_init:
+            post_init_map[section] = post_init
+
+    # create the base config class
+    BaseConfig = schema_utils.nested_schema_to_dataclass(_schema,
+                   "BaseConfig", section_bases=(BaseConfigSection,), post_init_map=post_init_map)
+
+    # make map of section classes
+    _config_dataclasses = OrderedDict((f.name, f.type) for f in fields(BaseConfig))
+            
     # the gain section is loaded explicitly, since we need to form up multiple instances
     _gain_schema = oc.merge(oc.structured(_GainSchema), oc.load(f"{dirname}/gain_schema.yaml"))
-
-    # convert schemas into dataclasses
-    for section, content in _schema.items():
-        # if Input has a corresponding post_init method, use it as "__post_init__" in the created dataclass 
-        post_init = getattr(Input, f"_{section}_post_init__", None)
-        namespace = post_init and dict(__post_init__=post_init)
-
-        # create dataclass per se
-        _config_dataclasses[section], _, _ = schema_utils.schema_to_dataclass(content, f"config_{section}", bases=(Input,), namespace=namespace)
+    _gain_schema = _gain_schema.gain
 
     # create gain dataclass
-    Gain, _, _  = schema_utils.schema_to_dataclass(_gain_schema.gain, "config_Gain", bases=(Input,), namespace=dict(__post_init__=Input.__gain_post_init__))
+    Gain = schema_utils.schema_to_dataclass(_gain_schema, "Gain", bases=(BaseConfigSection,), 
+                                            post_init=BaseConfigSection.__gain_post_init__)
 
-
-    # create BaseConfig dataclass
-    BaseConfig = make_dataclass("BaseConfig", [(name, _config_dataclasses[name], field(default=_config_dataclasses[name]())) for name in _config_dataclasses])
 
 def get_config_sections():
     """returns list of known config sections
@@ -139,7 +141,7 @@ def make_stimela_schema(params: Dict[str, Any], inputs: Dict[str, Parameter], ou
         terms  = _config_dataclasses["solver"].terms
 
     for jones in terms:
-        for key, value in _gain_schema['gain'].items():
+        for key, value in _gain_schema.items():
             inputs[f"{jones}.{key}"] = value
 
     return inputs, outputs
