@@ -1,18 +1,18 @@
-from lib2to3.pytree import Base
 import os.path
-from collections import OrderedDict
-from dataclasses import dataclass, field, make_dataclass, fields
-from urllib.request import OpenerDirector
+from dataclasses import dataclass, make_dataclass, fields
 from omegaconf import OmegaConf as oc
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 from quartical.config.converters import as_time, as_freq
-from scabha import schema_utils, configuratt
+from scabha import schema_utils
 from scabha.cargo import Parameter
 
 
 class BaseConfigSection:
-    """Base class for config dataclasses. Also implements specific post-init methods for them"""
-    def __post_init__ (self):
+    """Base class for dynamically generated config dataclasses.
+
+    Also implements specific post-init methods for them.
+    """
+    def __post_init__(self):
         self.validate_choice_fields()
 
     def validate_choice_fields(self):
@@ -33,8 +33,8 @@ class BaseConfigSection:
                        f"User specified '{args}'. " \
                        f"Valid choices are {field_choices}."
 
-    def __msinput_post_init__(self):
-        """__post_init__ method attached to MSInput dataclass when it is dynamically created"""
+    def __input_ms_post_init__(self):
+
         self.validate_choice_fields()
         self.time_chunk = as_time(self.time_chunk)
         self.freq_chunk = as_freq(self.freq_chunk)
@@ -45,8 +45,11 @@ class BaseConfigSection:
         assert not (self.sigma_column and self.weight_column), \
             "sigma_column and weight_column are mutually exclusive."
 
+    def __input_model_post_init__(self):
+        pass
 
     def __output_post_init__(self):
+
         self.validate_choice_fields()
         assert not(bool(self.products) ^ bool(self.columns)), \
             "Neither or both of products and columns must be specified."
@@ -54,14 +57,20 @@ class BaseConfigSection:
             assert len(self.products) == len(self.columns), \
                     "Number of products not equal to number of columns."
 
+    def __mad_flags_post_init__(self):
+        pass
 
     def __solver_post_init__(self):
+
         self.validate_choice_fields()
         assert len(self.iter_recipe) >= len(self.terms), \
-                "User has specified solver.iter_recipe with too few elements."
+            "User has specified solver.iter_recipe with too few elements."
 
         assert self.convergence_criteria >= 1e-8, \
-                "User has specified solver.convergence_criteria below 1e-8."
+            "User has specified solver.convergence_criteria below 1e-8."
+
+    def __dask_post_init__(self):
+        pass
 
     def __gain_post_init__(self):
         self.validate_choice_fields()
@@ -73,41 +82,50 @@ class BaseConfigSection:
 class _GainSchema(object):
     gain: Dict[str, Parameter]
 
+
 # load schema files
 _schema = _gain_schema = None
 
 if _schema is None:
     dirname = os.path.dirname(__file__)
 
-    # make dataclass based on argument schema
+    # Make dataclass based on the argument schema.
     _schema = oc.load(f"{dirname}/argument_schema.yaml")
 
-    # make map of post_init methods from BaseConfigSection class
-    post_init_map = {}
-    for section in _schema.keys():
-        post_init = getattr(BaseConfigSection, f"_{section}_post_init__", None)
-        if post_init:
-            post_init_map[section] = post_init
+    # Map __post_init__ methods to sections.
+    post_init_map = {s: getattr(BaseConfigSection, f"__{s}_post_init__")
+                     for s in _schema.keys()}
 
-    # create the base config class
-    BaseConfig = schema_utils.nested_schema_to_dataclass(_schema,
-                   "BaseConfig", section_bases=(BaseConfigSection,), post_init_map=post_init_map)
+    # Create the base config class.
+    BaseConfig = schema_utils.nested_schema_to_dataclass(
+        _schema,
+        "BaseConfig",
+        section_bases=(BaseConfigSection,),
+        post_init_map=post_init_map
+    )
 
-    # make map of section classes
-    _config_dataclasses = OrderedDict((f.name, f.type) for f in fields(BaseConfig))
-            
-    # the gain section is loaded explicitly, since we need to form up multiple instances
-    _gain_schema = oc.merge(oc.structured(_GainSchema), oc.load(f"{dirname}/gain_schema.yaml"))
+    # Create a mapping from section name to section dataclass.
+    _config_dataclasses = {f.name: f.type for f in fields(BaseConfig)}
+
+    # The gain section is loaded explicitly, since we need to form up multiple
+    # instances.
+    _gain_schema = oc.merge(
+        oc.structured(_GainSchema),
+        oc.load(f"{dirname}/gain_schema.yaml")
+    )
     _gain_schema = _gain_schema.gain
 
-    # create gain dataclass
-    Gain = schema_utils.schema_to_dataclass(_gain_schema, "Gain", bases=(BaseConfigSection,), 
-                                            post_init=BaseConfigSection.__gain_post_init__)
+    # Create gain dataclass.
+    Gain = schema_utils.schema_to_dataclass(
+        _gain_schema,
+        "Gain",
+        bases=(BaseConfigSection,),
+        post_init=BaseConfigSection.__gain_post_init__
+    )
 
 
 def get_config_sections():
-    """returns list of known config sections
-    """
+    """Returns list of known config sections."""
     return list(_config_dataclasses.keys()) + ["gain"]
 
 
@@ -132,13 +150,16 @@ def finalize_structure(additional_config):
     return FinalConfig
 
 
-def make_stimela_schema(params: Dict[str, Any], inputs: Dict[str, Parameter], outputs: Dict[str, Parameter]):
-    """Augments a schema for stimela based on solver.terms"""
+def make_stimela_schema(params: Dict[str, Any],
+                        inputs: Dict[str, Parameter],
+                        outputs: Dict[str, Parameter]):
+    """Augments a schema for stimela based on solver.terms."""
+
     inputs = inputs.copy()
 
     terms = params.get('solver.terms', None)
     if terms is None:
-        terms  = _config_dataclasses["solver"].terms
+        terms = _config_dataclasses["solver"].terms
 
     for jones in terms:
         for key, value in _gain_schema.items():

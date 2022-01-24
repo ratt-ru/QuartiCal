@@ -30,38 +30,39 @@ input_ms:
   time_chunk: 
     default: '0'
     info:
-      Chunk data up by this number of timeslots. This limits the amount of data
-      processed at once. Smaller chunks allow for a smaller RAM footprint and
-      greater parallelism, but this sets an upper limit on the solution
-      intervals that may be employed. Specify as an integer number of timeslots,
-      or a value with a unit (e.g. '300s'). 0 means use full time axis.
+      Chunk data up by this number of timeslots. This limits the amount of
+      data processed at once. Smaller chunks allow for a smaller RAM footprint 
+      and greater parallelism, but this sets an upper limit on the solution
+      intervals that may be employed. Specify as an integer number of
+      timeslots, or a value with a unit (e.g. '300s'). 0 means use full time
+      axis.
 
   freq_chunk:
     default: '0'
     info:
-      Chunk data by this number of channels. See time_chunk for info. Specify as
-      an integer number of channels, or a value with a unit (e.g. '128MHz').
+      Chunk data by this number of channels. See time_chunk for info. Specify
+      as an integer number of channels, or a value with a unit (e.g. '128MHz').
       0 means use full frequency axis.
 
   is_bda: 
     dtype: bool
     default: False
     info:
-      If set True, the input measurement set is assumed to have been averaged in
-      a baseline dependent fashion.
+      If set True, the input measurement set is assumed to have been averaged
+      in a baseline dependent fashion.
 
   group_by:
-    default: none
-    choices: [none, "SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID"]
+    dtype: Optional[List[str]]
+    default: ["SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID"]
+    choices: ["SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID"]
     info:
       Input data will be partitioned into separate xarray datasets based on the
       values of the specified columns. Multiple column names may be given as a
       list, e.g. [SCAN_NUMBER, FIELD_ID, DATA_DESC_ID].
 
   select_corr: 
-    default: 
     dtype: Optional[List[int]]
-#    choices: [none,0,1,2,3]
+    choices: [0,1,2,3]
     info:
       Select correlations from the input data. These are specified as integer
       values and must be given as a list e.g. to select the first and last
@@ -80,15 +81,15 @@ input_ms:
     default: []
     info:
       Select data descriptor IDs (spectral windows) from the input data. These
-      are specified as integer values and must be given as a list e.g. to select
-      ddids/SPWs 0 and 2, use [0, 2].
+      are specified as integer values and must be given as a list e.g. to
+      select ddids/SPWs 0 and 2, use [0, 2].
 
   select_uv_range: 
     dtype: List[float]
     default: [0, 0]
     info:
-      Select a range of uv values to include when calibrating. Practically, this
-      treats points outside the range as having zero weight. Use zero to
+      Select a range of uv values to include when calibrating. Practically,
+      this treats points outside the range as having zero weight. Use zero to
       indicate an open interval, e.g. [100, 0] would select all values greater
       than 100, [0, 10000] would select all values less than 10000 and
       [100, 10000] would select values greater than 100 but less than 10000.
@@ -98,26 +99,27 @@ input_model:
       dtype: Optional[str]
       required: true
       info:
-        Input model recipe. This is a string which describes how the model data
-        should be constructed. Currently, measurement set columns and Tigger lsms
-        are supported. Multiple columns and lsms can be specified and combined
-        using colons (:), addition (+) and negation (~). As an example consider
-        COL1, COL2 and LSM1. "COL1" will simply use a single MS column as input.
-        "COL1:COL2" will create a direction dependent model with COL1 as the
-        first direction and COL2 as the second. "COL1~COL2" will create a model
-        with a single direction by subtracting COL2 from COL1. "COL1+COL2" will
-        create a model with a single direction by adding COL1 and COL2. Tigger
-        lsms can be used interchangeably with columns (using the same syntax) but
-        also support the use of tagged directions. "LSM1" will create a model with
-        a single direction from the sky model. "LSM1@dE" will create a model with
+        Input model recipe. This is a string which describes how the model
+        data should be constructed. Currently, measurement set columns and
+        Tigger lsms are supported. Multiple columns and lsms can be specified
+        and combined using colons (:), addition (+) and negation (~). As an 
+        example consider COL1, COL2 and LSM1. "COL1" will simply use a single
+        MS column as input. "COL1:COL2" will create a direction dependent 
+        model with COL1 as the first direction and COL2 as the second.
+        "COL1~COL2" will create a model with a single direction by subtracting 
+        COL2 from COL1. "COL1+COL2" will create a model with a single
+        direction by adding COL1 and COL2. Tigger lsms can be used
+        interchangeably with columns (using the same syntax) but also support
+        the use of tagged directions. "LSM1" will create a model with a single
+        direction from the sky model. "LSM1@dE" will create a model with
         multiple directions, one for each cluster tagged with dE in the lsm.
         Combining all of the above it is possible to do things like
         "COL1~LSM1:LSM1@dE" which will create a model with multiple
         directions, the first given by COL1 minus LSM1 and the remainder given
         given by the dE tagged clusters in LSM1.
 
-    beam: 
-      default: none   
+    beam:
+      dtype: Optional[str]
       info: 
         Path to beams. Apply beams during predict if specified eg.
         'beam_$(corr)_$(reim).fits' or 'beam_$(CORR)_$(REIM).fits'.
@@ -139,8 +141,8 @@ input_model:
       dtype: bool
       default: true
       info:
-        The UVW coordinates will be negated if this option is specified. Enabled
-        by default to match the Casa convention.
+        The UVW coordinates will be negated if this option is specified.
+        Enabled by default to match the Casa convention.
 
     source_chunks:
       dtype: int
@@ -153,9 +155,10 @@ input_model:
       dtype: bool
       default: true
       info:
-        Determines whether P-Jones (parallactic angle rotation) is applied to the
-        model. This affects both measurement set columns and predicted components.
-        Care must taken when using this option and output.apply_p_jones_inv.
+        Determines whether P-Jones (parallactic angle rotation) is applied to
+        the model. This affects both measurement set columns and predicted
+        components. Care must taken when using this option and
+        output.apply_p_jones_inv.
 
 output:
     directory: 
@@ -171,21 +174,26 @@ output:
         Will trigger an error when False and output.directory already exists.
     
     products: 
-      dtype: Optional[str]
-      default: 
-      choices: [none, corrected_data, corrected_residual, residual, weight, corrected_weight]
+      dtype: Optional[List[str]]
+      choices: 
+        - corrected_data
+        - corrected_residual
+        - residual 
+        - weight
+        - corrected_weight
       info:
-        The desired output data products. Multiple data products can be specified
-        as a list e.g. [residual, corrected_residual]. QuartiCal always produces
-        gains. Any required measurement set outputs should be specified here.
+        The desired output data products. Multiple data products can be
+        specified as a list e.g. [residual, corrected_residual]. QuartiCal
+        always produces gains. Any required measurement set outputs should be
+        specified here.
 
     columns:
       dtype: Optional[List[str]]
-      default: 
       info:
         Output MS column names for visibility outputs (if applicable).
-        Column names will be used in order, matching the order of output.products.
-        Multiple columns can be specified as a list e.g. [COL1, COL2, COL3].
+        Column names will be used in order, matching the order of
+        output.products. Multiple columns can be specified as a list e.g.
+        [COL1, COL2, COL3].
 
     flags: 
       dtype: bool 
@@ -198,18 +206,17 @@ output:
       dtype: bool 
       default: True
       info:
-        Determines whether the inverse of P-Jones (parallactic angle rotation) is
-        applied to the output visibilitites. This has the effect of derotating
-        the output visibilities into the sky frame. Care must taken when using
-        this option and input_model.apply_p_jones.
+        Determines whether the inverse of P-Jones (parallactic angle rotation)
+        is applied to the output visibilitites. This has the effect of
+        derotating the output visibilities into the sky frame. Care must taken
+        when using this option and input_model.apply_p_jones.
 
     subtract_directions: 
       dtype: Optional[List[int]] 
-      default: 
       info:
         Which model directions to subtract when generating residuals. Must be
-        specified as a list of integers e.g. [0, 5, 7]. The default will subtract
-        all directions.
+        specified as a list of integers e.g. [0, 5, 7]. The default will
+        subtract all directions.
 
     net_gain: 
       dtype: bool
@@ -217,8 +224,8 @@ output:
       info:
         Output the effective/net gain per antenna per time per channel. This
         is formed by multiplying all the gain terms together. This can be used
-        to reduce the computational load of solution transfer by transferring the
-        effective gain rather than each individual term.
+        to reduce the computational load of solution transfer by transferring
+        the effective gain rather than each individual term.
 
 mad_flags:
     enable: 
@@ -231,17 +238,19 @@ mad_flags:
       dtype: float 
       default: 5
       info:
-        Multiplicative factor which determines whether or not a chi-squared value
-        is considered to deviate significantly from the median of a given baseline.
-        Values greater than MAD_bl*threshold_bl will be flagged.
+        Multiplicative factor which determines whether or not a chi-squared
+        value is considered to deviate significantly from the median of a
+        given baseline. Values greater than MAD_bl*threshold_bl will be
+        flagged.
 
     threshold_global: 
       dtype: float
       default: 5
       info:
-        Multiplicative factor which determines whether or not a chi-squared value
-        is considered to deviate significantly from the median of a given data
-        chunk. Values greater than MAD*threshold_global will be flagged.
+        Multiplicative factor which determines whether or not a chi-squared
+        value is considered to deviate significantly from the median of a
+        given data chunk. Values greater than MAD*threshold_global will be
+        flagged.
 
     max_deviation: 
       dtype: float
@@ -258,9 +267,10 @@ solver:
       dtype: List[str] 
       default: [G]
       info:
-        Gain terms for which we are solving. Multiple terms can be specified as
-        a list e.g. [G,B,dE]. Each term specified here has its own set of
-        arguments which can be specified as (gain).(option). e.g. G.time_interval.
+        Gain terms for which we are solving. Multiple terms can be specified
+        as a list e.g. [G,B,dE]. Each term specified here has its own set of
+        arguments which can be specified as (gain).(option). e.g.
+        G.time_interval.
 
     iter_recipe:    
       dtype: List[int]
@@ -271,25 +281,26 @@ solver:
         was given as [K,G,B], an iteration recipe of [20,10,5] would do 20
         iterations for K, 10 for G and 5 for B. To loop over the gains multiple
         times, use a longer list e.g. [20,10,5,15,5,0] would do the same as
-        the first example but then do an additional 15 iterations for K, 5 for G
-        and skip B. Setting to zero effectively disables solving for that term
-        and can be used in conjunction with iterpolation.
+        the first example but then do an additional 15 iterations for K, 5 for
+        G and skip B. Setting to zero effectively disables solving for that
+        term and can be used in conjunction with iterpolation.
 
     propagate_flags: 
       dtype: bool
       default: True
       info:
-        Controls whether gain flags/flags raised inside the solver are propagated
-        and ultimately written to the FLAG column. This should almost always be
-        enabled so that data associated with diverging gains is properly flagged.
+        Controls whether gain flags/flags raised inside the solver are
+        propagated and ultimately written to the FLAG column. This should
+        almost always be enabled so that data associated with diverging gains
+        is properly flagged.
 
     robust: 
       dtype: bool
       default: False
       info:
-        Enable robust reweighting in solvers. Note that this only works when the
-        solver.iter_recipe loops through the chain multiple times. The reweighting
-        step only happens once per traversal of the chain.
+        Enable robust reweighting in solvers. Note that this only works when
+        the solver.iter_recipe loops through the chain multiple times. The
+        reweighting step only happens once per traversal of the chain.
 
     threads: 
       dtype: int
@@ -304,16 +315,16 @@ solver:
       dtype: float
       default: 0.99
       info:
-        The fraction of gain values which must converge before a solver will exit
-        prematurely.
+        The fraction of gain values which must converge before a solver will
+        exit prematurely.
 
     convergence_criteria: 
       dtype: float
       default: 1e-6
       info:
         The change in the value of the gain below which it considered to have
-        converged. Set to zero to iterate for the number of interations specified
-        in solver.iter_recipe.
+        converged. Set to zero to iterate for the number of interations
+        specified in solver.iter_recipe.
 
 dask:
     threads:
@@ -327,12 +338,11 @@ dask:
       dtype: int
       default: 1
       info:
-        Number of workers to use in the dask distributed scheduler. Advanced users
-        only.
+        Number of workers to use in the dask distributed scheduler. Advanced
+        users only.
 
     address:
       dtype: Optional[str]
-      default: none
       info:
         Distributed scheduler address.
     
@@ -340,7 +350,7 @@ dask:
       default: threads
       choices: ["threads", "single-threaded", "distributed"]
       info:
-        Which dask scheduler to use. The default, threads, is the most appropriate
-        for non-cluster use.
+        Which dask scheduler to use. The default, threads, is the most
+        appropriate for non-cluster use.
 
   

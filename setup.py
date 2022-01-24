@@ -37,7 +37,7 @@ requirements = [
     "dask[array]",
     "astro-tigger-lsm",
     "loguru",
-    "numba==0.53.1",  # TODO: Pin to >0.55.0 after release.
+    "numba>=0.55.0",  # TODO: Pin to >0.55.0 after release.
     "distributed",
     "requests",
     "pytest",
