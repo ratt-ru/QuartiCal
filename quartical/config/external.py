@@ -12,8 +12,6 @@ class BaseConfigSection:
 
     Also implements specific post-init methods for them.
     """
-    def __post_init__(self):
-        self.validate_choice_fields()
 
     def validate_choice_fields(self):
         choice_fields = {f.name: f.metadata["choices"]
