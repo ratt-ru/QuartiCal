@@ -123,4 +123,6 @@ def parse_inputs(bypass_sysargv=None):
 
     additional_validation(config_obj)
 
+    print(type(config_obj.input_ms.group_by))
+
     return config_obj

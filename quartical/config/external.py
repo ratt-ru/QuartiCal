@@ -41,10 +41,11 @@ class BaseConfigSection:
                     args = value.values()
                 else:
                     continue
-                assert all(arg in element_choices for arg in args), \
+                invalid = set(args) - set(element_choices)
+                assert not invalid, \
                         f"Invalid input in {fld.name}. " \
-                        f"User specified '{','.join(map(str, args))}'. " \
-                        f"Valid choices are {element_choices}."
+                        f"User specified '{','.join(map(str, invalid))}'. " \
+                        f"Valid choices are {','.join(map(str,element_choices))}."
 
     def __input_ms_post_init__(self):
 

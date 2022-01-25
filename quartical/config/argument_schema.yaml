@@ -2,6 +2,7 @@ input_ms:
   path:
     required: true
     dtype: str
+    default: ''
     info:
       Path to input measurement set.
 
@@ -96,9 +97,10 @@ input_ms:
       [100, 10000] would select values greater than 100 but less than 10000.
 
 input_model:
-    recipe:
-      dtype: Optional[str]
+    recipe: 
+      dtype: str
       required: true
+      default: ''
       info:
         Input model recipe. This is a string which describes how the model
         data should be constructed. Currently, measurement set columns and
