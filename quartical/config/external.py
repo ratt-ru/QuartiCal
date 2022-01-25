@@ -153,7 +153,7 @@ def finalize_structure(additional_config):
             break
 
     # Use the default terms if no alternative is specified.
-    terms = terms or _config_dataclasses["solver"].terms
+    terms = terms or _config_dataclasses["solver"]().terms
 
     FinalConfig = make_dataclass(
         "FinalConfig",
