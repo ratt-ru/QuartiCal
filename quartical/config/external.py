@@ -14,38 +14,34 @@ class BaseConfigSection:
     """
 
     def validate_choice_fields(self):
-        choice_fields = {f.name: f.metadata["choices"]
-                         for f in fields(self)
-                         if f.metadata.get("choices")}
-        element_choice_fields = {f.name: f.metadata["element_choices"]
-                         for f in fields(self)
-                         if f.metadata.get("element_choices")}
         for fld in fields(self):
-            value = getattr(self, fld.name)
-            # Optional field values can be None, this is validated at construction time, so skip
+            name = fld.name
+            value = getattr(self, name)
+            meta = fld.metadata
+
+            # Optional field values can be None, validated at construction.
             if value is None:
                 continue
-            # check for choices
-            choices = fld.metadata.get("choices")
-            if choices:
+            elif "choices" in meta:  # Check for choices.
+                choices = meta.get("choices")
                 assert value in choices, \
-                       f"Invalid input in {fld.name}. " \
-                       f"User specified '{value}'. " \
-                       f"Valid choices are {choices}."
-            # element_choices only apply to containers
-            element_choices = fld.metadata.get("element_choices")
-            if element_choices:
+                    f"Invalid input in {fld.name}. " \
+                    f"User specified '{value}'. " \
+                    f"Valid choices are {choices}."
+            elif "element_choices" in meta:  # Check for element choices.
+                element_choices = meta.get("element_choices")
                 if isinstance(value, List):
                     args = value
                 elif isinstance(value, Dict):
                     args = value.values()
                 else:
-                    continue
+                    raise ValueError(f"Paramter {name} of type {type(value)}"
+                                     f"has element choices. Not understood.")
                 invalid = set(args) - set(element_choices)
                 assert not invalid, \
-                        f"Invalid input in {fld.name}. " \
-                        f"User specified '{','.join(map(str, invalid))}'. " \
-                        f"Valid choices are {','.join(map(str,element_choices))}."
+                    f"Invalid input in {fld.name}. " \
+                    f"User specified '{','.join(map(str, invalid))}'. " \
+                    f"Valid choices are {','.join(map(str,element_choices))}."
 
     def __input_ms_post_init__(self):
 
