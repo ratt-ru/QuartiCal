@@ -55,7 +55,7 @@ input_ms:
   group_by:
     dtype: Optional[List[str]]
     default: ["SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID"]
-    choices: ["SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID"]
+    element_choices: ["SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID"]
     info:
       Input data will be partitioned into separate xarray datasets based on the
       values of the specified columns. Multiple column names may be given as a
@@ -63,7 +63,7 @@ input_ms:
 
   select_corr:
     dtype: Optional[List[int]]
-    choices: [0,1,2,3]
+    element_choices: [0,1,2,3]
     info:
       Select correlations from the input data. These are specified as integer
       values and must be given as a list e.g. to select the first and last
@@ -176,7 +176,7 @@ output:
 
     products:
       dtype: Optional[List[str]]
-      choices:
+      element_choices:
         - corrected_data
         - corrected_residual
         - residual

@@ -14,8 +14,9 @@ class BaseConfigSection:
     """
 
     def validate_choice_fields(self):
-        choice_fields = {f.name: f.metadata["choices"]
-                         for f in fields(self) if "choices" in f.metadata}
+        choice_fields = {f.name: f.metadata["element_choices"]
+                         for f in fields(self)
+                         if f.metadata["element_choices"]}
         for field_name, field_choices in choice_fields.items():
             args = getattr(self, field_name)
             if args is None:  # An optional choices field might be None.
