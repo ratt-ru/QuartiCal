@@ -1,5 +1,5 @@
 import argparse
-from daskms import xds_from_ms, xds_to_table
+from daskms import xds_from_storage_ms, xds_to_table
 from daskms.experimental.zarr import xds_to_zarr, xds_from_zarr
 from pathlib import Path
 import time
@@ -38,7 +38,7 @@ def backup():
 
     timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-    data_xds_list = xds_from_ms(
+    data_xds_list = xds_from_storage_ms(
         ms_path,
         columns=args.column,
         index_cols=("TIME",),

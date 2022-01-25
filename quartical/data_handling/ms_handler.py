@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
 import numpy as np
-from daskms import xds_from_ms, xds_from_table, xds_to_table
+from daskms import xds_from_storage_ms, xds_from_storage_table, xds_to_table
 from dask.graph_manipulation import clone
 from loguru import logger
 from quartical.weights.weights import initialize_weights
@@ -25,7 +25,7 @@ def read_xds_list(model_columns, ms_opts):
         data_xds_list: A list of appropriately chunked xarray datasets.
     """
 
-    antenna_xds = xds_from_table(ms_opts.path + "::ANTENNA")[0]
+    antenna_xds = xds_from_storage_table(ms_opts.path + "::ANTENNA")[0]
 
     n_ant = antenna_xds.dims["row"]
 
@@ -33,7 +33,7 @@ def read_xds_list(model_columns, ms_opts):
                 "observation.", n_ant)
 
     # Determine the number/type of correlations present in the measurement set.
-    pol_xds = xds_from_table(ms_opts.path + "::POLARIZATION")[0]
+    pol_xds = xds_from_storage_table(ms_opts.path + "::POLARIZATION")[0]
 
     try:
         corr_types = [CORR_TYPES[ct] for ct in pol_xds.CORR_TYPE.values[0]]
@@ -53,7 +53,7 @@ def read_xds_list(model_columns, ms_opts):
     # probably need to be done on a per xds basis. Can probably be accomplished
     # by merging the field xds grouped by DDID into data grouped by DDID.
 
-    field_xds = xds_from_table(ms_opts.path + "::FIELD")[0]
+    field_xds = xds_from_storage_table(ms_opts.path + "::FIELD")[0]
     phase_dir = np.squeeze(field_xds.PHASE_DIR.values)
     field_names = field_xds.NAME.values
 
@@ -78,7 +78,7 @@ def read_xds_list(model_columns, ms_opts):
     columns += (ms_opts.sigma_column,) if ms_opts.sigma_column else ()
     columns += (*model_columns,)
 
-    available_columns = list(xds_from_ms(ms_opts.path)[0].keys())
+    available_columns = list(xds_from_storage_ms(ms_opts.path)[0].keys())
     assert all(c in available_columns for c in columns), \
            f"One or more columns in: {columns} is not present in the data."
 
@@ -88,7 +88,7 @@ def read_xds_list(model_columns, ms_opts):
     if ms_opts.weight_column not in known_weight_cols:
         schema[ms_opts.weight_column] = {'dims': ('chan', 'corr')}
 
-    data_xds_list = xds_from_ms(
+    data_xds_list = xds_from_storage_ms(
         ms_opts.path,
         columns=columns,
         index_cols=("TIME",),
@@ -96,7 +96,7 @@ def read_xds_list(model_columns, ms_opts):
         chunks=chunking_per_data_xds,
         table_schema=["MS", {**schema}])
 
-    spw_xds_list = xds_from_table(
+    spw_xds_list = xds_from_storage_table(
         ms_opts.path + "::SPECTRAL_WINDOW",
         group_cols=["__row__"],
         columns=["CHAN_FREQ", "CHAN_WIDTH"],
@@ -193,7 +193,7 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
     # dask-ms handle this. This also might need some further consideration,
     # as the fill_value might cause problems.
 
-    pol_xds = xds_from_table(ms_path + "::POLARIZATION")[0]
+    pol_xds = xds_from_storage_table(ms_path + "::POLARIZATION")[0]
     corr_types = [CORR_TYPES[ct] for ct in pol_xds.CORR_TYPE.values[0]]
     ms_n_corr = len(corr_types)
 
