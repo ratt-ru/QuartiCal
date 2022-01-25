@@ -14,23 +14,37 @@ class BaseConfigSection:
     """
 
     def validate_choice_fields(self):
-        choice_fields = {f.name: f.metadata["element_choices"]
+        choice_fields = {f.name: f.metadata["choices"]
                          for f in fields(self)
-                         if f.metadata["element_choices"]}
-        for field_name, field_choices in choice_fields.items():
-            args = getattr(self, field_name)
-            if args is None:  # An optional choices field might be None.
+                         if f.metadata.get("choices")}
+        element_choice_fields = {f.name: f.metadata["element_choices"]
+                         for f in fields(self)
+                         if f.metadata.get("element_choices")}
+        for fld in fields(self):
+            value = getattr(self, fld.name)
+            # Optional field values can be None, this is validated at construction time, so skip
+            if value is None:
                 continue
-            elif isinstance(args, List):
-                assert all(arg in field_choices for arg in args), \
-                       f"Invalid input in {field_name}. " \
-                       f"User specified '{args}'. " \
-                       f"Valid choices are {field_choices}."
-            else:
-                assert args in field_choices, \
-                       f"Invalid input in {field_name}. " \
-                       f"User specified '{args}'. " \
-                       f"Valid choices are {field_choices}."
+            # check for choices
+            choices = fld.metadata.get("choices")
+            if choices:
+                assert value in choices, \
+                       f"Invalid input in {fld.name}. " \
+                       f"User specified '{value}'. " \
+                       f"Valid choices are {choices}."
+            # element_choices only apply to containers
+            element_choices = fld.metadata.get("element_choices")
+            if element_choices:
+                if isinstance(value, List):
+                    args = value
+                elif isinstance(value, Dict):
+                    args = value.values()
+                else:
+                    continue
+                assert all(arg in element_choices for arg in args), \
+                        f"Invalid input in {fld.name}. " \
+                        f"User specified '{','.join(map(str, args))}'. " \
+                        f"Valid choices are {element_choices}."
 
     def __input_ms_post_init__(self):
 

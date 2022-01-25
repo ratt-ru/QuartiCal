@@ -16,5 +16,7 @@ test_recipe:
       params:
         input_ms.path: 'test.ms'
         input_model.recipe: MODEL_DATA
-        solver.terms: [B,G]
+        solver.terms: [B,G,dE]
+        B.freq-interval: 10
+        dE.time-interval: 20
 

@@ -119,6 +119,8 @@ def parse_inputs(bypass_sysargv=None):
 
     config_obj = oc.to_object(config)  # Ensures post_init methods are run.
 
+    logger.info(f"Type of input_ms.group_by: {type(config_obj.input_ms.group_by)}")
+
     additional_validation(config_obj)
 
     return config_obj
