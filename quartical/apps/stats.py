@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 from daskms import xds_from_ms, xds_from_table
 import dask.array as da
-import numpy as np
 from loguru import logger
 import logging
 import sys
@@ -97,7 +96,7 @@ def feed_info(path):
     for i, arrs in enumerate(zipper):
         for vals in zip(*arrs):
             msg += f"    {i:<4} {vals[0]:<8} {' '.join(vals[1]):<8} " \
-                   f"{'{} {}'.format(*vals[2]):<16}\n"
+                   f"{'{:.4f} {:.4f}'.format(*vals[2]):<16}\n"
 
     logger.info(msg)
 
