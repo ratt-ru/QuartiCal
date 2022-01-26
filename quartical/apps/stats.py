@@ -132,7 +132,7 @@ def field_info(path):
         msg += f"    {vals[0]:<4} {vals[1]:<16} " \
                f"{'{:.4f} {:.4f}'.format(*vals[2][0]):<16} " \
                f"{'{:.4f} {:.4f}'.format(*vals[3][0]):<16} " \
-               f"{'{:.4f} {:.4f}'.format(*vals[4][0]):<16}"
+               f"{'{:.4f} {:.4f}'.format(*vals[4][0]):<16}\n"
 
     logger.info(msg)
 
@@ -166,7 +166,7 @@ def polarization_info(path):
     msg += "    {:<8} {:<30}\n".format("INDEX", "CORR_TYPE")
 
     for i, vals in enumerate(zip(corr_types, readable_corr_types)):
-        msg += f"    {i:<8} {'{:} -> {:}'.format(vals[0], vals[1]):<30}"
+        msg += f"    {i:<8} {'{:} -> {:}'.format(vals[0], vals[1]):<30}\n"
 
     logger.info(msg)
 
