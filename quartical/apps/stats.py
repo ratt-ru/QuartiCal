@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 from daskms import xds_from_ms, xds_from_table
+import numpy as np
 import dask.array as da
 from loguru import logger
 import logging
@@ -226,6 +227,40 @@ def pointing_info(path):
     # what is relevant.
 
 
+def dimension_summary(xds_list):
+
+    rows_per_xds = [xds.dims["row"] for xds in xds_list]
+    chan_per_xds = [xds.dims["chan"] for xds in xds_list]
+    corr_per_xds = [xds.dims["corr"] for xds in xds_list]
+
+    utime_per_xds = [np.unique(xds.TIME.values).size for xds in xds_list]
+
+    fields = (
+        "DATA_DESC_ID",
+        "SCAN_NUMBER",
+        "FIELD_ID",
+        "ROW",
+        "TIME",
+        "CHAN",
+        "CORR",
+    )
+
+    msg = "Dimension summary:\n"
+    fmt = "    {:<12} {:<12} {:<12} {:<8} {:<6} {:<6} {:<4}\n"
+    msg += fmt.format(*fields)
+
+    for idx, xds in enumerate(xds_list):
+        msg += fmt.format(xds.DATA_DESC_ID,
+                          xds.SCAN_NUMBER,
+                          xds.FIELD_ID,
+                          rows_per_xds[idx],
+                          utime_per_xds[idx],
+                          chan_per_xds[idx],
+                          corr_per_xds[idx])
+
+    logger.info(msg)
+
+
 def flagging_summary(xds_list):
 
     n_flag_per_xds = []
@@ -251,7 +286,12 @@ def flagging_summary(xds_list):
     total_flag_perc, perc_flagged_per_xds = \
         da.compute(total_flag_perc, perc_flagged_per_xds)
 
-    fields = ("DATA_DESC_ID", "SCAN_NUMBER", "FIELD_ID", "PERC_FLAGGED")
+    fields = (
+        "DATA_DESC_ID",
+        "SCAN_NUMBER",
+        "FIELD_ID",
+        "PERC_FLAGGED"
+    )
 
     msg = "Flagging summary:\n"
     msg += "    {:<12} {:<12} {:<12} {:<12}\n".format(*fields)
@@ -311,9 +351,10 @@ def summary():
     data_xds_list = xds_from_ms(
         path,
         index_cols=("TIME",),
-        columns=("FLAG", "FLAG_ROW"),
+        columns=("TIME", "FLAG", "FLAG_ROW", "DATA"),
         group_cols=("DATA_DESC_ID", "SCAN_NUMBER", "FIELD_ID"),
         chunks={"row": 25000, "chan": 1024, "corr": -1},
     )
 
+    dimension_summary(data_xds_list)
     flagging_summary(data_xds_list)
