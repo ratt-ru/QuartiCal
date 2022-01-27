@@ -80,7 +80,7 @@ setup(
             'goquartical-config = quartical.config.parser:create_user_config',
             'goquartical-backup = quartical.apps.backup:backup',
             'goquartical-restore = quartical.apps.backup:restore',
-            'goquartical-summary = quartical.apps.stats:summary'
+            'goquartical-summary = quartical.apps.summary:summary'
         ]
     },
 )
