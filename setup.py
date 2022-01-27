@@ -37,7 +37,11 @@ requirements = [
     "dask[array]",
     "astro-tigger-lsm",
     "loguru",
+<<<<<<< HEAD
     "numba>=0.55.0",  # TODO: Pin to >0.55.0 after release.
+=======
+    "numba>=0.55.0",
+>>>>>>> main
     "distributed",
     "requests",
     "pytest",
@@ -80,7 +84,8 @@ setup(
             'goquartical = quartical.executor:execute',
             'goquartical-config = quartical.config.parser:create_user_config',
             'goquartical-backup = quartical.apps.backup:backup',
-            'goquartical-restore = quartical.apps.backup:restore'
+            'goquartical-restore = quartical.apps.backup:restore',
+            'goquartical-summary = quartical.apps.summary:summary'
         ]
     },
 )
