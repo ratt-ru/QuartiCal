@@ -167,12 +167,12 @@ def make_stimela_schema(params: Dict[str, Any],
 
     inputs = inputs.copy()
 
-    terms = params.get('solver.terms', None)
+    terms = params.get('solver/terms', None)
     if terms is None:
-        terms = _config_dataclasses["solver"].terms
+        terms = _config_dataclasses["solver"]().terms
 
     for jones in terms:
         for key, value in _gain_schema.items():
-            inputs[f"{jones}.{key}"] = value
+            inputs[f"{jones}/{key}"] = value
 
     return inputs, outputs

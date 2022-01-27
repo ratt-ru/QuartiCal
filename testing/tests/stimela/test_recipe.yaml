@@ -3,9 +3,12 @@ cabs:
     command: goquartical
     policies:
       key_value: true
+      replace:
+        '/': '.'
     inputs:
       _include: (quartical.config)argument_schema.yaml
       _flatten: 1
+      _flatten_sep: /
     dynamic_schema: quartical.config.external.make_stimela_schema
 
 
@@ -14,9 +17,9 @@ test_recipe:
     qc:
       cab: quartical
       params:
-        input_ms.path: 'test.ms'
-        input_model.recipe: MODEL_DATA
-        solver.terms: [B,G,dE]
-        B.freq-interval: 10
-        dE.time-interval: 20
+        input_ms/path: 'test.ms'
+        input_model/recipe: MODEL_DATA
+        solver/terms: [B,G,dE]
+        B/freq_interval: 10
+        dE/time_interval: 20
 
