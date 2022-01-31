@@ -201,9 +201,13 @@ def load_beams(beam_file_schema, corr_types, beam_l_axis, beam_m_axis):
         """ Exists so that fits file is closed when last ref is gc'd """
 
         def __init__(self, filename):
+            self.filename = filename
             self.hdul = hdul = fits.open(filename)
             assert len(hdul) == 1
             self.__del_ref = weakref.ref(self, lambda r: hdul.close())
+
+        def __reduce__(self):
+            return (FITSFile, (self.filename,))
 
     # Open files and get headers
     beam_files = []
