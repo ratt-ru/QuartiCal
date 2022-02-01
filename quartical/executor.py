@@ -4,9 +4,9 @@ from contextlib import ExitStack
 import sys
 from loguru import logger
 import dask
-from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster, performance_report
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from quartical.config import parser, preprocess, helper, internal
 from quartical.logging import configure_loguru
@@ -17,8 +17,10 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.data_handling.angles import make_parangle_xds_list
 from quartical.calibration.calibrate import add_calibration_graph
-from quartical.statistics.statistics import (compute_presolve_chisq,
-                                             compute_postsolve_chisq)
+from quartical.statistics.statistics import (make_stats_xds_list,
+                                             assign_presolve_chisq,
+                                             assign_postsolve_chisq,
+                                             log_stats)
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
@@ -106,7 +108,8 @@ def _execute(exitstack):
                                     ms_opts.path,
                                     model_opts)
 
-    presolve_chisq = compute_presolve_chisq(data_xds_list)
+    stats_xds_list = make_stats_xds_list(data_xds_list)
+    stats_xds_list = assign_presolve_chisq(data_xds_list, stats_xds_list)
 
     # Adds the dask graph describing the calibration of the data. TODO:
     # This call has excess functionality now. Split out mapping and outputs.
@@ -117,7 +120,8 @@ def _execute(exitstack):
         output_opts
     )
 
-    postsolve_chisq = compute_postsolve_chisq(data_xds_list)
+    stats_xds_list = assign_postsolve_chisq(data_xds_list, stats_xds_list)
+    stats_logs = log_stats(stats_xds_list)
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
@@ -140,19 +144,22 @@ def _execute(exitstack):
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
+    logger.info("Computation starting. Please be patient - log messages will "
+                "only appear per completed chunk.")
+
     def compute_context(dask_opts, output_opts):
         if dask_opts.scheduler == "distributed":
             root_path = Path(output_opts.directory).absolute()
             report_path = root_path / Path("dask_report.html.qc")
             return performance_report(filename=str(report_path))
         else:
-            return ProgressBar()
+            return nullcontext()
 
     t0 = time.time()
 
     with compute_context(dask_opts, output_opts):
 
-        dask.compute(ms_writes, gain_writes, presolve_chisq, postsolve_chisq,
+        dask.compute(ms_writes, gain_writes, stats_logs,
                      num_workers=dask_opts.threads,
                      optimize_graph=True,
                      scheduler=dask_opts.scheduler)

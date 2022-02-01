@@ -34,10 +34,12 @@ def configure_loguru(output_dir):
         "handlers": [
             {"sink": sys.stderr,
              "level": "INFO",
-             "format": fmt},
+             "format": fmt,
+             "enqueue": True},
             {"sink": str(output_path / output_name),
              "level": "DEBUG",
-             "format": fmt}
+             "format": fmt,
+             "enqueue": True}
         ],
     }
 
