@@ -58,6 +58,9 @@ def _execute(exitstack):
     model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
 
     if dask_opts.scheduler == "distributed":
+
+        dask.config.set({"distributed.worker.daemon": False})
+
         if dask_opts.address:
             logger.info("Initializing distributed client.")
             client = exitstack.enter_context(Client(dask_opts.address))
@@ -101,6 +104,8 @@ def _execute(exitstack):
                                     ms_opts.path,
                                     model_opts)
 
+    foo = log_presolve_chisq(data_xds_list)
+
     # Adds the dask graph describing the calibration of the data. TODO:
     # This call has excess functionality now. Split out mapping and outputs.
     gain_xds_lod, net_xds_list, data_xds_list = add_calibration_graph(
@@ -109,6 +114,8 @@ def _execute(exitstack):
         chain_opts,
         output_opts
     )
+
+    bar = log_postsolve_chisq(data_xds_list)
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
@@ -143,7 +150,7 @@ def _execute(exitstack):
 
     with compute_context(dask_opts, output_opts):
 
-        dask.compute(ms_writes, gain_writes,
+        dask.compute(ms_writes, gain_writes, foo, bar,
                      num_workers=dask_opts.threads,
                      optimize_graph=True,
                      scheduler=dask_opts.scheduler)
@@ -152,3 +159,87 @@ def _execute(exitstack):
 
     if dask_opts.scheduler == "distributed":
         client.close()  # Close this client, hopefully gracefully.
+
+
+def log_presolve_chisq(data_xds_list):
+
+    import numpy as np
+    import dask.array as da
+
+    result = []
+
+    for xds in data_xds_list:
+
+        data = xds.DATA.data
+        model = xds.MODEL_DATA.data
+        weights = xds.WEIGHT.data
+        inv_flags = da.where(xds.FLAG.data == 0, 1, 0)[:, :, None]
+
+        residual = data - model.sum(axis=2)
+
+        def baz(residual, weights, inv_flags):
+
+            eff_weights = weights * inv_flags
+
+            chisq = (residual * eff_weights * residual.conj()).real
+            chisq = chisq.sum(keepdims=True)
+
+            counts = inv_flags.sum(keepdims=True) * residual.shape[-1]
+
+            print(chisq/counts)
+
+            return chisq/counts
+
+        chisq = da.blockwise(
+            baz, "rf",
+            residual, "rfc",
+            weights, "rfc",
+            inv_flags, "rfc",
+            adjust_chunks={"r": 1, "f": 1},
+            concatenate=True,
+            align_arrays=False
+        )
+
+        result.append(chisq)
+
+    return result
+
+def log_postsolve_chisq(data_xds_list):
+
+    import numpy as np
+    import dask.array as da
+
+    result = []
+
+    for xds in data_xds_list:
+
+        weights = xds._CORRECTED_WEIGHT.data
+        residual = xds._RESIDUAL.data
+        inv_flags = da.where(xds.FLAG.data == 0, 1, 0)[:, :, None]
+
+        def baz(residual, weights, inv_flags):
+
+            eff_weights = weights * inv_flags
+
+            chisq = (residual * eff_weights * residual.conj()).real
+            chisq = chisq.sum(keepdims=True)
+
+            counts = inv_flags.sum(keepdims=True) * residual.shape[-1]
+
+            print(chisq/counts)
+
+            return chisq/counts
+
+        chisq = da.blockwise(
+            baz, "rf",
+            residual, "rfc",
+            weights, "rfc",
+            inv_flags, "rfc",
+            adjust_chunks={"r": 1, "f": 1},
+            concatenate=True,
+            align_arrays=False
+        )
+
+        result.append(chisq)
+
+    return result
