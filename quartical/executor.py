@@ -17,6 +17,8 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.data_handling.angles import make_parangle_xds_list
 from quartical.calibration.calibrate import add_calibration_graph
+from quartical.statistics.statistics import (compute_presolve_chisq,
+                                             compute_postsolve_chisq)
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
@@ -104,7 +106,7 @@ def _execute(exitstack):
                                     ms_opts.path,
                                     model_opts)
 
-    foo = log_presolve_chisq(data_xds_list)
+    presolve_chisq = compute_presolve_chisq(data_xds_list)
 
     # Adds the dask graph describing the calibration of the data. TODO:
     # This call has excess functionality now. Split out mapping and outputs.
@@ -115,7 +117,7 @@ def _execute(exitstack):
         output_opts
     )
 
-    bar = log_postsolve_chisq(data_xds_list)
+    postsolve_chisq = compute_postsolve_chisq(data_xds_list)
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
@@ -150,7 +152,7 @@ def _execute(exitstack):
 
     with compute_context(dask_opts, output_opts):
 
-        dask.compute(ms_writes, gain_writes, foo, bar,
+        dask.compute(ms_writes, gain_writes, presolve_chisq, postsolve_chisq,
                      num_workers=dask_opts.threads,
                      optimize_graph=True,
                      scheduler=dask_opts.scheduler)
@@ -159,87 +161,3 @@ def _execute(exitstack):
 
     if dask_opts.scheduler == "distributed":
         client.close()  # Close this client, hopefully gracefully.
-
-
-def log_presolve_chisq(data_xds_list):
-
-    import numpy as np
-    import dask.array as da
-
-    result = []
-
-    for xds in data_xds_list:
-
-        data = xds.DATA.data
-        model = xds.MODEL_DATA.data
-        weights = xds.WEIGHT.data
-        inv_flags = da.where(xds.FLAG.data == 0, 1, 0)[:, :, None]
-
-        residual = data - model.sum(axis=2)
-
-        def baz(residual, weights, inv_flags):
-
-            eff_weights = weights * inv_flags
-
-            chisq = (residual * eff_weights * residual.conj()).real
-            chisq = chisq.sum(keepdims=True)
-
-            counts = inv_flags.sum(keepdims=True) * residual.shape[-1]
-
-            print(chisq/counts)
-
-            return chisq/counts
-
-        chisq = da.blockwise(
-            baz, "rf",
-            residual, "rfc",
-            weights, "rfc",
-            inv_flags, "rfc",
-            adjust_chunks={"r": 1, "f": 1},
-            concatenate=True,
-            align_arrays=False
-        )
-
-        result.append(chisq)
-
-    return result
-
-def log_postsolve_chisq(data_xds_list):
-
-    import numpy as np
-    import dask.array as da
-
-    result = []
-
-    for xds in data_xds_list:
-
-        weights = xds._CORRECTED_WEIGHT.data
-        residual = xds._RESIDUAL.data
-        inv_flags = da.where(xds.FLAG.data == 0, 1, 0)[:, :, None]
-
-        def baz(residual, weights, inv_flags):
-
-            eff_weights = weights * inv_flags
-
-            chisq = (residual * eff_weights * residual.conj()).real
-            chisq = chisq.sum(keepdims=True)
-
-            counts = inv_flags.sum(keepdims=True) * residual.shape[-1]
-
-            print(chisq/counts)
-
-            return chisq/counts
-
-        chisq = da.blockwise(
-            baz, "rf",
-            residual, "rfc",
-            weights, "rfc",
-            inv_flags, "rfc",
-            adjust_chunks={"r": 1, "f": 1},
-            concatenate=True,
-            align_arrays=False
-        )
-
-        result.append(chisq)
-
-    return result
