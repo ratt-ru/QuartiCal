@@ -35,11 +35,13 @@ def configure_loguru(output_dir):
             {"sink": sys.stderr,
              "level": "INFO",
              "format": fmt,
-             "enqueue": True},
+             "enqueue": True,
+             "colorize": True},
             {"sink": str(output_path / output_name),
              "level": "DEBUG",
              "format": fmt,
-             "enqueue": True}
+             "enqueue": True,
+             "colorize": False}
         ],
     }
 

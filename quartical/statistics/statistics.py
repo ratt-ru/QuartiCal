@@ -3,6 +3,7 @@ import numpy as np
 import xarray
 from loguru import logger
 import os
+import re
 
 
 def make_stats_xds_list(data_xds_list):
@@ -154,6 +155,9 @@ def embed_stats_logging(stats_xds_list):
     return stats_log_xds_list
 
 
+colours = ["23D18B", "FFFF00", "FF8000", "FF0000"]
+
+
 def log_summary_stats(stats_xds_list):
 
     from columnar import columnar
@@ -165,6 +169,27 @@ def log_summary_stats(stats_xds_list):
 
     sxds_groups = [stats_xds_list[i:i+group_size]
                    for i in range(0, n_sxds, group_size)]
+
+    # This is only approximate as it is not weighted.
+    chisq_mean, chisq_std = compute_chisq_mean_and_std(stats_xds_list)
+
+    def colourize_chisq(match_obj):
+
+        match = match_obj.group(0)
+        value = float(match)
+
+        deviation = (value - chisq_mean)/chisq_std
+
+        if deviation <= 3:
+            i = 0
+        elif deviation <= 5:
+            i = 1
+        elif deviation <= 10:
+            i = 2
+        else:
+            i = 3
+
+        return f"<fg #{colours[i]}>{match}</fg #{colours[i]}>"
 
     for sxds_group in sxds_groups:
 
@@ -194,7 +219,7 @@ def log_summary_stats(stats_xds_list):
 
             attrs = [sxds.attrs.get(f, "?") for f in attr_fields]
 
-            data.append([f"{v:.2f}" if v else "N/A" for v in frame.ravel()])
+            data.append([f"{v:.2f}" if v else "" for v in frame.ravel()])
             headers.append(fmt.format(*attrs))
 
         data = [list(x) for x in zip(ids, *data)]
@@ -214,8 +239,33 @@ def log_summary_stats(stats_xds_list):
             terminal_width=columns
         )
 
+        table = table.replace("nan", "<fg #a0a0a0>nan</fg #a0a0a0>")
+
+        float_re = re.compile(r'\d+\.\d+')
+
+        table = re.sub(float_re, colourize_chisq, table)
+
         tables.append(table)
 
-    logger.info("Final post-solve chi-squared sumary:\n" + "\n".join(tables))
+    logger.opt(colors=True).info(
+        "\nFinal post-solve chi-squared sumary:\n" + "\n".join(tables)
+    )
 
     return
+
+
+def compute_chisq_mean_and_std(stats_xds_list):
+
+    chisq_vals = []
+
+    for sxds in stats_xds_list:
+
+        chisq = sxds.POSTSOLVE_CHISQ.values
+
+        sel = np.where(np.isfinite(chisq))
+
+        chisq_vals.append(chisq[sel])
+
+    chisq_vals = np.concatenate(chisq_vals)
+
+    return np.mean(chisq_vals), np.std(chisq_vals)
