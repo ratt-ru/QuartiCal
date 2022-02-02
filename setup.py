@@ -30,6 +30,7 @@ with open('README.md') as f:
     long_description = f.read()
 
 requirements = [
+    "columnar",
     "ruamel.yaml",
     "numpy",
     "dask-ms[xarray, zarr]",

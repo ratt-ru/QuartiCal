@@ -2,6 +2,7 @@ import dask.array as da
 import numpy as np
 import xarray
 from loguru import logger
+import os
 
 
 def make_stats_xds_list(data_xds_list):
@@ -112,7 +113,7 @@ def _log_chisq(pre, post, attrs, block_info=None):
 
     msg = "\n    "
 
-    msg += f"FIELD: {field} DDID: {ddid} SCAN: {scan} "
+    msg += f"FLD: {field} SPW: {ddid} SCN: {scan} "
     msg += f"T_CHUNK: {t_chunk} "
     msg += f"F_CHUNK: {f_chunk} "
 
@@ -125,20 +126,96 @@ def _log_chisq(pre, post, attrs, block_info=None):
 
     logger.opt(colors=True).info(msg)
 
-    return np.array([[True]])
+    return post
 
 
-def log_stats(stats_xds_list):
+def embed_stats_logging(stats_xds_list):
 
-    log_per_xds = []
+    stats_log_xds_list = []
 
     for sxds in stats_xds_list:
 
         pre = sxds.PRESOLVE_CHISQ.data
         post = sxds.POSTSOLVE_CHISQ.data
 
-        message = da.map_blocks(_log_chisq, pre, post, sxds.attrs, dtype=bool)
+        # This is dirty trick - we need to loop the logging into the graph.
+        # To do so, we resassign the post values (which are unchanged) to
+        # ensure that the logging code is called. TODO: Better way?
+        post = da.map_blocks(
+            _log_chisq, pre, post, sxds.attrs, dtype=np.float32
+        )
 
-        log_per_xds.append(message)
+        stats_log_xds_list.append(
+            sxds.assign(
+                {"POSTSOLVE_CHISQ": (("t_chunk", "f_chunk"), post)}
+            )
+        )
 
-    return log_per_xds
+    return stats_log_xds_list
+
+
+def log_summary_stats(stats_xds_list):
+
+    from columnar import columnar
+
+    tables = []
+
+    n_sxds = len(stats_xds_list)
+    group_size = 6
+
+    sxds_groups = [stats_xds_list[i:i+group_size]
+                   for i in range(0, n_sxds, group_size)]
+
+    for sxds_group in sxds_groups:
+
+        max_nt_chunk = max([sxds.dims["t_chunk"] for sxds in sxds_group])
+        max_nf_chunk = max([sxds.dims["f_chunk"] for sxds in sxds_group])
+
+        ids = [f"T{t}F{f}" for t in range(max_nt_chunk)
+                           for f in range(max_nf_chunk)]  # noqa
+
+        attr_fields = ["FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"]
+        fmt = "FLD{}\nSPW{}\nSCN{}"
+
+        data = []
+        headers = ["CHUNK"]
+
+        for sxds in sxds_group:
+
+            frame = np.zeros((max_nt_chunk, max_nf_chunk))
+
+            chisq = sxds.POSTSOLVE_CHISQ.values
+
+            t_coords, f_coords = sxds.t_chunk.values, sxds.f_chunk.values
+            t_coords, f_coords = np.meshgrid(t_coords, f_coords)
+            t_coords, f_coords = t_coords.ravel(), f_coords.ravel()
+
+            frame[t_coords, f_coords] = chisq[t_coords, f_coords]
+
+            attrs = [sxds.attrs.get(f, "?") for f in attr_fields]
+
+            data.append([f"{v:.2f}" if v else "N/A" for v in frame.ravel()])
+            headers.append(fmt.format(*attrs))
+
+        data = [list(x) for x in zip(ids, *data)]
+
+        try:
+            columns, _ = os.get_terminal_size()
+        except OSError:
+            columns = 80  # Fall over to some sensible default.
+        finally:
+            columns = 80 if columns < 80 else columns  # Don't go too narrow.
+
+        table = columnar(
+            data,
+            headers=headers,
+            justify='l',
+            no_borders=True,
+            terminal_width=columns
+        )
+
+        tables.append(table)
+
+    logger.info("Final post-solve chi-squared sumary:\n" + "\n".join(tables))
+
+    return

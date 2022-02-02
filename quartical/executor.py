@@ -20,7 +20,8 @@ from quartical.calibration.calibrate import add_calibration_graph
 from quartical.statistics.statistics import (make_stats_xds_list,
                                              assign_presolve_chisq,
                                              assign_postsolve_chisq,
-                                             log_stats)
+                                             embed_stats_logging,
+                                             log_summary_stats)
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
@@ -121,7 +122,7 @@ def _execute(exitstack):
     )
 
     stats_xds_list = assign_postsolve_chisq(data_xds_list, stats_xds_list)
-    stats_logs = log_stats(stats_xds_list)
+    stats_xds_list = embed_stats_logging(stats_xds_list)
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
@@ -159,12 +160,18 @@ def _execute(exitstack):
 
     with compute_context(dask_opts, output_opts):
 
-        dask.compute(ms_writes, gain_writes, stats_logs,
-                     num_workers=dask_opts.threads,
-                     optimize_graph=True,
-                     scheduler=dask_opts.scheduler)
+        _, _, stats_xds_list = dask.compute(
+            ms_writes,
+            gain_writes,
+            stats_xds_list,
+            num_workers=dask_opts.threads,
+            optimize_graph=True,
+            scheduler=dask_opts.scheduler
+        )
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
+
+    log_summary_stats(stats_xds_list)
 
     if dask_opts.scheduler == "distributed":
         client.close()  # Close this client, hopefully gracefully.
