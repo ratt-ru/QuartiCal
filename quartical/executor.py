@@ -4,12 +4,12 @@ from contextlib import ExitStack
 import sys
 from loguru import logger
 import dask
-from dask.distributed import Client, LocalCluster, performance_report, WorkerPlugin
+from dask.distributed import Client, LocalCluster, performance_report
 import time
 from contextlib import nullcontext
 from pathlib import Path
 from quartical.config import parser, preprocess, helper, internal
-from quartical.logging import ProxyLogger
+from quartical.logging import (ProxyLogger, LoggerPlugin)
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 write_xds_list,
                                                 preprocess_xds_list,
@@ -26,15 +26,6 @@ from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
 # from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
-
-
-class MyPlugin(WorkerPlugin):
-
-    def __init__(self, *args, **kwargs):
-        self.proxy_logger = kwargs['proxy_logger']
-
-    def setup(self, worker: dask.distributed.Worker):
-        self.proxy_logger.configure()
 
 
 @logger.catch(onerror=lambda _: sys.exit(1))
@@ -92,7 +83,7 @@ def _execute(exitstack):
             cluster = exitstack.enter_context(cluster)
             client = exitstack.enter_context(Client(cluster))
 
-        client.register_worker_plugin(MyPlugin, proxy_logger=proxy_logger)
+        client.register_worker_plugin(LoggerPlugin, proxy_logger=proxy_logger)
 
         # Install Quartical Scheduler Plugin. Controversial from a security
         # POV, run_on_scheduler is a debugging function.

@@ -1,9 +1,19 @@
 # -*- coding: utf-8 -*-
 from loguru import logger
 import logging
+from dask.distributed import WorkerPlugin
 import sys
 from pathlib import Path
 import time
+
+
+class LoggerPlugin(WorkerPlugin):
+
+    def __init__(self, *args, **kwargs):
+        self.proxy_logger = kwargs['proxy_logger']
+
+    def setup(self, worker):
+        self.proxy_logger.configure()
 
 
 class InterceptHandler(logging.Handler):
@@ -17,9 +27,13 @@ class InterceptHandler(logging.Handler):
 
 class ProxyLogger(object):
 
-    def __init__(self, output_dir):
-        self.birth = time.strftime("%Y%m%d_%H%M%S")
+    def __init__(self, output_dir, birth=None):
+
+        self.birth = birth or time.strftime("%Y%m%d_%H%M%S")
         self.output_dir = Path(output_dir)
+
+    def __reduce__(self):
+        return (ProxyLogger, (self.output_dir, self.birth))
 
     def configure(self):
         logging.basicConfig(handlers=[InterceptHandler()], level="WARNING")
@@ -36,7 +50,7 @@ class ProxyLogger(object):
         output_path = Path(self.output_dir)
         output_name = Path(f"{self.birth}.log.qc")
 
-        logger.remove()
+        logger.remove()  # Remove existing handlers.
 
         logger.add(
             sys.stderr,
