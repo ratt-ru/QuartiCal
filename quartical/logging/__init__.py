@@ -15,6 +15,7 @@ class InterceptHandler(logging.Handler):
 
 
 def configure_loguru(output_dir):
+
     logging.basicConfig(handlers=[InterceptHandler()], level="WARNING")
 
     # Put together a formatting string for the logger. Split into pieces in
@@ -30,19 +31,20 @@ def configure_loguru(output_dir):
     output_path = Path(output_dir)
     output_name = Path("{time:YYYYMMDD_HHmmss}.log.qc")
 
-    config = {
-        "handlers": [
-            {"sink": sys.stderr,
-             "level": "INFO",
-             "format": fmt,
-             "enqueue": True,
-             "colorize": True},
-            {"sink": str(output_path / output_name),
-             "level": "DEBUG",
-             "format": fmt,
-             "enqueue": True,
-             "colorize": False}
-        ],
-    }
+    logger.remove()
 
-    logger.configure(**config)
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        format=fmt,
+        enqueue=True,
+        colorize=True
+    )
+
+    logger.add(
+        str(output_path / output_name),
+        level="DEBUG",
+        format=fmt,
+        enqueue=True,
+        colorize=False
+    )

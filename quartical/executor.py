@@ -19,9 +19,9 @@ from quartical.data_handling.angles import make_parangle_xds_list
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.statistics.statistics import (make_stats_xds_list,
                                              assign_presolve_chisq,
-                                             assign_postsolve_chisq,
-                                             embed_stats_logging,
-                                             log_summary_stats)
+                                             assign_postsolve_chisq)
+from quartical.statistics.logging import (embed_stats_logging,
+                                          log_summary_stats)
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
