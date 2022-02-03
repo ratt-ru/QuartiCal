@@ -67,6 +67,8 @@ def _execute(exitstack):
 
     if dask_opts.scheduler == "distributed":
 
+        # NOTE: This is needed to allow threads to spawn processes in a
+        # distributed enviroment. This *may* be dangerous. Monitor.
         dask.config.set({"distributed.worker.daemon": False})
 
         if dask_opts.address:
