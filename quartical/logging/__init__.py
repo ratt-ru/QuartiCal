@@ -3,6 +3,7 @@ from loguru import logger
 import logging
 import sys
 from pathlib import Path
+import time
 
 
 class InterceptHandler(logging.Handler):
@@ -14,37 +15,41 @@ class InterceptHandler(logging.Handler):
         logger_opt.log(record.levelname, record.getMessage())
 
 
-def configure_loguru(output_dir):
+class ProxyLogger(object):
 
-    logging.basicConfig(handlers=[InterceptHandler()], level="WARNING")
+    def __init__(self, output_dir):
+        self.birth = time.strftime("%Y%m%d_%H%M%S")
+        self.output_dir = Path(output_dir)
 
-    # Put together a formatting string for the logger. Split into pieces in
-    # order to improve legibility.
+    def configure(self):
+        logging.basicConfig(handlers=[InterceptHandler()], level="WARNING")
 
-    tim_fmt = "<green>{time:YYYY-MM-DD HH:mm:ss}</green>"
-    lvl_fmt = "<level>{level}</level>"
-    src_fmt = "<cyan>{module}</cyan>:<cyan>{function}</cyan>"
-    msg_fmt = "<level>{message}</level>"
+        # Put together a formatting string for the logger.
 
-    fmt = " | ".join([tim_fmt, lvl_fmt, src_fmt, msg_fmt])
+        tim_fmt = "<green>{time:YYYY-MM-DD HH:mm:ss}</green>"
+        lvl_fmt = "<level>{level}</level>"
+        src_fmt = "<cyan>{module}</cyan>:<cyan>{function}</cyan>"
+        msg_fmt = "<level>{message}</level>"
 
-    output_path = Path(output_dir)
-    output_name = Path("{time:YYYYMMDD_HHmmss}.log.qc")
+        fmt = " | ".join([tim_fmt, lvl_fmt, src_fmt, msg_fmt])
 
-    logger.remove()
+        output_path = Path(self.output_dir)
+        output_name = Path(f"{self.birth}.log.qc")
 
-    logger.add(
-        sys.stderr,
-        level="INFO",
-        format=fmt,
-        enqueue=True,
-        colorize=True
-    )
+        logger.remove()
 
-    logger.add(
-        str(output_path / output_name),
-        level="DEBUG",
-        format=fmt,
-        enqueue=True,
-        colorize=False
-    )
+        logger.add(
+            sys.stderr,
+            level="INFO",
+            format=fmt,
+            enqueue=True,
+            colorize=True
+        )
+
+        logger.add(
+            str(output_path / output_name),
+            level="DEBUG",
+            format=fmt,
+            enqueue=True,
+            colorize=False
+        )
