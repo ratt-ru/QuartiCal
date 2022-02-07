@@ -1,10 +1,11 @@
-from omegaconf import OmegaConf as oc
+import yaml
 from pathlib import Path
 
 path = Path(__file__).resolve()
 path_to_helpstrings = \
     path.parents[2].joinpath("quartical/config/helpstrings.yaml")
-HELPSTRINGS = oc.load(path_to_helpstrings)
+with open(path_to_helpstrings, "r") as stream:
+    HELPSTRINGS = yaml.safe_load(stream)
 
 
 # Configuration file for the Sphinx documentation builder.
