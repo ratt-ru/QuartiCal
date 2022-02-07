@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import quartical
 from setuptools import setup, find_packages
 
 with open('README.md') as f:
@@ -27,7 +26,7 @@ requirements = [
 
 setup(
     name='quartical',
-    version=quartical.__version__,
+    version='0.0.0',
     description="Fast calibration implementation exploiting complex "
                 "optimisation.",
     url='https://github.com/JSKenyon/QuartiCal',
