@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
-import quartical
 from setuptools import setup, find_packages
 
 with open('README.md') as f:
     long_description = f.read()
 
 requirements = [
+    "tbump",
     "columnar",
     "ruamel.yaml",
     "numpy",
@@ -27,7 +27,7 @@ requirements = [
 
 setup(
     name='quartical',
-    version=quartical.__version__,
+    version='0.0.0',
     description="Fast calibration implementation exploiting complex "
                 "optimisation.",
     url='https://github.com/JSKenyon/QuartiCal',
@@ -37,8 +37,8 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: POSIX :: Linux",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7"
-        "Programming Language :: Python :: 3.8"
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Topic :: Scientific/Engineering :: Astronomy"
     ],
