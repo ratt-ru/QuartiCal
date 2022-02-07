@@ -1,3 +1,4 @@
+import os
 import yaml
 from pathlib import Path
 
@@ -48,6 +49,10 @@ jinja_contexts = {
 jinja_filters = {
     'bold': lambda value: f'**{value}**',
 }
+
+jinja_base = os.path.realpath(
+    os.path.dirname(os.path.realpath(__file__)) + '/../'
+)
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
