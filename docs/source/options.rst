@@ -3,9 +3,9 @@
 Options
 =======
 
-This page details available options. However, invoking ``goquartical`` or
-``goquartical help`` should be preferred as it will always be up-to-date. The
-following is broken up by configuration section.
+This page details all the available options. This information is also
+available on the command line by invoking ``goquartical`` or
+``goquartical help``. The following is broken up by configuration section.
 
 .. note::
 

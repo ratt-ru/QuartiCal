@@ -12,8 +12,8 @@ but the same is true for circular feeds):
 
 .. math::
 
-    \mathbf{G} = \begin{bmatrix} g^{XX} & g^{XY} \\ 
-                                 g^{YX} & g^{YY} \end{bmatrix} 
+    \mathbf{G} = \begin{bmatrix} g^{XX} & g^{XY} \\
+                                 g^{YX} & g^{YY} \end{bmatrix}
 
 Note:
     * This term contains amplitude, phase and leakage information and may not
@@ -30,12 +30,12 @@ but the same is true for circular feeds):
 
 .. math::
 
-    \mathbf{G} = \begin{bmatrix} g^{XX} & 0 \\ 
-                                 0 & g^{YY} \end{bmatrix} 
+    \mathbf{G} = \begin{bmatrix} g^{XX} & 0 \\
+                                 0 & g^{YY} \end{bmatrix}
 
 Note:
     * This term contains amplitude and phase information but does not
-      not incorporate leakage information. This makes it approporiate for
+      not incorporate leakage information. This makes it appropriate for
       the majority of use-cases.
 
 
@@ -47,8 +47,8 @@ but the same is true for circular feeds):
 
 .. math::
 
-    \mathbf{G} = \begin{bmatrix} g^{XX} & g^{XY} \\ 
-                                 g^{YX} & g^{YY} \end{bmatrix} 
+    \mathbf{G} = \begin{bmatrix} g^{XX} & g^{XY} \\
+                                 g^{YX} & g^{YY} \end{bmatrix}
 
 Note:
     * This term contains amplitude, phase and leakage information and may not
@@ -72,11 +72,11 @@ but the same is true for circular feeds):
 
 .. math::
 
-    \mathbf{G} = \begin{bmatrix} |g^{XX}| & 0 \\ 
-                                 0 & |g^{YY}| \end{bmatrix} 
+    \mathbf{G} = \begin{bmatrix} |g^{XX}| & 0 \\
+                                 0 & |g^{YY}| \end{bmatrix}
 
 Note:
-    * This term contains only amplitude information and should be used with 
+    * This term contains only amplitude information and should be used with
       caution. Amplitude only solutions are prone to introducing ghosts in the
       presence of an incomplete model.
 
@@ -89,11 +89,11 @@ but the same is true for circular feeds):
 
 .. math::
 
-    \mathbf{G} = \begin{bmatrix} e^{\theta_{XX}} & 0 \\ 
-                                 0 & e^{\theta_{YY}} \end{bmatrix} 
+    \mathbf{G} = \begin{bmatrix} e^{\theta_{XX}} & 0 \\
+                                 0 & e^{\theta_{YY}} \end{bmatrix}
 
 Note:
-    * This term contains only phase information and should be used with 
+    * This term contains only phase information and should be used with
       caution. Phase only solutions are prone to introducing ghosts in the
       presence of an incomplete model.
 
@@ -106,23 +106,23 @@ but the same is true for circular feeds):
 
 .. math::
 
-    \mathbf{G} = \begin{bmatrix} \exp(a_{XX}\nu + b_{XX}) & 0 \\ 
-                                 0 & \exp(a_{YY}\nu + b_{YY}) \end{bmatrix} 
+    \mathbf{G} = \begin{bmatrix} \exp(a_{XX}\nu + b_{XX}) & 0 \\
+                                 0 & \exp(a_{YY}\nu + b_{YY}) \end{bmatrix}
 
 where :math:`\nu` is the frequency of a particular channel, :math:`a` is the
 delay and :math:`b` is a phase offset.
 
 Note:
-    * This term contains only phase information and should be used with 
+    * This term contains only phase information and should be used with
       caution. Phase only solutions are prone to introducing ghosts in the
       presence of an incomplete model.
 
 .. warning::
 
     Solving for a delay is very difficult if the phases are not approximately
-    aligned. Thus, it is recommeded to to solve for residual delay errors 
-    after applying a term which will approximately align the phases. This 
-    can be accomplished using e.g. ``solver.terms=[K,G,B]`` and 
+    aligned. Thus, it is recommended to to solve for residual delay errors
+    after applying a term which will approximately align the phases. This
+    can be accomplished using e.g. ``solver.terms=[K,G,B]`` and
     ``solver.iter_recipe=[0,25,25,25,25,25]``. This means that the delay is
     only solved after first letting the gain and bandpass solutions
     approximately align the phases.
@@ -136,16 +136,16 @@ but the same is true for circular feeds):
 
 .. math::
 
-    \mathbf{G} = \begin{bmatrix} 
-        \exp(a_{XX}{\nu}^{-1} + b_{XX}) & 0 \\ 
+    \mathbf{G} = \begin{bmatrix}
+        \exp(a_{XX}{\nu}^{-1} + b_{XX}) & 0 \\
         0 & \exp(a_{YY}{\nu}^{-1} + b_{YY})
-    \end{bmatrix} 
+    \end{bmatrix}
 
 where :math:`\nu` is the frequency of a particular channel, :math:`a` is the
 tec multiplied by some constants and :math:`b` is a phase offset.
 
 Note:
-    * This term contains only phase information and should be used with 
+    * This term contains only phase information and should be used with
       caution. Phase only solutions are prone to introducing ghosts in the
       presence of an incomplete model.
 
@@ -168,7 +168,7 @@ but the same is true for circular feeds):
         \sin{(\lambda^2\mathrm{RM})} & \cos{(\lambda^2\mathrm{RM})}
     \end{bmatrix}
 
-where :math:`\lambda` is the wavelength in a particular channel and 
+where :math:`\lambda` is the wavelength in a particular channel and
 :math:`\mathrm{RM}` is an estimate of the rotation measure.
 
 Note:
