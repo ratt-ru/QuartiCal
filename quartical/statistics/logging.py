@@ -147,7 +147,7 @@ def log_summary_stats(stats_xds_list):
     # This is only approximate as it is not weighted.
     chisq_mean, chisq_std = compute_chisq_mean_and_std(stats_xds_list)
 
-    def colourize_chisq(match_obj):
+    def colourise_chisq(match_obj):
 
         match = match_obj.group(0)
         value = float(match)
@@ -165,12 +165,18 @@ def log_summary_stats(stats_xds_list):
 
         return f"<fg #{colour}>{match}</fg #{colour}>"
 
-    msg = "\nFinal post-solve chi-squared summary:\n"
+    bins = ["<= 3", "<= 5", "<= 10", ">= 10"]
+    clrs = ["green", "yellow", "orange", "red"]
+
+    msg = "\nFinal post-solve chi-squared summary, colourised by deviation " \
+          "from the mean:\n"
+    msg += " ".join(f"<fg #{colours[c]}> {b}*sigma </fg #{colours[c]}>"
+                    for b, c in zip(bins, clrs))
     msg += "\n".join(tables)
 
     colour = colours["grey"]
     msg = msg.replace("nan", f"<fg #{colour}>nan</fg #{colour}>")
-    msg = re.sub(r'\d+\.\d+', colourize_chisq, msg)
+    msg = re.sub(r'\d+\.\d+', colourise_chisq, msg)
 
     logger.opt(colors=True).info(msg)
 
