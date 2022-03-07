@@ -1,7 +1,7 @@
 Installation
 ============
 
-This page details QaurtiCal's recommended installation procedure.
+This page details QuartiCal's recommended installation procedure.
 
 Ubuntu 18.04+
 ~~~~~~~~~~~~~
@@ -9,14 +9,11 @@ Ubuntu 18.04+
 If you wish to install QuartiCal in a virtual environment (recommended), see
 `Using a virtual environment`_.
 
-QuartiCal can (not yet) be installed by running the following:
+QuartiCal can be installed by running the following:
 
 .. code:: bash
 
 	pip3 install quartical
-
-For now, you will need to install in developer mode by cloning the repository
-and following the instuctions in the following note.
 
 .. note::
 
@@ -31,8 +28,8 @@ and following the instuctions in the following note.
 Using a virtual environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Installing QuartiCal in a virtual enviroment is highly recommended. To install
-virtualenv using apt, run:
+Installing QuartiCal in a virtual environment is highly recommended. To
+install virtualenv using apt, run:
 
 .. code:: bash
 

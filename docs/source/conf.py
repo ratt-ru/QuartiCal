@@ -1,3 +1,4 @@
+import os
 from omegaconf import OmegaConf as oc
 from pathlib import Path
 
@@ -5,10 +6,6 @@ path = Path(__file__).resolve()
 config_path = path.parents[2].joinpath("quartical/config")
 HELPSTRINGS = oc.load(config_path.joinpath("argument_schema.yaml"))
 HELPSTRINGS.update(oc.load(config_path.joinpath("gain_schema.yaml")))
-
-# We want to pull out just the helpstrings and not all the scabha info.
-HELPSTRINGS = {k: {kk: vv["info"] for kk, vv in v.items()}
-               for k, v in HELPSTRINGS.items()}
 
 # Configuration file for the Sphinx documentation builder.
 #
@@ -51,6 +48,10 @@ jinja_filters = {
     'bold': lambda value: f'**{value}**',
 }
 
+jinja_base = os.path.realpath(
+    os.path.dirname(os.path.realpath(__file__)) + '/../'
+)
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
@@ -70,4 +71,4 @@ html_theme = "sphinx_rtd_theme"
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = []

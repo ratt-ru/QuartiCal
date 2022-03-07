@@ -37,16 +37,16 @@ relevant inputs, e.g.:
 
 	goquartical input_ms.path="/path/to.ms" input_model.recipe="MODEL_DATA" input_ms.sigma_column="SIGMA_SPECTRUM"
 
-Whilst this is convenient for sinple examples, it can become cumbersome when
+Whilst this is convenient for simple examples, it can become cumbersome when
 doing particularly complicated calibration which uses a large number of the
 available inputs.
 
 Config Files
 ~~~~~~~~~~~~
 
-In order to make specifying all of the relevant paramters more convenient,
+In order to make specifying all of the relevant parameters more convenient,
 QuartiCal allows users to provide one or more .yaml files containing the
-neccessary arguments.
+necessary arguments.
 
 The .yaml file corresponding to the command above will look like this:
 
@@ -55,7 +55,7 @@ The .yaml file corresponding to the command above will look like this:
     input_ms:
         path: path/to.ms
         sigma_column: SIGMA_SPECTRUM
-    
+
     input_model:
         recipe: MODEL_DATA
 
@@ -65,7 +65,7 @@ If the above parset was named basic.yaml, it could be run by invoking:
 
 	goquartical basic.yaml
 
-This simple example only uses a fraction of the available options - 
+This simple example only uses a fraction of the available options -
 unspecified options are populated from the defaults.
 
 Note that multiple .yaml files can be specified in addition to command line
@@ -80,7 +80,7 @@ In this example, the contents of basic.yaml would be augmented (and
 overwritten in the case of conflicting options) with the
 contents of less_basic.yaml. Finally, the remaining command line options would
 be taken into account, overwriting any conflicting values specified in the
-provided .yaml files. This aims to make configuring QuartiCal as painless and 
+provided .yaml files. This aims to make configuring QuartiCal as painless and
 flexible as possible.
 
 .. note::
@@ -101,7 +101,7 @@ Dynamic Fields
 
 QuartiCal is exceptionally flexible when it comes to gain calibration. To
 avoid having too many options, it makes use of dynamically created config
-fields. This applies to specifying gain terms. 
+fields. This applies to specifying gain terms.
 
 As an example, consider solving for a gain and bandpass (following their
 usual definitions). To do so, a user would need to tell QuartiCal that there
@@ -118,7 +118,7 @@ The contents of the .yaml would look as follows for this case:
         iter_recipe:
             - 25
             - 25
-    
+
     G:
         freq_interval: 0
     B:
@@ -146,7 +146,7 @@ The above can also be specified on the command line using:
                 - G
                 - B
 
-    or 
+    or
 
     .. code-block:: yaml
 
