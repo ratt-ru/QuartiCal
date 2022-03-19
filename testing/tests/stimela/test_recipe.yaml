@@ -1,114 +1,24 @@
-_include:
-  - (quartical)stimela_cabs.yaml
-
-opts:
-  log:
-    dir: logs
-    nest: 2
-
-1gc_recipe:
-  name: "Casa-free 1GC"
-  info: "Recipe to do 1GC and tranfer gains to the target field. \
-         It is assumed that the primary, secoandary and target are \
-         split out into seprate measurement sets, all of which have \
-         the same data, weight and flag columns. "
-
-  inputs:
-    ms_primary:
-      dtype: MS
-      required: true
-      abbreviation: msp
-      info: ""
-    ms_secondary:
-      dtype: MS
-      abbreviation: mss
-    ms_target:
-      dtype: MS
-      required: true
-      abbreviation: mst
-    data_column:
-      dtype: str
-      default: DATA
-      aliases: [*.input_ms-data_column]
-    weight_column:
-      dtype: str
-      default: WEIGHT_SPECTRUM
-      aliases: [*.input_ms-weight_column]
-    model_column:
-      dtype: str
-      default: MODEL_DATA
-    dworkers:
-      dtype: int
-      default: 1
-      aliases: [*.dask-workers]
-    dthreads:
-      dtype: int
-      default: 8
-      aliases: [*.dask-threads]
-    dscheduler:
-      dtype: str
-      default: threads
-      aliases: [*.dask-scheduler]
-    vthreads:
-      dtype: int
-      default: 8
-      alieases: [*.solver-threads]
-
-  defaults:
+cabs:
+  quartical:
+    command: goquartical
+    policies:
+      key_value: true
+      replace:
+        '/': '.'
+    inputs:
+      _include: (quartical.config)argument_schema.yaml
+      _flatten: 1
+      _flatten_sep: /
+    dynamic_schema: quartical.config.external.make_stimela_schema
 
 
+test_recipe:
   steps:
-    kgb:
+    qc:
       cab: quartical
-      info: "KGB on the primary"
       params:
-        input_ms-path: '{recipe.ms_primary}'
-        input_ms-time_chunk: 0
-        input_ms-freq_chunk: 0
-        input_ms-group_by: [SCAN_NUMBER,FIELD_ID,DATA_DESC_ID]
-        input_ms-select_cors: [0, 3]
-        input_model-recipe: '{recipe.model_column}'
-        input_model-apply_p_jones: false
-        solver-terms: [K,G,B]
-        solver-iter_recipe: [0,25,25,25,15,15,15,5,5,5]
-        K-time_interval: 1
-        K-freq_interval: 0
-        K-type: delay
-        G-time_interval: 1
-        G-freq_interval: 0
-        B-time_interval: 0
-        B-freq_interval: 1
-        output-directory: out/kgb_primary.qc
-        output-overwrite: false
-        output-flags: true
-        output-apply_p_jones_inv: false
-        output-net_gain: true
-        mad_flags-enable: true
-        mad_flags-threshold_baseline: 5
-        mad_flags-threshold_global: 4
-        mad_flags-max_deviation: 3
-
-    transfer:
-      cab: quartical
-      info: "Transfer gains to the targer"
-      params:
-        input_ms-path: '{recipe.ms_target}'
-        input_ms-time_chunk: 8
-        input_ms-freq_chunk: 256
-        input_ms-group_by: [SCAN_NUMBER,FIELD_ID,DATA_DESC_ID]
-        input_ms-select_cors: [0, 3]
-        input_model-recipe: DATA   # MODEL_DATA may not exist at this stage
-        input_model-apply_p_jones: false
-        solver-terms: [G]
-        solver-iter_recipe: [0]
-        G-time_interval: 0
-        G-freq_interval: 0
-        G-load_from: out/kgb_primary.qc/gains.qc/NET
-        output-directory: out/init_target.qc
-        output-overwrite: false
-        output-flags: false
-        output-apply_p_jones_inv: false
-        output-net_gain: true
-
-
-
+        input_ms/path: 'test.ms'
+        input_model/recipe: MODEL_DATA
+        solver/terms: [B,G,dE]
+        B/freq_interval: 10
+        dE/time_interval: 20
