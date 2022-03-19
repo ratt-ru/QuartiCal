@@ -26,15 +26,36 @@ opts:
       dtype: MS
       required: true
       abbreviation: mst
+    data_column:
+      dtype: str
+      default: DATA
+      aliases: [*.input_ms-data_column]
+    weight_column:
+      dtype: str
+      default: WEIGHT_SPECTRUM
+      aliases: [*.input_ms-weight_column]
+    model_column:
+      dtype: str
+      default: MODEL_DATA
+    dworkers:
+      dtype: int
+      default: 1
+      aliases: [*.dask-workers]
+    dthreads:
+      dtype: int
+      default: 8
+      aliases: [*.dask-threads]
+    dscheduler:
+      dtype: str
+      default: threads
+      aliases: [*.dask-scheduler]
+    vthreads:
+      dtype: int
+      default: 8
+      alieases: [*.solver-threads]
 
-  aliases:
-    data_column: *.data_column
-    weight_column: *.weight_column
-    model_column: *.model_column
-    dworkers: *.dask-workers
-    dthreads: *.dask-threads
-    dscheduler: *.dask-scheduler
-    vthreads: *.solver-threads
+  defaults:
+
 
   steps:
     kgb:

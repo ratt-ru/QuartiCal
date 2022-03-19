@@ -23,7 +23,10 @@ requirements = [
     "colorama",
     "bokeh",
     "xarray>=0.20.0",
-    "scabha>=0.6.0"
+
+    "scabha"
+    "@git+https://github.com/caracal-pipeline/scabha2.git"
+    "@alias-cleanup",
 ]
 
 setup(
