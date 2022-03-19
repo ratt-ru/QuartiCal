@@ -1,0 +1,12 @@
+cabs:
+  quartical:
+    command: goquartical
+    policies:
+      key_value: true
+      replace:
+        '/': '.'
+    inputs:
+      _include: (quartical.config)argument_schema.yaml
+      _flatten: 1
+      _flatten_sep: '-'
+    dynamic_schema: quartical.config.external.make_stimela_schema

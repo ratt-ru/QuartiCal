@@ -1,25 +1,51 @@
-cabs:
-  quartical:
-    command: goquartical
-    policies:
-      key_value: true
-      replace:
-        '/': '.'
-    inputs:
-      _include: (quartical.config)argument_schema.yaml
-      _flatten: 1
-      _flatten_sep: /
-    dynamic_schema: quartical.config.external.make_stimela_schema
+_include:
+  - (quartical)stimela_cabs.yaml
 
+opts:
+  log:
+    dir: logs
+    nest: 2
 
-test_recipe:
+1gc_recipe:
+  name: "Casa-free 1GC"
+  info: "Recipe to do 1GC and tranfer gains to the target field. \
+         It is assumed that the primary, secoandary and target are \
+         split out into seprate measurement sets, all of which have \
+         the same data, weight and flag columns. "
+
+  inputs:
+    ms_primary:
+      dtype: MS
+      required: true
+      abbreviation: msp
+      info: ""
+    ms_secondary:
+      dtype: MS
+      abbreviation: mss
+    ms_target:
+      dtype: MS
+      required: true
+      abbreviation: mst
+    data_column:
+      dtype: str
+      default: DATA
+      abbreviation: dc
+    weight_column:
+      dtype: str
+      default: WEIGHT_SPECTRUM
+      abbreviation: wc
+    flag_column:
+      dtype: str
+      default: FLAG
+      abbreviation: fc
+
   steps:
     qc:
       cab: quartical
       params:
-        input_ms/path: 'test.ms'
-        input_model/recipe: MODEL_DATA
-        solver/terms: [B,G,dE]
-        B/freq_interval: 10
-        dE/time_interval: 20
+        input_ms-path: 'test.ms'
+        input_model-recipe: MODEL_DATA
+        solver-terms: [B,G,dE]
+        B-freq_interval: 10
+        dE-time_interval: 20
 
