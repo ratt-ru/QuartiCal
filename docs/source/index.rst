@@ -19,5 +19,6 @@ of QuartiCal's interfaces.
    utilities
    options
    gain_types
+   gain_files
    examples
    distribution
