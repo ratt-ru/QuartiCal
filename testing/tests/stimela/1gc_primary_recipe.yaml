@@ -18,10 +18,6 @@ firstgc_recipe:
       dtype: MS
       required: true
       abbreviation: msp
-    ms_secondary:
-      dtype: MS
-      required: true
-      abbreviation: mss
     ms_target:
       dtype: MS
       required: true
@@ -49,7 +45,7 @@ firstgc_recipe:
       aliases: ['*.solver/threads']
 
   steps:
-    primary:
+    kgb:
       cab: quartical
       info: "KGB on the primary"
       params:
@@ -78,44 +74,6 @@ firstgc_recipe:
         mad_flags/threshold_bl: 5
         mad_flags/threshold_global: 4
         mad_flags/max_deviation: 3
-
-    secondary:
-      cab: quartical
-      info: "KGB on the secondary where B is global amplitude\
-             (to absorb the calibrator's freq spectra).
-             We will not transfer this B to the target."
-      params:
-        input_ms/path: '{recipe.ms_secondary}'
-        input_ms/time_chunk: '0'
-        input_ms/freq_chunk: '0'
-        input_ms/group_by: [SCAN_NUMBER,FIELD_ID,DATA_DESC_ID]
-        input_ms/select_corr: [0, 3]
-        input_model/recipe: '{recipe.model_column}'
-        input_model/apply_p_jones: false
-        solver/terms: [N,K,B,G]
-        solver/iter_recipe: [0,15,15,0,0,15,15,15,0,5,5,5]
-        N/load_from: out/kgb_primary.qc/gains.qc/NET
-        N/time_interval: 1
-        N/freq_interval: 1
-        K/time_interval: 1
-        K/freq_interval: 0
-        K/type: delay
-        B/time_interval: 0
-        B/freq_interval: 1
-        B/solve_per: array
-        B/type: amplitude
-        G/time_interval: 1
-        G/freq_interval: 0
-        output/directory: out/kgb_secondary.qc
-        output/overwrite: 1
-        output/flags: true
-        output/apply_p_jones_inv: false
-        output/net_gain: false  # we don't want to include B here as it simply absorbs source spectrum
-        mad_flags/enable: true
-        mad_flags/threshold_bl: 5
-        mad_flags/threshold_global: 4
-        mad_flags/max_deviation: 3
-
 
     transfer:
       cab: quartical

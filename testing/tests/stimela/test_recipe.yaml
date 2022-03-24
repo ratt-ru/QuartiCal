@@ -17,7 +17,7 @@ test_recipe:
     qc:
       cab: quartical
       params:
-        input_ms/path: 'test.ms'
+        input_ms/path: '/home/bester/projects/ESO137/subsets/msdir/ms1_primary_subset.ms'
         input_model/recipe: MODEL_DATA
         solver/terms: [B,G,dE]
         B/freq_interval: 10
