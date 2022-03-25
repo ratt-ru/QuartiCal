@@ -1,0 +1,66 @@
+_include:
+  - (quartical)stimela_cabs.yaml
+
+opts:
+  log:
+    dir: logs
+    nest: 2
+
+selfcal_recipe:
+  name: "selfcal"
+
+  inputs:
+    ms:
+      dtype: MS
+      required: true
+      abbreviation: ms
+    data_column:
+      default: DATA
+      aliases: ['*.input_ms/data_column']
+    weight_column:
+      default: WEIGHT_SPECTRUM
+      aliases: ['*.input_ms/weight_column']
+    model_column:
+      dtype: str
+      default: MODEL_DATA
+    dworkers:
+      default: 1
+      aliases: ['*.dask/workers']
+    dthreads:
+      default: 8
+      aliases: ['*.dask/threads']
+    dscheduler:
+      default: threads
+      aliases: ['*.dask/scheduler']
+    vthreads:
+      default: 8
+      aliases: ['*.solver/threads']
+
+  steps:
+    kgb:
+      cab: quartical
+      info: "selfcal on the target"
+      params:
+        input_ms/path: '{recipe.ms_primary}'
+        input_ms/time_chunk: '16'
+        input_ms/freq_chunk: '0'
+        input_ms/group_by: [SCAN_NUMBER,FIELD_ID,DATA_DESC_ID]
+        input_ms/select_corr: [0, 3]
+        input_model/recipe: '{recipe.model_column}'
+        input_model/apply_p_jones: false
+        solver/terms: [K]
+        solver/iter_recipe: [25,10,5]
+        K/time_interval: 1
+        K/freq_interval: 0
+        K/type: delay
+        output/directory: out/gains.qc
+        output/overwrite: 1
+        output/flags: true
+        output/apply_p_jones_inv: false
+        output/net_gain: true
+        mad_flags/enable: true
+        mad_flags/threshold_bl: 5
+        mad_flags/threshold_global: 5
+        mad_flags/max_deviation: 5
+
+
