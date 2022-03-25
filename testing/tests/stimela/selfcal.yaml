@@ -49,7 +49,7 @@ selfcal_recipe:
         input_model/recipe: '{recipe.model_column}'
         input_model/apply_p_jones: false
         solver/terms: [K]
-        solver/iter_recipe: [25,10,5]
+        solver/iter_recipe: [25]
         K/time_interval: 1
         K/freq_interval: 0
         K/type: delay
