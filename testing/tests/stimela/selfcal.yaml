@@ -54,6 +54,8 @@ selfcal_recipe:
         K/freq_interval: 0
         K/type: delay
         output/directory: out/gains.qc
+        output/products: [corrected]
+        output/columns: ['CORRECTED_DATA']
         output/overwrite: 1
         output/flags: true
         output/apply_p_jones_inv: false
