@@ -10,6 +10,7 @@ from quartical.data_handling import CORR_TYPES
 from quartical.data_handling.chunking import compute_chunking
 from quartical.data_handling.bda import process_bda_input, process_bda_output
 from quartical.data_handling.selection import filter_xds_list
+from quartical.data_handling.angles import apply_parangles
 
 
 def read_xds_list(model_columns, ms_opts):
@@ -70,7 +71,7 @@ def read_xds_list(model_columns, ms_opts):
     # up an xarray data set for the data. Note that we will reload certain
     # indexing columns so that they are consistent with the chunking strategy.
 
-    columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2",
+    columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "FEED1", "FEED2",
                "FLAG", "FLAG_ROW", "UVW")
     columns += (ms_opts.data_column,)
     columns += (ms_opts.weight_column,) if ms_opts.weight_column else ()
@@ -145,8 +146,7 @@ def read_xds_list(model_columns, ms_opts):
         field_id = getattr(xds, "FIELD_ID", None)
         field_name = "UNKNOWN" if field_id is None else field_names[field_id]
 
-        _xds = _xds.assign_attrs({"WRITE_COLS": (),
-                                  "UTIME_CHUNKS": utime_chunks,
+        _xds = _xds.assign_attrs({"UTIME_CHUNKS": utime_chunks,
                                   "FIELD_NAME": field_name})
 
         _data_xds_list.append(_xds)
@@ -175,7 +175,7 @@ def read_xds_list(model_columns, ms_opts):
 
 
 def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
-    """Writes fields specified in the WRITE_COLS attribute to the MS.
+    """Writes fields specified in output.products and flags to the MS.
 
     Args:
         xds_list: A list of xarray datasets.
@@ -211,11 +211,21 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
         if xds.dims["corr"] < ms_n_corr:
             xds = xds.reindex(corr=corr_types, fill_value=0)
 
+            # Do some special handling on the flag column if we reindexed -
+            # we need a value dependent fill value.
+
+            reindexed_flags = xds.FLAG.data
+
+            flags = da.any(reindexed_flags, axis=-1, keepdims=True)
+            flags = da.broadcast_to(flags, reindexed_flags.shape)
+
+            xds = xds.assign({"FLAG": (xds.FLAG.dims, flags)})
+
         _xds_list.append(xds)
 
     xds_list = _xds_list
 
-    output_cols = tuple(set([cn for xds in xds_list for cn in xds.WRITE_COLS]))
+    output_cols = ("FLAG", "FLAG_ROW") if output_opts.flags else ()
 
     if output_opts.products:
         # Drop variables from columns we intend to overwrite.
@@ -321,7 +331,9 @@ def preprocess_xds_list(xds_list, ms_opts):
 
         # Hereafter, DATA is whatever the user specified with data_column.
         # Hereafter, WEIGHT is is whatever the user spcified with
-        # weight_column.
+        # weight_column. TODO: We cast the data to double precision to avoid
+        # issues with dynamic range. This should instead be changed when
+        # allcating the residual array.
         output_xds = output_xds.assign(
             {"DATA": (("row", "chan", "corr"), data_col),
              "WEIGHT": (("row", "chan", "corr"), weight_col),
@@ -330,3 +342,33 @@ def preprocess_xds_list(xds_list, ms_opts):
         output_xds_list.append(output_xds)
 
     return output_xds_list
+
+
+def postprocess_xds_list(data_xds_list, parangle_xds_list, output_opts):
+    """Adds data postprocessing steps.
+
+    Given a list of xarray.DataSet objects, applies the inverse of P-Jones
+    if necessary.
+
+    Args:
+        data_xds_list: A list of xarray.Dataset objects containing MS data.
+        parangle_xds_list: A list of xarray.Dataset objects containing
+            parallactic angle information.
+        output_opts: An Outputs config object.
+
+    Returns:
+        output_data_xds_list: A list of xarray.DataSet objects containing MS
+            data with postprocessing operations applied.
+    """
+
+    if output_opts.apply_p_jones_inv:
+        derot_vars = ["_RESIDUAL", "_CORRECTED_DATA", "_CORRECTED_RESIDUAL"]
+
+        output_data_xds_list = apply_parangles(data_xds_list,
+                                               parangle_xds_list,
+                                               derot_vars,
+                                               derotate=True)
+    else:
+        output_data_xds_list = data_xds_list
+
+    return output_data_xds_list

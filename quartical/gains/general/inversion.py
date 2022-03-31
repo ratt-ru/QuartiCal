@@ -42,7 +42,8 @@ def invert_factory(corr_mode, generalised=False):
             p[:] = r
             r_k = vecct_mul_vec(r, r)
 
-            if r_k == 0:  # If the resdiual is exactly zero, x is exact.
+            # If the resdiual is exactly zero, x is exact or missing.
+            if r_k == 0:
                 return
 
             for _ in range(x.size):

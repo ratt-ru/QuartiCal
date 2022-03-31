@@ -76,7 +76,7 @@ class ModelInputs(Input):
         metadata=dict(choices=["X", "~X", "Y", "~Y", "L", "~L", "M", "~M"])
     )
     invert_uvw: bool = True
-    source_chunks: int = 10
+    source_chunks: int = 500
     apply_p_jones: bool = True
 
     def __post_init__(self):
@@ -96,6 +96,9 @@ class Outputs(Input):
                                "corrected_weight"])
     )
     columns: Optional[List[str]] = None
+    flags: bool = True
+    apply_p_jones_inv: bool = True
+    subtract_directions: Optional[List[int]] = None
     net_gain: bool = False
 
     def __post_init__(self):
@@ -122,6 +125,7 @@ class MadFlags(Input):
 class Solver(Input):
     terms: List[str] = field(default_factory=lambda: ["G"])
     iter_recipe: List[int] = field(default_factory=lambda: [25])
+    propagate_flags: bool = True
     robust: bool = False
     threads: int = 1
     convergence_fraction: float = 0.99
@@ -131,6 +135,9 @@ class Solver(Input):
         self.validate_choice_fields()
         assert len(self.iter_recipe) >= len(self.terms), \
                "User has specified solver.iter_recipe with too few elements."
+
+        assert self.convergence_criteria >= 1e-8, \
+               "User has specified solver.convergence_criteria below 1e-8."
 
 
 @dataclass
@@ -154,10 +161,11 @@ class Gain(Input):
     type: str = field(
         default="complex",
         metadata=dict(choices=["complex",
+                               "approx_complex",
+                               "diag_complex",
                                "amplitude",
                                "delay",
                                "phase",
-                               "slow_complex",
                                "tec",
                                "rotation_measure"])
     )

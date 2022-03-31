@@ -16,7 +16,8 @@ def opts(base_opts, select_corr, solve_per):
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [30]
-    _opts.solver.convergence_criteria = 0
+    _opts.solver.propagate_flags = False
+    _opts.solver.convergence_criteria = 1e-8
     _opts.G.type = "amplitude"
     _opts.G.solve_per = solve_per
 
@@ -111,10 +112,10 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
 @pytest.fixture(scope="module")
 def add_calibration_graph_outputs(corrupted_data_xds_list,
-                                  solver_opts, chain_opts):
+                                  solver_opts, chain_opts, output_opts):
     # Overload this fixture as we need to use the corrupted xdss.
     return add_calibration_graph(corrupted_data_xds_list,
-                                 solver_opts, chain_opts)
+                                 solver_opts, chain_opts, output_opts)
 
 # -----------------------------------------------------------------------------
 
@@ -125,10 +126,18 @@ def test_residual_magnitude(cmp_post_solve_data_xds_list):
         np.testing.assert_array_almost_equal(np.abs(xds._RESIDUAL.data), 0)
 
 
+def test_solver_flags(cmp_post_solve_data_xds_list):
+    # The solver should not add addiitonal flags to the test data.
+    for xds in cmp_post_solve_data_xds_list:
+        np.testing.assert_array_equal(xds._FLAG.data, xds.FLAG.data)
+
+
 def test_gains(gain_xds_lod, true_gain_list):
 
     for solved_gain_dict, true_gain in zip(gain_xds_lod, true_gain_list):
-        solved_gain = solved_gain_dict["G"].gains.values
+        solved_gain_xds = solved_gain_dict["G"]
+        solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
+                                               solved_gain_xds.gain_flags.data)
         true_gain = true_gain.compute()  # TODO: This could be done elsewhere.
 
         n_corr = true_gain.shape[-1]
@@ -136,13 +145,25 @@ def test_gains(gain_xds_lod, true_gain_list):
         solved_gain = reference_gains(solved_gain, n_corr)
         true_gain = reference_gains(true_gain, n_corr)
 
-        # TODO: Data is missing for these ants. Gain flags should capture this.
-        true_gain[:, :, (18, 20)] = 0
-        solved_gain[:, :, (18, 20)] = 0
+        true_gain[np.where(solved_flags)] = 0
+        solved_gain[np.where(solved_flags)] = 0
 
         # To ensure the missing antenna handling doesn't render this test
         # useless, check that we have non-zero entries first.
         assert np.any(solved_gain), "All gains are zero!"
         np.testing.assert_array_almost_equal(true_gain, solved_gain)
+
+
+def test_gain_flags(gain_xds_lod):
+
+    for solved_gain_dict in gain_xds_lod:
+        solved_gain_xds = solved_gain_dict["G"]
+        solved_flags = solved_gain_xds.gain_flags.values
+
+        frows, fchans, fants, fdir = np.where(solved_flags)
+
+        # We know that these antennas are missing in the test data. No other
+        # antennas should have flags.
+        assert set(np.unique(fants)) == {18, 20}
 
 # -----------------------------------------------------------------------------

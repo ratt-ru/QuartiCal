@@ -56,8 +56,12 @@ def compute_gbl_mad_and_med(chisq, flags):
     gbl_chisq = chisq.flatten()
     unflagged_sel = np.where(flags.flatten() == 0)
 
-    gbl_median = np.median(gbl_chisq[unflagged_sel])
-    gbl_mad = np.median(np.abs(gbl_chisq - gbl_median)[unflagged_sel])
+    if unflagged_sel[0].size:  # We have unflagged data.
+        gbl_median = np.median(gbl_chisq[unflagged_sel])
+        gbl_mad = np.median(np.abs(gbl_chisq - gbl_median)[unflagged_sel])
+    else:
+        gbl_median = 0
+        gbl_mad = 0
 
     return np.array((gbl_mad, gbl_median)).astype(chisq.dtype)
 
@@ -68,10 +72,14 @@ def compute_mad_flags(chisq, gbl_mad_and_med, bl_mad_and_med, ant1, ant2,
 
     flags = np.zeros_like(chisq, dtype=np.int8)
 
-    scale_factor = 1.4826
-
     gbl_mad, gbl_med = gbl_mad_and_med
     bl_mad, bl_med = bl_mad_and_med
+
+    if gbl_mad == 0:  # Indicates that all data was flagged.
+        flags[:] = 1
+        return flags
+
+    scale_factor = 1.4826
 
     gbl_std = scale_factor * gbl_mad  # MAD to standard deviation.
     gbl_cutoff = gbl_threshold * gbl_std

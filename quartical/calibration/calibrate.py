@@ -3,9 +3,6 @@ import dask.array as da
 from quartical.gains.general.generics import (compute_residual,
                                               compute_corrected_residual,
                                               compute_corrected_weights)
-# from quartical.statistics.statistics import (assign_interval_stats,
-#                                              assign_post_solve_chisq,
-#                                              assign_presolve_data_stats,)
 from quartical.calibration.constructor import construct_solver
 from quartical.calibration.mapping import make_t_maps, make_f_maps, make_d_maps
 from quartical.gains.datasets import (make_gain_xds_lod,
@@ -34,12 +31,12 @@ dstat_dims_tup = namedtuple("dstat_dims_tup",
 
 
 def dask_residual(data, model, a1, a2, t_map_arr, f_map_arr, d_map_arr,
-                  row_map, row_weights, corr_mode, *gains):
+                  sub_dirs, row_map, row_weights, corr_mode, *gains):
     """Thin wrapper to handle an unknown number of input gains."""
 
     return compute_residual(data, model, gains, a1, a2, t_map_arr[0],
                             f_map_arr[0], d_map_arr, row_map, row_weights,
-                            corr_mode)
+                            corr_mode, sub_dirs=sub_dirs)
 
 
 def dask_corrected_residual(residual, a1, a2, t_map_arr, f_map_arr,
@@ -62,7 +59,7 @@ def dask_corrected_weights(weights, a1, a2, t_map_arr, f_map_arr,
                                      row_weights, corr_mode)
 
 
-def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
+def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -148,51 +145,16 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts):
         gain_xds_lod,
         t_map_list,
         f_map_list,
-        d_map_list
+        d_map_list,
+        output_opts
     )
-
-    # for xds_ind, xds in enumerate(data_xds_list):
-
-    #     Create and populate xds for statisics at data resolution. Returns
-    #     some useful arrays required for future computations. TODO: I really
-    #     dislike this layer. Consider revising.
-
-    #     data_stats_xds, unflagged_tfac, avg_abs_sqrd_model = \
-    #         assign_presolve_data_stats(xds, utime_ind, utime_per_chunk)
-
-    #     Update the gain xds with relevant interval statistics. Used to be
-    #     very expensive - has been improved. TODO: Broken by massive changes
-    #     calibration graph code. Needs to be revisited.
-
-    #     gain_xds_list, empty_intervals = \
-    #         assign_interval_stats(gain_xds_list,
-    #                               data_stats_xds,
-    #                               unflagged_tfac,
-    #                               avg_abs_sqrd_model,
-    #                               utime_per_chunk,
-    #                               t_bin_arr,
-    #                               f_map_arr,
-    #                               opts)
-
-    #     ---------------------------------------------------------------------
-
-    #     data_stats_xds = assign_post_solve_chisq(data_stats_xds,
-    #                                              residuals,
-    #                                              weight_col,
-    #                                              ant1_col,
-    #                                              ant2_col,
-    #                                              utime_ind,
-    #                                              utime_per_chunk,
-    #                                              utime_chunks)
-
-    #     data_stats_xds_list.append(data_stats_xds)
 
     # Return the resulting graphs for the gains and updated xds.
     return gain_xds_lod, net_xds_list, data_xds_list
 
 
 def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
-                           f_map_list, d_map_list):
+                           f_map_list, d_map_list, output_opts):
     """Creates dask arrays for possible visibility outputs.
 
     Given and xds containing data and its assosciated gains, produces
@@ -246,6 +208,7 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
             t_map_arr, ("gp", "rowlike", "term"),
             f_map_arr, ("gp", "chan", "term"),
             d_map_arr, None,
+            output_opts.subtract_directions, None,
             *((row_map, ("rowlike",)) if is_bda else (None, None)),
             *((row_weights, ("rowlike",)) if is_bda else (None, None)),
             corr_mode, None,
@@ -318,10 +281,12 @@ def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,
         # QuartiCal will assign these to the xarray.Datasets as the following
         # underscore prefixed data vars. This is done to avoid overwriting
         # input data prematurely.
-        visibility_outputs = {"_RESIDUAL": residual,
-                              "_CORRECTED_RESIDUAL": corrected_residual,
-                              "_CORRECTED_DATA": corrected_data,
-                              "_CORRECTED_WEIGHT": corrected_weight}
+        visibility_outputs = {
+            "_RESIDUAL": residual,
+            "_CORRECTED_RESIDUAL": corrected_residual,
+            "_CORRECTED_DATA": corrected_data,
+            "_CORRECTED_WEIGHT": corrected_weight,
+        }
 
         dims = data_xds.DATA.dims  # All visiblity columns share these dims.
         data_vars = {k: (dims, v) for k, v in visibility_outputs.items()}

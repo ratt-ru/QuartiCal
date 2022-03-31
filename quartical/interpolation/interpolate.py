@@ -93,20 +93,20 @@ def convert_and_drop(load_xds_list, interp_mode):
             converted_xds = load_xds.assign(
                 {"phase": (dims, da.angle(load_xds.gains.data)),
                  "amp": (dims, da.absolute(load_xds.gains.data))})
-            interp_vars = {"phase", "amp"}
+            keep_vars = {"phase", "amp", "gain_flags"}
         elif interp_mode == "reim":
             # Convert the complex gain into its real and imaginary parts.
             converted_xds = load_xds.assign(
                 {"re": (dims, load_xds.gains.data.real),
                  "im": (dims, load_xds.gains.data.imag)})
-            interp_vars = {"re", "im"}
+            keep_vars = {"re", "im", "gain_flags"}
 
         # Drop the unecessary dims and data vars. TODO: At present, QuartiCal
         # will always interpolate a gain, not the parameters. This makes it
         # impossible to do a further solve on a parameterised term.
         drop_dims = set(converted_xds.dims) - set(converted_xds.GAIN_AXES)
         converted_xds = converted_xds.drop_dims(drop_dims)
-        drop_vars = set(converted_xds.data_vars) - interp_vars
+        drop_vars = set(converted_xds.data_vars) - keep_vars
         converted_xds = converted_xds.drop_vars(drop_vars)
 
         converted_xds_list.append(converted_xds)
@@ -213,17 +213,14 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
 
     interp_xds_list = []
 
-    # TODO: This is dodgy. Ideally we shouldn't be reasoning about the
-    # values of the gains - we should just use the gain flags. This is
-    # an interim solution.
     for term_xds, concat_xds in zip(term_xds_list, concat_xds_list):
 
         if interp_mode == "ampphase":
-            amp_sel = da.where(concat_xds.amp.data == 0,
+            amp_sel = da.where(concat_xds.gain_flags.data[..., None],
                                np.nan,
                                concat_xds.amp.data)
 
-            phase_sel = da.where(concat_xds.amp.data == 0,
+            phase_sel = da.where(concat_xds.gain_flags.data[..., None],
                                  np.nan,
                                  concat_xds.phase.data)
 
@@ -232,19 +229,19 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
                  "phase": (concat_xds.phase.dims, phase_sel)})
 
         elif interp_mode == "reim":
-            re_sel = da.where((concat_xds.re.data == 0) &
-                              (concat_xds.im.data == 0),
+            re_sel = da.where(concat_xds.gain_flags.data[..., None],
                               np.nan,
                               concat_xds.re.data)
 
-            im_sel = da.where((concat_xds.re.data == 0) &
-                              (concat_xds.im.data == 0),
+            im_sel = da.where(concat_xds.gain_flags.data[..., None],
                               np.nan,
                               concat_xds.im.data)
 
             interp_xds = concat_xds.assign(
                 {"re": (concat_xds.re.dims, re_sel),
                  "im": (concat_xds.im.dims, im_sel)})
+
+        interp_xds = interp_xds.drop_vars("gain_flags")
 
         # This fills in missing values using linear interpolation, or by
         # padding with the last good value (edges). Regions with no good data
