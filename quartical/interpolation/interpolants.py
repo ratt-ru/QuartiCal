@@ -4,6 +4,9 @@ import dask.array as da
 import numpy as np
 from scipy.interpolate import interp2d
 from numba import jit
+from functools import partial
+from quartical.utils.maths import (kron_matvec, kron_tensorvec,
+                                   fit_hyperplane, pcg, matern52)
 
 
 def linear2d_interpolate_gains(interp_xds, term_xds):
@@ -210,174 +213,98 @@ def interpolate_missing(interp_xds):
     return output_xds
 
 
-# GPR related utils below this line
-def matern52(x, xp, sigmaf, l):
-    N = x.size
-    Np = xp.size
-    xxp = np.abs(np.tile(x, (Np, 1)).T - np.tile(xp, (N, 1)))
-    return sigmaf**2*np.exp(-np.sqrt(5)*xxp/l) * (1 +
-                            np.sqrt(5)*xxp/l + 5*xxp**2/(3*l**2))
+def gpr_interpolate_gains(interp_xds, term_xds):
+    """Interpolate from interp_xds to term_xds using a 2D spline.
 
-def kron_matvec(A, b):
-    D = len(A)
-    N = b.size
-    x = b.ravel()
+    Args:
+        interp_xds: xarray.Dataset containing the data to interpolate from.
+        term_xds: xarray.Dataset onto which to interpolate.
 
-    for d in range(D):
-        Gd = A[d].shape[0]
-        NGd = N // Gd
-        X = np.reshape(x, (Gd, NGd))
-        Z = A[d].dot(X).T
-        x = Z.ravel()
-    return x.reshape(b.shape)
+    Returns:
+        output_xds: xarray.Dataset containing interpolated values
+    """
+    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
+    t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
+    # TODO - add spatial axis if more than one direction is present
 
-# kron_matvec for non-sqaure matrices
-def kron_tensorvec(A, b):
-    D = len(A)
-    G = np.zeros(D, dtype=np.int32)
-    M = np.zeros(D, dtype=np.int32)
-    for d in range(D):
-        M[d], G[d] = A[d].shape
-    x = b
-    for d in range(D):
-        Gd = G[d]
-        rem = np.prod(np.delete(G, d))
-        X = np.reshape(x, (Gd, rem))
-        Z = (A[d].dot(X)).T
-        x = Z.ravel()
-        G[d] = M[d]
-    return x.reshape(tuple(M))
+    output_xds = term_xds
 
-from ducc0.misc import vdot  # np.vdot can be very inaccurate for large arrays
-def pcg(A, b, x0, M=None, tol=1e-5, maxit=150):
+    # This is done externally because we are using the same length
+    # scale hyper-parameters for all antennas and correlations.
+    # We'll have to check if it's better to compute here or inside
+    # the function call in the distributed case
+    t = interp_xds[i_t_axis].values
+    f = interp_xds[i_f_axis].values
+    tp = term_xds[t_t_axis].values
+    fp = term_xds[t_f_axis].values
+    lt = 50  # hard-coded for now
+    lf = 5
+    f = f/1e6  # convert to MHz
+    fp = fp/1e6
+    K = (matern52(t, t, 1.0, lt), matern52(f, f, 1.0, lf))
+    Kp = (matern52(tp, t, 1.0, lt), matern52(fp, f, 1.0, lf))
+    tt, ff = np.meshgrid(t, f, indexing='ij')
+    x = np.vstack((tt.flatten(), ff.flatten()))
+    ttp, ffp = np.meshgrid(tp, fp, indexing='ij')
+    xp = np.vstack((ttp.flatten(), ffp.flatten()))
 
-    if M is None:
-        def M(x): return x
+    # rechunk along antenna dimension for parallelism
+    gains = interp_xds["gains"].data.rechunk({2: 1})
+    jhj = interp_xds["jhj"].data.rechunk({2: 1})
+    interp = da.blockwise(interp_gpr, "tfadc",
+                          gains, "tfadc",
+                          jhj, "tfadc",
+                          K, None,
+                          Kp, None,
+                          x, None,
+                          xp, None,
+                          dtype=np.complex128,
+                          adjust_chunks={"t": term_xds.dims[t_t_axis],
+                                         "f": term_xds.dims[t_f_axis]})
+    interp = interp.rechunk({2: -1})
+    output_xds = output_xds.assign(
+        {"gains": (term_xds.GAIN_AXES, interp)})
 
-    r = A(x0) - b
-    y = M(r)
-    p = -y
-    rnorm = vdot(r, y)
-    if np.isnan(rnorm) or rnorm == 0.0:
-        eps0 = 1.0
-    else:
-        eps0 = rnorm
-    k = 0
-    x = x0
-    eps = 1.0
-    stall_count = 0
-    while eps > tol and k < maxit:
-        xp = x.copy()
-        rp = r.copy()
-        Ap = A(p)
-        rnorm = vdot(r, y)
-        alpha = rnorm / vdot(p, Ap)
-        x = xp + alpha * p
-        r = rp + alpha * Ap
-        y = M(r)
-        rnorm_next = vdot(r, y)
-        beta = rnorm_next / rnorm
-        p = beta * p - y
-        rnorm = rnorm_next
-        k += 1
+    return output_xds
 
-        # using worst case convergence criteria
-        epsx = np.linalg.norm(x - xp) / np.linalg.norm(x)
-        epsn = rnorm / eps0
-        eps = np.maximum(epsx, epsn)
 
-    if k >= maxit:
-        print(f"Max iters reached. eps = {eps}")
-    else:
-        print(f"Success, converged after {k} iters")
-    return x
-
-def _interp_gpr(t, f, gain, jhj, tp, fp, sigmaf, lt, lf):
-    '''
-    GPR interpolation assuming data lies on a grid.
-    No hyper-parameter optimisation.
-
-    t - time coordinates where we have data
-    f - freq coordinates where we have data
-    gain - (tfadc) array of complex valued data
-    jhj- (tfadc) array of real valued "weights"
-    tp - times we want to interpolate to
-    fp - freqs we want to interpolate to
-    sigmaf - signal variance
-    lt - time length scale
-    lf - freq length scale
-
-    The interpolation is performed by using the conjugate
-    gradient algorithm to invert the Hessian of
-
-    (y - Lx).H W (y - Lx) + x.H x
-
-    where L is the Cholesky factor of the covariance matrix
-    (i.e. whitened Wiener filter) and W consists of the diagonal
-    elements of jhj.
-    '''
-    from functools import partial
-
-    # data prior covariance
-    nt = t.size
-    K = matern52(t, t, sigmaf, lt)
-    Lt = np.linalg.cholesky(K + 1e-10*np.eye(nt))
-
-    nf = f.size
-    K = matern52(f, f, 1.0, lf)
-    Lf = np.linalg.cholesky(K + 1e-10*np.eye(nf))
-
-    L = (Lt, Lf)
-    LH = (Lt.T, Lf.T)
-
-    # cross covariance
-    Kp = (matern52(tp, t, sigmaf, lt), matern52(fp, f, 1.0, lf))
+def interp_gpr(gain, jhj, K, Kp, x, xp):
+    D, N = x.shape
+    X = np.vstack((x, np.ones((1,N))))
+    D, Np = xp.shape
+    Xp = np.vstack((xp, np.ones((1,Np))))
+    ntp = Kp[0].shape[0]
+    nfp = Kp[1].shape[0]
 
     # operator that needs to be inverted
-    def hess(x, W, L, LH):
-        res = kron_matvec(L, x)
-        res *= W
-        return kron_matvec(LH, res) + x
+    def Kyop(x, K, Sigma, sigmafsq):
+        # sigmafsq is actually part of K but we want to set it
+        # per antenna and correlation so we cheat this way
+        return kron_matvec(K, sigmafsq*x) + Sigma*x
 
-    _, _, nant, ndir, ncorr = jhj.shape
-    sol = np.zeros((tp.size, fp.size, nant, ndir, ncorr), dtype=gain.dtype)
+    # this gives a small weight to missing values
+    # check that it doesn't introduce artefacts
+    jhj = np.where(jhj < 1e-10, 1e-10, jhj)
+
+    nt, nf, nant, ndir, ncorr = jhj.shape
+    sol = np.zeros((ntp, nfp, nant, ndir, ncorr), dtype=gain.dtype)
     for p in range(nant):
         for d in range(ndir):
             for c in range(ncorr):
-                W = jhj[:, :, p, d, c]
-                y = gain[:, :, p, d, c]
-                ymean = np.mean(y)
-                # remove mean in case there are large gaps in the data
-                y -= ymean
-
-                A = partial(hess,
-                            W=W, L=L, LH=LH)
-
-                b = W * y
-                x = pcg(A,
-                        kron_matvec(LH, b),
-                        np.zeros((nt, nf), dtype=gain.dtype),
-                        tol=1e-6,
-                        maxit=500)
-                x = W * kron_matvec(L, x)
-                x = b - x
-                sol[:, :, p, d, c] = kron_tensorvec(Kp, x)  + ymean
+                theta = fit_hyperplane(x, gain[:, :, p, d, c].flatten())
+                # subtract plane approx
+                plane_approx = X.T.dot(theta).reshape(nt, nf)
+                y = gain[:, :, p, d, c] - plane_approx
+                Sigma = 1.0/jhj[:, :, p, d, c]
+                sigmafsq = np.var(y)
+                Ky = partial(Kyop, K=K, Sigma=Sigma, sigmafsq=sigmafsq)
+                Kyinv = pcg(Ky,
+                            y,
+                            np.zeros((nt, nf), dtype=gain.dtype),
+                            tol=1e-6,
+                            maxit=500)
+                sol[:, :, p, d, c] = (kron_tensorvec(Kp, sigmafsq * Kyinv) +
+                                      Xp.T.dot(theta).reshape(ntp, nfp))
 
     return sol
 
-def interp_gpr(t, f, gain, jhj, tp, fp, sigmaf, lt, lf):
-    smooth_gain = blockwise(_interp_gpr, 'tfadc',
-                            t, 't',
-                            f, 'f',
-                            gain, 'tfadc',
-                            jhj, 'tfadc',
-                            tp, 't',
-                            fp, 'f',
-                            sigmaf, None,
-                            lt, None,
-                            lf, None,
-                            align_arrays=False,
-                            adjust_chunks={'t': tp.chunks[0],
-                                           'f': fp.chunks[0]},
-                            dtype=gain.dtype)
-    return smooth_gain

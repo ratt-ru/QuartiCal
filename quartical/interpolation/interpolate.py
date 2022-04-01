@@ -8,7 +8,8 @@ from daskms.experimental.zarr import xds_from_zarr
 from quartical.config.internal import yield_from
 from quartical.interpolation.interpolants import (interpolate_missing,
                                                   linear2d_interpolate_gains,
-                                                  spline2d_interpolate_gains)
+                                                  spline2d_interpolate_gains,
+                                                  gpr_interpolate_gains)
 
 
 def load_and_interpolate_gains(gain_xds_lod, chain_opts):
@@ -100,6 +101,9 @@ def convert_and_drop(load_xds_list, interp_mode):
                 {"re": (dims, load_xds.gains.data.real),
                  "im": (dims, load_xds.gains.data.imag)})
             keep_vars = {"re", "im", "gain_flags"}
+        elif interp_mode == 'complex':
+            converted_xds = load_xds
+            keep_vars = {"gains", "jhj", "gain_flags"}
 
         # Drop the unecessary dims and data vars. TODO: At present, QuartiCal
         # will always interpolate a gain, not the parameters. This makes it
@@ -241,6 +245,9 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
                 {"re": (concat_xds.re.dims, re_sel),
                  "im": (concat_xds.im.dims, im_sel)})
 
+        elif interp_mode == "complex":
+            interp_xds = concat_xds
+
         interp_xds = interp_xds.drop_vars("gain_flags")
 
         # This fills in missing values using linear interpolation, or by
@@ -253,6 +260,13 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
             interp_xds = linear2d_interpolate_gains(interp_xds, term_xds)
         elif interp_method == "2dspline":
             interp_xds = spline2d_interpolate_gains(interp_xds, term_xds)
+        elif interp_method == "gpr":
+            if interp_mode != "complex":
+                raise NotImplementedError("Only complex interpolation "
+                                          "currently supported for GPR "
+                                          "intrepolation. Set interp-mode "
+                                          "to 'complex to use this method.")
+            interp_xds = gpr_interpolate_gains(interp_xds, term_xds)
 
         # Convert the interpolated quantities back to gains.
         if interp_mode == "ampphase":
@@ -265,6 +279,7 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
             interp_xds = term_xds.assign(
                 {"gains": (term_xds.GAIN_AXES, gains)}
             )
+        # gains already present when interp_mode=='complex'
 
         t_chunks = term_xds.GAIN_SPEC.tchunk
         f_chunks = term_xds.GAIN_SPEC.fchunk
