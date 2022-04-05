@@ -40,8 +40,6 @@ def assign_presolve_chisq(data_xds_list, stats_xds_list):
 
         residual = data - model.sum(axis=2)
 
-        print(residual.chunks, weights.chunks, inv_flags.chunks)
-
         chisq = da.map_blocks(
             compute_chisq,
             residual,

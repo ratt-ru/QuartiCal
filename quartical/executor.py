@@ -116,8 +116,8 @@ def _execute(exitstack):
                                     ms_opts.path,
                                     model_opts)
 
-    # stats_xds_list = make_stats_xds_list(data_xds_list)
-    # stats_xds_list = assign_presolve_chisq(data_xds_list, stats_xds_list)
+    stats_xds_list = make_stats_xds_list(data_xds_list)
+    stats_xds_list = assign_presolve_chisq(data_xds_list, stats_xds_list)
 
     # Adds the dask graph describing the calibration of the data. TODO:
     # This call has excess functionality now. Split out mapping and outputs.
@@ -128,8 +128,8 @@ def _execute(exitstack):
         output_opts
     )
 
-    # stats_xds_list = assign_postsolve_chisq(data_xds_list, stats_xds_list)
-    # stats_xds_list = embed_stats_logging(stats_xds_list)
+    stats_xds_list = assign_postsolve_chisq(data_xds_list, stats_xds_list)
+    stats_xds_list = embed_stats_logging(stats_xds_list)
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
@@ -167,11 +167,10 @@ def _execute(exitstack):
 
     with compute_context(dask_opts, output_opts):
 
-        # _, _, stats_xds_list =
-        dask.compute(
+        _, _, stats_xds_list = dask.compute(
             ms_writes,
             gain_writes,
-            # stats_xds_list,
+            stats_xds_list,
             num_workers=dask_opts.threads,
             optimize_graph=True,
             scheduler=dask_opts.scheduler
@@ -179,7 +178,7 @@ def _execute(exitstack):
 
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
-    # log_summary_stats(stats_xds_list)
+    log_summary_stats(stats_xds_list)
 
     if dask_opts.scheduler == "distributed":
         client.close()  # Close this client, hopefully gracefully.
