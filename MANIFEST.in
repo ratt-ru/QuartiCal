@@ -1,1 +1,2 @@
 include quartical/config/helpstrings.yaml
+include quartical/config/argument_schema.yaml
