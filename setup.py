@@ -26,7 +26,9 @@ requirements = [
 
     "scabha"
     "@git+https://github.com/caracal-pipeline/scabha2.git"
-    "@alias-cleanup",
+    "@rich",
+
+    "rich",  # should go in scabha
 ]
 
 setup(
