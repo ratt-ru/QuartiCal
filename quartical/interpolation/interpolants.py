@@ -213,7 +213,7 @@ def interpolate_missing(interp_xds):
     return output_xds
 
 
-def gpr_interpolate_gains(interp_xds, term_xds):
+def gpr_interpolate_gains(interp_xds, term_xds, gpr_params):
     """Interpolate from interp_xds to term_xds using a 2D spline.
 
     Args:
@@ -237,44 +237,69 @@ def gpr_interpolate_gains(interp_xds, term_xds):
     f = interp_xds[i_f_axis].values
     tp = term_xds[t_t_axis].values
     fp = term_xds[t_f_axis].values
-    lt = 50  # hard-coded for now
-    lf = 5
+
+    # currently assume jhj is the same for all data_vars
+    jhj = interp_xds["jhj"].data  #.rechunk({2: 1})
+    # we don't want to interpolate jhj
+    interp_xds = interp_xds.drop_vars({'jhj'})
+    for data_field in interp_xds.data_vars:
+        lts = gpr_params[0]
+        lfs = gpr_params[1]
+        ninflates = gpr_params[2]
+        if data_field in ['phase','imag']:
+            lt = lts[1]
+            lf = lfs[1]
+            noise_inflation = ninflates[1]
+        elif data_field in ['amp', 'real', 'complex']:
+            lt = lts[0]
+            lf = lfs[0]
+            noise_inflation = ninflates[0]
+
+        # rechunk along antenna dimension for parallelism
+        gains = interp_xds[data_field].data  #.rechunk({2: 1})
+
+        interp = da.blockwise(interp_gpr, "tfadc",
+                              gains, "tfadc",
+                              jhj, "tfadc",
+                              t, None,
+                              f, None,
+                              tp, None,
+                              fp, None,
+                              lt, None,
+                              lf, None,
+                              noise_inflation, None,
+                              data_field, None,
+                              dtype=np.complex128,
+                              adjust_chunks={"t": term_xds.dims[t_t_axis],
+                                             "f": term_xds.dims[t_f_axis]})
+        interp = interp.rechunk({2: -1})
+        output_xds = output_xds.assign(
+            {data_field: (term_xds.GAIN_AXES, interp)})
+
+    return output_xds
+
+
+def interp_gpr(gain, jhj, t, f, tp, fp, lt, lf,
+               noise_inflation, term_type):
+
+    jhj = jhj.real
+
     f = f/1e6  # convert to MHz
     fp = fp/1e6
     K = (matern52(t, t, 1.0, lt), matern52(f, f, 1.0, lf))
     Kp = (matern52(tp, t, 1.0, lt), matern52(fp, f, 1.0, lf))
+
     tt, ff = np.meshgrid(t, f, indexing='ij')
     x = np.vstack((tt.flatten(), ff.flatten()))
     ttp, ffp = np.meshgrid(tp, fp, indexing='ij')
     xp = np.vstack((ttp.flatten(), ffp.flatten()))
 
-    # rechunk along antenna dimension for parallelism
-    gains = interp_xds["gains"].data.rechunk({2: 1})
-    jhj = interp_xds["jhj"].data.rechunk({2: 1})
-    interp = da.blockwise(interp_gpr, "tfadc",
-                          gains, "tfadc",
-                          jhj, "tfadc",
-                          K, None,
-                          Kp, None,
-                          x, None,
-                          xp, None,
-                          dtype=np.complex128,
-                          adjust_chunks={"t": term_xds.dims[t_t_axis],
-                                         "f": term_xds.dims[t_f_axis]})
-    interp = interp.rechunk({2: -1})
-    output_xds = output_xds.assign(
-        {"gains": (term_xds.GAIN_AXES, interp)})
-
-    return output_xds
-
-
-def interp_gpr(gain, jhj, K, Kp, x, xp):
     D, N = x.shape
     X = np.vstack((x, np.ones((1,N))))
     D, Np = xp.shape
     Xp = np.vstack((xp, np.ones((1,Np))))
-    ntp = Kp[0].shape[0]
-    nfp = Kp[1].shape[0]
+    ntp = tp.size
+    nfp = fp.size
 
     # operator that needs to be inverted
     def Kyop(x, K, Sigma, sigmafsq):
@@ -282,29 +307,41 @@ def interp_gpr(gain, jhj, K, Kp, x, xp):
         # per antenna and correlation so we cheat this way
         return kron_matvec(K, sigmafsq*x) + Sigma*x
 
-    # this gives a small weight to missing values
-    # check that it doesn't introduce artefacts
-    jhj = np.where(jhj < 1e-10, 1e-10, jhj)
-
     nt, nf, nant, ndir, ncorr = jhj.shape
     sol = np.zeros((ntp, nfp, nant, ndir, ncorr), dtype=gain.dtype)
     for p in range(nant):
         for d in range(ndir):
             for c in range(ncorr):
-                theta = fit_hyperplane(x, gain[:, :, p, d, c].flatten())
+                g = gain[:, :, p, d, c]
+                # unwrap if phase
+                if term_type == 'phase':
+                    g = np.unwrap(np.unwrap(g, axis=0), axis=1)
+                jhjflat = jhj[:, :, p, d, c].ravel()
+                # assumes gain flags correspond to where jhj is zero
+                ival = np.where(jhjflat>0)[0]
+                xval = x[:, ival]
+                yval = g.ravel()[ival]
+                theta = fit_hyperplane(xval, yval)
                 # subtract plane approx
                 plane_approx = X.T.dot(theta).reshape(nt, nf)
                 y = gain[:, :, p, d, c] - plane_approx
-                Sigma = 1.0/jhj[:, :, p, d, c]
                 sigmafsq = np.var(y)
+                # this gives small weight to flaged data
+                # need to check that it's sensible
+                Sigma = np.where(jhj[:, :, p, d, c]>0,
+                                 noise_inflation/jhj[:, :, p, d, c], 1e10)
                 Ky = partial(Kyop, K=K, Sigma=Sigma, sigmafsq=sigmafsq)
-                Kyinv = pcg(Ky,
-                            y,
-                            np.zeros((nt, nf), dtype=gain.dtype),
-                            tol=1e-6,
-                            maxit=500)
+                Kyinv, success, eps = pcg(Ky,
+                                          y,
+                                          np.zeros((nt, nf), dtype=gain.dtype),
+                                          tol=1e-6,
+                                          maxit=500)
                 sol[:, :, p, d, c] = (kron_tensorvec(Kp, sigmafsq * Kyinv) +
                                       Xp.T.dot(theta).reshape(ntp, nfp))
+                if not success:
+                    print(f"                                    {term_type} failed at antenna {p} with eps of {eps}")
+                else:
+                    print(f"{term_type} succeeded at antenna {p}")
 
     return sol
 

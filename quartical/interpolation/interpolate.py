@@ -29,11 +29,16 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
 
     interp_xds_lol = []
 
-    req_fields = ("load_from", "interp_mode", "interp_method")
+    req_fields = ("load_from", "interp_mode", "interp_method",
+                  "time_length_scales", "freq_length_scales",
+                  "noise_inflation")
 
     for loop_vars in yield_from(chain_opts, req_fields):
 
-        term_name, term_path, interp_mode, interp_method = loop_vars
+        term_name, term_path, interp_mode, interp_method, time_length_scales,\
+            freq_length_scales, noise_inflation = loop_vars
+
+        gpr_params = [time_length_scales, freq_length_scales, noise_inflation]
 
         # Pull out all the datasets for the current term into a flat list.
         term_xds_list = [term_dict[term_name] for term_dict in gain_xds_lod]
@@ -53,7 +58,9 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
         load_xds_list = [xds.chunk(-1) for xds in load_xds_list]
 
         # Convert to amp and phase/real and imag. Drop unused data_vars.
-        converted_xds_list = convert_and_drop(load_xds_list, interp_mode)
+        converted_xds_list = convert_and_drop(load_xds_list,
+                                              interp_mode,
+                                              interp_method)
 
         # Sort the datasets on disk into a list of lists, ordered by time
         # and frequency.
@@ -67,7 +74,8 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
         interp_xds_list = make_interp_xds_list(term_xds_list,
                                                concat_xds_list,
                                                interp_mode,
-                                               interp_method)
+                                               interp_method,
+                                               gpr_params)
 
         interp_xds_lol.append(interp_xds_list)
 
@@ -80,7 +88,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
     return interp_xds_lod
 
 
-def convert_and_drop(load_xds_list, interp_mode):
+def convert_and_drop(load_xds_list, interp_mode, interp_method):
     """Convert complex gain reim/ampphase. Drop unused data_vars."""
 
     converted_xds_list = []
@@ -95,12 +103,16 @@ def convert_and_drop(load_xds_list, interp_mode):
                 {"phase": (dims, da.angle(load_xds.gains.data)),
                  "amp": (dims, da.absolute(load_xds.gains.data))})
             keep_vars = {"phase", "amp", "gain_flags"}
+            if interp_method == 'gpr':
+                keep_vars.add("jhj")
         elif interp_mode == "reim":
             # Convert the complex gain into its real and imaginary parts.
             converted_xds = load_xds.assign(
                 {"re": (dims, load_xds.gains.data.real),
                  "im": (dims, load_xds.gains.data.imag)})
             keep_vars = {"re", "im", "gain_flags"}
+            if interp_method == 'gpr':
+                keep_vars.add("jhj")
         elif interp_mode == 'complex':
             converted_xds = load_xds
             keep_vars = {"gains", "jhj", "gain_flags"}
@@ -212,7 +224,7 @@ def make_concat_xds_list(term_xds_list, sorted_xds_lol):
 
 
 def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
-                         interp_method):
+                         interp_method, gpr_params):
     """Given the concatenated datasets, interp to the desired datasets."""
 
     interp_xds_list = []
@@ -261,12 +273,8 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
         elif interp_method == "2dspline":
             interp_xds = spline2d_interpolate_gains(interp_xds, term_xds)
         elif interp_method == "gpr":
-            if interp_mode != "complex":
-                raise NotImplementedError("Only complex interpolation "
-                                          "currently supported for GPR "
-                                          "intrepolation. Set interp-mode "
-                                          "to 'complex to use this method.")
-            interp_xds = gpr_interpolate_gains(interp_xds, term_xds)
+            interp_xds = gpr_interpolate_gains(interp_xds, term_xds,
+                                               gpr_params)
 
         # Convert the interpolated quantities back to gains.
         if interp_mode == "ampphase":

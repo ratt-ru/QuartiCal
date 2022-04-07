@@ -205,6 +205,19 @@ gain:
     Number of channels/bandwidth to include in a single solution. Specify as
     an integer number of channels, or a value with a unit (e.g. '128MHz').
     0 means use full frequency axis.
+  time_length_scale:
+    List of length scales for smoothing the time dimension when using
+    interp_method==gpr. The first is used for amplitude/real depending
+    on interp-mode. The second for the phase/imag.
+  freq_length_scale:
+    List of length scales for smoothing the freq dimension when using
+    interp_method==gpr. The first is used for amp/real depending
+    on interp-mode. The second for phase/imag.
+  noise_inflation:
+    List of noise inflation factors when using interp_method=gpr.
+    This can help suppress flux absorbtion when the model is incomplete.
+    It is generally a good idea to use a value > 1 since the 1/jhj is
+    already a lower bound on the variance in the gain.
   load_from:
     Load solutions from given database.
   interp_mode:

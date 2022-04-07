@@ -176,8 +176,8 @@ def pcg(A, b, x0, M=None, tol=1e-5, maxit=150):
         k += 1
         eps = rnorm / eps0
 
+    # LB - how to check for failures?
     if k >= maxit:
-        print(f"Max iters reached. eps = {eps}")
+        return x, 0, eps
     else:
-        print(f"Success, converged after {k} iters")
-    return x
+        return x, 1, eps
