@@ -315,6 +315,10 @@ def interp_gpr(gain, jhj, t, f, tp, fp, lt, lf,
                 g = gain[:, :, p, d, c]
                 # unwrap if phase
                 if term_type == 'phase':
+                    # if p == nant-1:
+                    #     continue
+                    # gref = gain[:, :, -1, d, c]
+                    # g *= np.conj(gref)
                     g = np.unwrap(np.unwrap(g, axis=0), axis=1)
                 jhjflat = jhj[:, :, p, d, c].ravel()
                 # assumes gain flags correspond to where jhj is zero
@@ -324,7 +328,7 @@ def interp_gpr(gain, jhj, t, f, tp, fp, lt, lf,
                 theta = fit_hyperplane(xval, yval)
                 # subtract plane approx
                 plane_approx = X.T.dot(theta).reshape(nt, nf)
-                y = gain[:, :, p, d, c] - plane_approx
+                y = g - plane_approx
                 sigmafsq = np.var(y)
                 # this gives small weight to flaged data
                 # need to check that it's sensible
@@ -333,15 +337,15 @@ def interp_gpr(gain, jhj, t, f, tp, fp, lt, lf,
                 Ky = partial(Kyop, K=K, Sigma=Sigma, sigmafsq=sigmafsq)
                 Kyinv, success, eps = pcg(Ky,
                                           y,
-                                          np.zeros((nt, nf), dtype=gain.dtype),
+                                          y,
                                           tol=1e-6,
                                           maxit=500)
                 sol[:, :, p, d, c] = (kron_tensorvec(Kp, sigmafsq * Kyinv) +
                                       Xp.T.dot(theta).reshape(ntp, nfp))
                 if not success:
-                    print(f"                                    {term_type} failed at antenna {p} with eps of {eps}")
+                    print(f"                                    {term_type} failed at ant/corr {p}/{c} with eps of {eps}")
                 else:
-                    print(f"{term_type} succeeded at antenna {p}")
+                    print(f"{term_type} succeeded at ant/corr {p}/{c}")
 
     return sol
 
