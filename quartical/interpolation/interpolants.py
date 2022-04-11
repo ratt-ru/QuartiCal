@@ -239,7 +239,7 @@ def gpr_interpolate_gains(interp_xds, term_xds, gpr_params):
     fp = term_xds[t_f_axis].values
 
     # currently assume jhj is the same for all data_vars
-    jhj = interp_xds["jhj"].data  #.rechunk({2: 1})
+    jhj = interp_xds["jhj"].data.rechunk({2: 1})
     # we don't want to interpolate jhj
     interp_xds = interp_xds.drop_vars({'jhj'})
     for data_field in interp_xds.data_vars:
@@ -256,7 +256,7 @@ def gpr_interpolate_gains(interp_xds, term_xds, gpr_params):
             noise_inflation = ninflates[0]
 
         # rechunk along antenna dimension for parallelism
-        gains = interp_xds[data_field].data  #.rechunk({2: 1})
+        gains = interp_xds[data_field].data.rechunk({2: 1})
 
         interp = da.blockwise(interp_gpr, "tfadc",
                               gains, "tfadc",
