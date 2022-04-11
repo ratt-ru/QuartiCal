@@ -184,8 +184,7 @@ class Gain(Input):
     interp_mode: str = field(
         default="reim",
         metadata=dict(choices=["reim",
-                               "ampphase",
-                               "complex"])
+                               "ampphase"])
     )
     interp_method: str = field(
         default="2dlinear",

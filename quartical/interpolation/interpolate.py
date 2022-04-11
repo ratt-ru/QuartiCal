@@ -113,9 +113,6 @@ def convert_and_drop(load_xds_list, interp_mode, interp_method):
             keep_vars = {"re", "im", "gain_flags"}
             if interp_method == 'gpr':
                 keep_vars.add("jhj")
-        elif interp_mode == 'complex':
-            converted_xds = load_xds
-            keep_vars = {"gains", "jhj", "gain_flags"}
 
         # Drop the unecessary dims and data vars. TODO: At present, QuartiCal
         # will always interpolate a gain, not the parameters. This makes it
@@ -257,9 +254,6 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
                 {"re": (concat_xds.re.dims, re_sel),
                  "im": (concat_xds.im.dims, im_sel)})
 
-        elif interp_mode == "complex":
-            interp_xds = concat_xds
-
         interp_xds = interp_xds.drop_vars("gain_flags")
 
         # This fills in missing values using linear interpolation, or by
@@ -287,7 +281,6 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
             interp_xds = term_xds.assign(
                 {"gains": (term_xds.GAIN_AXES, gains)}
             )
-        # gains already present when interp_mode=='complex'
 
         t_chunks = term_xds.GAIN_SPEC.tchunk
         f_chunks = term_xds.GAIN_SPEC.fchunk

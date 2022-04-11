@@ -246,11 +246,11 @@ def gpr_interpolate_gains(interp_xds, term_xds, gpr_params):
         lts = gpr_params[0]
         lfs = gpr_params[1]
         ninflates = gpr_params[2]
-        if data_field in ['phase','imag']:
+        if data_field in ['phase','im']:
             lt = lts[1]
             lf = lfs[1]
             noise_inflation = ninflates[1]
-        elif data_field in ['amp', 'real', 'complex']:
+        elif data_field in ['amp', 're']:
             lt = lts[0]
             lf = lfs[0]
             noise_inflation = ninflates[0]
@@ -315,11 +315,8 @@ def interp_gpr(gain, jhj, t, f, tp, fp, lt, lf,
                 g = gain[:, :, p, d, c]
                 # unwrap if phase
                 if term_type == 'phase':
-                    # if p == nant-1:
-                    #     continue
-                    # gref = gain[:, :, -1, d, c]
-                    # g *= np.conj(gref)
                     g = np.unwrap(np.unwrap(g, axis=0), axis=1)
+
                 jhjflat = jhj[:, :, p, d, c].ravel()
                 # assumes gain flags correspond to where jhj is zero
                 ival = np.where(jhjflat>0)[0]
