@@ -326,7 +326,7 @@ def interp_gpr(gain, jhj, t, f, tp, fp, lt, lf,
                 # subtract plane approx
                 plane_approx = X.T.dot(theta).reshape(nt, nf)
                 y = g - plane_approx
-                sigmafsq = np.var(y)
+                sigmafsq = np.var(y.ravel()[ival])
                 # this gives small weight to flaged data
                 # need to check that it's sensible
                 Sigma = np.where(jhj[:, :, p, d, c]>0,

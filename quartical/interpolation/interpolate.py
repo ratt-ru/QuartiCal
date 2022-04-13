@@ -8,8 +8,7 @@ from daskms.experimental.zarr import xds_from_zarr
 from quartical.config.internal import yield_from
 from quartical.interpolation.interpolants import (interpolate_missing,
                                                   linear2d_interpolate_gains,
-                                                  spline2d_interpolate_gains,
-                                                  gpr_interpolate_gains)
+                                                  spline2d_interpolate_gains)
 
 
 def load_and_interpolate_gains(gain_xds_lod, chain_opts):
@@ -29,16 +28,11 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
 
     interp_xds_lol = []
 
-    req_fields = ("load_from", "interp_mode", "interp_method",
-                  "time_length_scales", "freq_length_scales",
-                  "noise_inflation")
+    req_fields = ("load_from", "interp_mode", "interp_method")
 
     for loop_vars in yield_from(chain_opts, req_fields):
 
-        term_name, term_path, interp_mode, interp_method, time_length_scales,\
-            freq_length_scales, noise_inflation = loop_vars
-
-        gpr_params = [time_length_scales, freq_length_scales, noise_inflation]
+        term_name, term_path, interp_mode, interp_method = loop_vars
 
         # Pull out all the datasets for the current term into a flat list.
         term_xds_list = [term_dict[term_name] for term_dict in gain_xds_lod]
@@ -58,9 +52,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
         load_xds_list = [xds.chunk(-1) for xds in load_xds_list]
 
         # Convert to amp and phase/real and imag. Drop unused data_vars.
-        converted_xds_list = convert_and_drop(load_xds_list,
-                                              interp_mode,
-                                              interp_method)
+        converted_xds_list = convert_and_drop(load_xds_list, interp_mode)
 
         # Sort the datasets on disk into a list of lists, ordered by time
         # and frequency.
@@ -74,8 +66,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
         interp_xds_list = make_interp_xds_list(term_xds_list,
                                                concat_xds_list,
                                                interp_mode,
-                                               interp_method,
-                                               gpr_params)
+                                               interp_method)
 
         interp_xds_lol.append(interp_xds_list)
 
@@ -88,7 +79,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
     return interp_xds_lod
 
 
-def convert_and_drop(load_xds_list, interp_mode, interp_method):
+def convert_and_drop(load_xds_list, interp_mode):
     """Convert complex gain reim/ampphase. Drop unused data_vars."""
 
     converted_xds_list = []
@@ -103,16 +94,12 @@ def convert_and_drop(load_xds_list, interp_mode, interp_method):
                 {"phase": (dims, da.angle(load_xds.gains.data)),
                  "amp": (dims, da.absolute(load_xds.gains.data))})
             keep_vars = {"phase", "amp", "gain_flags"}
-            if interp_method == 'gpr':
-                keep_vars.add("jhj")
         elif interp_mode == "reim":
             # Convert the complex gain into its real and imaginary parts.
             converted_xds = load_xds.assign(
                 {"re": (dims, load_xds.gains.data.real),
                  "im": (dims, load_xds.gains.data.imag)})
             keep_vars = {"re", "im", "gain_flags"}
-            if interp_method == 'gpr':
-                keep_vars.add("jhj")
 
         # Drop the unecessary dims and data vars. TODO: At present, QuartiCal
         # will always interpolate a gain, not the parameters. This makes it
@@ -221,7 +208,7 @@ def make_concat_xds_list(term_xds_list, sorted_xds_lol):
 
 
 def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
-                         interp_method, gpr_params):
+                         interp_method):
     """Given the concatenated datasets, interp to the desired datasets."""
 
     interp_xds_list = []
@@ -266,9 +253,6 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
             interp_xds = linear2d_interpolate_gains(interp_xds, term_xds)
         elif interp_method == "2dspline":
             interp_xds = spline2d_interpolate_gains(interp_xds, term_xds)
-        elif interp_method == "gpr":
-            interp_xds = gpr_interpolate_gains(interp_xds, term_xds,
-                                               gpr_params)
 
         # Convert the interpolated quantities back to gains.
         if interp_mode == "ampphase":

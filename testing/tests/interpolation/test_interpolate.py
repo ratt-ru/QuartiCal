@@ -143,28 +143,22 @@ def interp_mode(request):
     return request.param
 
 
-@pytest.fixture(scope="module", params=["2dlinear", "2dspline", "gpr"])
+@pytest.fixture(scope="module", params=["2dlinear",
+                                        "2dspline"])
 def interp_method(request):
     return request.param
 
 
 @pytest.fixture(scope="module")
-def converted_xds_list(load_xds_list, interp_mode, interp_method):
-    return convert_and_drop(load_xds_list, interp_mode, interp_method)
+def converted_xds_list(load_xds_list, interp_mode):
+    return convert_and_drop(load_xds_list, interp_mode)
 
 
-def test_data_vars(converted_xds_list, interp_mode, interp_method):
-    # LB - atm a bit of a hack to get the tests passing
+def test_data_vars(converted_xds_list, interp_mode):
+    reim_keys = {"gain_flags", "re", "im"}
+    ampphase_keys = {"gain_flags", "amp", "phase"}
 
-    if interp_mode == "reim":
-        expected_keys = {"gain_flags", "re", "im"}
-    elif interp_mode == "ampphase":
-        expected_keys = {"gain_flags", "amp", "phase"}
-    else:
-        raise ValueError(f"Unknown interp-mode {interp_mode}")
-
-    if interp_method == "gpr":
-        expected_keys.add("jhj")
+    expected_keys = reim_keys if interp_mode == "reim" else ampphase_keys
 
     assert all([set(xds.keys()) ^ expected_keys == set()
                 for xds in converted_xds_list])
@@ -296,22 +290,17 @@ def test_freq_upper_bounds(concat_xds_list, term_xds_list, bounds):
 
 
 # -----------------------------make_interp_xds_list----------------------------
-@pytest.fixture(scope="module", params=[None])
-def gpr_params(request):
-    return request.param
 
 
 @pytest.fixture(scope="module")
 def interp_xds_list(term_xds_list,
                     concat_xds_list,
                     interp_mode,
-                    interp_method,
-                    gpr_params):
+                    interp_method):
     return make_interp_xds_list(term_xds_list,
                                 concat_xds_list,
                                 interp_mode,
-                                interp_method,
-                                gpr_params)
+                                interp_method)
 
 
 def test_has_gains(interp_xds_list):

@@ -177,9 +177,6 @@ class Gain(Input):
     direction_dependent: bool = False
     time_interval: str = "1"
     freq_interval: str = "1"
-    time_length_scales: List[float] = field(default_factory=lambda: [50,5])
-    freq_length_scales: List[float] = field(default_factory=lambda: [15,15])
-    noise_inflation: List[float] = field(default_factory=lambda: [1,1])
     load_from: Optional[str] = None
     interp_mode: str = field(
         default="reim",
@@ -189,8 +186,7 @@ class Gain(Input):
     interp_method: str = field(
         default="2dlinear",
         metadata=dict(choices=["2dlinear",
-                               "2dspline",
-                               "gpr"])
+                               "2dspline"])
     )
 
     def __post_init__(self):
