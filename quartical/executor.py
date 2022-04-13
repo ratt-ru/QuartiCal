@@ -3,11 +3,6 @@
 from contextlib import ExitStack
 import sys
 from loguru import logger
-import os
-os.environ["OMP_NUM_THREADS"] = '1'
-os.environ["OPENBLAS_NUM_THREADS"] = '1'
-os.environ["MKL_NUM_THREADS"] = '1'
-os.environ["VECLIB_MAXIMUM_THREADS"] = '1'
 import dask
 from dask.distributed import Client, LocalCluster, performance_report
 import time

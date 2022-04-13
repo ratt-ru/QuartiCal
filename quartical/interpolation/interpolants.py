@@ -213,93 +213,66 @@ def interpolate_missing(interp_xds):
     return output_xds
 
 
-def gpr_interpolate_gains(interp_xds, term_xds, gpr_params):
-    """Interpolate from interp_xds to term_xds using a 2D spline.
+def gpr_interpolate_gains(input_xds, output_xds, gpr_params):
+    """
+    Interpolate from input_xds to output_xds using GPR.
+
+    TODO - add spatial axis if more than one direction is present
 
     Args:
-        interp_xds: xarray.Dataset containing the data to interpolate from.
-        term_xds: xarray.Dataset onto which to interpolate.
+        input_xds: xarray.Dataset containing the data to interpolate from.
+        output_xds: list of xarray.Datasets onto which to interpolate.
+        gpr_params: hyper-parameters for GPR
 
     Returns:
-        output_xds: xarray.Dataset containing interpolated values
+        output_xds: list of xarray.Datasets containing interpolated values.
     """
-    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
-    t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
-    # TODO - add spatial axis if more than one direction is present
+    # We first solve for Kyinv y required to perform the interpolation
+    t = input_xds.gain_t.values
+    f = input_xds.gain_t.values
+    jhj = input_xds.jhj.data.rechunk({2: 1})
+    gain = input_xds.gains.data.rechunk({2: 1})
+    flag = input_xds.gain_flags.data.rechunk({2: 1})
 
-    output_xds = term_xds
+    lts = gpr_params[0]
+    lfs = gpr_params[1]
+    ninflates = gpr_params[2]
 
-    # This is done externally because we are using the same length
-    # scale hyper-parameters for all antennas and correlations.
-    # We'll have to check if it's better to compute here or inside
-    # the function call in the distributed case
-    t = interp_xds[i_t_axis].values
-    f = interp_xds[i_f_axis].values
-    tp = term_xds[t_t_axis].values
-    fp = term_xds[t_f_axis].values
+    Kyinvs, thetas, sigmasqs = da.blockwise(
+        interp_gpr, "tfadc",
+        gains, "tfadc",
+        jhj, "tfadc",
+        flag, "tfadc",
+        t, None,
+        f, None,
+        lts, None,
+        lfs, None,
+        noise_inflation, None,
+        dtype=np.complex128)
 
-    # currently assume jhj is the same for all data_vars
-    jhj = interp_xds["jhj"].data.rechunk({2: 1})
-    # we don't want to interpolate jhj
-    interp_xds = interp_xds.drop_vars({'jhj'})
-    for data_field in interp_xds.data_vars:
-        lts = gpr_params[0]
-        lfs = gpr_params[1]
-        ninflates = gpr_params[2]
-        if data_field in ['phase','im']:
-            lt = lts[1]
-            lf = lfs[1]
-            noise_inflation = ninflates[1]
-        elif data_field in ['amp', 're']:
-            lt = lts[0]
-            lf = lfs[0]
-            noise_inflation = ninflates[0]
-
-        # rechunk along antenna dimension for parallelism
-        gains = interp_xds[data_field].data.rechunk({2: 1})
-
-        interp = da.blockwise(interp_gpr, "tfadc",
-                              gains, "tfadc",
-                              jhj, "tfadc",
-                              t, None,
-                              f, None,
-                              tp, None,
-                              fp, None,
-                              lt, None,
-                              lf, None,
-                              noise_inflation, None,
-                              data_field, None,
-                              dtype=np.complex128,
-                              adjust_chunks={"t": term_xds.dims[t_t_axis],
-                                             "f": term_xds.dims[t_f_axis]})
-        interp = interp.rechunk({2: -1})
-        output_xds = output_xds.assign(
-            {data_field: (term_xds.GAIN_AXES, interp)})
+    interp = interp.rechunk({2: -1})
+    output_xds = output_xds.assign(
+        {data_field: (term_xds.GAIN_AXES, interp)})
 
     return output_xds
 
 
-def interp_gpr(gain, jhj, t, f, tp, fp, lt, lf,
+def interp_gpr(gain, jhj, flag, gref, t, f, tp, fp, lt, lf,
                noise_inflation, term_type):
-
+    '''
+    Solves (K + Sigma)inv y for each antenna
+    '''
     jhj = jhj.real
 
     f = f/1e6  # convert to MHz
     fp = fp/1e6
     K = (matern52(t, t, 1.0, lt), matern52(f, f, 1.0, lf))
-    Kp = (matern52(tp, t, 1.0, lt), matern52(fp, f, 1.0, lf))
 
     tt, ff = np.meshgrid(t, f, indexing='ij')
     x = np.vstack((tt.flatten(), ff.flatten()))
-    ttp, ffp = np.meshgrid(tp, fp, indexing='ij')
-    xp = np.vstack((ttp.flatten(), ffp.flatten()))
 
     D, N = x.shape
     X = np.vstack((x, np.ones((1,N))))
-    D, Np = xp.shape
-    Xp = np.vstack((xp, np.ones((1,Np))))
-    ntp = tp.size
-    nfp = fp.size
 
     # operator that needs to be inverted
     def Kyop(x, K, Sigma, sigmafsq):
@@ -308,19 +281,46 @@ def interp_gpr(gain, jhj, t, f, tp, fp, lt, lf,
         return kron_matvec(K, sigmafsq*x) + Sigma*x
 
     nt, nf, nant, ndir, ncorr = jhj.shape
-    sol = np.zeros((ntp, nfp, nant, ndir, ncorr), dtype=gain.dtype)
+    Kyinvs = np.zeros((nt, nf, nant, ndir, ncorr, 2), dtype=np.float64)
+    thetas = np.zeros((D, nant, ndir, ncorr), dtype=np.float64)
+    sigmafsqs = np.zeros((nant, ndir, ncorr), dtype=np.float64)
     for p in range(nant):
         for d in range(ndir):
             for c in range(ncorr):
-                g = gain[:, :, p, d, c]
-                # unwrap if phase
-                if term_type == 'phase':
-                    g = np.unwrap(np.unwrap(g, axis=0), axis=1)
-
-                jhjflat = jhj[:, :, p, d, c].ravel()
-                # assumes gain flags correspond to where jhj is zero
-                ival = np.where(jhjflat>0)[0]
+                # find valid data
+                ival = ~flag[:, :, p, d, c].ravel()
                 xval = x[:, ival]
+
+                # amplitudes
+                g = np.abs(gain[:, :, p, d, c])
+                yval = g.ravel()[ival]
+                theta = fit_hyperplane(xval, yval)
+                # subtract plane approx
+                plane_approx = X.T.dot(theta).reshape(nt, nf)
+                y = g - plane_approx
+                sigmafsq = np.var(y.ravel()[ival])
+                # this gives small weight to flagged data
+                # need to check that it's sensible
+                weight = jhj[:, :, p, d, c]
+                Sigma = np.where(weight>0, noise_inflation/weight, 1e10)
+                Ky = partial(Kyop, K=K, Sigma=Sigma, sigmafsq=sigmafsq)
+                Kyinv, success, eps = pcg(Ky,
+                                          y,
+                                          y,  # init at ML solution
+                                          tol=1e-6,
+                                          maxit=500)
+                Kyinvs[:, :, p, d, c, 0] = Kyinv
+                thetas[:, p, d, c, 0] = theta
+                sigmafsqs[p, d, c, 0] = sigmafsq
+
+                if not success:
+                    print(f"Amplitude failed at ant/corr {p}/{c} with eps of {eps}")
+
+                # phases
+                weight *= g**2  # scale weights for uncertainty propagation
+                g = np.angle(gain[:, :, p, d, c] * np.conj(gref[:, :, d, c]))
+                g = np.unwrap(np.unwrap(g, axis=0), axis=1)
+
                 yval = g.ravel()[ival]
                 theta = fit_hyperplane(xval, yval)
                 # subtract plane approx
@@ -329,20 +329,58 @@ def interp_gpr(gain, jhj, t, f, tp, fp, lt, lf,
                 sigmafsq = np.var(y.ravel()[ival])
                 # this gives small weight to flaged data
                 # need to check that it's sensible
-                Sigma = np.where(jhj[:, :, p, d, c]>0,
-                                 noise_inflation/jhj[:, :, p, d, c], 1e10)
+                Sigma = np.where(weight>0, noise_inflation/weight, 1e10)
                 Ky = partial(Kyop, K=K, Sigma=Sigma, sigmafsq=sigmafsq)
                 Kyinv, success, eps = pcg(Ky,
                                           y,
-                                          y,
+                                          y,  # init at ML solution
                                           tol=1e-6,
                                           maxit=500)
-                sol[:, :, p, d, c] = (kron_tensorvec(Kp, sigmafsq * Kyinv) +
-                                      Xp.T.dot(theta).reshape(ntp, nfp))
+                Kyinvs[:, :, p, d, c, 1] = Kyinv
+                thetas[:, p, d, c, 1] = theta
+                sigmafsqs[p, d, c, 1] = sigmafsq
+
                 if not success:
-                    print(f"                                    {term_type} failed at ant/corr {p}/{c} with eps of {eps}")
-                else:
-                    print(f"{term_type} succeeded at ant/corr {p}/{c}")
+                    print(f"Phase failed at ant/corr {p}/{c} with eps of {eps}")
 
-    return sol
+    return Kyinvs, thetas, sigmafsqs
 
+
+def predict_grp(Kyinvs, thetas, sigmafsqs,
+                t, f, tp, fp,
+                ltamp, ltphase, lfamp, lfphase):
+    '''
+    Interpolates the GPR solutions onto tp and fp
+    '''
+    f = f/1e6  # convert to MHz
+    fp = fp/1e6
+
+    # for plane approx
+    ttp, ffp = np.meshgrid(tp, fp, indexing='ij')
+    xp = np.vstack((ttp.flatten(), ffp.flatten()))
+    D, Np = xp.shape
+    Xp = np.vstack((xp, np.ones((1,Np))))
+    ntp = tp.size
+    nfp = fp.size
+    sol = np.zeros((ntp, nfp, nant, ndir, ncorr), dtype=np.complex128)
+
+    Kp = (matern52(tp, t, 1.0, lt), matern52(fp, f, 1.0, lf))
+
+    for p in range(nant):
+        for d in range(ndir):
+            for c in range(ncorr):
+                # amplitudes
+                Kyinv = Kyinvs[:, :, p, d, c, 0]
+                theta = thetas[:, p, d, c, 0]
+                sigmafsq = sigmafsqs[p, d, c, 0]
+                amp = (kron_tensorvec(Kp, sigmafsq * Kyinv) +
+                       Xp.T.dot(theta).reshape(ntp, nfp))
+
+                # phases
+                Kyinv = Kyinvs[:, :, p, d, c, 1]
+                theta = thetas[:, p, d, c, 1]
+                sigmafsq = sigmafsqs[p, d, c, 1]
+                phase = (kron_tensorvec(Kp, sigmafsq * Kyinv) +
+                       Xp.T.dot(theta).reshape(ntp, nfp))
+
+                sol[:, :, p, d, c] = amp * np.exp(1.0j*phase)
