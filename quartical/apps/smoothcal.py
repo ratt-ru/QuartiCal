@@ -10,9 +10,12 @@ from daskms.experimental.zarr import xds_to_zarr, xds_from_zarr
 from pathlib import Path
 import time
 import dask
+import dask.array as da
+import numpy as np
 from quartical.interpolation.interpolants import gpr_interpolate_gains
 import xarray as xr
 from collections import namedtuple
+from quartical.data_handling import CORR_TYPES
 
 
 def smoothcal():
@@ -37,6 +40,14 @@ def smoothcal():
         help='Gain term ro interpolate.'
     )
     parser.add_argument(
+        '--select-corr',
+        type=float,
+        nargs='+',
+        default=[0,-1],
+        help='Target correlations to smooth. '
+        'Must be consistent with gain dataset.'
+    )
+    parser.add_argument(
         '--time-length-scales',
         type=float,
         nargs=2,
@@ -59,28 +70,37 @@ def smoothcal():
     opts = parser.parse_args()
     timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-    # create empty output datasets
+    # create empty output datasets corresponding to MS
     ms_path = opts.ms_path.resolve()
     ms_name = str(ms_path)
     group_cols = ("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER")
     xds = xds_from_ms(ms_name,
-                      columns=['TIME','ANTENNA1','ANTENNA2','FLAG'],
+                      chunks={"row":-1},
+                      columns=['TIME','ANTENNA1','ANTENNA2'],
                       index_cols=("TIME",),
                       group_cols=group_cols)
-    f = xds_from_table(f'{ms_name}::SPECTRAL_WINDOW').CHAN_FREQ.data.squeeze()
+    f = xds_from_table(f'{ms_name}::SPECTRAL_WINDOW')[0].CHAN_FREQ.values
+    f = f.squeeze()
+    nchan = f.size
     fname = xds_from_table(f'{ms_name}::FIELD')[0].NAME.values[0]
+    ant_names = xds_from_table(f'{ms_name}::ANTENNA')[0].NAME.values
+    corrs = xds_from_table(f'{ms_name}::POLARIZATION')[0].CORR_TYPE
+    corrs = [corrs.values[0][i] for i in opts.select_corr]
+    corrs = np.array([CORR_TYPES[i] for i in corrs], dtype=object)
+    ncorr = corrs.size
     output_xds = []
+    nant = None
     for ds in xds:
-        t = da.unique(ds.TIME.data)
+        t = np.unique(ds.TIME.values)
         ntime = t.size
-        nfreq = f.size
 
-        ant1 = ds.ANTENNA1
-        ant2 = ds.ANTENNA2
+        ant1 = ds.ANTENNA1.values
+        ant2 = ds.ANTENNA2.values
 
-        nant = da.maximum(ant1, ant2) + 1
-
-        ncorr = ds.FLAG.data.shape[-1]
+        if nant is None:
+            nant = np.maximum(ant1.max(), ant2.max()) + 1
+        else:
+            assert (np.maximum(ant1.max(), ant2.max()) + 1) == nant
 
         fid = ds.FIELD_ID
         ddid = ds.DATA_DESC_ID
@@ -94,22 +114,18 @@ def smoothcal():
             'FIELD_NAME': fname,
             'GAIN_AXES': ('gain_t', 'gain_f', 'ant', 'dir', 'corr'),
             'GAIN_SPEC': gain_spec_tup(tchunk=(int(ntime),),
-                                        fchunk=(int(nchan),),
-                                        achunk=(int(nant),),
-                                        dchunk=(int(1),),
-                                        cchunk=(int(ncorr),)),
+                                       fchunk=(int(nchan),),
+                                       achunk=(int(nant),),
+                                       dchunk=(int(1),),
+                                       cchunk=(int(ncorr),)),
             'NAME': opts.gain_term,
             'SCAN_NUMBER': int(sid),
             'TYPE': 'complex'
         }
 
-        if ncorr==1:
-            corrs = np.array(['XX'], dtype=object)
-        elif ncorr==2:
-            corrs = np.array(['XX', 'YY'], dtype=object)
         coords = {
-            'gain_f': (('gain_f',), freq),
-            'gain_t': (('gain_t',), time),
+            'gain_f': (('gain_f',), f),
+            'gain_t': (('gain_t',), t),
             'ant': (('ant'), ant_names),
             'corr': (('corr'), corrs),
             'dir': (('dir'), np.array([0], dtype=np.int32)),
@@ -137,5 +153,7 @@ def smoothcal():
 
     interp_xds = gpr_interpolate_gains(input_xds, output_xds, gpr_params)
 
-
-    dask.compute(bkp_xds_list)
+    writes = xds_to_zarr(interp_xds,
+                         f'{str(gain_dir)}/smoothed.qc::{opts.gain_term}',
+                         columns='ALL')
+    dask.compute(writes)

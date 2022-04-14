@@ -5,6 +5,8 @@ import numpy as np
 from scipy.interpolate import interp2d
 from numba import jit
 from functools import partial
+from quartical.utils.dask import Blocker
+import gc
 from quartical.utils.maths import (kron_matvec, kron_tensorvec,
                                    fit_hyperplane, pcg, matern52)
 
@@ -229,44 +231,84 @@ def gpr_interpolate_gains(input_xds, output_xds, gpr_params):
     """
     # We first solve for Kyinv y required to perform the interpolation
     t = input_xds.gain_t.values
-    f = input_xds.gain_t.values
-    jhj = input_xds.jhj.data.rechunk({2: 1})
-    gain = input_xds.gains.data.rechunk({2: 1})
-    flag = input_xds.gain_flags.data.rechunk({2: 1})
+    f = input_xds.gain_f.values
+    jhj = input_xds.jhj.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
+    gain = input_xds.gains.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
+    flag = input_xds.gain_flags.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1})
+    gref = gain[:,:,-1]
+    _, _, nant, _, _ = gain.shape
+    p = da.arange(nant, chunks=1)
 
     lts = gpr_params[0]
     lfs = gpr_params[1]
     ninflates = gpr_params[2]
 
-    Kyinvs, thetas, sigmasqs = da.blockwise(
-        interp_gpr, "tfadc",
-        gains, "tfadc",
-        jhj, "tfadc",
-        flag, "tfadc",
-        t, None,
-        f, None,
-        lts, None,
-        lfs, None,
-        noise_inflation, None,
-        dtype=np.complex128)
+    # need Blocker here since expecting multiple outputs
+    inversion_blocker = Blocker(solve_gpr, 'a')
+    inversion_blocker.add_input("gain", gain, 'tfadc')
+    inversion_blocker.add_input("jhj", jhj, 'tfadc')
+    inversion_blocker.add_input("flag", flag, 'tfad')
+    inversion_blocker.add_input("gref", gref, 'tfdc')
+    inversion_blocker.add_input("pant", p, 'a')
+    inversion_blocker.add_input("t", t)
+    inversion_blocker.add_input("f", f)
+    inversion_blocker.add_input("lt", lts)
+    inversion_blocker.add_input("lf", lfs)
+    inversion_blocker.add_input("noise_inflation", ninflates)
 
-    interp = interp.rechunk({2: -1})
-    output_xds = output_xds.assign(
-        {data_field: (term_xds.GAIN_AXES, interp)})
+    # the final entry in chunks is for amplitudes and phases
+    inversion_blocker.add_output("Kyinvs", "tfadcx",
+                                 gain.chunks + ((2,),),
+                                 np.float64)
+    # the first entry here is determined by the number of
+    # coordinates we are interpolating
+    theta_chunks = ((3,),) + gain.chunks[2:] + ((2,),)
+    inversion_blocker.add_output("thetas", "nadcx",
+                                 theta_chunks,
+                                 np.float64)
+    sigmasqs_chunks = gain.chunks[2:] + ((2,),)
+    inversion_blocker.add_output("sigmafsqs", 'adcx',
+                                 sigmasqs_chunks,
+                                 np.float64)
 
-    return output_xds
+    out_dict = inversion_blocker.get_dask_outputs()
+
+    # iterate over output datasets interpolating each
+    # onto target coordiantes
+    out_ds = []
+    for ds in output_xds:
+        tp = ds.gain_t.values
+        fp = ds.gain_f.values
+        gain = da.blockwise(interp_gpr, 'tfadc',
+                            out_dict['Kyinvs'], 'tfadcx',
+                            out_dict['thetas'], 'nadcx',
+                            out_dict['sigmafsqs'], 'adcx',
+                            t, None,
+                            f, None,
+                            tp, None,
+                            fp, None,
+                            lts, None,
+                            lfs, None,
+                            new_axes={'n': 3, 'x': 2},
+                            adjust_chunks={'t': tp.size, 'f': fp.size},
+                            dtype=np.complex128,
+                            meta=np.empty((0,0,0,0,0), dtype=np.complex128))
+        dso = ds.assign(**{'gains': (ds.GAIN_AXES, gain.rechunk({2:-1}))})
+        out_ds.append(dso)
+
+    return out_ds
 
 
-def interp_gpr(gain, jhj, flag, gref, t, f, tp, fp, lt, lf,
-               noise_inflation, term_type):
+def solve_gpr(gain, jhj, flag, gref, pant, t, f, lt, lf,
+               noise_inflation):
     '''
     Solves (K + Sigma)inv y for each antenna
     '''
     jhj = jhj.real
 
     f = f/1e6  # convert to MHz
-    fp = fp/1e6
-    K = (matern52(t, t, 1.0, lt), matern52(f, f, 1.0, lf))
+    Kamp = (matern52(t, t, 1.0, lt[0]), matern52(f, f, 1.0, lf[0]))
+    Kphase = (matern52(t, t, 1.0, lt[1]), matern52(f, f, 1.0, lf[1]))
 
     tt, ff = np.meshgrid(t, f, indexing='ij')
     x = np.vstack((tt.flatten(), ff.flatten()))
@@ -282,13 +324,15 @@ def interp_gpr(gain, jhj, flag, gref, t, f, tp, fp, lt, lf,
 
     nt, nf, nant, ndir, ncorr = jhj.shape
     Kyinvs = np.zeros((nt, nf, nant, ndir, ncorr, 2), dtype=np.float64)
-    thetas = np.zeros((D, nant, ndir, ncorr), dtype=np.float64)
-    sigmafsqs = np.zeros((nant, ndir, ncorr), dtype=np.float64)
+    thetas = np.zeros((D+1, nant, ndir, ncorr, 2), dtype=np.float64)
+    sigmafsqs = np.zeros((nant, ndir, ncorr, 2), dtype=np.float64)
     for p in range(nant):
         for d in range(ndir):
             for c in range(ncorr):
                 # find valid data
-                ival = ~flag[:, :, p, d, c].ravel()
+                invalid = np.logical_or(flag[:, :, p, d],
+                                        jhj[:, :, p, d, c]==0).ravel()
+                ival = ~invalid
                 xval = x[:, ival]
 
                 # amplitudes
@@ -303,7 +347,7 @@ def interp_gpr(gain, jhj, flag, gref, t, f, tp, fp, lt, lf,
                 # need to check that it's sensible
                 weight = jhj[:, :, p, d, c]
                 Sigma = np.where(weight>0, noise_inflation/weight, 1e10)
-                Ky = partial(Kyop, K=K, Sigma=Sigma, sigmafsq=sigmafsq)
+                Ky = partial(Kyop, K=Kamp, Sigma=Sigma, sigmafsq=sigmafsq)
                 Kyinv, success, eps = pcg(Ky,
                                           y,
                                           y,  # init at ML solution
@@ -314,12 +358,15 @@ def interp_gpr(gain, jhj, flag, gref, t, f, tp, fp, lt, lf,
                 sigmafsqs[p, d, c, 0] = sigmafsq
 
                 if not success:
-                    print(f"Amplitude failed at ant/corr {p}/{c} with eps of {eps}")
+                    print(f"Amplitude failed at ant/corr {pant}/{c} with eps of {eps}")
 
                 # phases
                 weight *= g**2  # scale weights for uncertainty propagation
                 g = np.angle(gain[:, :, p, d, c] * np.conj(gref[:, :, d, c]))
                 g = np.unwrap(np.unwrap(g, axis=0), axis=1)
+                # don't smooth the reference antenna
+                if not g.any():
+                    continue
 
                 yval = g.ravel()[ival]
                 theta = fit_hyperplane(xval, yval)
@@ -330,7 +377,7 @@ def interp_gpr(gain, jhj, flag, gref, t, f, tp, fp, lt, lf,
                 # this gives small weight to flaged data
                 # need to check that it's sensible
                 Sigma = np.where(weight>0, noise_inflation/weight, 1e10)
-                Ky = partial(Kyop, K=K, Sigma=Sigma, sigmafsq=sigmafsq)
+                Ky = partial(Kyop, K=Kphase, Sigma=Sigma, sigmafsq=sigmafsq)
                 Kyinv, success, eps = pcg(Ky,
                                           y,
                                           y,  # init at ML solution
@@ -341,14 +388,23 @@ def interp_gpr(gain, jhj, flag, gref, t, f, tp, fp, lt, lf,
                 sigmafsqs[p, d, c, 1] = sigmafsq
 
                 if not success:
-                    print(f"Phase failed at ant/corr {p}/{c} with eps of {eps}")
+                    print(f"Phase failed at ant/corr {pant}/{c} with eps of {eps}")
+    result_dict = {}
+    result_dict['Kyinvs'] = Kyinvs
+    result_dict['thetas'] = thetas
+    result_dict['sigmafsqs'] = sigmafsqs
+    gc.collect()
+    return result_dict
 
-    return Kyinvs, thetas, sigmafsqs
+
+def interp_gpr(Kyinvs, thetas, sigmafsqs,
+               t, f, tp, fp, lt, lf):
+    return _interp_gpr(Kyinvs[0], thetas[0][0], sigmafsqs[0],
+                       t, f, tp, fp, lt, lf)
 
 
-def predict_grp(Kyinvs, thetas, sigmafsqs,
-                t, f, tp, fp,
-                ltamp, ltphase, lfamp, lfphase):
+def _interp_gpr(Kyinvs, thetas, sigmafsqs,
+                t, f, tp, fp, lt, lf):
     '''
     Interpolates the GPR solutions onto tp and fp
     '''
@@ -362,9 +418,12 @@ def predict_grp(Kyinvs, thetas, sigmafsqs,
     Xp = np.vstack((xp, np.ones((1,Np))))
     ntp = tp.size
     nfp = fp.size
+    _, _, nant, ndir, ncorr, _ = Kyinvs.shape
     sol = np.zeros((ntp, nfp, nant, ndir, ncorr), dtype=np.complex128)
 
-    Kp = (matern52(tp, t, 1.0, lt), matern52(fp, f, 1.0, lf))
+
+    Kamp = (matern52(tp, t, 1.0, lt[0]), matern52(fp, f, 1.0, lf[0]))
+    Kphase = (matern52(tp, t, 1.0, lt[1]), matern52(fp, f, 1.0, lf[1]))
 
     for p in range(nant):
         for d in range(ndir):
@@ -373,14 +432,15 @@ def predict_grp(Kyinvs, thetas, sigmafsqs,
                 Kyinv = Kyinvs[:, :, p, d, c, 0]
                 theta = thetas[:, p, d, c, 0]
                 sigmafsq = sigmafsqs[p, d, c, 0]
-                amp = (kron_tensorvec(Kp, sigmafsq * Kyinv) +
+                amp = (kron_tensorvec(Kamp, sigmafsq * Kyinv) +
                        Xp.T.dot(theta).reshape(ntp, nfp))
 
                 # phases
                 Kyinv = Kyinvs[:, :, p, d, c, 1]
                 theta = thetas[:, p, d, c, 1]
                 sigmafsq = sigmafsqs[p, d, c, 1]
-                phase = (kron_tensorvec(Kp, sigmafsq * Kyinv) +
-                       Xp.T.dot(theta).reshape(ntp, nfp))
+                phase = (kron_tensorvec(Kphase, sigmafsq * Kyinv) +
+                         Xp.T.dot(theta).reshape(ntp, nfp))
 
                 sol[:, :, p, d, c] = amp * np.exp(1.0j*phase)
+    return sol
