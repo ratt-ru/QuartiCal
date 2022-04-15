@@ -8,6 +8,7 @@ import argparse
 from daskms import xds_from_ms, xds_from_table
 from daskms.experimental.zarr import xds_to_zarr, xds_from_zarr
 from pathlib import Path
+import shutil
 import time
 import dask
 import dask.array as da
@@ -40,6 +41,16 @@ def smoothcal():
         help='Gain term ro interpolate.'
     )
     parser.add_argument(
+        '--output-dir',
+        type=Path,
+        help='Directory to write smoothed gain solutions to. '
+        'Solutions will be stored as output_dir/smoothed.qc/gain_term'
+    )
+    parser.add_argument(
+        '--overwrite',
+        action='store_true'
+    )
+    parser.add_argument(
         '--select-corr',
         type=float,
         nargs='+',
@@ -69,6 +80,17 @@ def smoothcal():
 
     opts = parser.parse_args()
     timestamp = time.strftime("%Y%m%d-%H%M%S")
+
+    output_dir = opts.output_dir / 'smoothed.qc' / opts.gain_term
+    output_dir = output_dir.resolve()
+    if output_dir.exists():
+        if opts.overwrite:
+            shutil.rmtree(output_dir)
+        else:
+            raise ValueError(f"output-dir {str(output_dir)} exists. "
+                             "Use --overwrite flag if contents should be "
+                             "ovrwritten. ")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # create empty output datasets corresponding to MS
     ms_path = opts.ms_path.resolve()
@@ -159,6 +181,6 @@ def smoothcal():
         rechunked_xds.append(dso)
 
     writes = xds_to_zarr(rechunked_xds,
-                         f'{str(gain_dir)}/smoothed.qc::{opts.gain_term}',
+                         str(output_dir),
                          columns='ALL')
     dask.compute(writes)
