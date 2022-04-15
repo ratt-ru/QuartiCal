@@ -153,7 +153,12 @@ def smoothcal():
 
     interp_xds = gpr_interpolate_gains(input_xds, output_xds, gpr_params)
 
-    writes = xds_to_zarr(interp_xds,
+    rechunked_xds = []
+    for ds in interp_xds:
+        dso = ds.chunk({'gain_t': 'auto', 'gain_f': 'auto'})
+        rechunked_xds.append(dso)
+
+    writes = xds_to_zarr(rechunked_xds,
                          f'{str(gain_dir)}/smoothed.qc::{opts.gain_term}',
                          columns='ALL')
     dask.compute(writes)
