@@ -4,6 +4,7 @@ os.environ["OMP_NUM_THREADS"] = '1'
 os.environ["OPENBLAS_NUM_THREADS"] = '1'
 os.environ["MKL_NUM_THREADS"] = '1'
 os.environ["VECLIB_MAXIMUM_THREADS"] = '1'
+import sys
 import argparse
 from daskms import xds_from_ms, xds_from_table
 from daskms.experimental.zarr import xds_to_zarr, xds_from_zarr
@@ -17,6 +18,39 @@ from quartical.interpolation.interpolants import gpr_interpolate_gains
 import xarray as xr
 from collections import namedtuple
 from quartical.data_handling import CORR_TYPES
+from quartical.logging import InterceptHandler
+import logging
+from loguru import logger
+
+
+def configure_loguru(output_dir):
+    logging.basicConfig(handlers=[InterceptHandler()], level="WARNING")
+
+    # Put together a formatting string for the logger. Split into pieces in
+    # order to improve legibility.
+
+    tim_fmt = "<green>{time:YYYY-MM-DD HH:mm:ss}</green>"
+    lvl_fmt = "<level>{level}</level>"
+    src_fmt = "<cyan>{module}</cyan>:<cyan>{function}</cyan>"
+    msg_fmt = "<level>\n{message}</level>"
+
+    fmt = " | ".join([tim_fmt, lvl_fmt, src_fmt, msg_fmt])
+
+    output_path = Path(output_dir)
+    output_name = Path("{time:YYYYMMDD_HHmmss}.smoothcal.qc")
+
+    config = {
+        "handlers": [
+            {"sink": sys.stderr,
+             "level": "INFO",
+             "format": fmt},
+            {"sink": str(output_path / output_name),
+             "level": "INFO",
+             "format": fmt}
+        ],
+    }
+
+    logger.configure(**config)
 
 
 def smoothcal():
@@ -44,7 +78,8 @@ def smoothcal():
         '--output-dir',
         type=Path,
         help='Directory to write smoothed gain solutions to. '
-        'Solutions will be stored as output_dir/smoothed.qc/gain_term'
+        'Solutions will be stored as output_dir/smoothed.qc/gain_term. '
+        'If None solutions are stored in parent of gain-dir. '
     )
     parser.add_argument(
         '--overwrite',
@@ -80,8 +115,14 @@ def smoothcal():
 
     opts = parser.parse_args()
     timestamp = time.strftime("%Y%m%d-%H%M%S")
+    gain_dir = opts.gain_dir.resolve()
 
-    output_dir = opts.output_dir / 'smoothed.qc' / opts.gain_term
+    configure_loguru(gain_dir.parent)
+
+    if opts.output_dir is not None:
+        output_dir = (opts.output_dir / 'smoothed.qc') / opts.gain_term
+    else:
+        output_dir = (opts.gain_dir.parent / 'smoothed.qc') / opts.gain_term
     output_dir = output_dir.resolve()
     if output_dir.exists():
         if opts.overwrite:
@@ -95,6 +136,14 @@ def smoothcal():
     # create empty output datasets corresponding to MS
     ms_path = opts.ms_path.resolve()
     ms_name = str(ms_path)
+
+    GD = vars(opts)
+    msg = ''
+    for key in GD.keys():
+        msg += '     %25s = %s \n' % (key, GD[key])
+
+    logger.info(msg)
+
     group_cols = ("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER")
     xds = xds_from_ms(ms_name,
                       chunks={"row":-1},
@@ -162,7 +211,6 @@ def smoothcal():
         output_xds.append(xr.Dataset(data_vars, coords=coords, attrs=attrs))
 
 
-    gain_dir = opts.gain_dir.resolve()
     gain_name = f'{str(gain_dir)}/gains.qc::{opts.gain_term}'
     input_xds = xds_from_zarr(gain_name)
 
@@ -184,3 +232,5 @@ def smoothcal():
                          str(output_dir),
                          columns='ALL')
     dask.compute(writes)
+
+    logger.info('Success!')
