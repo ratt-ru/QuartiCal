@@ -212,7 +212,7 @@ def smoothcal():
         output_xds.append(xr.Dataset(data_vars, coords=coords, attrs=attrs))
 
 
-    gain_name = f'{str(gain_dir)}/gains.qc::{opts.gain_term}'
+    gain_name = f'{str(gain_dir)}::{opts.gain_term}'
     input_xds = xds_from_zarr(gain_name)
 
     # concatenate scans
