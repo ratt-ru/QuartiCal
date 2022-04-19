@@ -3,6 +3,7 @@ from loguru import logger  # noqa
 import dask.array as da
 import numpy as np
 from scipy.interpolate import interp2d
+from scipy.interpolate import RectBivariateSpline as rbs
 from numba import jit
 from functools import partial
 from quartical.utils.dask import Blocker
@@ -68,8 +69,9 @@ def spline2d(x, y, z, xx, yy):
                 z_sel = z[:, :, a, d, c]
                 if not np.any(z_sel):
                     continue
-                interp_func = interp2d(y, x, z_sel, kind="cubic")
-                zz[:, :, a, d, c] = interp_func(yy, xx).reshape(n_ti, n_fi)
+                # interp_func = interp2d(y, x, z_sel, kind="cubic")
+                interp_func = rbs(x, y, z_sel, kx=1, ky=1)
+                zz[:, :, a, d, c] = interp_func(xx, yy).reshape(n_ti, n_fi)
 
     return zz
 
