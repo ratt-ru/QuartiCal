@@ -132,6 +132,7 @@ def smoothcal():
                              "Use --overwrite flag if contents should be "
                              "ovrwritten. ")
     output_dir.mkdir(parents=True, exist_ok=True)
+    opts.output_dir = str(output_dir)
 
     # create empty output datasets corresponding to MS
     ms_path = opts.ms_path.resolve()
