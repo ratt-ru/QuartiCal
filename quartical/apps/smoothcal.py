@@ -93,7 +93,7 @@ def _spline_solve(gain, jhj, flag, p, t, f, gref, s, k):
                 sol[p, d, c, 0] = ampo
 
                 # unwrapped phase
-                gphase = np.angle(g * np.conj(gr))
+                gphase = np.angle(g) # * np.conj(gr))
                 gphase = np.unwrap(np.unwrap(gphase, axis=0), axis=1)
                 phaseo = rbs(t, f, gphase, kx=k, ky=k, s=s)
 
