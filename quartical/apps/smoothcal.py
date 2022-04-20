@@ -21,6 +21,111 @@ from quartical.data_handling import CORR_TYPES
 from quartical.logging import InterceptHandler
 import logging
 from loguru import logger
+from scipy.interpolate import RectBivariateSpline as rbs
+
+
+def spline_interpolate_gains(input_xds, output_xds, s, k):
+    t = input_xds.gain_t.values
+    f = input_xds.gain_f.values
+    jhj = input_xds.jhj.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
+    gain = input_xds.gains.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
+    flag = input_xds.gain_flags.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1})
+    gref = gain[:,:,-1]
+    _, _, nant, _, _ = gain.shape
+    p = da.arange(nant, chunks=1)
+
+    interpo = da.blockwise(spline_solve, 'adcx',
+                           gain, 'tfadc',
+                           jhj, 'tfadc',
+                           flag, 'tfad',
+                           p, 'a',
+                           t, None,
+                           f, None,
+                           gref, None,
+                           s, None,
+                           k, None,
+                           new_axes={'x':2},
+                           meta=np.empty((1,1,1,1), dtype=object))
+
+    out_ds = []
+    for ds in output_xds:
+        tp = ds.gain_t.values
+        fp = ds.gain_f.values
+        gain = da.blockwise(spline_interp, 'tfadc',
+                            interpo, 'adcx',
+                            tp, None,
+                            fp, None,
+                            new_axes={'t': tp.size, 'f': fp.size},
+                            dtype=np.complex128)
+
+        dso = ds.assign(**{'gains': (ds.GAIN_AXES, gain.rechunk({2:-1}))})
+        out_ds.append(dso)
+    return out_ds
+
+
+def spline_solve(gain, jhj, flag, p, t, f, gref, s, k):
+    return _spline_solve(gain[0][0],
+                         jhj[0][0],
+                         flag[0][0],
+                         p,
+                         t, f, gref, s, k)
+
+def _spline_solve(gain, jhj, flag, p, t, f, gref, s, k):
+    ntime, nchan, nant, ndir, ncorr = gain.shape
+    sol = np.zeros((nant, ndir, ncorr, 2), dtype=object)
+    for p in range(nant):
+        for d in range(ndir):
+            for c in range(ncorr):
+                # mask where flagged or jhj is zero
+                inval = np.logical_or(flag[:, :, p, d],
+                                      jhj[:, :, p, d, c]==0)
+                It, If = np.where(inval)
+                # replace flagged data with ones
+                g = gain[:, :, p, d, c]
+                g[It, If] = 1.0 + 0j
+                gr = gref[:, :, d, c]
+                gr[It, If] = 1.0 + 0j
+
+                # first logamp
+                gamp = np.log(np.abs(g))
+                ampo = rbs(t, f, gamp, kx=k, ky=k, s=s)
+
+                sol[p, d, c, 0] = ampo
+
+                # unwrapped phase
+                gphase = np.angle(g * np.conj(gr))
+                gphase = np.unwrap(np.unwrap(gphase, axis=0), axis=1)
+                phaseo = rbs(t, f, gphase, kx=k, ky=k, s=s)
+
+                sol[p, d, c, 1] = phaseo
+
+    return sol
+
+
+def spline_interp(interpo, tp, fp):
+    return _spline_interp(interpo[0], tp, fp)
+
+
+def _spline_interp(interpo, tp, fp):
+    nant, ndir, ncorr, _ = interpo.shape
+    ntime = tp.size
+    nchan = fp.size
+
+    sol = np.zeros((ntime, nchan, nant, ndir, ncorr), dtype=np.complex128)
+
+    for p in range(nant):
+        for d in range(ndir):
+            for c in range(ncorr):
+                logampo = interpo[p, d, c, 0]
+                logamp = logampo(tp, fp)
+
+                phaseo = interpo[p, d, c, 1]
+                phase = phaseo(tp, fp)
+
+                sol[:, :, p, d, c] = np.exp(logamp + 1.0j*phase)
+
+    return sol
+
 
 
 def configure_loguru(output_dir):
@@ -112,7 +217,25 @@ def smoothcal():
         type=float,
         help='Noise inflation factor'
     )
-
+    parser.add_argument(
+        '--mode',
+        type=str,
+        default='spline',
+        help='Type of smothig to do. Options are "gpr" or "spline"'
+    )
+    parser.add_argument(
+        '--s',
+        type=float,
+        default=0.0,
+        help='Smoothing factor for spline. '
+        'Default is zero which is interpolation. '
+    )
+    parser.add_argument(
+        '--k',
+        type=int,
+        default=1,
+        help='Spline order. Default of one means linear. '
+    )
     opts = parser.parse_args()
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     gain_dir = opts.gain_dir.resolve()
@@ -218,11 +341,14 @@ def smoothcal():
     # concatenate scans
     input_xds = xr.concat(input_xds, dim='gain_t')
 
-    gpr_params = (opts.time_length_scales,
-                  opts.freq_length_scales,
-                  opts.noise_inflation)
-
-    interp_xds = gpr_interpolate_gains(input_xds, output_xds, gpr_params)
+    if opts.mode.lower() == 'gpr':
+        gpr_params = (opts.time_length_scales,
+                      opts.freq_length_scales,
+                      opts.noise_inflation)
+        interp_xds = gpr_interpolate_gains(input_xds, output_xds, gpr_params)
+    elif opts.mode.lower() == 'spline':
+        interp_xds = spline_interpolate_gains(input_xds, output_xds,
+                                              opts.s, opts.k)
 
     rechunked_xds = []
     for ds in interp_xds:
