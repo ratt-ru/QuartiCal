@@ -94,7 +94,7 @@ def _spline_solve(gain, jhj, flag, p, t, f, gref, s, k):
 
                 # unwrapped phase
                 gphase = np.angle(g) # * np.conj(gr))
-                gphase = np.unwrap(np.unwrap(gphase, axis=0), axis=1)
+                # gphase = np.unwrap(np.unwrap(gphase, axis=0), axis=1)
                 phaseo = rbs(t, f, gphase, kx=k, ky=k, s=s)
 
                 sol[p, d, c, 1] = phaseo
@@ -345,7 +345,8 @@ def smoothcal():
         gpr_params = (opts.time_length_scales,
                       opts.freq_length_scales,
                       opts.noise_inflation)
-        interp_xds = gpr_interpolate_gains(input_xds, output_xds, gpr_params)
+        interp_xds = gpr_interpolate_gains(input_xds, output_xds,
+                                           gpr_params)
     elif opts.mode.lower() == 'spline':
         interp_xds = spline_interpolate_gains(input_xds, output_xds,
                                               opts.s, opts.k)
