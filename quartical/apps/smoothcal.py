@@ -511,7 +511,10 @@ def smoothcal():
             g1 = ds.gains.values[~f]
             g2 = dsi.gains.values[~f]
             diff = g1-g2
-            assert np.abs(diff).max() < 1e-10
+            try:
+                assert np.abs(diff).max() < 1e-10
+            except:
+                import pdb; pdb.set_trace()
 
     rechunked_xds = []
     for ds in interp_xds:
