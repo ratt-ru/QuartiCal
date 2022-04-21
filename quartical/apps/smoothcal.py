@@ -79,6 +79,7 @@ def rspline_solve(gain, jhj, flag, p, t, f, gref, s, k, mode):
                          t, f, gref, s, k, mode)
 
 def _rspline_solve(gain, jhj, flag, p, t, f, gref, s, k, mode):
+    flag = flag.astype(bool)
     ntime, nchan, nant, ndir, ncorr = gain.shape
     sol = np.zeros((nant, ndir, ncorr, 2), dtype=object)
     for p in range(nant):
@@ -87,6 +88,7 @@ def _rspline_solve(gain, jhj, flag, p, t, f, gref, s, k, mode):
                 # mask where flagged or jhj is zero
                 inval = np.logical_or(flag[:, :, p, d],
                                       jhj[:, :, p, d, c]==0)
+                assert (inval == flag[:, :, p, d]).all()
                 It, If = np.where(inval)
                 # replace flagged data with ones
                 g = gain[:, :, p, d, c]
