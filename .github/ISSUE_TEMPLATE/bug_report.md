@@ -1,6 +1,6 @@
 ---
-name: Bug report
-about: Create a report to help us improve
+name: Bug Report
+about: Help us improve by providing details of the problem.
 title: ''
 labels: ''
 assignees: ''
@@ -11,7 +11,7 @@ assignees: ''
 A clear and concise description of what the bug is.
 
 **Data description (if applicable)**
-Please provide details regarding the data you are using e.g. telescope, size, number of spectral windows, flag percentages.
+Please provide details regarding the data you are using e.g. telescope, size, number of spectral windows, flag percentages. Ideally, please attach the output of `goquartical-summary`. 
 
 **To Reproduce**
 Steps to reproduce the behavior. In particular, please be sure to include your complete configuration (.yaml file and any additional command-line arguments).

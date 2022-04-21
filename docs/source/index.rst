@@ -19,13 +19,6 @@ of QuartiCal's interfaces.
    utilities
    options
    gain_types
+   gain_files
    examples
    distribution
-
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
