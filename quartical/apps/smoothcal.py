@@ -319,6 +319,10 @@ def smoothcal():
         action='store_true'
     )
     parser.add_argument(
+        '--sanity',
+        action='store_true'
+    )
+    parser.add_argument(
         '--select-corr',
         type=float,
         nargs='+',
@@ -391,10 +395,6 @@ def smoothcal():
     output_dir.mkdir(parents=True, exist_ok=True)
     opts.output_dir = str(output_dir)
 
-    # create empty output datasets corresponding to MS
-    ms_path = opts.ms_path.resolve()
-    ms_name = str(ms_path)
-
     GD = vars(opts)
     msg = ''
     for key in GD.keys():
@@ -402,78 +402,85 @@ def smoothcal():
 
     logger.info(msg)
 
-    group_cols = ("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER")
-    xds = xds_from_ms(ms_name,
-                      chunks={"row":-1},
-                      columns=['TIME','ANTENNA1','ANTENNA2'],
-                      index_cols=("TIME",),
-                      group_cols=group_cols)
-    f = xds_from_table(f'{ms_name}::SPECTRAL_WINDOW')[0].CHAN_FREQ.values
-    f = f.squeeze()
-    nchan = f.size
-    fname = xds_from_table(f'{ms_name}::FIELD')[0].NAME.values[0]
-    ant_names = xds_from_table(f'{ms_name}::ANTENNA')[0].NAME.values
-    corrs = xds_from_table(f'{ms_name}::POLARIZATION')[0].CORR_TYPE
-    corrs = [corrs.values[0][i] for i in opts.select_corr]
-    corrs = np.array([CORR_TYPES[i] for i in corrs], dtype=object)
-    ncorr = corrs.size
-    output_xds = []
-    nant = None
-    for ds in xds:
-        t = np.unique(ds.TIME.values)
-        ntime = t.size
-
-        ant1 = ds.ANTENNA1.values
-        ant2 = ds.ANTENNA2.values
-
-        if nant is None:
-            nant = np.maximum(ant1.max(), ant2.max()) + 1
-        else:
-            assert (np.maximum(ant1.max(), ant2.max()) + 1) == nant
-
-        fid = ds.FIELD_ID
-        ddid = ds.DATA_DESC_ID
-        sid = ds.SCAN_NUMBER
-
-        gain_spec_tup = namedtuple('gains_spec_tup',
-                                   'tchunk fchunk achunk dchunk cchunk')
-        attrs = {
-            'DATA_DESC_ID': int(ddid),
-            'FIELD_ID': int(fid),
-            'FIELD_NAME': fname,
-            'GAIN_AXES': ('gain_t', 'gain_f', 'ant', 'dir', 'corr'),
-            'GAIN_SPEC': gain_spec_tup(tchunk=(int(ntime),),
-                                       fchunk=(int(nchan),),
-                                       achunk=(int(nant),),
-                                       dchunk=(int(1),),
-                                       cchunk=(int(ncorr),)),
-            'NAME': opts.gain_term,
-            'SCAN_NUMBER': int(sid),
-            'TYPE': 'complex'
-        }
-
-        coords = {
-            'gain_f': (('gain_f',), f),
-            'gain_t': (('gain_t',), t),
-            'ant': (('ant'), ant_names),
-            'corr': (('corr'), corrs),
-            'dir': (('dir'), np.array([0], dtype=np.int32)),
-            'f_chunk': (('f_chunk'), np.array([0], dtype=np.int32)),
-            't_chunk': (('t_chunk'), np.array([0], dtype=np.int32))
-        }
-
-        gain = da.zeros((ntime, nchan, nant, 1, ncorr), dtype=np.complex128)
-        data_vars = {
-        'gains':(('gain_t', 'gain_f', 'ant', 'dir', 'corr'), gain)
-        }
-        output_xds.append(xr.Dataset(data_vars, coords=coords, attrs=attrs))
-
-
     gain_name = f'{str(gain_dir)}::{opts.gain_term}'
     input_xds = xds_from_zarr(gain_name)
 
+    # if ms is passed in create empty output datasets corresponding to MS
+    if opts.ms_path is not None:
+        ms_path = opts.ms_path.resolve()
+        ms_name = str(ms_path)
+
+        group_cols = ("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER")
+        xds = xds_from_ms(ms_name,
+                        chunks={"row":-1},
+                        columns=['TIME','ANTENNA1','ANTENNA2'],
+                        index_cols=("TIME",),
+                        group_cols=group_cols)
+        f = xds_from_table(f'{ms_name}::SPECTRAL_WINDOW')[0].CHAN_FREQ.values
+        f = f.squeeze()
+        nchan = f.size
+        fname = xds_from_table(f'{ms_name}::FIELD')[0].NAME.values[0]
+        ant_names = xds_from_table(f'{ms_name}::ANTENNA')[0].NAME.values
+        corrs = xds_from_table(f'{ms_name}::POLARIZATION')[0].CORR_TYPE
+        corrs = [corrs.values[0][i] for i in opts.select_corr]
+        corrs = np.array([CORR_TYPES[i] for i in corrs], dtype=object)
+        ncorr = corrs.size
+        output_xds = []
+        nant = None
+        for ds in xds:
+            t = np.unique(ds.TIME.values)
+            ntime = t.size
+
+            ant1 = ds.ANTENNA1.values
+            ant2 = ds.ANTENNA2.values
+
+            if nant is None:
+                nant = np.maximum(ant1.max(), ant2.max()) + 1
+            else:
+                assert (np.maximum(ant1.max(), ant2.max()) + 1) == nant
+
+            fid = ds.FIELD_ID
+            ddid = ds.DATA_DESC_ID
+            sid = ds.SCAN_NUMBER
+
+            gain_spec_tup = namedtuple('gains_spec_tup',
+                                    'tchunk fchunk achunk dchunk cchunk')
+            attrs = {
+                'DATA_DESC_ID': int(ddid),
+                'FIELD_ID': int(fid),
+                'FIELD_NAME': fname,
+                'GAIN_AXES': ('gain_t', 'gain_f', 'ant', 'dir', 'corr'),
+                'GAIN_SPEC': gain_spec_tup(tchunk=(int(ntime),),
+                                        fchunk=(int(nchan),),
+                                        achunk=(int(nant),),
+                                        dchunk=(int(1),),
+                                        cchunk=(int(ncorr),)),
+                'NAME': opts.gain_term,
+                'SCAN_NUMBER': int(sid),
+                'TYPE': 'complex'
+            }
+
+            coords = {
+                'gain_f': (('gain_f',), f),
+                'gain_t': (('gain_t',), t),
+                'ant': (('ant'), ant_names),
+                'corr': (('corr'), corrs),
+                'dir': (('dir'), np.array([0], dtype=np.int32)),
+                'f_chunk': (('f_chunk'), np.array([0], dtype=np.int32)),
+                't_chunk': (('t_chunk'), np.array([0], dtype=np.int32))
+            }
+
+            gain = da.zeros((ntime, nchan, nant, 1, ncorr), dtype=np.complex128)
+            data_vars = {
+            'gains':(('gain_t', 'gain_f', 'ant', 'dir', 'corr'), gain)
+            }
+            output_xds.append(xr.Dataset(data_vars, coords=coords, attrs=attrs))
+    else:
+        output_xds = input_xds
+
+
     # concatenate scans
-    input_xds = xr.concat(input_xds, dim='gain_t')
+    input_xds = xr.concat(input_xds, dim='gain_t').sortby('gain_t')
 
     if opts.method.lower() == 'gpr':
         gpr_params = (opts.time_length_scales,
@@ -487,6 +494,24 @@ def smoothcal():
     elif opts.method.lower() == 'rspline':
         interp_xds = rspline_interpolate_gains(input_xds, output_xds,
                                                opts.s, opts.k, opts.mode)
+
+    if opts.sanity:
+        if opts.ms_path is not None:
+            raise ValueError('Sanity checks only possible when interpolating '
+                             'onto original domain (the default if no ms '
+                             'passed in).')
+        if opts.method.lower() not in ['spline', 'rspline']:
+            raise ValueError('Sanity checks only possible using spline '
+                             'interpolation.')
+        if opts.s > 0:
+            raise ValueError('Sanity checks only possible when no smoothing '
+                             'is applied. ')
+        for ds, dsi in zip(output_xds, interp_xds):
+            f = ds.gain_flags.values.astype(bool)
+            g1 = ds.gains.values[~f]
+            g2 = dsi.gains.values[~f]
+            diff = g1-g2
+            assert np.abs(diff).max() < 1e-10
 
     rechunked_xds = []
     for ds in interp_xds:
