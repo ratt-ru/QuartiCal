@@ -509,7 +509,11 @@ def smoothcal():
             raise ValueError('Sanity checks only possible when no smoothing '
                              'is applied. ')
         for ds, dsi in zip(output_xds, interp_xds):
-            f = ds.gain_flags.values.astype(bool)
+            f1 = ds.gain_flags.values.astype(bool)
+            jhj = ds.jhj.values
+            f2 = jhj == 0
+            f2 = np.logical_or(f2[:, :, :, :, 0], f2[:, :, :, :, 1])
+            f = np.logical_or(f1, f2)
             g1 = ds.gains.values[~f]
             g2 = dsi.gains.values[~f]
             diff = g1-g2
