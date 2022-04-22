@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
+import warnings
 import dask.array as da
 import numpy as np
-from daskms import xds_from_storage_ms, xds_from_storage_table, xds_to_table
+from daskms import (xds_from_storage_ms,
+                    xds_from_storage_table,
+                    xds_to_storage_table)
 from dask.graph_manipulation import clone
 from loguru import logger
 from quartical.weights.weights import initialize_weights
@@ -260,7 +263,14 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
                               errors='ignore')
                 for xds in xds_list]
 
-    write_xds_list = xds_to_table(xds_list, ms_path, columns=output_cols)
+    with warnings.catch_warnings():  # We anticipate spurious warnings.
+        warnings.simplefilter("ignore")
+        write_xds_list = xds_to_storage_table(
+            xds_list,
+            ms_path,
+            columns=output_cols,
+            rechunk=True  # Needed to ensure zarr chunks map correctly to disk.
+        )
 
     return write_xds_list
 

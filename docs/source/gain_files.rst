@@ -5,7 +5,7 @@ This page details how users can access QuartiCal's gain solutions. By default,
 QuartiCal places all its outputs in a folder called ``outputs.qc``. This folder
 (or the folder chosen using ``output.directory``), will contain a log file as 
 well as a subfolder containing all the gain solutions. These gain solutions are
-stored as `xarray.Datasets` backed by zarr arrays and include gain flags and
+stored as ``xarray.Datasets`` backed by zarr arrays and include gain flags and
 coordinate information. 
 
 .. note::
