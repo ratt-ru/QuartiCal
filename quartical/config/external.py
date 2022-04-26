@@ -167,7 +167,8 @@ class Gain(Input):
                                "delay",
                                "phase",
                                "tec",
-                               "rotation_measure"])
+                               "rotation_measure",
+                               "crosshand_phase"])
     )
     solve_per: str = field(
         default="antenna",
@@ -193,6 +194,11 @@ class Gain(Input):
         self.validate_choice_fields()
         self.time_interval = as_time(self.time_interval)
         self.freq_interval = as_freq(self.freq_interval)
+
+        if self.type == "crosshand_phase" and self.solve_per != "array":
+            raise ValueError("Crosshand phase can only be solved as a per "
+                             "array term. Please set the appropriate "
+                             "term.solve_per to 'array'.")
 
 
 @dataclass
