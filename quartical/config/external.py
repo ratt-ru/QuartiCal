@@ -87,6 +87,11 @@ class BaseConfigSection:
         self.time_interval = as_time(self.time_interval)
         self.freq_interval = as_freq(self.freq_interval)
 
+        if self.type == "crosshand_phase" and self.solve_per != "array":
+            raise ValueError("Crosshand phase can only be solved as a per "
+                             "array term. Please set the appropriate "
+                             "term.solve_per to 'array'.")
+
 
 @dataclass
 class _GainSchema(object):

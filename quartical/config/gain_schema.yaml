@@ -11,6 +11,7 @@ gain:
       - phase
       - tec
       - rotation_measure
+      - crosshand_phase
     info:
       Type of gain to solve for.
 
