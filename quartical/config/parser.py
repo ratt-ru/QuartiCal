@@ -58,10 +58,8 @@ def log_final_config(config):
         columns, _ = os.get_terminal_size(0)
     else:
         columns = 80  # Fall over to some sensible default.
-    left_column = columns//2
-    right_column = columns - left_column
 
-    log_message = "Final configuration state: \n"
+    log_message = "Final configuration state:"
 
     current_section = None
 
@@ -74,10 +72,19 @@ def log_final_config(config):
                 section, columns)
             current_section = section
 
+        maxlen = max(map(len, [f"{section}.{key}" for key in options.keys()]))
+
         for key, value in options.items():
             option = f"{section}.{key}"
-            log_message += f"{option:<{left_column}}"
-            log_message += f"{str(value):>{right_column}}\n"
+            msg = f"{option:<{maxlen + 1}}{str(value):>{columns - maxlen - 1}}"
+
+            if len(msg) > columns:
+                split = [msg[i:i+columns] for i in range(0, len(msg), columns)]
+
+                msg = "\n".join((split[0],
+                                *[f"{s:>{columns}}" for s in split[1:]]))
+
+            log_message += msg + "\n"
 
     log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
 

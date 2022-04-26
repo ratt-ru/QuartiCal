@@ -76,7 +76,7 @@ class ModelInputs(Input):
         metadata=dict(choices=["X", "~X", "Y", "~Y", "L", "~L", "M", "~M"])
     )
     invert_uvw: bool = True
-    source_chunks: int = 10
+    source_chunks: int = 500
     apply_p_jones: bool = True
 
     def __post_init__(self):

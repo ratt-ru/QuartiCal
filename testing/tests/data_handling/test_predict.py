@@ -126,7 +126,7 @@ def test_chunking(dask_sky_dict):
     for sky_model_name, sky_model in dask_sky_dict.items():
         for cluster_name, cluster in sky_model.items():
             for source_type, sources in cluster.items():
-                for arr in sources:
+                for arr in sources.values():
                     check &= all([c <= 10 for c in arr.chunks[0]])
 
     assert check is True

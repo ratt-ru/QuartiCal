@@ -71,7 +71,7 @@ def read_xds_list(model_columns, ms_opts):
     # up an xarray data set for the data. Note that we will reload certain
     # indexing columns so that they are consistent with the chunking strategy.
 
-    columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2",
+    columns = ("TIME", "INTERVAL", "ANTENNA1", "ANTENNA2", "FEED1", "FEED2",
                "FLAG", "FLAG_ROW", "UVW")
     columns += (ms_opts.data_column,)
     columns += (ms_opts.weight_column,) if ms_opts.weight_column else ()
@@ -210,6 +210,16 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
         # If the xds has fewer correlations than the measurement set, reindex.
         if xds.dims["corr"] < ms_n_corr:
             xds = xds.reindex(corr=corr_types, fill_value=0)
+
+            # Do some special handling on the flag column if we reindexed -
+            # we need a value dependent fill value.
+
+            reindexed_flags = xds.FLAG.data
+
+            flags = da.any(reindexed_flags, axis=-1, keepdims=True)
+            flags = da.broadcast_to(flags, reindexed_flags.shape)
+
+            xds = xds.assign({"FLAG": (xds.FLAG.dims, flags)})
 
         _xds_list.append(xds)
 
