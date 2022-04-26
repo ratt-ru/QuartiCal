@@ -171,9 +171,9 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
                             # Unflag points which converged.
                             gain_flags[ti, fi, a, d] = 0
                             n_cnvgd += 1
-                        elif km0_trend < km1_trend < 1e-4:
+                        elif km0_trend < km1_trend < 1e-6:
                             gain_flags[ti, fi, a, d] = 0
-                        elif km0_trend > km1_trend > 1e-4:
+                        elif km0_trend > km1_trend > 1e-6:
                             gain_flags[ti, fi, a, d] = \
                                 1 if gain_flags[ti, fi, a, d] else -1
 

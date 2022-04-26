@@ -7,7 +7,7 @@ from testing.utils.gains import apply_gains, reference_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, solve_per):
+def opts(base_opts):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -19,7 +19,7 @@ def opts(base_opts, solve_per):
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-8
     _opts.G.type = "crosshand_phase"
-    _opts.G.solve_per = solve_per
+    _opts.G.solve_per = "antenna"
 
     return _opts
 
@@ -31,7 +31,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list, solve_per):
+def true_gain_list(predicted_xds_list):
 
     gain_list = []
 
@@ -59,8 +59,7 @@ def true_gain_list(predicted_xds_list, solve_per):
 
         gains = amp[None, None, None, None, :]*da.exp(1j*phase)
 
-        if solve_per == "array":
-            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
+        gains = da.broadcast_to(gains[:, :, :1], gains.shape)
 
         gain_list.append(gains)
 
