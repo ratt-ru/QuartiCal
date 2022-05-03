@@ -33,40 +33,73 @@ def rspline_interpolate_gains(input_xds, output_xds, s, k, mode):
     """
     t = input_xds.gain_t.values
     f = input_xds.gain_f.values
-    jhj = input_xds.jhj.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
-    gain = input_xds.gains.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
-    flag = input_xds.gain_flags.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1})
-    gref = gain[:,:,-1]
-    _, _, nant, _, _ = gain.shape
-    p = da.arange(nant, chunks=1)
+    # jhj = input_xds.jhj.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
+    # gain = input_xds.gains.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
+    # flag = input_xds.gain_flags.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1})
+    # gref = gain[:,:,-1]
+    # _, _, nant, _, _ = gain.shape
+    # p = da.arange(nant, chunks=1)
 
-    interpo = da.blockwise(rspline_solve, 'adcx',
-                           gain, 'tfadc',
-                           jhj, 'tfadc',
-                           flag, 'tfad',
-                           p, 'a',
-                           t, None,
-                           f, None,
-                           gref, None,
-                           s, None,
-                           k, None,
-                           mode, None,
-                           new_axes={'x':2},
-                           meta=np.empty((1,1,1,1), dtype=object))
+    # interpo = da.blockwise(rspline_solve, 'adcx',
+    #                        gain, 'tfadc',
+    #                        jhj, 'tfadc',
+    #                        flag, 'tfad',
+    #                        p, 'a',
+    #                        t, None,
+    #                        f, None,
+    #                        gref, None,
+    #                        s, None,
+    #                        k, None,
+    #                        mode, None,
+    #                        new_axes={'x':2},
+    #                        meta=np.empty((1,1,1,1), dtype=object))
+
+    jhj = input_xds.jhj.values
+    gain = input_xds.gains.values
+    flag = input_xds.gain_flags.values
+    gref = gain[:,:,-1]
+    ntime, nchan, nant, ndir, ncorr = gain.shape
+    sol = np.zeros((nant, ndir, ncorr, 2), dtype=object)
+
+    for p in range(nant):
+        for d in range(ndir):
+            jhj_flag = np.any(jhj[:, :, p, d]==0, axis=-1)
+            for c in range(ncorr):
+                inval = np.logical_or(flag[:, :, p, d],
+                                      jhj_flag==0)
+                It, If = np.where(inval)
+                g = gain[:, :, p, d, c]
+                g[It, If] = 1.0 + 0j
+
+                sol[p, d, c, 0] = rbs(t, f, np.real(g), kx=k, ky=k, s=s)
+                sol[p, d, c, 1] = rbs(t, f, np.imag(g), kx=k, ky=k, s=s)
+
 
     out_ds = []
     for ds in output_xds:
         tp = ds.gain_t.values
         fp = ds.gain_f.values
-        gain = da.blockwise(rspline_interp, 'tfadc',
-                            interpo, 'adcx',
-                            tp, None,
-                            fp, None,
-                            mode, None,
-                            new_axes={'t': tp.size, 'f': fp.size},
-                            dtype=np.complex128)
+        # gain = da.blockwise(rspline_interp, 'tfadc',
+        #                     interpo, 'adcx',
+        #                     tp, None,
+        #                     fp, None,
+        #                     mode, None,
+        #                     new_axes={'t': tp.size, 'f': fp.size},
+        #                     dtype=np.complex128)
 
-        dso = ds.assign(**{'gains': (ds.GAIN_AXES, gain.rechunk({2:-1}))})
+        ntime = tp.size
+        nchan = fp.size
+        gain = np.zeros((ntime, nchan, nant, ndir, ncorr), dtype=np.complex128)
+
+        for p in range(nant):
+            for d in range(ndir):
+                for c in range(ncorr):
+                    res = (sol[p, d, c, 0](tp, fp) +
+                           1.0j * sol[p, d, c, 1](tp, fp))
+                    gain[:, :, p, d, c] = res
+
+        gain = da.from_array(gain, chunks=(-1, -1, -1, -1, -1))
+        dso = ds.assign(**{'gains': (ds.GAIN_AXES, gain)})
         out_ds.append(dso)
     return out_ds
 
