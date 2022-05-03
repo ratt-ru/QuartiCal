@@ -84,11 +84,11 @@ def _rspline_solve(gain, jhj, flag, p, t, f, gref, s, k, mode):
     sol = np.zeros((nant, ndir, ncorr, 2), dtype=object)
     for p in range(nant):
         for d in range(ndir):
+            jhj_flag = ~np.any(jhj[:, :, p, d], axis=-1)
             for c in range(ncorr):
                 # mask where flagged or jhj is zero
                 inval = np.logical_or(flag[:, :, p, d],
-                                      jhj[:, :, p, d, c]==0)
-                assert (inval == flag[:, :, p, d]).all()
+                                      jhj_flag==0)
                 It, If = np.where(inval)
                 # replace flagged data with ones
                 g = gain[:, :, p, d, c]
@@ -97,17 +97,14 @@ def _rspline_solve(gain, jhj, flag, p, t, f, gref, s, k, mode):
                 gr[It, If] = 1.0 + 0j
 
                 if mode == 'reim':
-                    gamp = np.real(g)
-                    gphase = np.imag(g)
+                    sol[p, d, c, 0] = rbs(t, f, np.real(g), kx=k, ky=k, s=s)
+                    sol[p, d, c, 1] = rbs(t, f, np.imag(g), kx=k, ky=k, s=s)
                 elif mode == 'ampphase':
                     gamp = np.log(np.abs(g))
+                    sol[p, d, c, 0] = rbs(t, f, glogamp, kx=k, ky=k, s=s)
                     gphase = np.angle(g) # * np.conj(gr))
                     # gphase = np.unwrap(np.unwrap(gphase, axis=0), axis=1)
-
-                ampo = rbs(t, f, gamp, kx=k, ky=k, s=s)
-                sol[p, d, c, 0] = ampo
-                phaseo = rbs(t, f, gphase, kx=k, ky=k, s=s)
-                sol[p, d, c, 1] = phaseo
+                    sol[p, d, c, 1] = rbs(t, f, gphase, kx=k, ky=k, s=s)
 
     return sol
 
@@ -126,16 +123,13 @@ def _rspline_interp(interpo, tp, fp, mode):
     for p in range(nant):
         for d in range(ndir):
             for c in range(ncorr):
-                logampo = interpo[p, d, c, 0]
-                logamp = logampo(tp, fp)
-
-                phaseo = interpo[p, d, c, 1]
-                phase = phaseo(tp, fp)
+                res = (interpo[p, d, c, 0](tp, fp) +
+                       1.0j * interpo[p, d, c, 1](tp, fp))
 
                 if mode=="reim":
-                    sol[:, :, p, d, c] = logamp + 1.0j*phase
+                    sol[:, :, p, d, c] = res
                 elif mode=="ampphase":
-                    sol[:, :, p, d, c] = np.exp(logamp + 1.0j*phase)
+                    sol[:, :, p, d, c] = np.exp(res)
 
     return sol
 
