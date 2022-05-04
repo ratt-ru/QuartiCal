@@ -33,110 +33,140 @@ def rspline_interpolate_gains(input_xds, output_xds, s, k, mode):
     """
     t = input_xds.gain_t.values
     f = input_xds.gain_f.values
-    # jhj = input_xds.jhj.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
-    # gain = input_xds.gains.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
-    # flag = input_xds.gain_flags.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1})
-    # gref = gain[:,:,-1]
-    # _, _, nant, _, _ = gain.shape
-    # p = da.arange(nant, chunks=1)
-
-    # interpo = da.blockwise(rspline_solve, 'adcx',
-    #                        gain, 'tfadc',
-    #                        jhj, 'tfadc',
-    #                        flag, 'tfad',
-    #                        p, 'a',
-    #                        t, None,
-    #                        f, None,
-    #                        gref, None,
-    #                        s, None,
-    #                        k, None,
-    #                        mode, None,
-    #                        new_axes={'x':2},
-    #                        meta=np.empty((1,1,1,1), dtype=object))
-
-    jhj = input_xds.jhj.values
-    gain = input_xds.gains.values
-    flag = input_xds.gain_flags.values
+    jhj = input_xds.jhj.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
+    gain = input_xds.gains.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1, 4:-1})
+    flag = input_xds.gain_flags.data.rechunk({0:-1, 1:-1, 2: 1, 3:-1})
     gref = gain[:,:,-1]
-    ntime, nchan, nant, ndir, ncorr = gain.shape
-    sol = np.zeros((nant, ndir, ncorr, 2), dtype=object)
+    _, _, nant, ndir, ncorr = gain.shape
+    ant_num = da.arange(nant, chunks=1)
 
-    for p in range(nant):
-        for d in range(ndir):
-            jhj_flag = np.any(jhj[:, :, p, d]==0, axis=-1)
-            for c in range(ncorr):
-                inval = np.logical_or(flag[:, :, p, d],
-                                      jhj_flag==0)
-                It, If = np.where(inval)
-                g = gain[:, :, p, d, c]
-                g[It, If] = 1.0 + 0j
+    interpo = da.blockwise(rspline_solve, 'adcx',
+                           gain, 'tfadc',
+                           jhj, 'tfadc',
+                           flag, 'tfad',
+                           ant_num, 'a',
+                           t, None,
+                           f, None,
+                           gref, None,
+                           s, None,
+                           k, None,
+                           mode, None,
+                           new_axes={'x':2},
+                           meta=np.empty((1,1,1,1), dtype=object))
 
-                sol[p, d, c, 0] = rbs(t, f, np.real(g), kx=k, ky=k, s=s)
-                sol[p, d, c, 1] = rbs(t, f, np.imag(g), kx=k, ky=k, s=s)
+    # interpo = interpo.compute()
+    # gain = gain.compute()
+    # jhj = jhj.compute()
+    # flag = flag.compute()
+
+    # for p in range(nant):
+    #     for d in range(ndir):
+    #         jhj_flag = np.any(jhj[:, :, p, d]==0, axis=-1)
+    #         for c in range(ncorr):
+    #             print(p, d, c)
+    #             inval = np.logical_or(flag[:, :, p, d],
+    #                                   jhj_flag)
+    #             It, If = np.where(inval)
+    #             tmp = gain[:, :, p, d, c]
+    #             tmp[It, If] = 1+0j
+    #             res = interpo[p, d, c, 0](t, f) + 1.0j*interpo[p, d, c, 1](t, f)
+
+    #             try:
+    #                 diff = np.abs(res - tmp)
+    #                 assert (diff < 1e-12).all()
+    #             except:
+    #                 print(diff.max())
+    #                 import pdb; pdb.set_trace()
+
+    # jhj = input_xds.jhj.values
+    # gain = input_xds.gains.values
+    # flag = input_xds.gain_flags.values
+    # gref = gain[:,:,-1]
+    # ntime, nchan, nant, ndir, ncorr = gain.shape
+    # sol = np.zeros((nant, ndir, ncorr, 2), dtype=object)
+
+    # for p in range(nant):
+    #     for d in range(ndir):
+    #         jhj_flag = np.any(jhj[:, :, p, d]==0, axis=-1)
+    #         for c in range(ncorr):
+    #             inval = np.logical_or(flag[:, :, p, d],
+    #                                   jhj_flag)
+    #             It, If = np.where(inval)
+    #             g = gain[:, :, p, d, c]
+    #             g[It, If] = 1.0 + 0j
+
+    #             sol[p, d, c, 0] = rbs(t, f, np.real(g), kx=k, ky=k, s=s)
+    #             sol[p, d, c, 1] = rbs(t, f, np.imag(g), kx=k, ky=k, s=s)
+
+    #             tmp = sol[p, d, c, 0](t, f) + 1.0j*sol[p, d, c, 1](t, f)
+
+    #             try:
+    #                 assert (np.abs(g - tmp) < 1e-12).all()
+    #             except:
+    #                 import pdb; pdb.set_trace()
 
 
     out_ds = []
     for ds in output_xds:
         tp = ds.gain_t.values
         fp = ds.gain_f.values
-        # gain = da.blockwise(rspline_interp, 'tfadc',
-        #                     interpo, 'adcx',
-        #                     tp, None,
-        #                     fp, None,
-        #                     mode, None,
-        #                     new_axes={'t': tp.size, 'f': fp.size},
-        #                     dtype=np.complex128)
+        interp_gain = da.blockwise(rspline_interp, 'tfadc',
+                            interpo, 'adcx',
+                            tp, None,
+                            fp, None,
+                            mode, None,
+                            new_axes={'t': tp.size, 'f': fp.size},
+                            dtype=np.complex128)
 
-        ntime = tp.size
-        nchan = fp.size
-        gain = np.zeros((ntime, nchan, nant, ndir, ncorr), dtype=np.complex128)
+        # ntime = tp.size
+        # nchan = fp.size
+        # interp_gain = np.zeros((ntime, nchan, nant, ndir, ncorr), dtype=np.complex128)
 
-        for p in range(nant):
-            for d in range(ndir):
-                for c in range(ncorr):
-                    res = (sol[p, d, c, 0](tp, fp) +
-                           1.0j * sol[p, d, c, 1](tp, fp))
-                    gain[:, :, p, d, c] = res
+        # for p in range(nant):
+        #     for d in range(ndir):
+        #         for c in range(ncorr):
+        #             res = (sol[p, d, c, 0](tp, fp) +
+        #                    1.0j * sol[p, d, c, 1](tp, fp))
+        #             interp_gain[:, :, p, d, c] = res
 
-        gain = da.from_array(gain, chunks=(-1, -1, -1, -1, -1))
-        dso = ds.assign(**{'gains': (ds.GAIN_AXES, gain)})
+        # interp_gain = da.from_array(interp_gain, chunks=(-1, -1, -1, -1, -1))
+        dso = ds.assign(**{'gains': (ds.GAIN_AXES, interp_gain)})
         out_ds.append(dso)
     return out_ds
 
 
-def rspline_solve(gain, jhj, flag, p, t, f, gref, s, k, mode):
+def rspline_solve(gain, jhj, flag, ant_num, t, f, gref, s, k, mode):
     return _rspline_solve(gain[0][0],
                          jhj[0][0],
                          flag[0][0],
-                         p,
+                         ant_num,
                          t, f, gref, s, k, mode)
 
-def _rspline_solve(gain, jhj, flag, p, t, f, gref, s, k, mode):
+def _rspline_solve(gain, jhj, flag, ant_num, t, f, gref, s, k, mode):
     flag = flag.astype(bool)
     ntime, nchan, nant, ndir, ncorr = gain.shape
     sol = np.zeros((nant, ndir, ncorr, 2), dtype=object)
     for p in range(nant):
         for d in range(ndir):
-            jhj_flag = ~np.any(jhj[:, :, p, d], axis=-1)
+            jhj_flag = np.any(jhj[:, :, p, d]==0, axis=-1)
             for c in range(ncorr):
                 # mask where flagged or jhj is zero
                 inval = np.logical_or(flag[:, :, p, d],
-                                      jhj_flag==0)
+                                      jhj_flag)
                 It, If = np.where(inval)
                 # replace flagged data with ones
                 g = gain[:, :, p, d, c]
                 g[It, If] = 1.0 + 0j
-                gr = gref[:, :, d, c]
-                gr[It, If] = 1.0 + 0j
 
                 if mode == 'reim':
                     sol[p, d, c, 0] = rbs(t, f, np.real(g), kx=k, ky=k, s=s)
                     sol[p, d, c, 1] = rbs(t, f, np.imag(g), kx=k, ky=k, s=s)
                 elif mode == 'ampphase':
                     gamp = np.log(np.abs(g))
-                    sol[p, d, c, 0] = rbs(t, f, glogamp, kx=k, ky=k, s=s)
-                    gphase = np.angle(g) # * np.conj(gr))
-                    # gphase = np.unwrap(np.unwrap(gphase, axis=0), axis=1)
+                    sol[p, d, c, 0] = rbs(t, f, gamp, kx=k, ky=k, s=s)
+                    # gr = gref[:, :, d, c]
+                    gphase = np.angle(g) # - np.angle(gr)
+                    gphase = np.unwrap(np.unwrap(gphase, axis=0), axis=1)
                     sol[p, d, c, 1] = rbs(t, f, gphase, kx=k, ky=k, s=s)
 
     return sol
@@ -538,20 +568,24 @@ def smoothcal():
         for ds, dsi in zip(output_xds, interp_xds):
             f1 = ds.gain_flags.values.astype(bool)
             jhj = ds.jhj.values
-            f2 = jhj == 0
-            f2 = np.logical_or(f2[:, :, :, :, 0], f2[:, :, :, :, 1])
+            f2 = np.any(jhj == 0, axis=-1)
             f = np.logical_or(f1, f2)
             g1 = ds.gains.values[~f]
             g2 = dsi.gains.values[~f]
             diff = g1-g2
             try:
+                print(np.abs(diff).max())
                 assert np.abs(diff).max() < 1e-10
             except:
                 import pdb; pdb.set_trace()
 
     rechunked_xds = []
     for ds in interp_xds:
-        dso = ds.chunk({'gain_t': 'auto', 'gain_f': 'auto'})
+        g = ds.gains.chunk({'gain_t': 'auto', 'gain_f': 'auto'})
+        tchunks, fchunks, _, _, _ = g.chunks
+        # we need the above otherwise different DataArrays end up
+        # with different chunking?
+        dso = ds.chunk({'gain_t': tchunks, 'gain_f': fchunks, 'ant': -1})
         rechunked_xds.append(dso)
 
     writes = xds_to_zarr(rechunked_xds,
