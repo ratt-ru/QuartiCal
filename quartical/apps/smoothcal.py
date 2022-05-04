@@ -89,7 +89,7 @@ def _rspline_solve(gain, jhj, flag, ant_num, t, f, gref, s, k, mode):
     inval = np.logical_or(flag, jhj_flag)
     gain = gain.copy()
     gain[inval] = np.nan
-    gain = _interpolate_missing(gain, t, f)
+    gain = _interpolate_missing(t, f, gain)
 
     for p in range(nant):
         for d in range(ndir):
