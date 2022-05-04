@@ -23,6 +23,7 @@ import logging
 from loguru import logger
 from scipy.interpolate import RectBivariateSpline as rbs
 from scipy.interpolate import bisplrep, bisplev
+from quartical.interpolation.interpolants import _interpolate_missing
 
 
 def rspline_interpolate_gains(input_xds, output_xds, s, k, mode):
@@ -54,58 +55,6 @@ def rspline_interpolate_gains(input_xds, output_xds, s, k, mode):
                            new_axes={'x':2},
                            meta=np.empty((1,1,1,1), dtype=object))
 
-    # interpo = interpo.compute()
-    # gain = gain.compute()
-    # jhj = jhj.compute()
-    # flag = flag.compute()
-
-    # for p in range(nant):
-    #     for d in range(ndir):
-    #         jhj_flag = np.any(jhj[:, :, p, d]==0, axis=-1)
-    #         for c in range(ncorr):
-    #             print(p, d, c)
-    #             inval = np.logical_or(flag[:, :, p, d],
-    #                                   jhj_flag)
-    #             It, If = np.where(inval)
-    #             tmp = gain[:, :, p, d, c]
-    #             tmp[It, If] = 1+0j
-    #             res = interpo[p, d, c, 0](t, f) + 1.0j*interpo[p, d, c, 1](t, f)
-
-    #             try:
-    #                 diff = np.abs(res - tmp)
-    #                 assert (diff < 1e-12).all()
-    #             except:
-    #                 print(diff.max())
-    #                 import pdb; pdb.set_trace()
-
-    # jhj = input_xds.jhj.values
-    # gain = input_xds.gains.values
-    # flag = input_xds.gain_flags.values
-    # gref = gain[:,:,-1]
-    # ntime, nchan, nant, ndir, ncorr = gain.shape
-    # sol = np.zeros((nant, ndir, ncorr, 2), dtype=object)
-
-    # for p in range(nant):
-    #     for d in range(ndir):
-    #         jhj_flag = np.any(jhj[:, :, p, d]==0, axis=-1)
-    #         for c in range(ncorr):
-    #             inval = np.logical_or(flag[:, :, p, d],
-    #                                   jhj_flag)
-    #             It, If = np.where(inval)
-    #             g = gain[:, :, p, d, c]
-    #             g[It, If] = 1.0 + 0j
-
-    #             sol[p, d, c, 0] = rbs(t, f, np.real(g), kx=k, ky=k, s=s)
-    #             sol[p, d, c, 1] = rbs(t, f, np.imag(g), kx=k, ky=k, s=s)
-
-    #             tmp = sol[p, d, c, 0](t, f) + 1.0j*sol[p, d, c, 1](t, f)
-
-    #             try:
-    #                 assert (np.abs(g - tmp) < 1e-12).all()
-    #             except:
-    #                 import pdb; pdb.set_trace()
-
-
     out_ds = []
     for ds in output_xds:
         tp = ds.gain_t.values
@@ -118,18 +67,6 @@ def rspline_interpolate_gains(input_xds, output_xds, s, k, mode):
                             new_axes={'t': tp.size, 'f': fp.size},
                             dtype=np.complex128)
 
-        # ntime = tp.size
-        # nchan = fp.size
-        # interp_gain = np.zeros((ntime, nchan, nant, ndir, ncorr), dtype=np.complex128)
-
-        # for p in range(nant):
-        #     for d in range(ndir):
-        #         for c in range(ncorr):
-        #             res = (sol[p, d, c, 0](tp, fp) +
-        #                    1.0j * sol[p, d, c, 1](tp, fp))
-        #             interp_gain[:, :, p, d, c] = res
-
-        # interp_gain = da.from_array(interp_gain, chunks=(-1, -1, -1, -1, -1))
         dso = ds.assign(**{'gains': (ds.GAIN_AXES, interp_gain)})
         out_ds.append(dso)
     return out_ds
@@ -146,17 +83,26 @@ def _rspline_solve(gain, jhj, flag, ant_num, t, f, gref, s, k, mode):
     flag = flag.astype(bool)
     ntime, nchan, nant, ndir, ncorr = gain.shape
     sol = np.zeros((nant, ndir, ncorr, 2), dtype=object)
+
+    # linearly interpolate to fill missing values
+    jhj_flag = np.any(jhj==0, axis=-1)
+    inval = np.logical_or(flag, jhj_flag)
+    gain = gain.copy()
+    gain[inval] = np.nan
+    gain = _interpolate_missing(gain, t, f)
+
     for p in range(nant):
         for d in range(ndir):
-            jhj_flag = np.any(jhj[:, :, p, d]==0, axis=-1)
+            # jhj_flag = np.any(jhj[:, :, p, d]==0, axis=-1)
             for c in range(ncorr):
-                # mask where flagged or jhj is zero
-                inval = np.logical_or(flag[:, :, p, d],
-                                      jhj_flag)
-                It, If = np.where(inval)
-                # replace flagged data with ones
+                # inval = np.logical_or(flag[:, :, p, d],
+                #                       jhj_flag)
+                # # bad data
+                # It, If = np.where(inval)
+                # # good data
+                # Itval, Ifval = np.where(~inval)
+
                 g = gain[:, :, p, d, c]
-                g[It, If] = 1.0 + 0j
 
                 if mode == 'reim':
                     sol[p, d, c, 0] = rbs(t, f, np.real(g), kx=k, ky=k, s=s)
