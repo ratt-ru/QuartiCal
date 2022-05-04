@@ -520,8 +520,10 @@ def smoothcal():
             g2 = dsi.gains.values[~f]
             diff = g1-g2
             try:
-                print(np.abs(diff).max())
-                assert np.abs(diff).max() < 1e-10
+                print(np.abs(diff.real).max())
+                print(np.abs(diff.imag).max())
+                assert np.abs(diff.real).max() < 1e-10
+                assert np.abs(diff.imag).max() < 1e-10
             except:
                 import pdb; pdb.set_trace()
 
@@ -531,7 +533,7 @@ def smoothcal():
         tchunks, fchunks, _, _, _ = g.chunks
         # we need the above otherwise different DataArrays end up
         # with different chunking?
-        dso = ds.chunk({'gain_t': tchunks, 'gain_f': fchunks, 'ant': -1})
+        dso = ds.chunk({'gain_t': tchunks, 'gain_f': fchunks, 'ant': 1})
         rechunked_xds.append(dso)
 
     writes = xds_to_zarr(rechunked_xds,
