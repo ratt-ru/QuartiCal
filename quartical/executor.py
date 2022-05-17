@@ -85,7 +85,7 @@ def _execute(exitstack):
             cluster = exitstack.enter_context(cluster)
             client = exitstack.enter_context(Client(cluster))
 
-        client.register_worker_plugin(LoggerPlugin, proxy_logger=proxy_logger)
+        client.register_worker_plugin(LoggerPlugin(proxy_logger=proxy_logger))
 
         # Install Quartical Scheduler Plugin. Controversial from a security
         # POV, run_on_scheduler is a debugging function.
