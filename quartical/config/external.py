@@ -142,7 +142,7 @@ class Solver(Input):
 
 @dataclass
 class Dask(Input):
-    threads: int = 0
+    threads: Optional[int] = None
     workers: int = 1
     address: Optional[str] = None
     scheduler: str = field(
