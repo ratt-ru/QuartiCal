@@ -51,9 +51,9 @@ class Amplitude(Gain):
         return xds
 
     @staticmethod
-    def init_term(gain, param, term_ind, term_spec, **kwargs):
+    def init_term(gain, param, term_ind, term_spec, ref_ant, **kwargs):
         """Initialise the gains (and parameters)."""
 
-        Gain.init_term(gain, param, term_ind, term_spec, **kwargs)
+        Gain.init_term(gain, param, term_ind, term_spec, ref_ant, **kwargs)
 
         param[:] = 1  # Amplitudes start at unity. TODO: Estimate?

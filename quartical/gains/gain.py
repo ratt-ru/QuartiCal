@@ -159,7 +159,7 @@ class Gain:
         return tbin_arr
 
     @staticmethod
-    def init_term(gain, param, term_ind, term_spec, **kwargs):
+    def init_term(gain, param, term_ind, term_spec, ref_ant, **kwargs):
         """Initialise the gains (and parameters)."""
 
         (term_name, term_type, term_shape, term_pshape) = term_spec

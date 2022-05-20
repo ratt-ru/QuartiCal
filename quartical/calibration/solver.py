@@ -38,6 +38,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     """
 
     set_num_threads(solver_opts.threads)
+    ref_ant = solver_opts.reference_antenna
 
     gain_tup = ()
     param_tup = ()
@@ -55,7 +56,9 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         param = np.zeros(term_pshape, dtype=gain.real.dtype)
 
         # Perform terms specific setup e.g. init gains and params.
-        term_type_cls.init_term(gain, param, term_ind, term_spec, **kwargs)
+        term_type_cls.init_term(
+            gain, param, term_ind, term_spec, ref_ant, **kwargs
+        )
 
         # Init gain flags by looking for intervals with no data.
         gain_flags = init_gain_flags(term_shape, term_ind, **kwargs)

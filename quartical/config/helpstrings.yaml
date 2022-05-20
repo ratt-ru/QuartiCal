@@ -174,7 +174,10 @@ solver:
   convergence_fraction:
     The fraction of gain values which must converge before a solver will exit
     prematurely.
-
+  reference_antenna:
+    A reference antenna to use for terms which require one. This is shared by
+    all terms and currently only used for delay estimates. Specify as the
+    integer index of the antenna - antenna names are not currently supported.
 
 dask:
   threads:

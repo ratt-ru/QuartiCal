@@ -78,10 +78,10 @@ class Delay(Gain):
         return f_map_arr
 
     @staticmethod
-    def init_term(gain, param, term_ind, term_spec, **kwargs):
+    def init_term(gain, param, term_ind, term_spec, ref_ant, **kwargs):
         """Initialise the gains (and parameters)."""
 
-        Gain.init_term(gain, param, term_ind, term_spec, **kwargs)
+        Gain.init_term(gain, param, term_ind, term_spec, ref_ant, **kwargs)
 
         data = kwargs["data"]  # (row, chan, corr)
         flags = kwargs["flags"]  # (row, chan)
@@ -89,14 +89,12 @@ class Delay(Gain):
         a2 = kwargs["a2"]
         chan_freq = kwargs["chan_freqs"]
         t_map = kwargs["t_map_arr"][0, :, term_ind]  # time -> solint
-        refant = 0  # TODO: Make controllable.
         _, n_chan, n_ant, n_dir, n_corr = gain.shape
         # TODO: Make controllable/automate. Check with Landman.
         pad_factor = int(np.ceil(2 ** 15 / n_chan))
 
-        sel = np.where((a1 == refant) | (a2 == refant))  # All bls with refant.
-
-        # We only need the baselines which include the refant.
+        # We only need the baselines which include the ref_ant.
+        sel = np.where((a1 == ref_ant) | (a2 == ref_ant))
         a1 = a1[sel]
         a2 = a2[sel]
         t_map = t_map[sel]
@@ -107,8 +105,8 @@ class Delay(Gain):
 
         for ut in utint:
             sel = np.where(t_map == ut)
-            ant_map_pq = np.where(a1[sel] == refant, a2[sel], 0)
-            ant_map_qp = np.where(a2[sel] == refant, a1[sel], 0)
+            ant_map_pq = np.where(a1[sel] == ref_ant, a2[sel], 0)
+            ant_map_qp = np.where(a2[sel] == ref_ant, a1[sel], 0)
             ant_map = ant_map_pq + ant_map_qp
             ref_data = np.zeros((n_ant, n_chan, n_corr), dtype=np.complex128)
             counts = np.zeros((n_ant, n_chan), dtype=int)
@@ -146,7 +144,7 @@ class Delay(Gain):
                 delay_est_11 = fft_freq[delay_est_ind_11]
 
             for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
-                if p == refant:
+                if p == ref_ant:
                     param[t, 0, q, 0, 1] = -delay_est_00[q]
                     if n_corr > 1:
                         param[t, 0, q, 0, 3] = -delay_est_11[q]

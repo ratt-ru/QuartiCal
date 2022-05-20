@@ -131,6 +131,7 @@ class Solver(Input):
     threads: int = 1
     convergence_fraction: float = 0.99
     convergence_criteria: float = 1e-6
+    reference_antenna: int = 0
 
     def __post_init__(self):
         self.validate_choice_fields()
