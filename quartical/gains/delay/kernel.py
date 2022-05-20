@@ -131,7 +131,8 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
                                           meta_args,
                                           flag_imdry,
                                           loop_idx,
-                                          corr_mode)
+                                          corr_mode,
+                                          numbness=1)
 
             # Propagate gain flags to parameter flags.
             update_param_flags(base_args,

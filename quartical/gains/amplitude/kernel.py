@@ -67,14 +67,10 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
         max_iter = meta_args.iters
         solve_per = meta_args.solve_per
         dd_term = meta_args.dd_term
-        is_init = meta_args.is_init
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
         active_params = term_args.params[active_term]
-
-        if not is_init:
-            active_params[:] = 1
 
         # Set up some intemediaries used for flagging. TODO: Move?
         km1_gain = active_gain.copy()
