@@ -93,7 +93,8 @@ class Outputs(Input):
                                "corrected_residual",
                                "residual",
                                "weight",
-                               "corrected_weight"])
+                               "corrected_weight",
+                               "model_data"])
     )
     columns: Optional[List[str]] = None
     flags: bool = True
