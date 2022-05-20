@@ -15,9 +15,10 @@ def opts(base_opts, select_corr, solve_per):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [30]
+    _opts.solver.iter_recipe = [60]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_criteria = 1e-8
+    _opts.solver.convergence_fraction = 1
+    _opts.solver.convergence_criteria = 1e-6
     _opts.G.type = "delay"
     _opts.G.freq_interval = 0
     _opts.G.solve_per = solve_per
@@ -46,21 +47,29 @@ def true_gain_list(predicted_xds_list, solve_per):
         n_dir = xds.dims["dir"]
         n_corr = xds.dims["corr"]
 
-        chan_freq = xds.CHAN_FREQ.data / xds.CHAN_FREQ.data[0]
+        chan_freq = xds.CHAN_FREQ.data
+        bw = chan_freq[-1] - chan_freq[0]
+
+        single_wrap_delay = 2*np.pi/bw
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
         delays = da.random.normal(size=(n_time, 1, n_ant, n_dir, n_corr),
                                   loc=0,
-                                  scale=0.5)
+                                  scale=single_wrap_delay/3)
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
                       chunks=chunking)
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
 
-        gains = amp*da.exp(1j*delays*chan_freq[None, :, None, None, None])
+        offsets = da.random.uniform(size=(n_time, 1, n_ant, n_dir, n_corr),
+                                    low=-np.pi,
+                                    high=np.pi)
+
+        phase = (2*np.pi*delays*chan_freq[None, :, None, None, None] + offsets)
+        gains = amp*da.exp(1j*phase)
 
         if solve_per == "array":
             gains = da.broadcast_to(gains[:, :, :1], gains.shape)
@@ -87,6 +96,10 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
             time.map_blocks(lambda x: np.unique(x, return_inverse=True)[1])
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
+
+        # TODO: Why is this needed?
+        if n_corr == 4:  # This solver only considers the diagonal elements.
+            model = model * da.from_array([1, 0, 0, 1])
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
