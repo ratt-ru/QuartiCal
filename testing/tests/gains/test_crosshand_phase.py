@@ -15,11 +15,12 @@ def opts(base_opts):
 
     _opts.input_ms.select_corr = [0, 1, 2, 3]
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [50]
+    _opts.solver.iter_recipe = [60]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_criteria = 1e-8
+    _opts.solver.convergence_criteria = 1e-6
+    _opts.solver.convergence_fraction = 1
     _opts.G.type = "crosshand_phase"
-    _opts.G.solve_per = "antenna"
+    _opts.G.solve_per = "array"
 
     return _opts
 
@@ -45,13 +46,13 @@ def true_gain_list(predicted_xds_list):
         n_dir = xds.dims["dir"]
         n_corr = xds.dims["corr"]
 
-        chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
+        chunking = (len(utime_chunks), chan_chunks, n_ant, n_dir, n_corr)
 
-        bound = np.pi/4
+        bound = np.pi
 
         da.random.seed(0)
         amp = da.from_array(np.array([1, 0, 0, 1]))
-        phase = da.random.uniform(size=(n_time, n_chan, n_ant, n_dir, n_corr),
+        phase = da.random.uniform(size=(1, n_chan, 1, n_dir, n_corr),
                                   high=bound,
                                   low=-bound,
                                   chunks=chunking)
@@ -59,7 +60,9 @@ def true_gain_list(predicted_xds_list):
 
         gains = amp[None, None, None, None, :]*da.exp(1j*phase)
 
-        gains = da.broadcast_to(gains[:, :, :1], gains.shape)
+        shape = (n_time, n_chan, n_ant, n_dir, n_corr)
+
+        gains = da.broadcast_to(gains[:, :, :1], shape)
 
         gain_list.append(gains)
 
