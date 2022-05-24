@@ -50,3 +50,38 @@ class CrosshandPhase(Gain):
                                 "PARAM_AXES": self.param_axes})
 
         return xds
+
+
+    @staticmethod
+    def init_term(gain, param, term_ind, term_spec, ref_ant, **kwargs):
+        """Initialise the gains (and parameters)."""
+
+        Gain.init_term(gain, param, term_ind, term_spec, ref_ant, **kwargs)
+
+        data = kwargs["data"]  # (row, chan, corr)
+        model = kwargs["model"]  # (row, chan, corr)
+        flags = kwargs["flags"]  # (row, chan)
+        t_map = kwargs["t_map_arr"][0, :, term_ind]  # time -> solint
+        f_map = kwargs["f_map_arr"][0, :, term_ind]  # freq -> solint
+
+        offdiag_model = model[..., (1, 2)].sum(axis=2)
+        offdiag_data = data[..., (1, 2)]
+
+        model_inv = np.divide(
+            np.conj(offdiag_model),
+            np.abs(offdiag_model),
+            where=flags[..., None] == 0
+        )
+
+        est_data = (offdiag_data * model_inv).sum(0)
+        offdiag_data_abs = np.abs(offdiag_data).sum(0)
+        est_data = est_data[..., 0] + np.conj(est_data[..., 1])
+        offdiag_data_abs = \
+            offdiag_data_abs[..., 0] + np.conj(offdiag_data_abs[..., 1])
+
+        crosshand_phase = np.angle(
+            np.divide(est_data, offdiag_data_abs, where=offdiag_data_abs != 0)
+        )
+
+        param[0, :, :, 0, 0] = crosshand_phase[:, None]
+        gain[0, :, :, 0, 0] = np.exp(1j*crosshand_phase[:, None])

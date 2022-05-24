@@ -19,6 +19,7 @@ def opts(base_opts):
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-6
     _opts.solver.convergence_fraction = 1
+    _opts.G.time_interval = 0
     _opts.G.type = "crosshand_phase"
     _opts.G.solve_per = "array"
 
@@ -152,7 +153,7 @@ def test_gains(gain_xds_lod, true_gain_list):
         # To ensure the missing antenna handling doesn't render this test
         # useless, check that we have non-zero entries first.
         assert np.any(solved_gain), "All gains are zero!"
-        np.testing.assert_array_almost_equal(true_gain, solved_gain)
+        np.testing.assert_array_almost_equal(true_gain[:1], solved_gain)
 
 
 def test_gain_flags(gain_xds_lod):
