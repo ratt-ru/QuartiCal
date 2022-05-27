@@ -101,6 +101,8 @@ class Delay(Gain):
         data = data[sel]
         flags = flags[sel]
 
+        data[flags != 0] = 0
+
         utint = np.unique(t_map)
 
         for ut in utint:
