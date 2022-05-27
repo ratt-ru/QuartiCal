@@ -89,10 +89,9 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
 
         for loop_idx in range(max_iter):
 
-            if dd_term or len(gains) > 1:
-                compute_residual_solver(base_args,
-                                        solver_imdry,
-                                        corr_mode)
+            compute_residual_solver(base_args,
+                                    solver_imdry,
+                                    corr_mode)
 
             compute_jhj_jhr(base_args,
                             term_args,
@@ -121,7 +120,8 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
                                           meta_args,
                                           flag_imdry,
                                           loop_idx,
-                                          corr_mode)
+                                          corr_mode,
+                                          numbness=1e9)
 
             # Propagate gain flags to parameter flags.
             update_param_flags(base_args,
@@ -434,7 +434,6 @@ def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
                             p[:] = 0
                             set_identity(g)
                         else:
-                            upd /= 2
                             p += upd
                             param_to_gain(p, g)
 

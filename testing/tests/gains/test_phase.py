@@ -15,9 +15,10 @@ def opts(base_opts, select_corr, solve_per):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [30]
+    _opts.solver.iter_recipe = [50]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_criteria = 1e-8
+    _opts.solver.convergence_criteria = 1e-6
+    _opts.solver.convergence_fraction = 1
     _opts.G.type = "phase"
     _opts.G.solve_per = solve_per
 
@@ -47,7 +48,7 @@ def true_gain_list(predicted_xds_list, solve_per):
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
-        bound = np.pi/4 if solve_per == "array" else np.pi/2
+        bound = np.pi
 
         da.random.seed(0)
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
