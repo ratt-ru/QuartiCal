@@ -51,12 +51,16 @@ class CrosshandPhase(Gain):
 
         return xds
 
-
     @staticmethod
     def init_term(gain, param, term_ind, term_spec, ref_ant, **kwargs):
         """Initialise the gains (and parameters)."""
 
-        Gain.init_term(gain, param, term_ind, term_spec, ref_ant, **kwargs)
+        loaded = Gain.init_term(
+            gain, param, term_ind, term_spec, ref_ant, **kwargs
+        )
+
+        if loaded:
+            return
 
         data = kwargs["data"]  # (row, chan, corr)
         model = kwargs["model"]  # (row, chan, corr)

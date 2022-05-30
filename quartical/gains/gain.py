@@ -167,5 +167,9 @@ class Gain:
         # TODO: This needs to be more sophisticated on parameterised terms.
         if f"{term_name}_initial_gain" in kwargs:
             gain[:] = kwargs[f"{term_name}_initial_gain"]
+            loaded = True
         else:
             gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
+            loaded = False
+
+        return loaded
