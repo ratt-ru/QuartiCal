@@ -156,7 +156,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
             jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
 
         results_dict[f"{term_name}-conviter"] += np.atleast_2d(info_tup[0])
-        results_dict[f"{term_name}-convperc"] += np.atleast_2d(info_tup[1])
+        results_dict[f"{term_name}-convperc"] = np.atleast_2d(info_tup[1])
         results_dict[f"{term_name}-jhj"] = jhj
 
     gc.collect()

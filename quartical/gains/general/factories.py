@@ -650,10 +650,11 @@ def iabsdiv_factory(mode):
 
     if mode.literal_value == 4:
         def impl(v1):
-            v1[0] = 0 if v1[0] == 0 else 1/np.abs(v1[0])
-            v1[1] = 0 if v1[1] == 0 else 1/np.abs(v1[1])
-            v1[2] = 0 if v1[2] == 0 else 1/np.abs(v1[2])
-            v1[3] = 0 if v1[3] == 0 else 1/np.abs(v1[3])
+            denom = np.abs(v1[0]) + np.abs(v1[3])
+            if denom != 0:
+                v1[:] = 2/denom
+            else:
+                v1[:] = 0
     elif mode.literal_value == 2:
         def impl(v1):
             v1[0] = 0 if v1[0] == 0 else 1/np.abs(v1[0])
