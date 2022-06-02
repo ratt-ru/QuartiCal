@@ -503,6 +503,11 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     if corr_mode.literal_value == 4:
         def impl(lop, rop, w, nu, normf, gain, tmp_kprod, res, jhr, jhj):
 
+            # Effectively apply zero weight to off-diagonal terms.
+            # TODO: Can be tidied but requires moving other weighting code.
+            res[1] = 0
+            res[2] = 0
+
             # Compute normalization factor.
             v1_imul_v2(lop, rop, normf)
             iabsdiv(normf)
@@ -541,10 +546,11 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
             n_0, n_1, n_2, n_3 = unpack(normf)
 
-            # Apply normalisation factors by scaling w.
+            # Apply normalisation factors by scaling w. Neglect (set weight
+            # to zero) for off diagonal terms.
             w_0 = n_0 * w_0 * n_0
-            w_1 = n_1 * w_1 * n_1
-            w_2 = n_2 * w_2 * n_2
+            w_1 = 0
+            w_2 = 0
             w_3 = n_3 * w_3 * n_3
 
             jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[0])
