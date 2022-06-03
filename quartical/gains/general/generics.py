@@ -285,7 +285,17 @@ def compute_residual_phase(base_args, solver_imdry, corr_mode, sub_dirs=None):
 
 
 @qcgjit
-def compute_residual_amp(base_args, solver_imdry, corr_mode, sub_dirs=None):
+def compute_phaselocked_residual(
+    base_args,
+    solver_imdry,
+    corr_mode,
+    sub_dirs=None):
+    """A special residual implementation for amplitude only terms.
+
+    The phaselocked residual is equivalent to the residual when the phases
+    on the data are set to the phases on the model. This is appropriate for
+    amplitude only solutions.
+    """
 
     coerce_literal(compute_residual_phase, ["corr_mode"])
 
@@ -300,7 +310,7 @@ def compute_residual_amp(base_args, solver_imdry, corr_mode, sub_dirs=None):
     iunpack = factories.iunpack_factory(corr_mode)
     valloc = factories.valloc_factory(corr_mode)
     iabs = factories.iabs_factory(corr_mode)
-    iabsdiv = factories.iabsdiv_factory(corr_mode)
+    v1_iabsdiv_v2 = factories.v1_iabsdiv_v2_factory(corr_mode)
 
     def impl(base_args, solver_imdry, corr_mode, sub_dirs=None):
 
@@ -333,6 +343,7 @@ def compute_residual_amp(base_args, solver_imdry, corr_mode, sub_dirs=None):
             row = get_row(row_ind, row_map)
             a1_m, a2_m = a1[row], a2[row]
             v = valloc(np.complex128)  # Hold GMGH.
+            v_phase = valloc(np.complex128)
 
             for f in range(n_chan):
 
@@ -360,11 +371,8 @@ def compute_residual_amp(base_args, solver_imdry, corr_mode, sub_dirs=None):
 
                     imul_rweight(v, v, row_weights, row_ind)
 
-                    v2 = v.copy()
-
-                    imul(r, v)
-                    iabsdiv(v2)
-                    imul(r, v2)
+                    v1_iabsdiv_v2(v, v, v_phase)
+                    imul(r, v_phase)
                     isub(r, v)
 
     return impl
