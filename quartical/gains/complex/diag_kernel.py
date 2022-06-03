@@ -422,6 +422,11 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     if corr_mode.literal_value == 4:
         def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
 
+            # Effectively apply zero weight to off-diagonal terms.
+            # TODO: Can be tidied but requires moving other weighting code.
+            res[1] = 0
+            res[2] = 0
+
             # Accumulate an element of jhwr.
             v1_imul_v2(lop, res, res)
             v1_imul_v2(res, rop, res)
@@ -437,6 +442,8 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             a_kron_bt(lop, rop, tmp_kprod)
 
             w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
+            w_1 = 0  # Effectively ignore the off-diagonal contributions.
+            w_2 = 0  # Effectively ignore the off-diagonal contributions.
             r_0, _, _, r_3 = unpack(res)  # NOTE: XX, XY, YX, YY
 
             jhr[0] += r_0
