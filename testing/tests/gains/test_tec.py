@@ -15,9 +15,10 @@ def opts(base_opts, select_corr, solve_per):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [30]
+    _opts.solver.iter_recipe = [50]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_criteria = 1e-8
+    _opts.solver.convergence_criteria = 1e-7
+    _opts.solver.convergence_fraction = 1
     _opts.G.type = "tec"
     _opts.G.freq_interval = 0
     _opts.G.solve_per = solve_per
@@ -91,6 +92,9 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
             time.map_blocks(lambda x: np.unique(x, return_inverse=True)[1])
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
+
+        if n_corr == 4:  # This solver only considers the diagonal elements.
+            model = model * da.from_array([1, 0, 0, 1])
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
