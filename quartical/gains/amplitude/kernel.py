@@ -3,7 +3,7 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (solver_intermediaries,
-                                              compute_residual_solver,
+                                              compute_residual_amp,
                                               per_array_jhj_jhr)
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
@@ -89,10 +89,9 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
 
         for loop_idx in range(max_iter):
 
-            if dd_term or len(gains) > 1:
-                compute_residual_solver(base_args,
-                                        solver_imdry,
-                                        corr_mode)
+            compute_residual_amp(base_args,
+                                 solver_imdry,
+                                 corr_mode)
 
             compute_jhj_jhr(base_args,
                             term_args,
@@ -407,7 +406,6 @@ def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
     def impl(base_args, term_args, meta_args, solver_imdry, loop_idx,
              corr_mode):
 
-        direct_update = not (meta_args.dd_term or len(base_args.gains) > 1)
         active_term = meta_args.active_term
 
         gain = base_args.gains[active_term]
@@ -432,10 +430,6 @@ def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
                         if fl == 1:
                             p[:] = 1
                             set_identity(g)
-                        elif direct_update:
-                            p += upd
-                            p /= 2
-                            param_to_gain(p, g)
                         else:
                             upd /= 2
                             p += upd
@@ -473,6 +467,11 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     if corr_mode.literal_value == 4:
         def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
 
+            # Effectively apply zero weight to off-diagonal terms.
+            # TODO: Can be tidied but requires moving other weighting code.
+            res[1] = 0
+            res[2] = 0
+
             # Accumulate an element of jhwr.
             v1_imul_v2(res, rop, res)
             v1_imul_v2(lop, res, res)
@@ -488,6 +487,8 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             a_kron_bt(lop, rop, tmp_kprod)  # TODO: Only necessary elem.
 
             w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
+            w_1 = 0  # Ignore off-diagonal contributions.
+            w_2 = 0  # Ignore off-diagonal contributions.
             r_0, _, _, r_3 = unpack(res)  # NOTE: XX, XY, YX, YY
 
             jhr[0] += r_0.real

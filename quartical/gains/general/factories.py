@@ -646,6 +646,27 @@ def set_identity_factory(mode):
     return qcjit(impl)
 
 
+def iabs_factory(mode):
+
+    if mode.literal_value == 4:
+        def impl(v1):
+            v1[0] = np.abs(v1[0])
+            v1[1] = np.abs(v1[1])
+            v1[2] = np.abs(v1[2])
+            v1[3] = np.abs(v1[3])
+    elif mode.literal_value == 2:
+        def impl(v1):
+            v1[0] = np.abs(v1[0])
+            v1[1] = np.abs(v1[1])
+    elif mode.literal_value == 1:
+        def impl(v1):
+            v1[0] = np.abs(v1[0])
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
 def iabsdiv_factory(mode):
 
     if mode.literal_value == 4:

@@ -285,6 +285,92 @@ def compute_residual_phase(base_args, solver_imdry, corr_mode, sub_dirs=None):
 
 
 @qcgjit
+def compute_residual_amp(base_args, solver_imdry, corr_mode, sub_dirs=None):
+
+    coerce_literal(compute_residual_phase, ["corr_mode"])
+
+    # We want to dispatch based on this field so we need its type.
+    row_weights = base_args[base_args.fields.index('row_weights')]
+
+    imul = factories.imul_factory(corr_mode)
+    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
+    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
+    isub = factories.isub_factory(corr_mode)
+    iunpack = factories.iunpack_factory(corr_mode)
+    valloc = factories.valloc_factory(corr_mode)
+    iabs = factories.iabs_factory(corr_mode)
+    iabsdiv = factories.iabsdiv_factory(corr_mode)
+
+    def impl(base_args, solver_imdry, corr_mode, sub_dirs=None):
+
+        data = base_args.data
+        model = base_args.model
+        model = base_args.model
+        a1 = base_args.a1
+        a2 = base_args.a2
+        row_map = base_args.row_map
+        row_weights = base_args.row_weights
+
+        gains = base_args.gains
+        t_map_arr = base_args.t_map_arr[0]  # We only need the gain mappings.
+        f_map_arr = base_args.f_map_arr[0]  # We only need the gain mappings.
+        d_map_arr = base_args.d_map_arr
+
+        residual = solver_imdry.residual
+        residual[:] = data
+
+        n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
+        n_gains = len(gains)
+
+        if sub_dirs is None:
+            dir_loop = np.arange(n_dir)
+        else:
+            dir_loop = np.array(sub_dirs)
+
+        for row_ind in prange(n_rows):
+
+            row = get_row(row_ind, row_map)
+            a1_m, a2_m = a1[row], a2[row]
+            v = valloc(np.complex128)  # Hold GMGH.
+
+            for f in range(n_chan):
+
+                r = residual[row, f]
+                m = model[row, f]
+
+                iabs(r)
+
+                for d in dir_loop:
+
+                    iunpack(v, m[d])
+
+                    for g in range(n_gains - 1, -1, -1):
+
+                        t_m = t_map_arr[row_ind, g]
+                        f_m = f_map_arr[f, g]
+                        d_m = d_map_arr[g, d]  # Broadcast dir.
+
+                        gain = gains[g][t_m, f_m]
+                        gain_p = gain[a1_m, d_m]
+                        gain_q = gain[a2_m, d_m]
+
+                        v1_imul_v2(gain_p, v, v)
+                        v1_imul_v2ct(v, gain_q, v)
+
+                    imul_rweight(v, v, row_weights, row_ind)
+
+                    v2 = v.copy()
+
+                    imul(r, v)
+                    iabsdiv(v2)
+                    imul(r, v2)
+                    isub(r, v)
+
+    return impl
+
+
+@qcgjit
 def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
                                f_map_arr, d_map_arr, row_map, row_weights,
                                corr_mode):
