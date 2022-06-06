@@ -51,13 +51,14 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         (term_name, term_type, term_shape, term_pshape) = term_spec
 
         term_type_cls = TERM_TYPES[term_type]
+        term_opts = getattr(chain_opts, term_name)
 
         gain = np.zeros(term_shape, dtype=np.complex128)
         param = np.zeros(term_pshape, dtype=gain.real.dtype)
 
         # Perform terms specific setup e.g. init gains and params.
         term_type_cls.init_term(
-            gain, param, term_ind, term_spec, ref_ant, **kwargs
+            gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
         )
 
         # Init gain flags by looking for intervals with no data.

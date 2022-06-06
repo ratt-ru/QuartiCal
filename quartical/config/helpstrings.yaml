@@ -208,6 +208,9 @@ gain:
     Number of channels/bandwidth to include in a single solution. Specify as
     an integer number of channels, or a value with a unit (e.g. '128MHz').
     0 means use full frequency axis.
+  initial_estimate:
+    Controls whether or not a term will be populated with an initial
+    estimiate where applicable. Currently only supported for delay terms.
   load_from:
     Load solutions from given database.
   interp_mode:

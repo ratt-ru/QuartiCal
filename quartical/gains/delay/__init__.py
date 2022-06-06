@@ -78,14 +78,16 @@ class Delay(Gain):
         return f_map_arr
 
     @staticmethod
-    def init_term(gain, param, term_ind, term_spec, ref_ant, **kwargs):
+    def init_term(
+        gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
+    ):
         """Initialise the gains (and parameters)."""
 
         loaded = Gain.init_term(
-            gain, param, term_ind, term_spec, ref_ant, **kwargs
+            gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
         )
 
-        if loaded:
+        if loaded or not term_opts.initial_estimate:
             return
 
         data = kwargs["data"]  # (row, chan, corr)
