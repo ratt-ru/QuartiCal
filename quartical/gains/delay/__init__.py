@@ -111,7 +111,7 @@ class Delay(Gain):
         utint = np.unique(t_map)
 
         for ut in utint:
-            sel = np.where(t_map == ut)
+            sel = np.where((t_map == ut) & (a1 != a2))
             ant_map_pq = np.where(a1[sel] == ref_ant, a2[sel], 0)
             ant_map_qp = np.where(a2[sel] == ref_ant, a1[sel], 0)
             ant_map = ant_map_pq + ant_map_qp
