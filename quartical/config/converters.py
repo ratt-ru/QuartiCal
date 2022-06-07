@@ -20,7 +20,10 @@ def as_time(arg):
     """
 
     if sum(not char.isnumeric() for char in arg) > 1:
-        raise ValueError("Too many non-numeric characters in time value.")
+        if arg == "SCAN":  # Magic word argument.
+            return arg
+        else:
+            raise ValueError("Too many non-numeric characters in time value.")
 
     if arg.isnumeric():
         arg = int(arg)

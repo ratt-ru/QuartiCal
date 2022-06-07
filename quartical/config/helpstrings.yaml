@@ -203,7 +203,9 @@ gain:
   time_interval:
     Number of timeslots/amount of time to include in a single solution.
     Specify as an integer number of timeslots, or a value with a unit
-    (e.g. '300s'). 0 means use full time axis.
+    (e.g. '300s'). 0 means use full time axis. A special keyword 'SCAN' is
+    also accepted - this can be useful to avoid solving over scan boundaries
+    when not partitioning the data by scan.
   freq_interval:
     Number of channels/bandwidth to include in a single solution. Specify as
     an integer number of channels, or a value with a unit (e.g. '128MHz').

@@ -137,12 +137,15 @@ class Gain:
         return f_map_arr
 
     @staticmethod
-    def make_t_bins(n_utime, utime_intervals, t_int):
+    def make_t_bins(n_utime, utime_intervals, utime_scan_numbers, t_int):
         """Internals of the time binner."""
 
         tbin_arr = np.empty((2, utime_intervals.size), dtype=np.int32)
 
-        if isinstance(t_int, float):
+        if t_int == "SCAN":
+            _, tbin_arr[:, :] = np.unique(utime_scan_numbers,
+                                          return_inverse=True)
+        elif isinstance(t_int, float):
             net_ivl = 0
             bin_num = 0
             for i, ivl in enumerate(utime_intervals):
