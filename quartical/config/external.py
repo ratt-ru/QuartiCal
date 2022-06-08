@@ -169,6 +169,7 @@ class Gain(Input):
                                "delay",
                                "phase",
                                "tec",
+                               "rotation",
                                "rotation_measure",
                                "crosshand_phase"])
     )
