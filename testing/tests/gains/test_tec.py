@@ -93,9 +93,6 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
 
-        if n_corr == 4:  # This solver only considers the diagonal elements.
-            model = model * da.from_array([1, 0, 0, 1])
-
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
                             gains, ("rfadc"),
@@ -133,7 +130,10 @@ def add_calibration_graph_outputs(corrupted_data_xds_list,
 def test_residual_magnitude(cmp_post_solve_data_xds_list):
     # Magnitude of the residuals should tend to zero.
     for xds in cmp_post_solve_data_xds_list:
-        np.testing.assert_array_almost_equal(np.abs(xds._RESIDUAL.data), 0)
+        residual = xds._RESIDUAL.data
+        if residual.shape[-1] == 4:
+            residual = residual[..., (0, 3)]  # Only check on-diagonal terms.
+        np.testing.assert_array_almost_equal(np.abs(residual), 0)
 
 
 def test_solver_flags(cmp_post_solve_data_xds_list):
