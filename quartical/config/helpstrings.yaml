@@ -176,8 +176,9 @@ solver:
     prematurely.
   reference_antenna:
     A reference antenna to use for terms which require one. This is shared by
-    all terms and currently only used for delay estimates. Specify as the
-    integer index of the antenna - antenna names are not currently supported.
+    all terms and currently only used for delay estimates - QuartiCal does not
+    guarantee zero phase on an antenna. Specify as the integer index of the
+    antenna - antenna names are not currently supported.
 
 dask:
   threads:
@@ -219,44 +220,9 @@ gain:
     Set interpolation mode.
   interp_method:
     Set interpolation method.
-  #   restrict-update:
-  #       type: str
-  #       help: Determines update restrictions. This does not change the solver
-  #             type, but instead restricts the update rule.
-  #       choices:
-  #             - default
-  #             - diagonal
-  #             - diagonal-phase
-  #             - diagonal-amp
-  #       default: default
   #   exclude-directions:
   #       nargs: +
   #       type: int
   #       help: For direction-dependent terms, makes the listed directions
   #             (specified by index) non-solvable. -1 disables.
   #       default: -1
-  #   chisq-threshold:
-  #       type: float
-  #       help: Threshold for solution stagnancy - if the relative improvement in
-  #             the chi-squared is less than this value, then the solution is
-  #             marked as stalled.
-  #       default: 1e-6
-  #   reference-antenna:
-  #       type: int
-  #       help: Reference antenna - its phase is guaranteed to be zero.
-  #             -1 disables.
-  #       default: -1
-  #   upper-clip:
-  #       type: float
-  #       help: Amplitude clipping - flag solutions with amplitudes above this
-  #             value. 0 disables. Disabled by default.
-  #       default: 0
-  #   lower-clip:
-  #       type: float
-  #       help: Amplitude clipping - flag solutions with any amplitudes below
-  #             this value. 0 disables. Disabled by default.
-  #       default: 0
-  #   clip-interval:
-  #       type: int
-  #       help: Number of iterations to perform between clips.
-  #       default: 5

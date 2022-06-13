@@ -138,7 +138,10 @@ def add_calibration_graph_outputs(corrupted_data_xds_list,
 def test_residual_magnitude(cmp_post_solve_data_xds_list):
     # Magnitude of the residuals should tend to zero.
     for xds in cmp_post_solve_data_xds_list:
-        np.testing.assert_array_almost_equal(np.abs(xds._RESIDUAL.data), 0)
+        residual = xds._RESIDUAL.data
+        if residual.shape[-1] == 4:
+            residual = residual[..., (0, 3)]  # Only check on-diagonal terms.
+        np.testing.assert_array_almost_equal(np.abs(residual), 0)
 
 
 def test_solver_flags(cmp_post_solve_data_xds_list):

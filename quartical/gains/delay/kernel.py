@@ -547,7 +547,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             n_0, n_1, n_2, n_3 = unpack(normf)
 
             # Apply normalisation factors by scaling w. Neglect (set weight
-            # to zero) for off diagonal terms.
+            # to zero) off diagonal terms.
             w_0 = n_0 * w_0 * n_0
             w_1 = 0
             w_2 = 0
