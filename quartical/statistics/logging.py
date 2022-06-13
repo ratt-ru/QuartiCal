@@ -152,7 +152,10 @@ def log_summary_stats(stats_xds_list):
         match = match_obj.group(0)
         value = float(match)
 
-        deviation = (value - chisq_mean)/chisq_std
+        if chisq_std:
+            deviation = (value - chisq_mean)/chisq_std
+        else:
+            deviation = 0
 
         if deviation <= 3:
             colour = colours["green"]
@@ -165,7 +168,7 @@ def log_summary_stats(stats_xds_list):
 
         return f"<fg #{colour}>{match}</fg #{colour}>"
 
-    bins = ["<= 3", "<= 5", "<= 10", ">= 10"]
+    bins = ["<= 3", "<= 5", "<= 10", "> 10"]
     clrs = ["green", "yellow", "orange", "red"]
 
     msg = "\nFinal post-solve chi-squared summary, colourised by deviation " \
