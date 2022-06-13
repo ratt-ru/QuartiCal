@@ -646,6 +646,69 @@ def set_identity_factory(mode):
     return qcjit(impl)
 
 
+def iabs_factory(mode):
+
+    if mode.literal_value == 4:
+        def impl(v1):
+            v1[0] = np.abs(v1[0])
+            v1[1] = np.abs(v1[1])
+            v1[2] = np.abs(v1[2])
+            v1[3] = np.abs(v1[3])
+    elif mode.literal_value == 2:
+        def impl(v1):
+            v1[0] = np.abs(v1[0])
+            v1[1] = np.abs(v1[1])
+    elif mode.literal_value == 1:
+        def impl(v1):
+            v1[0] = np.abs(v1[0])
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def iabsdiv_factory(mode):
+
+    if mode.literal_value == 4:
+        def impl(v1):
+            v1[0] = 0 if v1[0] == 0 else 1/np.abs(v1[0])
+            v1[1] = 0 if v1[1] == 0 else 1/np.abs(v1[1])
+            v1[2] = 0 if v1[2] == 0 else 1/np.abs(v1[2])
+            v1[3] = 0 if v1[3] == 0 else 1/np.abs(v1[3])
+    elif mode.literal_value == 2:
+        def impl(v1):
+            v1[0] = 0 if v1[0] == 0 else 1/np.abs(v1[0])
+            v1[1] = 0 if v1[1] == 0 else 1/np.abs(v1[1])
+    elif mode.literal_value == 1:
+        def impl(v1):
+            v1[0] = 0 if v1[0] == 0 else 1/np.abs(v1[0])
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def v1_iabsdiv_v2_factory(mode):
+
+    if mode.literal_value == 4:
+        def impl(v1, v2, o1):
+            o1[0] = 0 if v2[0] == 0 else v1[0]/np.abs(v2[0])
+            o1[1] = 0 if v2[1] == 0 else v1[1]/np.abs(v2[1])
+            o1[2] = 0 if v2[2] == 0 else v1[2]/np.abs(v2[2])
+            o1[3] = 0 if v2[3] == 0 else v1[3]/np.abs(v2[3])
+    elif mode.literal_value == 2:
+        def impl(v1, v2, o1):
+            o1[0] = 0 if v2[0] == 0 else v1[0]/np.abs(v2[0])
+            o1[1] = 0 if v2[1] == 0 else v1[1]/np.abs(v2[1])
+    elif mode.literal_value == 1:
+        def impl(v1, v2, o1):
+            o1[0] = 0 if v2[0] == 0 else v1[0]/np.abs(v2[0])
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
 def a_kron_bt_factory(corr_mode):
 
     unpack = unpack_factory(corr_mode)

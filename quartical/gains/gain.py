@@ -157,3 +157,21 @@ class Gain:
                                              dtype=np.int32)
 
         return tbin_arr
+
+    @staticmethod
+    def init_term(
+        gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
+    ):
+        """Initialise the gains (and parameters)."""
+
+        (term_name, term_type, term_shape, term_pshape) = term_spec
+
+        # TODO: This needs to be more sophisticated on parameterised terms.
+        if f"{term_name}_initial_gain" in kwargs:
+            gain[:] = kwargs[f"{term_name}_initial_gain"]
+            loaded = True
+        else:
+            gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
+            loaded = False
+
+        return loaded

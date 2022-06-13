@@ -15,9 +15,10 @@ def opts(base_opts, select_corr, solve_per):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [30]
+    _opts.solver.iter_recipe = [50]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_criteria = 1e-8
+    _opts.solver.convergence_criteria = 1e-7
+    _opts.solver.convergence_fraction = 1
     _opts.G.type = "tec"
     _opts.G.freq_interval = 0
     _opts.G.solve_per = solve_per
@@ -129,7 +130,10 @@ def add_calibration_graph_outputs(corrupted_data_xds_list,
 def test_residual_magnitude(cmp_post_solve_data_xds_list):
     # Magnitude of the residuals should tend to zero.
     for xds in cmp_post_solve_data_xds_list:
-        np.testing.assert_array_almost_equal(np.abs(xds._RESIDUAL.data), 0)
+        residual = xds._RESIDUAL.data
+        if residual.shape[-1] == 4:
+            residual = residual[..., (0, 3)]  # Only check on-diagonal terms.
+        np.testing.assert_array_almost_equal(np.abs(residual), 0)
 
 
 def test_solver_flags(cmp_post_solve_data_xds_list):

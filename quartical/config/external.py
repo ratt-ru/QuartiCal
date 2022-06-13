@@ -93,7 +93,8 @@ class Outputs(Input):
                                "corrected_residual",
                                "residual",
                                "weight",
-                               "corrected_weight"])
+                               "corrected_weight",
+                               "model_data"])
     )
     columns: Optional[List[str]] = None
     flags: bool = True
@@ -130,6 +131,7 @@ class Solver(Input):
     threads: int = 1
     convergence_fraction: float = 0.99
     convergence_criteria: float = 1e-6
+    reference_antenna: int = 0
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -178,6 +180,7 @@ class Gain(Input):
     direction_dependent: bool = False
     time_interval: str = "1"
     freq_interval: str = "1"
+    initial_estimate: bool = True
     load_from: Optional[str] = None
     interp_mode: str = field(
         default="reim",

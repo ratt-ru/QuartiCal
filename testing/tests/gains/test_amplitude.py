@@ -48,12 +48,16 @@ def true_gain_list(predicted_xds_list, solve_per):
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
-        amp = da.random.normal(size=(n_time, n_chan, n_ant, n_dir, n_corr),
-                               loc=1,
-                               scale=0.05,
-                               chunks=chunking)
-        phase = da.zeros((n_time, n_chan, n_ant, n_dir, n_corr),
-                         chunks=chunking)
+        amp = da.random.normal(
+            size=(n_time, n_chan, n_ant, n_dir, n_corr),
+            loc=1,
+            scale=0.2,
+            chunks=chunking
+        )
+        phase = da.ones(
+            (n_time, n_chan, n_ant, n_dir, n_corr),
+            chunks=chunking
+        )
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])

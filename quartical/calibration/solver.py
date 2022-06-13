@@ -13,7 +13,6 @@ meta_args_nt = namedtuple(
     "meta_args_nt", (
         "iters",
         "active_term",
-        "is_init",
         "stop_frac",
         "stop_crit",
         "dd_term",
@@ -39,31 +38,31 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     """
 
     set_num_threads(solver_opts.threads)
+    ref_ant = solver_opts.reference_antenna
 
     gain_tup = ()
     param_tup = ()
     gain_flags_tup = ()
     param_flags_tup = ()
     results_dict = {}
-    is_initialised = {}
 
     for term_ind, term_spec in enumerate(term_spec_list):
 
         (term_name, term_type, term_shape, term_pshape) = term_spec
 
-        gain = np.zeros(term_shape, dtype=np.complex128)
+        term_type_cls = TERM_TYPES[term_type]
+        term_opts = getattr(chain_opts, term_name)
 
-        # Check for initialisation data. TODO: Parameterised terms?
-        if f"{term_name}_initial_gain" in kwargs:
-            gain[:] = kwargs[f"{term_name}_initial_gain"]
-            is_initialised[term_name] = True
-        else:
-            gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
-            is_initialised[term_name] = False
+        gain = np.zeros(term_shape, dtype=np.complex128)
+        param = np.zeros(term_pshape, dtype=gain.real.dtype)
+
+        # Perform terms specific setup e.g. init gains and params.
+        term_type_cls.init_term(
+            gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
+        )
 
         # Init gain flags by looking for intervals with no data.
         gain_flags = init_gain_flags(term_shape, term_ind, **kwargs)
-        param = np.zeros(term_pshape, dtype=gain.real.dtype)
         param_flags = init_param_flags(term_pshape, term_ind, **kwargs)
 
         gain_tup += (gain,)
@@ -121,7 +120,6 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
 
         meta_args = meta_args_nt(iters,
                                  active_term,
-                                 is_initialised[term_name],
                                  solver_opts.convergence_fraction,
                                  solver_opts.convergence_criteria,
                                  term_opts.direction_dependent,
@@ -133,9 +131,6 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                    term_args,
                                    meta_args,
                                    kwargs["corr_mode"])
-
-            # After a solver is run once, it will have been initialised.
-            is_initialised[term_name] = True
         else:
             # TODO: Actually compute it in this special case?
             jhj = np.zeros_like(results_dict[f"{term_name}-gain"])
@@ -162,7 +157,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
             jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
 
         results_dict[f"{term_name}-conviter"] += np.atleast_2d(info_tup[0])
-        results_dict[f"{term_name}-convperc"] += np.atleast_2d(info_tup[1])
+        results_dict[f"{term_name}-convperc"] = np.atleast_2d(info_tup[1])
         results_dict[f"{term_name}-jhj"] = jhj
 
     gc.collect()

@@ -228,6 +228,14 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
     output_cols = ("FLAG", "FLAG_ROW") if output_opts.flags else ()
 
     if output_opts.products:
+        # Special case - we need to sum over direction.
+        if "model_data" in output_opts.products:
+            models = [xds.MODEL_DATA.data.sum(axis=2) for xds in xds_list]
+            xds_list = [
+                xds.assign({"_MODEL_DATA": (('row', 'chan', 'corr'), model)})
+                for model, xds in zip(models, xds_list)
+            ]
+
         # Drop variables from columns we intend to overwrite.
         xds_list = [xds.drop_vars(output_opts.columns, errors="ignore")
                     for xds in xds_list]
@@ -236,7 +244,8 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
                        "corrected_residual": "_CORRECTED_RESIDUAL",
                        "corrected_data": "_CORRECTED_DATA",
                        "weight": "_WEIGHT",
-                       "corrected_weight": "_CORRECTED_WEIGHT"}
+                       "corrected_weight": "_CORRECTED_WEIGHT",
+                       "model_data": "_MODEL_DATA"}
 
         # Rename QuartiCal's underscore prefixed results so that they will be
         # written to the appropriate column.
