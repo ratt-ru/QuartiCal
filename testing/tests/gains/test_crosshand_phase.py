@@ -134,9 +134,9 @@ def test_solver_flags(cmp_post_solve_data_xds_list):
         np.testing.assert_array_equal(xds._FLAG.data, xds.FLAG.data)
 
 
-def test_gains(gain_xds_lod, true_gain_list):
+def test_gains(cmp_gain_xds_lod, true_gain_list):
 
-    for solved_gain_dict, true_gain in zip(gain_xds_lod, true_gain_list):
+    for solved_gain_dict, true_gain in zip(cmp_gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
         solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
                                                solved_gain_xds.gain_flags.data)
@@ -156,9 +156,9 @@ def test_gains(gain_xds_lod, true_gain_list):
         np.testing.assert_array_almost_equal(true_gain[:1], solved_gain)
 
 
-def test_gain_flags(gain_xds_lod):
+def test_gain_flags(cmp_gain_xds_lod):
 
-    for solved_gain_dict in gain_xds_lod:
+    for solved_gain_dict in cmp_gain_xds_lod:
         solved_gain_xds = solved_gain_dict["G"]
         solved_flags = solved_gain_xds.gain_flags.values
 
