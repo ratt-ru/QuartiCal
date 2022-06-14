@@ -167,11 +167,11 @@ def read_xds_list(model_columns, ms_opts):
         try:
             data_xds_list = [xds.isel(corr=ms_opts.select_corr)
                              for xds in data_xds_list]
-        except KeyError:
-            raise KeyError(f"--input-ms-select-corr attempted to select "
-                           f"correlations not present in the data - this MS "
-                           f"contains {n_corr} correlations. User "
-                           f"attempted to select {ms_opts.select_corr}.")
+        except IndexError:
+            raise IndexError(f"input-ms.select-corr attempted to select "
+                             f"correlations not present in the data - this MS "
+                             f"contains {n_corr} correlations. User "
+                             f"attempted to select {ms_opts.select_corr}.")
 
     return data_xds_list, ref_xds_list
 
