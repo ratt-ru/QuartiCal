@@ -137,24 +137,48 @@ class Gain:
         return f_map_arr
 
     @staticmethod
-    def make_t_bins(n_utime, utime_intervals, t_int):
-        """Internals of the time binner."""
+    def make_t_bins(n_utime, utime_intervals, utime_scan_numbers, t_int, rsb):
+        """Internals of the time binner.
+
+        Args:
+            n_utime: An interger number of unique times.
+            utime_intervals: The intervals associated with the unique times.
+            utime_scan_numbers: The scan numbers assosciated with the unique
+                times.
+            t_int: A int or float describing the time intervals. Floats
+                correspond to value based solution intervals (e.g. 10s)
+                and ints correspond to an interger number of timeslots.
+            rsb: A boolean indicating whether respect_scan_boundaries is
+                enabled for the current term.
+        """
 
         tbin_arr = np.empty((2, utime_intervals.size), dtype=np.int32)
 
-        if isinstance(t_int, float):
-            net_ivl = 0
-            bin_num = 0
-            for i, ivl in enumerate(utime_intervals):
-                tbin_arr[:, i] = bin_num
-                net_ivl += ivl
-                if net_ivl >= t_int:
-                    net_ivl = 0
-                    bin_num += 1
+        if rsb:
+            _, scan_boundaries = np.unique(
+                utime_scan_numbers,
+                return_index=True
+            )
+            scan_boundaries = list(scan_boundaries - 1)  # Offset.
+            scan_boundaries.pop(0)  # The first boundary will be zero.
+            scan_boundaries.append(n_utime.item())  # Add a final boundary.
         else:
-            tbin_arr[:, :] = np.floor_divide(np.arange(n_utime),
-                                             t_int,
-                                             dtype=np.int32)
+            scan_boundaries = [-1]
+
+        scan_id = 0
+        bin_size = 0
+        bin_num = 0
+        break_interval = False
+        for i, ivl in enumerate(utime_intervals):
+            tbin_arr[:, i] = bin_num
+            bin_size += ivl if isinstance(t_int, float) else 1
+            if i == scan_boundaries[scan_id]:
+                scan_id += 1
+                break_interval = True
+            if bin_size >= t_int or break_interval:
+                bin_size = 0
+                bin_num += 1
+                break_interval = False
 
         return tbin_arr
 

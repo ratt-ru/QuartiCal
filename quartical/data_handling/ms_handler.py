@@ -76,6 +76,8 @@ def read_xds_list(model_columns, ms_opts):
     columns += (ms_opts.data_column,)
     columns += (ms_opts.weight_column,) if ms_opts.weight_column else ()
     columns += (ms_opts.sigma_column,) if ms_opts.sigma_column else ()
+    columns += \
+        ("SCAN_NUMBER",) if "SCAN_NUMBER" not in ms_opts.group_by else ()
     columns += (*model_columns,)
 
     available_columns = list(xds_from_ms(ms_opts.path)[0].keys())
