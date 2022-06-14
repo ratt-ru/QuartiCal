@@ -204,13 +204,17 @@ gain:
   time_interval:
     Number of timeslots/amount of time to include in a single solution.
     Specify as an integer number of timeslots, or a value with a unit
-    (e.g. '300s'). 0 means use full time axis. A special keyword 'SCAN' is
-    also accepted - this can be useful to avoid solving over scan boundaries
-    when not partitioning the data by scan.
+    (e.g. '300s'). 0 means use full time axis.
   freq_interval:
     Number of channels/bandwidth to include in a single solution. Specify as
     an integer number of channels, or a value with a unit (e.g. '128MHz').
     0 means use full frequency axis.
+  respect_scan_boundaries:
+    Determines whether solution intervals may span multiple scans. This only
+    works when input_ms.group_by does not include SCAN_NUMBER. Can be used
+    in conjunction with time_interval to solve a term per scan even when
+    data is not partitioned by scan (by setting this to True and
+    time_interval to 0).
   initial_estimate:
     Controls whether or not a term will be populated with an initial
     estimiate where applicable. Currently only supported for delay terms.

@@ -53,7 +53,6 @@ def make_t_maps(data_xds_list, chain_opts):
             chunks=utime_loc.chunks,
             dtype=np.float64)
 
-        # NOTE: This is to support a magic "SCAN" time interval.
         if "SCAN_NUMBER" in xds.data_vars.keys():
             utime_scan_numbers = da.map_blocks(
                 get_array_items,
@@ -97,7 +96,9 @@ def make_t_binnings(
 
     term_t_bins = []
 
-    for _, tt, ti in yield_from(chain_opts, ("type", "time_interval")):
+    for _, tt, ti, rsb in yield_from(
+        chain_opts, ("type", "time_interval", "respect_scan_boundaries")
+    ):
 
         term_t_bin = da.map_blocks(
             TERM_TYPES[tt].make_t_bins,
@@ -105,6 +106,7 @@ def make_t_binnings(
             utime_intervals,
             utime_scan_numbers,
             ti or np.inf,  # Or handles zero.
+            rsb,
             chunks=(2, utime_intervals.chunks[0]),
             new_axis=0,
             dtype=np.int32,
