@@ -61,9 +61,12 @@ def test_t_binnings(time_chunk, chain_opts):
         chunks=utime_loc.chunks,
         dtype=np.float64)
 
+    utime_scan_numbers = da.zeros_like(utime_intervals, dtype=np.int32)
+
     # TODO: Should also check parameter mappings.
     da_t_bins = make_t_binnings(utime_per_chunk,
                                 utime_intervals,
+                                utime_scan_numbers,
                                 chain_opts)[0, ...]
 
     t_ints = [ti or n_time

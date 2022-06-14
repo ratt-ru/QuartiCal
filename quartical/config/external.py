@@ -180,6 +180,7 @@ class Gain(Input):
     direction_dependent: bool = False
     time_interval: str = "1"
     freq_interval: str = "1"
+    respect_scan_boundaries: bool = True
     initial_estimate: bool = True
     load_from: Optional[str] = None
     interp_mode: str = field(
