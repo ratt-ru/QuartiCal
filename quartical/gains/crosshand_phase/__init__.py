@@ -1,18 +1,19 @@
 from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
-from quartical.gains.amplitude.kernel import amplitude_solver, amplitude_args
+from quartical.gains.crosshand_phase.kernel import (crosshand_phase_solver,
+                                                    crosshand_phase_args)
 import numpy as np
 
 
-class Amplitude(Gain):
+class CrosshandPhase(Gain):
 
-    solver = amplitude_solver
-    term_args = amplitude_args
+    solver = crosshand_phase_solver
+    term_args = crosshand_phase_args
 
     def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
 
         Gain.__init__(self, term_name, term_opts, data_xds, coords, tipc, fipc)
 
-        parameterisable = ["XX", "YY", "RR", "LL"]
+        parameterisable = ["XX", "RR"]
 
         self.parameterised_corr = \
             [ct for ct in self.corr_types if ct in parameterisable]
@@ -35,7 +36,7 @@ class Amplitude(Gain):
 
         xds = Gain.make_xds(self)
 
-        param_template = ["amplitude_{}"]
+        param_template = ["crosshand_phase_{}"]
 
         param_labels = [pt.format(ct) for ct in self.parameterised_corr
                         for pt in param_template]
@@ -49,15 +50,3 @@ class Amplitude(Gain):
                                 "PARAM_AXES": self.param_axes})
 
         return xds
-
-    @staticmethod
-    def init_term(
-        gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
-    ):
-        """Initialise the gains (and parameters)."""
-
-        Gain.init_term(
-            gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
-        )
-
-        param[:] = 1  # Amplitudes start at unity. TODO: Estimate?

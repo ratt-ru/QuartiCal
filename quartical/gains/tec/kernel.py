@@ -3,7 +3,7 @@ import numpy as np
 from numba import generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (solver_intermediaries,
-                                              compute_residual_solver,
+                                              compute_residual_phase,
                                               per_array_jhj_jhr)
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
@@ -95,10 +95,9 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
         for loop_idx in range(max_iter):
 
-            if dd_term or len(gains) > 1:
-                compute_residual_solver(base_args,
-                                        solver_imdry,
-                                        corr_mode)
+            compute_residual_phase(base_args,
+                                   solver_imdry,
+                                   corr_mode)
 
             compute_jhj_jhr(base_args,
                             term_args,
@@ -129,7 +128,8 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
                                           meta_args,
                                           flag_imdry,
                                           loop_idx,
-                                          corr_mode)
+                                          corr_mode,
+                                          numbness=1e9)
 
             # Propagate gain flags to parameter flags.
             update_param_flags(base_args,

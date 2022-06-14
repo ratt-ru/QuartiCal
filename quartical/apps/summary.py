@@ -213,7 +213,10 @@ def state_info(path):
 
 def source_info(path):
 
-    source_xds = xds_from_table(path + "::SOURCE")[0]  # noqa
+    # NOTE: Skip reading this for now - I can break dask-ms.
+    # source_xds = xds_from_table(path + "::SOURCE")[0]  # noqa
+
+    return
 
     # Not printing any summary information for this subtable yet - not sure
     # what is relevant.

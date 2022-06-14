@@ -11,6 +11,7 @@ gain:
       - phase
       - tec
       - rotation_measure
+      - crosshand_phase
     info:
       Type of gain to solve for.
 
@@ -62,6 +63,22 @@ gain:
     choices: ["2dlinear", "2dspline"]
     info:
       Set interpolation method.
+
+  respect_scan_boundaries:
+    dtype: bool
+    default: true
+    info: Determines whether solution intervals may span multiple scans. This
+          only works when input_ms.group_by does not include SCAN_NUMBER. Can
+          be used in conjunction with time_interval to solve a term per scan
+          even when data is not partitioned by scan (by setting this to True
+          and time_interval to 0).
+
+  initial_estimate:
+    dtype: bool
+    default: true
+    info: Controls whether or not a term will be populated with an initial
+          estimiate where applicable. Currently only supported for delay
+          terms.
 
 
   ### OMS: copied these across from helpstrings.yaml. Future or deprecated parameters?

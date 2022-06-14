@@ -76,6 +76,8 @@ def read_xds_list(model_columns, ms_opts):
     columns += (ms_opts.data_column,)
     columns += (ms_opts.weight_column,) if ms_opts.weight_column else ()
     columns += (ms_opts.sigma_column,) if ms_opts.sigma_column else ()
+    columns += \
+        ("SCAN_NUMBER",) if "SCAN_NUMBER" not in ms_opts.group_by else ()
     columns += (*model_columns,)
 
     available_columns = list(xds_from_ms(ms_opts.path)[0].keys())
@@ -165,11 +167,11 @@ def read_xds_list(model_columns, ms_opts):
         try:
             data_xds_list = [xds.isel(corr=ms_opts.select_corr)
                              for xds in data_xds_list]
-        except KeyError:
-            raise KeyError(f"--input-ms-select-corr attempted to select "
-                           f"correlations not present in the data - this MS "
-                           f"contains {n_corr} correlations. User "
-                           f"attempted to select {ms_opts.select_corr}.")
+        except IndexError:
+            raise IndexError(f"input-ms.select-corr attempted to select "
+                             f"correlations not present in the data - this MS "
+                             f"contains {n_corr} correlations. User "
+                             f"attempted to select {ms_opts.select_corr}.")
 
     return data_xds_list, ref_xds_list
 
@@ -228,6 +230,14 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
     output_cols = ("FLAG", "FLAG_ROW") if output_opts.flags else ()
 
     if output_opts.products:
+        # Special case - we need to sum over direction.
+        if "model_data" in output_opts.products:
+            models = [xds.MODEL_DATA.data.sum(axis=2) for xds in xds_list]
+            xds_list = [
+                xds.assign({"_MODEL_DATA": (('row', 'chan', 'corr'), model)})
+                for model, xds in zip(models, xds_list)
+            ]
+
         # Drop variables from columns we intend to overwrite.
         xds_list = [xds.drop_vars(output_opts.columns, errors="ignore")
                     for xds in xds_list]
@@ -236,7 +246,8 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
                        "corrected_residual": "_CORRECTED_RESIDUAL",
                        "corrected_data": "_CORRECTED_DATA",
                        "weight": "_WEIGHT",
-                       "corrected_weight": "_CORRECTED_WEIGHT"}
+                       "corrected_weight": "_CORRECTED_WEIGHT",
+                       "model_data": "_MODEL_DATA"}
 
         # Rename QuartiCal's underscore prefixed results so that they will be
         # written to the appropriate column.

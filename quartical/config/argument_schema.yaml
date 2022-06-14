@@ -97,7 +97,7 @@ input_ms:
       [100, 10000] would select values greater than 100 but less than 10000.
 
 input_model:
-    recipe: 
+    recipe:
       dtype: str
       required: true
       default: ''
@@ -184,6 +184,7 @@ output:
         - residual
         - weight
         - corrected_weight
+        - model_data
       info:
         The desired output data products. Multiple data products can be
         specified as a list e.g. [residual, corrected_residual]. QuartiCal
@@ -329,10 +330,18 @@ solver:
         converged. Set to zero to iterate for the number of interations
         specified in solver.iter_recipe.
 
-dask:
-    threads:
+    reference_antenna:
       dtype: int
       default: 0
+      info:
+        A reference antenna to use for terms which require one. This is shared
+        by all terms and currently only used for delay estimates - QuartiCal
+        does not guarantee zero phase on an antenna. Specify as the integer
+        index of the antenna - antenna names are not currently supported.
+
+dask:
+    threads:
+      dtype: Optional[int]
       info:
         Number of threads to use in the dask scheduler. Setting to zero (the
         default) will use all available resources.

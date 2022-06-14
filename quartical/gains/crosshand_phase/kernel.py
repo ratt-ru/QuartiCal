@@ -3,7 +3,7 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (solver_intermediaries,
-                                              compute_phaselocked_residual,
+                                              compute_residual_phase,
                                               per_array_jhj_jhr)
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
@@ -26,8 +26,8 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
-amplitude_args = namedtuple(
-    "amplitude_args",
+crosshand_phase_args = namedtuple(
+    "crosshand_phase_args",
     (
         "params",
         "param_flags",
@@ -38,10 +38,8 @@ amplitude_args = namedtuple(
 
 def get_identity_params(corr_mode):
 
-    if corr_mode.literal_value in (2, 4):
-        return np.ones((2,), dtype=np.float64)
-    elif corr_mode.literal_value == 1:
-        return np.ones((1,), dtype=np.float64)
+    if corr_mode.literal_value == 4:
+        return np.zeros((1,), dtype=np.float64)
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -51,9 +49,9 @@ def get_identity_params(corr_mode):
                parallel=False,
                cache=True,
                nogil=True)
-def amplitude_solver(base_args, term_args, meta_args, corr_mode):
+def crosshand_phase_solver(base_args, term_args, meta_args, corr_mode):
 
-    coerce_literal(amplitude_solver, ["corr_mode"])
+    coerce_literal(crosshand_phase_solver, ["corr_mode"])
 
     identity_params = get_identity_params(corr_mode)
 
@@ -81,17 +79,18 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
 
         # Set up some intemediaries used for solving. TODO: Move?
         real_dtype = active_gain.real.dtype
-        jhj = np.empty_like(active_gain, dtype=real_dtype)
-        jhr = np.empty_like(active_params, dtype=real_dtype)
+        pshape = active_params.shape
+        jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
+        jhr = np.empty(pshape, dtype=real_dtype)
         residual = data.astype(np.complex128)  # Make a high precision copy.
         update = np.zeros_like(jhr)
         solver_imdry = solver_intermediaries(jhj, jhr, residual, update)
 
         for loop_idx in range(max_iter):
 
-            compute_phaselocked_residual(base_args,
-                                         solver_imdry,
-                                         corr_mode)
+            compute_residual_phase(base_args,
+                                   solver_imdry,
+                                   corr_mode)
 
             compute_jhj_jhr(base_args,
                             term_args,
@@ -120,7 +119,8 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
                                           meta_args,
                                           flag_imdry,
                                           loop_idx,
-                                          corr_mode)
+                                          corr_mode,
+                                          numbness=1e9)
 
             # Propagate gain flags to parameter flags.
             update_param_flags(base_args,
@@ -245,6 +245,8 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
             lop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
             rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
 
+            norm_factors = valloc(complex_dtype)
+
             tmp_kprod = np.zeros((4, 4), dtype=complex_dtype)
             tmp_jhr = jhr[ti, fi]
             tmp_jhj = jhj[ti, fi]
@@ -332,6 +334,8 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                         compute_jhwj_jhwr_elem(lop_pq_d,
                                                rop_pq_d,
                                                w,
+                                               norm_factors,
+                                               gains_p[active_term],
                                                tmp_kprod,
                                                r_pq,
                                                tmp_jhr[a1_m, d],
@@ -343,6 +347,8 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                         compute_jhwj_jhwr_elem(lop_qp_d,
                                                rop_qp_d,
                                                w,
+                                               norm_factors,
+                                               gains_q[active_term],
                                                tmp_kprod,
                                                r_qp,
                                                tmp_jhr[a2_m, d],
@@ -428,10 +434,9 @@ def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
                         upd = update[ti, fi, a, d]
 
                         if fl == 1:
-                            p[:] = 1
+                            p[:] = 0
                             set_identity(g)
                         else:
-                            upd /= 2
                             p += upd
                             param_to_gain(p, g)
 
@@ -442,17 +447,10 @@ def param_to_gain_factory(corr_mode):
 
     if corr_mode.literal_value == 4:
         def impl(params, gain):
-            gain[0] = params[0]
-            gain[3] = params[1]
-    elif corr_mode.literal_value == 2:
-        def impl(params, gain):
-            gain[0] = params[0]
-            gain[1] = params[1]
-    elif corr_mode.literal_value == 1:
-        def impl(params, gain):
-            gain[0] = params[0]
+            gain[0] = np.exp(1j*params[0])
     else:
-        raise ValueError("Unsupported number of correlations.")
+        raise ValueError("Crosshand phase can only be solved for with four "
+                         "correlation data.")
 
     return factories.qcjit(impl)
 
@@ -460,19 +458,21 @@ def param_to_gain_factory(corr_mode):
 def compute_jhwj_jhwr_elem_factory(corr_mode):
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
+    imul = factories.imul_factory(corr_mode)
     a_kron_bt = factories.a_kron_bt_factory(corr_mode)
     unpack = factories.unpack_factory(corr_mode)
     unpackc = factories.unpackc_factory(corr_mode)
+    iabsdiv = factories.iabsdiv_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, normf, gain, tmp_kprod, res, jhr, jhj):
 
-            # Effectively apply zero weight to off-diagonal terms.
-            # TODO: Can be tidied but requires moving other weighting code.
-            res[1] = 0
-            res[2] = 0
+            # Compute normalization factor.
+            v1_imul_v2(lop, rop, normf)
+            iabsdiv(normf)
 
             # Accumulate an element of jhwr.
+            imul(res, normf)  # Apply normalization factor to r.
             v1_imul_v2(res, rop, res)
             v1_imul_v2(lop, res, res)
 
@@ -486,68 +486,34 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             # data directly without worrying about swapping elements around.
             a_kron_bt(lop, rop, tmp_kprod)  # TODO: Only necessary elem.
 
-            w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
-            w_1 = 0  # Ignore off-diagonal contributions.
-            w_2 = 0  # Ignore off-diagonal contributions.
-            r_0, _, _, r_3 = unpack(res)  # NOTE: XX, XY, YX, YY
+            r_0, _, _, _ = unpack(res)  # NOTE: XX, XY, YX, YY
 
-            jhr[0] += r_0.real
-            jhr[1] += r_3.real
+            gc_0, _, _, _ = unpackc(gain)
+
+            drv_00 = -1j*gc_0
+
+            upd_00 = (drv_00*r_0).real
+
+            jhr[0] += upd_00
+
+            w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
+            n_0, n_1, n_2, n_3 = unpack(normf)
+
+            # Apply normalisation factors by scaling w.
+            w_0 = n_0 * w_0 * n_0
+            w_1 = n_1 * w_1 * n_1
+            w_2 = n_2 * w_2 * n_2
+            w_3 = n_3 * w_3 * n_3
 
             jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[0])
             j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[0])
 
             jhwj_00 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
 
-            j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[3])
+            jhj[0, 0] += jhwj_00.real
 
-            jhwj_03 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
-
-            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[3])
-            jhwj_33 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
-
-            jhj[0] += jhwj_00.real
-            jhj[1] += jhwj_03.real
-            jhj[2] = jhj[1]
-            jhj[3] += jhwj_33.real
-
-    elif corr_mode.literal_value == 2:
-        def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
-
-            # Accumulate an element of jhwr.
-            v1_imul_v2(res, rop, res)
-
-            r_0, r_1 = unpack(res)
-
-            jhr[0] += r_0.real
-            jhr[1] += r_1.real
-
-            # Accumulate an element of jhwj.
-            jh_00, jh_11 = unpack(rop)
-            j_00, j_11 = unpackc(rop)
-            w_00, w_11 = unpack(w)
-
-            # TODO: Consider representing as a vector?
-            jhj[0] += (jh_00*w_00*j_00).real
-            jhj[1] += (jh_11*w_11*j_11).real
-
-    elif corr_mode.literal_value == 1:
-        def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
-
-            # Accumulate an element of jhwr.
-            v1_imul_v2(res, rop, res)
-
-            r_0 = unpack(res)
-
-            jhr[0] += r_0.real
-
-            # Accumulate an element of jhwj.
-            jh_00 = unpack(rop)
-            j_00 = unpackc(rop)
-            w_00 = unpack(w)
-
-            jhj[0] += (jh_00*w_00*j_00).real
     else:
-        raise ValueError("Unsupported number of correlations.")
+        raise ValueError("Crosshand phase can only be solved for with four "
+                         "correlation data.")
 
     return factories.qcjit(impl)
