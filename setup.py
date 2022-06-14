@@ -23,12 +23,7 @@ requirements = [
     "colorama",
     "bokeh",
     "xarray>=0.20.0",
-
-    "scabha"
-    "@git+https://github.com/caracal-pipeline/scabha2.git"
-    "@rich",
-
-    "rich",  # should go in scabha
+    "scabha>=2.0b1"
 ]
 
 setup(
