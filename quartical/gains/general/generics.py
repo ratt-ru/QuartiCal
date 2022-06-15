@@ -25,6 +25,12 @@ qcgjit = generated_jit(nopython=True,
                        cache=True,
                        nogil=True)
 
+qcgjit_parallel = generated_jit(nopython=True,
+                                fastmath=True,
+                                parallel=True,
+                                cache=True,
+                                nogil=True)
+
 
 @qcgjit
 def invert_gains(gain_list, inverse_gains, corr_mode):
@@ -122,8 +128,13 @@ def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
     return impl
 
 
-@qcgjit
-def compute_residual_solver(base_args, solver_imdry, corr_mode, sub_dirs=None):
+@qcgjit_parallel
+def compute_residual_solver(
+    base_args,
+    solver_imdry,
+    corr_mode,
+    sub_dirs=None
+):
 
     coerce_literal(compute_residual_solver, ["corr_mode"])
 
@@ -197,10 +208,15 @@ def compute_residual_solver(base_args, solver_imdry, corr_mode, sub_dirs=None):
     return impl
 
 
-@qcgjit
-def compute_residual_phase(base_args, solver_imdry, corr_mode, sub_dirs=None):
+@qcgjit_parallel
+def compute_amplocked_residual(
+    base_args,
+    solver_imdry,
+    corr_mode,
+    sub_dirs=None
+):
 
-    coerce_literal(compute_residual_phase, ["corr_mode"])
+    coerce_literal(compute_amplocked_residual, ["corr_mode"])
 
     # We want to dispatch based on this field so we need its type.
     row_weights = base_args[base_args.fields.index('row_weights')]
@@ -210,9 +226,10 @@ def compute_residual_phase(base_args, solver_imdry, corr_mode, sub_dirs=None):
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
     isub = factories.isub_factory(corr_mode)
+    iadd = factories.iadd_factory(corr_mode)
     iunpack = factories.iunpack_factory(corr_mode)
     valloc = factories.valloc_factory(corr_mode)
-    iabsdiv = factories.iabsdiv_factory(corr_mode)
+    absv1_idiv_absv2 = factories.absv1_idiv_absv2_factory(corr_mode)
 
     def impl(base_args, solver_imdry, corr_mode, sub_dirs=None):
 
@@ -244,19 +261,20 @@ def compute_residual_phase(base_args, solver_imdry, corr_mode, sub_dirs=None):
 
             row = get_row(row_ind, row_map)
             a1_m, a2_m = a1[row], a2[row]
-            v = valloc(np.complex128)  # Hold GMGH.
+            v_d = valloc(np.complex128)  # Hold GMGH.
+            v = valloc(np.complex128)  # Accumulate GMGH over direction.
 
-            r_normf = valloc(np.complex128)
-            v_normf = valloc(np.complex128)
+            normf = valloc(np.complex128)
 
             for f in range(n_chan):
 
                 r = residual[row, f]
                 m = model[row, f]
+                v[:] = 0
 
                 for d in dir_loop:
 
-                    iunpack(v, m[d])
+                    iunpack(v_d, m[d])
 
                     for g in range(n_gains - 1, -1, -1):
 
@@ -268,28 +286,26 @@ def compute_residual_phase(base_args, solver_imdry, corr_mode, sub_dirs=None):
                         gain_p = gain[a1_m, d_m]
                         gain_q = gain[a2_m, d_m]
 
-                        v1_imul_v2(gain_p, v, v)
-                        v1_imul_v2ct(v, gain_q, v)
+                        v1_imul_v2(gain_p, v_d, v_d)
+                        v1_imul_v2ct(v_d, gain_q, v_d)
+                        iadd(v, v_d)
 
-                    imul_rweight(v, v, row_weights, row_ind)
+                imul_rweight(v, v, row_weights, row_ind)
 
-                    iunpack(r_normf, r)
-                    iunpack(v_normf, v)
-                    iabsdiv(r_normf)
-                    iabsdiv(v_normf)
-                    imul(r, r_normf)
-                    imul(v, v_normf)
-                    isub(r, v)
+                absv1_idiv_absv2(v, r, normf)
+                imul(r, normf)
+                isub(r, v)
 
     return impl
 
 
-@qcgjit
+@qcgjit_parallel
 def compute_phaselocked_residual(
     base_args,
     solver_imdry,
     corr_mode,
-    sub_dirs=None):
+    sub_dirs=None
+):
     """A special residual implementation for amplitude only terms.
 
     The phaselocked residual is equivalent to the residual when the phases
@@ -297,7 +313,7 @@ def compute_phaselocked_residual(
     amplitude only solutions.
     """
 
-    coerce_literal(compute_residual_phase, ["corr_mode"])
+    coerce_literal(compute_phaselocked_residual, ["corr_mode"])
 
     # We want to dispatch based on this field so we need its type.
     row_weights = base_args[base_args.fields.index('row_weights')]
@@ -310,7 +326,7 @@ def compute_phaselocked_residual(
     iunpack = factories.iunpack_factory(corr_mode)
     valloc = factories.valloc_factory(corr_mode)
     iabs = factories.iabs_factory(corr_mode)
-    v1_iabsdiv_v2 = factories.v1_iabsdiv_v2_factory(corr_mode)
+    v1_idiv_absv2 = factories.v1_idiv_absv2_factory(corr_mode)
 
     def impl(base_args, solver_imdry, corr_mode, sub_dirs=None):
 
@@ -371,7 +387,7 @@ def compute_phaselocked_residual(
 
                     imul_rweight(v, v, row_weights, row_ind)
 
-                    v1_iabsdiv_v2(v, v, v_phase)
+                    v1_idiv_absv2(v, v, v_phase)
                     imul(r, v_phase)
                     isub(r, v)
 
