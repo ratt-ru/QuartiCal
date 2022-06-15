@@ -90,8 +90,8 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
         for loop_idx in range(max_iter):
 
             compute_amplocked_residual(base_args,
-                                   solver_imdry,
-                                   corr_mode)
+                                       solver_imdry,
+                                       corr_mode)
 
             compute_jhj_jhr(base_args,
                             term_args,
@@ -246,8 +246,6 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
             lop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
             rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
 
-            norm_factors = valloc(complex_dtype)
-
             tmp_kprod = np.zeros((4, 4), dtype=complex_dtype)
             tmp_jhr = jhr[ti, fi]
             tmp_jhj = jhj[ti, fi]
@@ -335,7 +333,6 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                         compute_jhwj_jhwr_elem(lop_pq_d,
                                                rop_pq_d,
                                                w,
-                                               norm_factors,
                                                gains_p[active_term],
                                                tmp_kprod,
                                                r_pq,
@@ -348,7 +345,6 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                         compute_jhwj_jhwr_elem(lop_qp_d,
                                                rop_qp_d,
                                                w,
-                                               norm_factors,
                                                gains_q[active_term],
                                                tmp_kprod,
                                                r_qp,
@@ -466,27 +462,19 @@ def param_to_gain_factory(corr_mode):
 def compute_jhwj_jhwr_elem_factory(corr_mode):
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    imul = factories.imul_factory(corr_mode)
     a_kron_bt = factories.a_kron_bt_factory(corr_mode)
-    iunpack = factories.iunpack_factory(corr_mode)
     unpack = factories.unpack_factory(corr_mode)
     unpackc = factories.unpackc_factory(corr_mode)
-    iabsdiv = factories.iabsdiv_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, normf, gain, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, gain, tmp_kprod, res, jhr, jhj):
 
             # Effectively apply zero weight to off-diagonal terms.
             # TODO: Can be tidied but requires moving other weighting code.
             res[1] = 0
             res[2] = 0
 
-            # Compute normalization factor.
-            v1_imul_v2(lop, rop, normf)
-            iabsdiv(normf)
-
             # Accumulate an element of jhwr.
-            imul(res, normf)  # Apply normalization factor to r.
             v1_imul_v2(res, rop, res)
             v1_imul_v2(lop, res, res)
 
@@ -515,14 +503,10 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jhr[1] += upd_11
 
             w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
-            n_0, n_1, n_2, n_3 = unpack(normf)
 
-            # Apply normalisation factors by scaling w. Neglect (set weight
-            # to zero) off diagonal terms.
-            w_0 = n_0 * w_0 * n_0
+            # Neglect (set weight to zero) off diagonal terms.
             w_1 = 0
             w_2 = 0
-            w_3 = n_3 * w_3 * n_3
 
             jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[0])
             j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[0])
@@ -542,14 +526,9 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jhj[3] += jhwj_33.real
 
     elif corr_mode.literal_value == 2:
-        def impl(lop, rop, w, normf, gain, tmp_kprod, res, jhr, jhj):
-
-            # Compute normalization factor.
-            iunpack(normf, rop)
-            iabsdiv(normf)
+        def impl(lop, rop, w, gain, tmp_kprod, res, jhr, jhj):
 
             # Accumulate an element of jhwr.
-            imul(res, normf)
             v1_imul_v2(res, rop, res)
 
             r_0, r_1 = unpack(res)
@@ -568,21 +547,15 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jh_00, jh_11 = unpack(rop)
             j_00, j_11 = unpackc(rop)
             w_00, w_11 = unpack(w)
-            n_00, n_11 = unpack(normf)
 
             # TODO: Consider representing as a vector?
-            jhj[0] += (jh_00*n_00*w_00*n_00*j_00).real
-            jhj[1] += (jh_11*n_11*w_11*n_11*j_11).real
+            jhj[0] += (jh_00*w_00*j_00).real
+            jhj[1] += (jh_11*w_11*j_11).real
 
     elif corr_mode.literal_value == 1:
-        def impl(lop, rop, w, normf, gain, tmp_kprod, res, jhr, jhj):
-
-            # Compute normalization factor.
-            iunpack(normf, rop)
-            iabsdiv(normf)
+        def impl(lop, rop, w, gain, tmp_kprod, res, jhr, jhj):
 
             # Accumulate an element of jhwr.
-            imul(res, normf)
             v1_imul_v2(res, rop, res)
 
             r_0 = unpack(res)
@@ -598,9 +571,8 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jh_00 = unpack(rop)
             j_00 = unpackc(rop)
             w_00 = unpack(w)
-            n_00 = unpack(normf)
 
-            jhj[0] += (jh_00*n_00*w_00*n_00*j_00).real
+            jhj[0] += (jh_00*w_00*j_00).real
     else:
         raise ValueError("Unsupported number of correlations.")
 

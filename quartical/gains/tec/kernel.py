@@ -96,8 +96,8 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         for loop_idx in range(max_iter):
 
             compute_amplocked_residual(base_args,
-                                   solver_imdry,
-                                   corr_mode)
+                                       solver_imdry,
+                                       corr_mode)
 
             compute_jhj_jhr(base_args,
                             term_args,
