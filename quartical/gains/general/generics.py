@@ -315,7 +315,7 @@ def compute_phaselocked_residual(
     iunpack = factories.iunpack_factory(corr_mode)
     valloc = factories.valloc_factory(corr_mode)
     iabs = factories.iabs_factory(corr_mode)
-    v1_iabsdiv_v2 = factories.v1_iabsdiv_v2_factory(corr_mode)
+    v1_idiv_absv2 = factories.v1_idiv_absv2_factory(corr_mode)
 
     def impl(base_args, solver_imdry, corr_mode, sub_dirs=None):
 
@@ -376,7 +376,7 @@ def compute_phaselocked_residual(
 
                     imul_rweight(v, v, row_weights, row_ind)
 
-                    v1_iabsdiv_v2(v, v, v_phase)
+                    v1_idiv_absv2(v, v, v_phase)
                     imul(r, v_phase)
                     isub(r, v)
 
