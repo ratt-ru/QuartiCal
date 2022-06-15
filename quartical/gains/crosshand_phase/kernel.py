@@ -3,7 +3,7 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (solver_intermediaries,
-                                              compute_residual_phase,
+                                              compute_amplocked_residual,
                                               per_array_jhj_jhr)
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
@@ -88,7 +88,7 @@ def crosshand_phase_solver(base_args, term_args, meta_args, corr_mode):
 
         for loop_idx in range(max_iter):
 
-            compute_residual_phase(base_args,
+            compute_amplocked_residual(base_args,
                                    solver_imdry,
                                    corr_mode)
 

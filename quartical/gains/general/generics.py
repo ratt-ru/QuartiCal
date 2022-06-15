@@ -198,9 +198,14 @@ def compute_residual_solver(base_args, solver_imdry, corr_mode, sub_dirs=None):
 
 
 @qcgjit
-def compute_residual_phase(base_args, solver_imdry, corr_mode, sub_dirs=None):
+def compute_amplocked_residual(
+    base_args,
+    solver_imdry,
+    corr_mode,
+    sub_dirs=None
+):
 
-    coerce_literal(compute_residual_phase, ["corr_mode"])
+    coerce_literal(compute_amplocked_residual, ["corr_mode"])
 
     # We want to dispatch based on this field so we need its type.
     row_weights = base_args[base_args.fields.index('row_weights')]
@@ -288,7 +293,8 @@ def compute_phaselocked_residual(
     base_args,
     solver_imdry,
     corr_mode,
-    sub_dirs=None):
+    sub_dirs=None
+):
     """A special residual implementation for amplitude only terms.
 
     The phaselocked residual is equivalent to the residual when the phases
@@ -296,7 +302,7 @@ def compute_phaselocked_residual(
     amplitude only solutions.
     """
 
-    coerce_literal(compute_residual_phase, ["corr_mode"])
+    coerce_literal(compute_phaselocked_residual, ["corr_mode"])
 
     # We want to dispatch based on this field so we need its type.
     row_weights = base_args[base_args.fields.index('row_weights')]
