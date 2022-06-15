@@ -25,6 +25,12 @@ qcgjit = generated_jit(nopython=True,
                        cache=True,
                        nogil=True)
 
+qcgjit_parallel = generated_jit(nopython=True,
+                                fastmath=True,
+                                parallel=True,
+                                cache=True,
+                                nogil=True)
+
 
 @qcgjit
 def invert_gains(gain_list, inverse_gains, corr_mode):
@@ -122,8 +128,13 @@ def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
     return impl
 
 
-@qcgjit
-def compute_residual_solver(base_args, solver_imdry, corr_mode, sub_dirs=None):
+@qcgjit_parallel
+def compute_residual_solver(
+    base_args,
+    solver_imdry,
+    corr_mode,
+    sub_dirs=None
+):
 
     coerce_literal(compute_residual_solver, ["corr_mode"])
 
@@ -197,7 +208,7 @@ def compute_residual_solver(base_args, solver_imdry, corr_mode, sub_dirs=None):
     return impl
 
 
-@qcgjit
+@qcgjit_parallel
 def compute_amplocked_residual(
     base_args,
     solver_imdry,
@@ -288,7 +299,7 @@ def compute_amplocked_residual(
     return impl
 
 
-@qcgjit
+@qcgjit_parallel
 def compute_phaselocked_residual(
     base_args,
     solver_imdry,
