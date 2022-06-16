@@ -18,10 +18,10 @@ cabs:
       replace: {'_': '-'}
     inputs:
       ms_path:
-        dtype: Path
+        dtype: Directory
         info: 'Path to input measurement set, e.g. path/to/dir/foo.MS.'
       zarr_dir:
-        dtype: Path
+        dtype: Directory
         info: Path to desired backup location. Note that this only allows
               the user to specify a directory and not the name of the backup
               zarr that will be created, e.g. path/to/dir.
