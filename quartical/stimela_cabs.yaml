@@ -15,7 +15,6 @@ cabs:
     command: goquartical-backup
     policies:
       prefix: '--'
-      replace: {'_': '-'}
     inputs:
       ms_path:
         dtype: Directory
