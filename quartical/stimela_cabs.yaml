@@ -10,3 +10,21 @@ cabs:
       _flatten: 1
       _flatten_sep: /
     dynamic_schema: quartical.config.external.make_stimela_schema
+
+  qcalbackup:
+    command: goquartical-backup
+    policies:
+      prefix: '--'
+      replace: {'_': '-'}
+    inputs:
+      ms_path:
+        dtype: Path
+        info: 'Path to input measurement set, e.g. path/to/dir/foo.MS.'
+      zarr_dir:
+        dtype: Path
+        info: Path to desired backup location. Note that this only allows
+              the user to specify a directory and not the name of the backup
+              zarr that will be created, e.g. path/to/dir.
+      column:
+        dtype: str
+        info: Name of column to be backed up.
