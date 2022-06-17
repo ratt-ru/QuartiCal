@@ -288,7 +288,8 @@ def compute_amplocked_residual(
 
                         v1_imul_v2(gain_p, v_d, v_d)
                         v1_imul_v2ct(v_d, gain_q, v_d)
-                        iadd(v, v_d)
+
+                    iadd(v, v_d)
 
                 imul_rweight(v, v, row_weights, row_ind)
 
