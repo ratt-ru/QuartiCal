@@ -14,7 +14,10 @@ cabs:
   qcalbackup:
     command: goquartical-backup
     policies:
-      prefix: '--'
+      positional: true
+      # prefix: '--'
+      # replace:
+      #   '_': '-'
     inputs:
       ms_path:
         dtype: Directory
