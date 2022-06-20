@@ -245,6 +245,8 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
             lop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
             rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
 
+            norm_factors = valloc(complex_dtype)
+
             tmp_kprod = np.zeros((4, 4), dtype=complex_dtype)
             tmp_jhr = jhr[ti, fi]
             tmp_jhj = jhj[ti, fi]
@@ -332,6 +334,7 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                         compute_jhwj_jhwr_elem(lop_pq_d,
                                                rop_pq_d,
                                                w,
+                                               norm_factors,
                                                gains_p[active_term],
                                                tmp_kprod,
                                                r_pq,
@@ -344,6 +347,7 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                         compute_jhwj_jhwr_elem(lop_qp_d,
                                                rop_qp_d,
                                                w,
+                                               norm_factors,
                                                gains_q[active_term],
                                                tmp_kprod,
                                                r_qp,
@@ -457,9 +461,16 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     a_kron_bt = factories.a_kron_bt_factory(corr_mode)
     unpack = factories.unpack_factory(corr_mode)
     unpackc = factories.unpackc_factory(corr_mode)
+    iabsdivsq = factories.iabsdivsq_factory(corr_mode)
+    imul = factories.imul_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, normf, gain, tmp_kprod, res, jhr, jhj):
+
+            # Compute normalization factor.
+            v1_imul_v2(lop, rop, normf)
+            iabsdivsq(normf)
+            imul(res, normf)  # Apply normalization factor to r.
 
             # Accumulate an element of jhwr.
             v1_imul_v2(res, rop, res)
@@ -486,6 +497,13 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jhr[0] += upd_00
 
             w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
+            n_0, n_1, n_2, n_3 = unpack(normf)
+
+            # Apply normalisation factors by scaling w.
+            w_0 = n_0 * w_0
+            w_1 = n_1 * w_1
+            w_2 = n_2 * w_2
+            w_3 = n_3 * w_3
 
             jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[0])
             j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[0])
