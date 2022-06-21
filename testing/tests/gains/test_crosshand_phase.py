@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 import dask.array as da
 from quartical.calibration.calibrate import add_calibration_graph
-from testing.utils.gains import apply_gains, reference_gains
+from testing.utils.gains import apply_gains
 
 
 @pytest.fixture(scope="module")
@@ -15,7 +15,7 @@ def opts(base_opts):
 
     _opts.input_ms.select_corr = [0, 1, 2, 3]
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [60]
+    _opts.solver.iter_recipe = [50]
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-6
     _opts.solver.convergence_fraction = 1
@@ -88,6 +88,8 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
 
+        model *= da.from_array([1, 0.1, 0.1, 1])
+
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
                             gains, ("rfadc"),
@@ -140,12 +142,7 @@ def test_gains(cmp_gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
         solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
                                                solved_gain_xds.gain_flags.data)
-        true_gain = true_gain.compute()  # TODO: This could be done elsewhere.
-
-        n_corr = true_gain.shape[-1]
-
-        solved_gain = reference_gains(solved_gain, n_corr)
-        true_gain = reference_gains(true_gain, n_corr)
+        true_gain = true_gain.compute().copy()  # Make mutable.
 
         true_gain[np.where(solved_flags)] = 0
         solved_gain[np.where(solved_flags)] = 0

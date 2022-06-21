@@ -667,6 +667,56 @@ def iabs_factory(mode):
     return qcjit(impl)
 
 
+def iabsdiv_factory(mode):
+
+    if mode.literal_value == 4:
+        def impl(v1):
+            v1[0] = 0 if v1[0] == 0 else 1/np.abs(v1[0])
+            v1[1] = 0 if v1[1] == 0 else 1/np.abs(v1[1])
+            v1[2] = 0 if v1[2] == 0 else 1/np.abs(v1[2])
+            v1[3] = 0 if v1[3] == 0 else 1/np.abs(v1[3])
+    elif mode.literal_value == 2:
+        def impl(v1):
+            v1[0] = 0 if v1[0] == 0 else 1/np.abs(v1[0])
+            v1[1] = 0 if v1[1] == 0 else 1/np.abs(v1[1])
+    elif mode.literal_value == 1:
+        def impl(v1):
+            v1[0] = 0 if v1[0] == 0 else 1/np.abs(v1[0])
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def iabsdivsq_factory(mode):
+
+    unpack = unpack_factory(mode)
+
+    if mode.literal_value == 4:
+        def impl(v1):
+            v1_0, v1_1, v1_2, v1_3 = unpack(v1)
+
+            v1[0] = 0 if v1_0 == 0 else 1/(v1_0.real**2 + v1_0.imag**2)
+            v1[1] = 0 if v1_1 == 0 else 1/(v1_1.real**2 + v1_1.imag**2)
+            v1[2] = 0 if v1_2 == 0 else 1/(v1_2.real**2 + v1_2.imag**2)
+            v1[3] = 0 if v1_3 == 0 else 1/(v1_3.real**2 + v1_3.imag**2)
+    elif mode.literal_value == 2:
+        def impl(v1):
+            v1_0, v1_1 = unpack(v1)
+
+            v1[0] = 0 if v1_0 == 0 else 1/(v1_0.real**2 + v1_0.imag**2)
+            v1[1] = 0 if v1_1 == 0 else 1/(v1_1.real**2 + v1_1.imag**2)
+    elif mode.literal_value == 1:
+        def impl(v1):
+            v1_0 = unpack(v1)
+
+            v1[0] = 0 if v1_0 == 0 else 1/(v1_0.real**2 + v1_0.imag**2)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
 def v1_idiv_absv2_factory(mode):
 
     if mode.literal_value == 4:
