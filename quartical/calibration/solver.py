@@ -96,7 +96,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
 
     if solver_opts.robust:
         final_epoch = len(iter_recipe) // len(terms)
-        etas = np.zeros_like(kwargs["weights"][..., 0])
+        etas = np.ones_like(kwargs["weights"][..., 0])
         icovariance = np.zeros(kwargs["corr_mode"], np.float64)
         dof = 5
 
@@ -159,6 +159,10 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         results_dict[f"{term_name}-conviter"] += np.atleast_2d(info_tup[0])
         results_dict[f"{term_name}-convperc"] = np.atleast_2d(info_tup[1])
         results_dict[f"{term_name}-jhj"] = jhj
+        # propagate robust flags
+        if solver_opts.robust:
+            fsel = etas == 0
+            results_dict["flags"][fsel] = True
 
     gc.collect()
 
