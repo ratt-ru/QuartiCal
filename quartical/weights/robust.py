@@ -96,7 +96,11 @@ def update_etas(residuals, flags, etas, icovariance, dof, mode):
                     numerator = dof + n_corr  # Not correct for diagonal terms.
                     denominator = dof + update_etas_inner(residuals[r, f],
                                                           icovariance)
-                    etas[r, f] = numerator/denominator
+                    etan = numerator/denominator
+                    if etas[r, f] != 0  and etan/etas[r, f]  < 0.2:
+                        etas[r, f] = 0
+                    else:
+                        etas[r, f] = etan
 
     return impl
 
