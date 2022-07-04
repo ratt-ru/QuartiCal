@@ -152,6 +152,10 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                     dof,
                     kwargs["corr_mode"])
 
+                # propagate robust flags
+                fsel = etas == 0
+                results_dict["flags"][fsel] = 1
+
         # TODO: Ugly hack for larger jhj matrices. Refine.
         if jhj.ndim == 6:
             jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
@@ -159,10 +163,6 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         results_dict[f"{term_name}-conviter"] += np.atleast_2d(info_tup[0])
         results_dict[f"{term_name}-convperc"] = np.atleast_2d(info_tup[1])
         results_dict[f"{term_name}-jhj"] = jhj
-        # propagate robust flags
-        if solver_opts.robust:
-            fsel = etas == 0
-            results_dict["flags"][fsel] = True
 
     gc.collect()
 
