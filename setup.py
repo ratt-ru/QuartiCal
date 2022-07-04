@@ -9,7 +9,7 @@ requirements = [
     "tbump",
     "columnar",
     "ruamel.yaml",
-    "numpy",
+    "numpy <= 1.22",
     "dask-ms[xarray, zarr]",
     "codex-africanus[dask, scipy, astropy, python-casacore]",
     "dask[array]",
