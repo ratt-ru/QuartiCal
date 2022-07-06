@@ -13,7 +13,6 @@ solver_intermediaries = namedtuple(
     (
         "jhj",
         "jhr",
-        "residual",
         "update"
     )
 )
