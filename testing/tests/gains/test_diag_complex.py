@@ -20,7 +20,7 @@ def opts(base_opts, solver_type, select_corr, solve_per):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [50]
+    _opts.solver.iter_recipe = [100]
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
