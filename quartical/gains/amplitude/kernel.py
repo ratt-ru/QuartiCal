@@ -79,8 +79,9 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
 
         # Set up some intemediaries used for solving. TODO: Move?
         real_dtype = active_gain.real.dtype
-        jhj = np.empty_like(active_gain, dtype=real_dtype)
-        jhr = np.empty_like(active_params, dtype=real_dtype)
+        pshape = active_params.shape
+        jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
+        jhr = np.empty(pshape, dtype=real_dtype)
         update = np.zeros_like(jhr)
         solver_imdry = solver_intermediaries(jhj, jhr, update)
 
@@ -529,10 +530,10 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[3])
             jhwj_33 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
 
-            jhj[0] += jhwj_00.real
-            jhj[1] += jhwj_03.real
-            jhj[2] = jhj[1]
-            jhj[3] += jhwj_33.real
+            jhj[0, 0] += jhwj_00.real
+            jhj[0, 1] += jhwj_03.real
+            jhj[1, 0] = jhj[0, 1]
+            jhj[1, 1] += jhwj_33.real
 
     elif corr_mode.literal_value == 2:
         def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
@@ -551,8 +552,8 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_00, w_11 = unpack(w)
 
             # TODO: Consider representing as a vector?
-            jhj[0] += (jh_00*w_00*j_00).real
-            jhj[1] += (jh_11*w_11*j_11).real
+            jhj[0, 0] += (jh_00*w_00*j_00).real
+            jhj[1, 1] += (jh_11*w_11*j_11).real
 
     elif corr_mode.literal_value == 1:
         def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
@@ -569,7 +570,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             j_00 = unpackc(rop)
             w_00 = unpack(w)
 
-            jhj[0] += (jh_00*w_00*j_00).real
+            jhj[0, 0] += (jh_00*w_00*j_00).real
     else:
         raise ValueError("Unsupported number of correlations.")
 
