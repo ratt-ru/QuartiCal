@@ -302,7 +302,7 @@ def compute_jhj_jhr(
                             iunpack(gains_q[gi], gain[a2_m, d_m])
 
                         m = model[row, f, d]
-                        imul_rweight(m, rop_qp, row_weights, row_ind)
+                        iunpack(rop_qp, m)
                         iunpackct(rop_pq, rop_qp)
 
                         for g in all_terms:
