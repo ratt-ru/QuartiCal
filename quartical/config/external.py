@@ -163,7 +163,6 @@ class Gain(Input):
     type: str = field(
         default="complex",
         metadata=dict(choices=["complex",
-                               "approx_complex",
                                "diag_complex",
                                "amplitude",
                                "delay",
