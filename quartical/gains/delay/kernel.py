@@ -201,8 +201,8 @@ def compute_jhj_jhr(
         model = base_args.model
         weights = base_args.weights
         flags = base_args.flags
-        a1 = base_args.a1
-        a2 = base_args.a2
+        antenna1 = base_args.a1
+        antenna2 = base_args.a2
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
@@ -283,7 +283,7 @@ def compute_jhj_jhr(
             for row_ind in range(rs, re):
 
                 row = get_row(row_ind, row_map)
-                a1_m, a2_m = a1[row], a2[row]
+                a1_m, a2_m = antenna1[row], antenna2[row]
 
                 for f in range(fs, fe):
 
