@@ -19,6 +19,7 @@ def opts(base_opts, select_corr, solve_per):
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
+    _opts.solver.threads = 4
     _opts.G.type = "tec"
     _opts.G.freq_interval = 0
     _opts.G.solve_per = solve_per

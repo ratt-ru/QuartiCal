@@ -17,8 +17,9 @@ def opts(base_opts):
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [50]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_criteria = 1e-6
+    _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
+    _opts.solver.threads = 4
     _opts.G.time_interval = 0
     _opts.G.type = "crosshand_phase"
     _opts.G.solve_per = "array"

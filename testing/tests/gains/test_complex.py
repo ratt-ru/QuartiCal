@@ -6,7 +6,7 @@ from quartical.calibration.calibrate import add_calibration_graph
 from testing.utils.gains import apply_gains, reference_gains
 
 
-@pytest.fixture(params=["complex", "approx_complex"], scope="module")
+@pytest.fixture(params=["complex"], scope="module")
 def solver_type(request):
     return request.param
 
@@ -22,7 +22,9 @@ def opts(base_opts, solver_type, select_corr, solve_per):
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [30]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_criteria = 1e-8
+    _opts.solver.convergence_criteria = 1e-7
+    _opts.solver.convergence_fraction = 1
+    _opts.solver.threads = 4
     _opts.G.type = solver_type
     _opts.G.solve_per = solve_per
 
