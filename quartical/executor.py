@@ -25,7 +25,6 @@ from quartical.statistics.logging import (embed_stats_logging,
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
-# from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
 
 
 @logger.catch(onerror=lambda _: sys.exit(1))
