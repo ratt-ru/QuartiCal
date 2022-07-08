@@ -497,13 +497,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             # Accumulate an element of jhwj.
 
-            # WARNING: In this instance we are using the row-major
-            # version of the kronecker product identity. This is because the
-            # MS stores the correlations in row-major order (XX, XY, YX, YY),
-            # whereas the standard maths assumes column-major ordering
-            # (XX, YX, XY, YY). This subtle change means we can use the MS
-            # data directly without worrying about swapping elements around.
-
             r_0, _, _, _ = unpack(res)  # NOTE: XX, XY, YX, YY
 
             gc_0, _, _, _ = unpackc(gain)
