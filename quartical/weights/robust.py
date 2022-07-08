@@ -80,7 +80,8 @@ def update_covariance_inner_factory(mode):
 
 
 @qcgjit
-def update_etas(residuals, flags, etas, icovariance, dof, mode):
+def update_etas(residuals, flags, etas, icovariance, dof, flag_threshold,
+                mode):
 
     update_etas_inner = update_etas_inner_factory(mode)
 
@@ -97,7 +98,7 @@ def update_etas(residuals, flags, etas, icovariance, dof, mode):
                     denominator = dof + update_etas_inner(residuals[r, f],
                                                           icovariance)
                     etan = numerator/denominator
-                    if etas[r, f] != 0  and etan/etas[r, f]  < 0.2:
+                    if etas[r, f] != 0  and etan/etas[r, f]  < flag_threshold:
                         etas[r, f] = 0
                     else:
                         etas[r, f] = etan
@@ -247,9 +248,11 @@ def update_weights(weights, etas, icovariance):
 
 
 @qcgjit
-def robust_reweighting(base_args, meta_args, etas, icovariance, dof, mode):
+def robust_reweighting(base_args, meta_args, etas, icovariance, dof,
+                       flag_threshold, mode):
 
-    def impl(base_args, meta_args, etas, icovariance, dof, mode):
+    def impl(base_args, meta_args, etas, icovariance, dof, flag_threshold,
+             mode):
         model = base_args.model
         data = base_args.data
         a1 = base_args.a1
@@ -279,13 +282,15 @@ def robust_reweighting(base_args, meta_args, etas, icovariance, dof, mode):
         # This tries to approximate what that means in terms of initial values.
         if np.all(icovariance == 0):
             icovariance[:] = mean_weight(weights, flags)
-            update_etas(residuals, flags, etas, icovariance, dof, mode)
+            update_etas(residuals, flags, etas, icovariance, dof,
+                        flag_threshold, mode)
 
         update_icovariance(residuals, flags, etas, icovariance, mode)
 
         dof = compute_dof(etas, flags, dof, mode)
 
-        update_etas(residuals, flags, etas, icovariance, dof, mode)
+        update_etas(residuals, flags, etas, icovariance, dof,
+                    flag_threshold, mode)
 
         update_weights(weights, etas, icovariance)
 
