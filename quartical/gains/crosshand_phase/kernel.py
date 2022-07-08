@@ -25,11 +25,10 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
-rm_args = namedtuple(
-    "rm_args",
+crosshand_phase_args = namedtuple(
+    "crosshand_phase_args",
     (
         "params",
-        "chan_freqs",
         "param_flags",
         "t_bin_arr"
     )
@@ -49,9 +48,9 @@ def get_identity_params(corr_mode):
                parallel=False,
                cache=True,
                nogil=True)
-def rm_solver(base_args, term_args, meta_args, corr_mode):
+def crosshand_phase_solver(base_args, term_args, meta_args, corr_mode):
 
-    coerce_literal(rm_solver, ["corr_mode"])
+    coerce_literal(crosshand_phase_solver, ["corr_mode"])
 
     identity_params = get_identity_params(corr_mode)
 
@@ -84,16 +83,12 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
         update = np.zeros_like(jhr)
         solver_imdry = solver_intermediaries(jhj, jhr, update)
 
-        chan_freqs = term_args.chan_freqs
-        lambda_sq = (299792458/chan_freqs)**2
-
         for loop_idx in range(max_iter):
 
             compute_jhj_jhr(base_args,
                             term_args,
                             meta_args,
                             solver_imdry,
-                            lambda_sq,
                             corr_mode)
 
             if solve_per == "array":
@@ -106,7 +101,6 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
                             term_args,
                             meta_args,
                             solver_imdry,
-                            lambda_sq,
                             loop_idx,
                             corr_mode)
 
@@ -118,7 +112,8 @@ def rm_solver(base_args, term_args, meta_args, corr_mode):
                                           meta_args,
                                           flag_imdry,
                                           loop_idx,
-                                          corr_mode)
+                                          corr_mode,
+                                          numbness=1e9)
 
             # Propagate gain flags to parameter flags.
             update_param_flags(base_args,
@@ -156,7 +151,6 @@ def compute_jhj_jhr(
     term_args,
     meta_args,
     solver_imdry,
-    lambda_sq,
     corr_mode
 ):
 
@@ -167,6 +161,7 @@ def compute_jhj_jhr(
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
     v1ct_imul_v2 = factories.v1ct_imul_v2_factory(corr_mode)
+    absv1_idiv_absv2 = factories.absv1_idiv_absv2_factory(corr_mode)
     iunpack = factories.iunpack_factory(corr_mode)
     iunpackct = factories.iunpackct_factory(corr_mode)
     imul = factories.imul_factory(corr_mode)
@@ -182,7 +177,6 @@ def compute_jhj_jhr(
         term_args,
         meta_args,
         solver_imdry,
-        lambda_sq,
         corr_mode
     ):
 
@@ -198,10 +192,8 @@ def compute_jhj_jhr(
         row_weights = base_args.row_weights
 
         gains = base_args.gains
-        params = term_args.params[active_term]
         t_map_arr = base_args.t_map_arr[0]  # We only need the gain mappings.
-        f_map_arr_g = base_args.f_map_arr[0]
-        f_map_arr_p = base_args.f_map_arr[1]
+        f_map_arr = base_args.f_map_arr[0]  # We only need the gain mappings.
         d_map_arr = base_args.d_map_arr
 
         jhj = solver_imdry.jhj
@@ -226,7 +218,7 @@ def compute_jhj_jhr(
                                                 active_term,
                                                 n_tint)
 
-        chan_starts, chan_stops = get_chan_extents(f_map_arr_p,
+        chan_starts, chan_stops = get_chan_extents(f_map_arr,
                                                    active_term,
                                                    n_fint,
                                                    n_chan)
@@ -266,6 +258,8 @@ def compute_jhj_jhr(
             lop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
             rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
 
+            norm_factors = valloc(complex_dtype)
+
             tmp_kprod = np.zeros((4, 4), dtype=complex_dtype)
             jhr_tifi = jhr[ti, fi]
             jhj_tifi = jhj[ti, fi]
@@ -274,8 +268,6 @@ def compute_jhj_jhr(
 
                 row = get_row(row_ind, row_map)
                 a1_m, a2_m = antenna1[row], antenna2[row]
-
-                rm_t = t_map_arr[row_ind, active_term]
 
                 for f in range(fs, fe):
 
@@ -292,8 +284,6 @@ def compute_jhj_jhr(
                     rop_qp_arr[:] = 0
                     v_pq[:] = 0
 
-                    rm_f = f_map_arr_p[f, active_term]
-
                     for d in range(n_dir):
 
                         set_identity(lop_pq)
@@ -304,7 +294,7 @@ def compute_jhj_jhr(
                         for gi in range(n_gains):
                             d_m = d_map_arr[gi, d]  # Broadcast dir.
                             t_m = t_map_arr[row_ind, gi]
-                            f_m = f_map_arr_g[f, gi]
+                            f_m = f_map_arr[f, gi]
 
                             gain = gains[gi][t_m, f_m]
 
@@ -351,14 +341,11 @@ def compute_jhj_jhr(
                         v1_imul_v2ct(v_pqd, rop_pq, v_pqd)
                         iadd(v_pq, v_pqd)
 
+                    absv1_idiv_absv2(v_pq, r_pq, norm_factors)
+                    imul(r_pq, norm_factors)
                     isub(r_pq, v_pq)
 
-                    lsq = lambda_sq[f]
-
                     for d in range(n_gdir):
-
-                        rm_p = params[rm_t, rm_f, a1_m, d, 0]
-                        rm_q = params[rm_t, rm_f, a2_m, d, 0]
 
                         iunpack(wr_pq, r_pq)
                         imul(wr_pq, w)
@@ -370,8 +357,7 @@ def compute_jhj_jhr(
                         compute_jhwj_jhwr_elem(lop_pq_d,
                                                rop_pq_d,
                                                w,
-                                               rm_p,
-                                               lsq,
+                                               norm_factors,
                                                gains_p[active_term],
                                                tmp_kprod,
                                                wr_pq,
@@ -384,8 +370,7 @@ def compute_jhj_jhr(
                         compute_jhwj_jhwr_elem(lop_qp_d,
                                                rop_qp_d,
                                                w,
-                                               rm_q,
-                                               lsq,
+                                               norm_factors,
                                                gains_q[active_term],
                                                tmp_kprod,
                                                wr_qp,
@@ -441,60 +426,56 @@ def compute_update(solver_imdry, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(base_args, term_args, meta_args, solver_imdry, lambda_sq,
-                    loop_idx, corr_mode):
+def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
+                    corr_mode):
 
     set_identity = factories.set_identity_factory(corr_mode)
+    param_to_gain = param_to_gain_factory(corr_mode)
 
-    if corr_mode.literal_value == 4:
-        def impl(base_args, term_args, meta_args, solver_imdry, lambda_sq,
-                 loop_idx, corr_mode):
+    def impl(base_args, term_args, meta_args, solver_imdry, loop_idx,
+             corr_mode):
 
-            active_term = meta_args.active_term
+        active_term = meta_args.active_term
 
-            gain = base_args.gains[active_term]
-            gain_flags = base_args.gain_flags[active_term]
-            f_map_arr_p = base_args.f_map_arr[1, :, active_term]
-            d_map_arr = base_args.d_map_arr[active_term, :]
+        gain = base_args.gains[active_term]
+        gain_flags = base_args.gain_flags[active_term]
 
-            params = term_args.params[active_term]
+        params = term_args.params[active_term]
 
-            update = solver_imdry.update
+        update = solver_imdry.update
 
-            update /= 2
-            params += update
+        n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
-            n_time, n_freq, n_ant, n_dir, _ = gain.shape
+        for ti in range(n_tint):
+            for fi in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
 
-            for t in range(n_time):
-                for f in range(n_freq):
-                    lsq = lambda_sq[f]
-                    for a in range(n_ant):
-                        for d in range(n_dir):
+                        p = params[ti, fi, a, d]
+                        g = gain[ti, fi, a, d]
+                        fl = gain_flags[ti, fi, a, d]
+                        upd = update[ti, fi, a, d]
 
-                            f_m = f_map_arr_p[f]
-                            d_m = d_map_arr[d]
-                            fl = gain_flags[t, f, a, d]
-
-                            if fl == 1:
-                                set_identity(gain[t, f, a, d])
-                            else:
-                                rm = params[t, f_m, a, d_m, 0]
-
-                                beta = lsq*rm
-
-                                cos_beta = np.cos(beta)
-                                sin_beta = np.sin(beta)
-
-                                gain[t, f, a, d, 0] = cos_beta
-                                gain[t, f, a, d, 1] = -sin_beta
-                                gain[t, f, a, d, 2] = sin_beta
-                                gain[t, f, a, d, 3] = cos_beta
-    else:
-        raise ValueError("Rotation measure can only be solved for with four "
-                         "correlation data.")
+                        if fl == 1:
+                            p[:] = 0
+                            set_identity(g)
+                        else:
+                            p += upd
+                            param_to_gain(p, g)
 
     return impl
+
+
+def param_to_gain_factory(corr_mode):
+
+    if corr_mode.literal_value == 4:
+        def impl(params, gain):
+            gain[0] = np.exp(1j*params[0])
+    else:
+        raise ValueError("Crosshand phase can only be solved for with four "
+                         "correlation data.")
+
+    return factories.qcjit(impl)
 
 
 def compute_jhwj_jhwr_elem_factory(corr_mode):
@@ -502,9 +483,17 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     a_kron_bt = factories.a_kron_bt_factory(corr_mode)
     unpack = factories.unpack_factory(corr_mode)
+    unpackc = factories.unpackc_factory(corr_mode)
+    iabsdivsq = factories.iabsdivsq_factory(corr_mode)
+    imul = factories.imul_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, rm, lsq, gain, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, normf, gain, tmp_kprod, res, jhr, jhj):
+
+            # Compute normalization factor.
+            v1_imul_v2(lop, rop, normf)
+            iabsdivsq(normf)
+            imul(res, normf)  # Apply normalization factor to r.
 
             # Accumulate an element of jhwr.
             v1_imul_v2(res, rop, res)
@@ -518,51 +507,36 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             # whereas the standard maths assumes column-major ordering
             # (XX, YX, XY, YY). This subtle change means we can use the MS
             # data directly without worrying about swapping elements around.
-            a_kron_bt(lop, rop, tmp_kprod)
+            a_kron_bt(lop, rop, tmp_kprod)  # TODO: Only necessary elem.
+
+            r_0, _, _, _ = unpack(res)  # NOTE: XX, XY, YX, YY
+
+            gc_0, _, _, _ = unpackc(gain)
+
+            drv_00 = -1j*gc_0
+
+            upd_00 = (drv_00*r_0).real
+
+            jhr[0] += upd_00
 
             w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
-            r_0, r_1, r_2, r_3 = unpack(res)
+            n_0, n_1, n_2, n_3 = unpack(normf)
 
-            beta = lsq*rm
+            # Apply normalisation factors by scaling w.
+            w_0 = n_0 * w_0
+            w_1 = n_1 * w_1
+            w_2 = n_2 * w_2
+            w_3 = n_3 * w_3
 
-            sin_beta = np.sin(beta)
-            cos_beta = np.cos(beta)
+            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[0])
+            j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[0])
 
-            dh_0 = -lsq*sin_beta
-            dh_1 = -lsq*cos_beta
-            dh_2 = lsq*cos_beta
-            dh_3 = -lsq*sin_beta
+            jhwj_00 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
 
-            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[:, 0])
-
-            dhjh = dh_0*jh_0 + dh_1*jh_1 + dh_2*jh_2 + dh_3*jh_3
-
-            jhj[0, 0] += (dhjh * w_0 * dhjh.conjugate()).real
-            jhr[0] += (dh_0 * r_0).real
-
-            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[:, 1])
-
-            dhjh = dh_0*jh_0 + dh_1*jh_1 + dh_2*jh_2 + dh_3*jh_3
-
-            jhj[0, 0] += (dhjh * w_1 * dhjh.conjugate()).real
-            jhr[0] += (dh_1 * r_1).real
-
-            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[:, 2])
-
-            dhjh = dh_0*jh_0 + dh_1*jh_1 + dh_2*jh_2 + dh_3*jh_3
-
-            jhj[0, 0] += (dhjh * w_2 * dhjh.conjugate()).real
-            jhr[0] += (dh_2 * r_2).real
-
-            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[:, 3])
-
-            dhjh = dh_0*jh_0 + dh_1*jh_1 + dh_2*jh_2 + dh_3*jh_3
-
-            jhj[0, 0] += (dhjh * w_3 * dhjh.conjugate()).real
-            jhr[0] += (dh_3 * r_3).real
+            jhj[0, 0] += jhwj_00.real
 
     else:
-        raise ValueError("Rotation measure can only be solved for with four "
+        raise ValueError("Crosshand phase can only be solved for with four "
                          "correlation data.")
 
     return factories.qcjit(impl)

@@ -7,7 +7,7 @@ from testing.utils.gains import apply_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, solve_per):
+def opts(base_opts):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -20,9 +20,9 @@ def opts(base_opts, solve_per):
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
     _opts.solver.threads = 2
-    _opts.G.type = "rotation_measure"
-    _opts.G.freq_interval = 0
-    _opts.G.solve_per = solve_per
+    _opts.G.time_interval = 0
+    _opts.G.type = "crosshand_phase"
+    _opts.G.solve_per = "array"
 
     return _opts
 
@@ -34,7 +34,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list, solve_per):
+def true_gain_list(predicted_xds_list):
 
     gain_list = []
 
@@ -48,27 +48,23 @@ def true_gain_list(predicted_xds_list, solve_per):
         n_dir = xds.dims["dir"]
         n_corr = xds.dims["corr"]
 
-        lambda_sq = (299792458/xds.CHAN_FREQ.data)**2
+        chunking = (len(utime_chunks), chan_chunks, n_ant, n_dir, n_corr)
 
-        chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
-
-        bound = 8 if solve_per == "array" else 10
+        bound = np.pi
 
         da.random.seed(0)
-        rm = da.random.normal(size=(n_time, 1, n_ant, n_dir),
-                              loc=0,
-                              scale=bound)
-        betas = rm * lambda_sq[None, :, None, None]
+        amp = da.from_array(np.array([1, 0, 0, 1]))
+        phase = da.random.uniform(size=(1, n_chan, 1, n_dir, n_corr),
+                                  high=bound,
+                                  low=-bound,
+                                  chunks=chunking)
+        phase[..., 1:] = 0  # Only introduce the phase on XX or RR.
 
-        gains = da.zeros((n_time, n_chan, n_ant, n_dir, n_corr),
-                         chunks=chunking)
-        gains[..., 0] = da.cos(betas)
-        gains[..., 1] = -da.sin(betas)
-        gains[..., 2] = da.sin(betas)
-        gains[..., 3] = da.cos(betas)
+        gains = amp[None, None, None, None, :]*da.exp(1j*phase)
 
-        if solve_per == "array":
-            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
+        shape = (n_time, n_chan, n_ant, n_dir, n_corr)
+
+        gains = da.broadcast_to(gains[:, :, :1], shape)
 
         gain_list.append(gains)
 
@@ -92,6 +88,8 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
             time.map_blocks(lambda x: np.unique(x, return_inverse=True)[1])
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
+
+        model *= da.from_array([1, 0.1, 0.1, 1])
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
@@ -145,7 +143,7 @@ def test_gains(cmp_gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
         solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
                                                solved_gain_xds.gain_flags.data)
-        true_gain = true_gain.compute().copy()
+        true_gain = true_gain.compute().copy()  # Make mutable.
 
         true_gain[np.where(solved_flags)] = 0
         solved_gain[np.where(solved_flags)] = 0
@@ -153,7 +151,7 @@ def test_gains(cmp_gain_xds_lod, true_gain_list):
         # To ensure the missing antenna handling doesn't render this test
         # useless, check that we have non-zero entries first.
         assert np.any(solved_gain), "All gains are zero!"
-        np.testing.assert_array_almost_equal(true_gain, solved_gain)
+        np.testing.assert_array_almost_equal(true_gain[:1], solved_gain)
 
 
 def test_gain_flags(cmp_gain_xds_lod):

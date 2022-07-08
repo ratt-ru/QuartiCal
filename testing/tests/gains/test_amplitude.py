@@ -2,7 +2,7 @@ from copy import deepcopy
 import pytest
 import numpy as np
 import dask.array as da
-from testing.utils.gains import apply_gains, reference_gains
+from testing.utils.gains import apply_gains
 from quartical.calibration.calibrate import add_calibration_graph
 
 
@@ -15,9 +15,11 @@ def opts(base_opts, select_corr, solve_per):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [30]
+    _opts.solver.iter_recipe = [100]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_criteria = 1e-8
+    _opts.solver.convergence_criteria = 1e-7
+    _opts.solver.convergence_fraction = 1
+    _opts.solver.threads = 2
     _opts.G.type = "amplitude"
     _opts.G.solve_per = solve_per
 
@@ -48,12 +50,16 @@ def true_gain_list(predicted_xds_list, solve_per):
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
-        amp = da.random.normal(size=(n_time, n_chan, n_ant, n_dir, n_corr),
-                               loc=1,
-                               scale=0.05,
-                               chunks=chunking)
-        phase = da.zeros((n_time, n_chan, n_ant, n_dir, n_corr),
-                         chunks=chunking)
+        amp = da.random.normal(
+            size=(n_time, n_chan, n_ant, n_dir, n_corr),
+            loc=1,
+            scale=0.2,
+            chunks=chunking
+        )
+        phase = da.zeros(
+            (n_time, n_chan, n_ant, n_dir, n_corr),
+            chunks=chunking
+        )
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
@@ -132,18 +138,13 @@ def test_solver_flags(cmp_post_solve_data_xds_list):
         np.testing.assert_array_equal(xds._FLAG.data, xds.FLAG.data)
 
 
-def test_gains(gain_xds_lod, true_gain_list):
+def test_gains(cmp_gain_xds_lod, true_gain_list):
 
-    for solved_gain_dict, true_gain in zip(gain_xds_lod, true_gain_list):
+    for solved_gain_dict, true_gain in zip(cmp_gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
         solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
                                                solved_gain_xds.gain_flags.data)
-        true_gain = true_gain.compute()  # TODO: This could be done elsewhere.
-
-        n_corr = true_gain.shape[-1]
-
-        solved_gain = reference_gains(solved_gain, n_corr)
-        true_gain = reference_gains(true_gain, n_corr)
+        true_gain = true_gain.compute().copy()
 
         true_gain[np.where(solved_flags)] = 0
         solved_gain[np.where(solved_flags)] = 0
@@ -154,9 +155,9 @@ def test_gains(gain_xds_lod, true_gain_list):
         np.testing.assert_array_almost_equal(true_gain, solved_gain)
 
 
-def test_gain_flags(gain_xds_lod):
+def test_gain_flags(cmp_gain_xds_lod):
 
-    for solved_gain_dict in gain_xds_lod:
+    for solved_gain_dict in cmp_gain_xds_lod:
         solved_gain_xds = solved_gain_dict["G"]
         solved_flags = solved_gain_xds.gain_flags.values
 

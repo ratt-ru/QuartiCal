@@ -15,9 +15,11 @@ def opts(base_opts, select_corr, solve_per):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [30]
+    _opts.solver.iter_recipe = [100]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_criteria = 1e-8
+    _opts.solver.convergence_criteria = 1e-7
+    _opts.solver.convergence_fraction = 1
+    _opts.solver.threads = 2
     _opts.G.type = "phase"
     _opts.G.solve_per = solve_per
 
@@ -47,7 +49,7 @@ def true_gain_list(predicted_xds_list, solve_per):
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
-        bound = np.pi/4 if solve_per == "array" else np.pi/2
+        bound = np.pi
 
         da.random.seed(0)
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
@@ -125,7 +127,10 @@ def add_calibration_graph_outputs(corrupted_data_xds_list,
 def test_residual_magnitude(cmp_post_solve_data_xds_list):
     # Magnitude of the residuals should tend to zero.
     for xds in cmp_post_solve_data_xds_list:
-        np.testing.assert_array_almost_equal(np.abs(xds._RESIDUAL.data), 0)
+        residual = xds._RESIDUAL.data
+        if residual.shape[-1] == 4:
+            residual = residual[..., (0, 3)]  # Only check on-diagonal terms.
+        np.testing.assert_array_almost_equal(np.abs(residual), 0)
 
 
 def test_solver_flags(cmp_post_solve_data_xds_list):
@@ -134,9 +139,9 @@ def test_solver_flags(cmp_post_solve_data_xds_list):
         np.testing.assert_array_equal(xds._FLAG.data, xds.FLAG.data)
 
 
-def test_gains(gain_xds_lod, true_gain_list):
+def test_gains(cmp_gain_xds_lod, true_gain_list):
 
-    for solved_gain_dict, true_gain in zip(gain_xds_lod, true_gain_list):
+    for solved_gain_dict, true_gain in zip(cmp_gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
         solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
                                                solved_gain_xds.gain_flags.data)
@@ -156,9 +161,9 @@ def test_gains(gain_xds_lod, true_gain_list):
         np.testing.assert_array_almost_equal(true_gain, solved_gain)
 
 
-def test_gain_flags(gain_xds_lod):
+def test_gain_flags(cmp_gain_xds_lod):
 
-    for solved_gain_dict in gain_xds_lod:
+    for solved_gain_dict in cmp_gain_xds_lod:
         solved_gain_xds = solved_gain_dict["G"]
         solved_flags = solved_gain_xds.gain_flags.values
 

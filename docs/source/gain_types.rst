@@ -39,31 +39,6 @@ Note:
       the majority of use-cases.
 
 
-Approximate Complex - ``approx_complex``
-----------------------------------------
-
-This solves for gains of the following form (in the case of linear feeds,
-but the same is true for circular feeds):
-
-.. math::
-
-    \mathbf{G} = \begin{bmatrix} g^{XX} & g^{XY} \\
-                                 g^{YX} & g^{YY} \end{bmatrix}
-
-Note:
-    * This term contains amplitude, phase and leakage information and may not
-      be appropriate in the absence of a polarised model.
-    * This is roughly equivalent to the ``complex`` case but makes some
-      simplifying assumptions about the data weights. This makes it faster
-      but less accurate.
-    * Can be used in conjunction with ``input_ms.select_corr`` to solve over
-      a subset of the correlations present in the measurement set.
-
-.. warning::
-
-    This solver may be deprecated at short notice if it causes problems for
-    users.
-
 Amplitude - ``amplitude``
 -------------------------
 

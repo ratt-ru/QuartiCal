@@ -254,6 +254,14 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
         elif interp_method == "2dspline":
             interp_xds = spline2d_interpolate_gains(interp_xds, term_xds)
 
+        # If we are loading a term with a differing number of correlations,
+        # this should handle selecting them out/padding them in.
+        if interp_xds.dims["corr"] < term_xds.dims["corr"]:
+            interp_xds = \
+                interp_xds.reindex({"corr": term_xds.corr}, fill_value=0)
+        elif interp_xds.dims["corr"] > term_xds.dims["corr"]:
+            interp_xds = interp_xds.sel({"corr": term_xds.corr})
+
         # Convert the interpolated quantities back to gains.
         if interp_mode == "ampphase":
             gains = interp_xds.amp.data*da.exp(1j*interp_xds.phase.data)

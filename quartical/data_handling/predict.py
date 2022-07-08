@@ -74,7 +74,7 @@ def parse_sky_models(sky_models):
             # will error out. However, if the first source has a reference
             # frequency set, we will instead default to that.
 
-            if fallback_freq0 is None:
+            if (fallback_freq0 is None) or (fallback_freq0 == 0):
                 ref_freq = 1e9  # Non-zero default.
                 spi = [[0]*4]  # Flat spectrum.
             else:

@@ -69,7 +69,7 @@ def _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
 def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
-                      corr_mode):
+                      corr_mode, numbness=1e-6):
     """Update the current state of the gain flags.
 
     Uses the current (km0) and previous (km1) gains to identify diverging
@@ -94,7 +94,15 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
 
     set_identity = factories.set_identity_factory(corr_mode)
 
-    def impl(base_args, term_args, meta_args, flag_imdry, loop_idx, corr_mode):
+    def impl(
+        base_args,
+        term_args,
+        meta_args,
+        flag_imdry,
+        loop_idx,
+        corr_mode,
+        numbness=1e-6
+    ):
 
         active_term = meta_args.active_term
         max_iter = meta_args.iters
@@ -160,7 +168,7 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
                         # This if-else ladder aims to do the following:
                         # 1) If a point has converged, ensure it is unflagged.
                         # 2) If a point is strictly converging, it should have
-                        #    no flags. Note we allow a small epsilon (1e-6) of
+                        #    no flags. Note we allow a small epsilon of
                         #    "numbness" - this is important if our initial
                         #    estimate is very close to the solution.
                         # 3) If a point strictly diverging, it should be soft
@@ -171,9 +179,9 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
                             # Unflag points which converged.
                             gain_flags[ti, fi, a, d] = 0
                             n_cnvgd += 1
-                        elif km0_trend < km1_trend < 1e-6:
+                        elif km0_trend < km1_trend < numbness:
                             gain_flags[ti, fi, a, d] = 0
-                        elif km0_trend > km1_trend > 1e-6:
+                        elif km0_trend > km1_trend > numbness:
                             gain_flags[ti, fi, a, d] = \
                                 1 if gain_flags[ti, fi, a, d] else -1
 

@@ -1,6 +1,8 @@
 import dask.array as da
 import numpy as np
 import xarray
+from quartical.statistics.stat_kernels import (compute_mean_presolve_chisq,
+                                               compute_mean_postsolve_chisq)
 
 
 def make_stats_xds_list(data_xds_list):
@@ -35,18 +37,19 @@ def assign_presolve_chisq(data_xds_list, stats_xds_list):
 
         data = xds.DATA.data
         model = xds.MODEL_DATA.data
-        weights = xds.WEIGHT.data
-        inv_flags = da.where(xds.FLAG.data == 0, 1, 0)[:, :, None]
+        weight = xds.WEIGHT.data
+        flags = xds.FLAG.data
 
-        residual = data - model.sum(axis=2)
-
-        chisq = da.map_blocks(
-            compute_chisq,
-            residual,
-            weights,
-            inv_flags,
-            chunks=(1, 1),
-            drop_axis=-1,
+        chisq = da.blockwise(
+            compute_mean_presolve_chisq, "rf",
+            data, "rfc",
+            model, "rfdc",
+            weight, "rfc",
+            flags, "rf",
+            adjust_chunks={"r": 1, "f": 1},
+            align_arrays=False,
+            concatenate=True,
+            dtype=np.float64,
         )
 
         chisq_per_xds.append(
@@ -65,17 +68,19 @@ def assign_postsolve_chisq(data_xds_list, stats_xds_list):
 
     for xds, sxds in zip(data_xds_list, stats_xds_list):
 
-        weights = xds._WEIGHT.data
         residual = xds._RESIDUAL.data
-        inv_flags = da.where(xds.FLAG.data == 0, 1, 0)[:, :, None]
+        weight = xds._WEIGHT.data
+        flags = xds.FLAG.data
 
-        chisq = da.map_blocks(
-            compute_chisq,
-            residual,
-            weights,
-            inv_flags,
-            chunks=(1, 1),
-            drop_axis=-1,
+        chisq = da.blockwise(
+            compute_mean_postsolve_chisq, "rf",
+            residual, "rfc",
+            weight, "rfc",
+            flags, "rf",
+            adjust_chunks={"r": 1, "f": 1},
+            align_arrays=False,
+            concatenate=True,
+            dtype=np.float64,
         )
 
         chisq_per_xds.append(
@@ -85,31 +90,3 @@ def assign_postsolve_chisq(data_xds_list, stats_xds_list):
         )
 
     return chisq_per_xds
-
-
-def compute_chisq(residual, weights, inv_flags):
-    """Compute the mean chi-squared for a given chunk.
-
-    Args:
-        residual: A (row, chan, corr) numpy.ndarray containing residual values.
-        weights: A (row, chan, corr) numpy.ndarray containing weight values.
-        inv_flags: A (row, chan, 1) numpy.ndarray containing inverse flags i.e.
-            set where data is valid.
-
-    Returns:
-        mean_chisq: A (1, 1) numpy.ndarray containing the mean chi-squared.
-    """
-
-    eff_weights = weights * inv_flags
-
-    chisq = (residual * eff_weights * residual.conj()).real
-    chisq = chisq.sum(keepdims=True)
-
-    counts = inv_flags.sum(keepdims=True) * residual.shape[-1]
-
-    if counts:
-        mean_chisq = (chisq/counts)[..., -1]
-    else:
-        mean_chisq = np.array([[np.nan]])
-
-    return mean_chisq

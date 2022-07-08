@@ -93,7 +93,8 @@ class Outputs(Input):
                                "corrected_residual",
                                "residual",
                                "weight",
-                               "corrected_weight"])
+                               "corrected_weight",
+                               "model_data"])
     )
     columns: Optional[List[str]] = None
     flags: bool = True
@@ -130,6 +131,7 @@ class Solver(Input):
     threads: int = 1
     convergence_fraction: float = 0.99
     convergence_criteria: float = 1e-6
+    reference_antenna: int = 0
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -142,7 +144,7 @@ class Solver(Input):
 
 @dataclass
 class Dask(Input):
-    threads: int = 0
+    threads: Optional[int] = None
     workers: int = 1
     address: Optional[str] = None
     scheduler: str = field(
@@ -161,13 +163,13 @@ class Gain(Input):
     type: str = field(
         default="complex",
         metadata=dict(choices=["complex",
-                               "approx_complex",
                                "diag_complex",
                                "amplitude",
                                "delay",
                                "phase",
                                "tec",
-                               "rotation_measure"])
+                               "rotation_measure",
+                               "crosshand_phase"])
     )
     solve_per: str = field(
         default="antenna",
@@ -177,6 +179,8 @@ class Gain(Input):
     direction_dependent: bool = False
     time_interval: str = "1"
     freq_interval: str = "1"
+    respect_scan_boundaries: bool = True
+    initial_estimate: bool = True
     load_from: Optional[str] = None
     interp_mode: str = field(
         default="reim",
@@ -193,6 +197,11 @@ class Gain(Input):
         self.validate_choice_fields()
         self.time_interval = as_time(self.time_interval)
         self.freq_interval = as_freq(self.freq_interval)
+
+        if self.type == "crosshand_phase" and self.solve_per != "array":
+            raise ValueError("Crosshand phase can only be solved as a per "
+                             "array term. Please set the appropriate "
+                             "term.solve_per to 'array'.")
 
 
 @dataclass
