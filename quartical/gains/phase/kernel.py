@@ -262,7 +262,6 @@ def compute_jhj_jhr(
 
             norm_factors = valloc(complex_dtype)
 
-            tmp_kprod = np.zeros((4, 4), dtype=complex_dtype)
             jhr_tifi = jhr[ti, fi]
             jhj_tifi = jhj[ti, fi]
 
@@ -361,7 +360,6 @@ def compute_jhj_jhr(
                                                w,
                                                norm_factors,
                                                gains_p[active_term],
-                                               tmp_kprod,
                                                wr_pq,
                                                jhr_tifi[a1_m, d],
                                                jhj_tifi[a1_m, d])
@@ -374,7 +372,6 @@ def compute_jhj_jhr(
                                                w,
                                                norm_factors,
                                                gains_q[active_term],
-                                               tmp_kprod,
                                                wr_qp,
                                                jhr_tifi[a2_m, d],
                                                jhj_tifi[a2_m, d])
@@ -490,7 +487,6 @@ def param_to_gain_factory(corr_mode):
 def compute_jhwj_jhwr_elem_factory(corr_mode):
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    a_kron_bt = factories.a_kron_bt_factory(corr_mode)
     unpack = factories.unpack_factory(corr_mode)
     unpackc = factories.unpackc_factory(corr_mode)
     iunpack = factories.iunpack_factory(corr_mode)
@@ -498,7 +494,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     imul = factories.imul_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, normf, gain, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, normf, gain, res, jhr, jhj):
 
             # Effectively apply zero weight to off-diagonal terms.
             # TODO: Can be tidied but requires moving other weighting code.
@@ -516,17 +512,9 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             # Accumulate an element of jhwj.
 
-            # WARNING: In this instance we are using the row-major
-            # version of the kronecker product identity. This is because the
-            # MS stores the correlations in row-major order (XX, XY, YX, YY),
-            # whereas the standard maths assumes column-major ordering
-            # (XX, YX, XY, YY). This subtle change means we can use the MS
-            # data directly without worrying about swapping elements around.
-            a_kron_bt(lop, rop, tmp_kprod)  # TODO: Only necessary elem.
-
             r_0, _, _, r_3 = unpack(res)  # NOTE: XX, XY, YX, YY
 
-            g_0, _, _, g_3 = unpack(gain)
+            _, _, _, g_3 = unpack(gain)
             gc_0, _, _, gc_3 = unpackc(gain)
 
             drv_00 = -1j*gc_0
@@ -538,27 +526,31 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jhr[0] += upd_00
             jhr[1] += upd_11
 
-            w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
+            w_0, _, _, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
             n_0, _, _, n_3 = unpack(normf)
 
-            # Apply normalisation factors by scaling w. # Neglect (set weight
-            # to zero) off diagonal terms.
+            # Apply normalisation factors by scaling w.
             w_0 = n_0 * w_0
-            w_1 = 0
-            w_2 = 0
             w_3 = n_3 * w_3
 
-            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[0])
-            j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[0])
+            lop_00, lop_01, lop_10, lop_11 = unpack(lop)
+            rop_00, rop_10, rop_01, rop_11 = unpack(rop)  # "Transpose"
 
-            jhwj_00 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
+            jh_00 = lop_00 * rop_00
+            jh_03 = lop_01 * rop_01
 
-            j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[3])
+            j_00 = jh_00.conjugate()
+            j_03 = jh_03.conjugate()
 
-            jhwj_03 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
+            jh_30 = lop_10 * rop_10
+            jh_33 = lop_11 * rop_11
 
-            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[3])
-            jhwj_33 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
+            j_30 = jh_30.conjugate()
+            j_33 = jh_33.conjugate()
+
+            jhwj_00 = jh_00*w_0*j_00 + jh_03*w_3*j_03
+            jhwj_03 = jh_00*w_0*j_30 + jh_03*w_3*j_33
+            jhwj_33 = jh_30*w_0*j_30 + jh_33*w_3*j_33
 
             jhj[0, 0] += jhwj_00.real
             jhj[0, 1] += (gc_0*jhwj_03*g_3).real
@@ -566,7 +558,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jhj[1, 1] += jhwj_33.real
 
     elif corr_mode.literal_value == 2:
-        def impl(lop, rop, w, normf, gain, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, normf, gain, res, jhr, jhj):
 
             # Compute normalization factor.
             iunpack(normf, rop)
@@ -599,7 +591,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             jhj[1, 1] += (jh_11*n_11*w_11*j_11).real
 
     elif corr_mode.literal_value == 1:
-        def impl(lop, rop, w, normf, gain, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, normf, gain, res, jhr, jhj):
 
             # Compute normalization factor.
             iunpack(normf, rop)

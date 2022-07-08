@@ -260,7 +260,6 @@ def compute_jhj_jhr(
 
             norm_factors = valloc(complex_dtype)
 
-            tmp_kprod = np.zeros((4, 4), dtype=complex_dtype)
             jhr_tifi = jhr[ti, fi]
             jhj_tifi = jhj[ti, fi]
 
@@ -359,7 +358,6 @@ def compute_jhj_jhr(
                                                w,
                                                norm_factors,
                                                gains_p[active_term],
-                                               tmp_kprod,
                                                wr_pq,
                                                jhr_tifi[a1_m, d],
                                                jhj_tifi[a1_m, d])
@@ -372,7 +370,6 @@ def compute_jhj_jhr(
                                                w,
                                                norm_factors,
                                                gains_q[active_term],
-                                               tmp_kprod,
                                                wr_qp,
                                                jhr_tifi[a2_m, d],
                                                jhj_tifi[a2_m, d])
@@ -481,14 +478,13 @@ def param_to_gain_factory(corr_mode):
 def compute_jhwj_jhwr_elem_factory(corr_mode):
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    a_kron_bt = factories.a_kron_bt_factory(corr_mode)
     unpack = factories.unpack_factory(corr_mode)
     unpackc = factories.unpackc_factory(corr_mode)
     iabsdivsq = factories.iabsdivsq_factory(corr_mode)
     imul = factories.imul_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, normf, gain, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, normf, gain, res, jhr, jhj):
 
             # Compute normalization factor.
             v1_imul_v2(lop, rop, normf)
@@ -500,14 +496,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             v1_imul_v2(lop, res, res)
 
             # Accumulate an element of jhwj.
-
-            # WARNING: In this instance we are using the row-major
-            # version of the kronecker product identity. This is because the
-            # MS stores the correlations in row-major order (XX, XY, YX, YY),
-            # whereas the standard maths assumes column-major ordering
-            # (XX, YX, XY, YY). This subtle change means we can use the MS
-            # data directly without worrying about swapping elements around.
-            a_kron_bt(lop, rop, tmp_kprod)  # TODO: Only necessary elem.
 
             r_0, _, _, _ = unpack(res)  # NOTE: XX, XY, YX, YY
 
@@ -528,10 +516,21 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_2 = n_2 * w_2
             w_3 = n_3 * w_3
 
-            jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[0])
-            j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[0])
+            lop_00, lop_01, _, _ = unpack(lop)
+            rop_00, _, rop_01, _ = unpack(rop)  # "Transpose"
 
-            jhwj_00 = jh_0*w_0*j_0 + jh_1*w_1*j_1 + jh_2*w_2*j_2 + jh_3*w_3*j_3
+            jh_00 = lop_00 * rop_00
+            jh_01 = lop_00 * rop_01
+            jh_02 = lop_01 * rop_00
+            jh_03 = lop_01 * rop_01
+
+            j_00 = jh_00.conjugate()
+            j_01 = jh_01.conjugate()
+            j_02 = jh_02.conjugate()
+            j_03 = jh_03.conjugate()
+
+            jhwj_00 = jh_00*w_0*j_00 + jh_01*w_1*j_01 + \
+                      jh_02*w_2*j_02 + jh_03*w_3*j_03  # noqa
 
             jhj[0, 0] += jhwj_00.real
 
