@@ -85,7 +85,8 @@ def update_etas(residuals, flags, etas, icovariance, dof, flag_threshold,
 
     update_etas_inner = update_etas_inner_factory(mode)
 
-    def impl(residuals, flags, etas, icovariance, dof, mode):
+    def impl(residuals, flags, etas, icovariance, dof, flag_threshold,
+             mode):
 
         n_row, n_chan, n_corr = residuals.shape
 
