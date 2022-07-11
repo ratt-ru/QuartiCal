@@ -96,7 +96,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
 
     if solver_opts.robust:
         final_epoch = len(iter_recipe) // len(terms)
-        etas = np.zeros_like(kwargs["weights"][..., 0])
+        etas = np.ones_like(kwargs["weights"][..., 0])
         icovariance = np.zeros(kwargs["corr_mode"], np.float64)
         dof = 5
 
@@ -150,7 +150,13 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                     etas,
                     icovariance,
                     dof,
+                    solver_opts.reweighting_flag_threshold,
                     kwargs["corr_mode"])
+
+                # propagate robust flags
+                if solver_opts.reweighting_flag_threshold:
+                    fsel = etas == 0
+                    results_dict["flags"][fsel] = 1
 
         # TODO: Ugly hack for larger jhj matrices. Refine.
         if jhj.ndim == 6:

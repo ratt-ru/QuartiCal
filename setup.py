@@ -24,9 +24,7 @@ requirements = [
     "bokeh",
     "xarray>=0.20.0",
     "rich",
-    "scabha"
-    "@git+https://github.com/caracal-pipeline/scabha2"
-    "@rich",
+    "scabha",
 ]
 
 setup(
