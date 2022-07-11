@@ -4,7 +4,6 @@ gain:
     default: complex
     choices:
       - complex
-      - approx_complex
       - diag_complex
       - amplitude
       - delay

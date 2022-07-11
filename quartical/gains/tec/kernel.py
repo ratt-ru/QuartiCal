@@ -3,7 +3,6 @@ import numpy as np
 from numba import generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (solver_intermediaries,
-                                              compute_amplocked_residual,
                                               per_array_jhj_jhr)
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
@@ -59,7 +58,6 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
     def impl(base_args, term_args, meta_args, corr_mode):
 
-        data = base_args.data
         gains = base_args.gains
         gain_flags = base_args.gain_flags
 
@@ -84,9 +82,8 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         pshape = active_params.shape
         jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
         jhr = np.empty(pshape, dtype=real_dtype)
-        residual = data.astype(np.complex128)  # Make a high precision copy.
         update = np.zeros_like(jhr)
-        solver_imdry = solver_intermediaries(jhj, jhr, residual, update)
+        solver_imdry = solver_intermediaries(jhj, jhr, update)
 
         scaled_icf = term_args.chan_freqs.copy()  # Don't mutate.
         min_freq = np.min(scaled_icf)
@@ -94,10 +91,6 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         active_params[..., 1::2] /= min_freq  # Scale consistently with freq.
 
         for loop_idx in range(max_iter):
-
-            compute_amplocked_residual(base_args,
-                                       solver_imdry,
-                                       corr_mode)
 
             compute_jhj_jhr(base_args,
                             term_args,
