@@ -3,7 +3,10 @@ import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (solver_intermediaries,
-                                              per_array_jhj_jhr)
+                                              jhj_jhr_itermediaries,
+                                              per_array_jhj_jhr,
+                                              resample_solints,
+                                              downsample_jhj_jhr)
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
@@ -11,7 +14,8 @@ from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_param_flags)
 from quartical.gains.general.convenience import (get_row,
                                                  get_chan_extents,
-                                                 get_row_extents)
+                                                 get_row_extents,
+                                                 extent_tuple)
 import quartical.gains.general.factories as factories
 from quartical.gains.general.inversion import (invert_factory,
                                                inversion_buffer_factory)
@@ -66,6 +70,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
         max_iter = meta_args.iters
         solve_per = meta_args.solve_per
         dd_term = meta_args.dd_term
+        n_thread = meta_args.threads
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
@@ -80,11 +85,42 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
         # Set up some intemediaries used for solving. TODO: Move?
         real_dtype = active_gain.real.dtype
-        pshape = active_params.shape
-        jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
-        jhr = np.empty(pshape, dtype=real_dtype)
-        update = np.zeros_like(jhr)
-        solver_imdry = solver_intermediaries(jhj, jhr, update)
+        param_shape = active_params.shape
+
+        active_t_map_g = base_args.t_map_arr[0, :, active_term]
+        active_f_map_p = base_args.f_map_arr[1, :, active_term]
+
+        resample_outputs = resample_solints(
+            active_t_map_g,
+            param_shape,
+            n_thread
+        )
+
+        upsample_shape, upsample_t_map, downsample_t_map = resample_outputs
+
+        # Determine the starts and stops of the rows and channels associated
+        # with each solution interval.
+        row_starts, row_stops = get_row_extents(upsample_t_map)
+        chan_starts, chan_stops = get_chan_extents(active_f_map_p)
+
+        extents = extent_tuple(
+            row_starts,
+            row_stops,
+            chan_starts,
+            chan_stops
+        )
+
+        jhj = np.empty(upsample_shape + (upsample_shape[-1],),
+                       dtype=real_dtype)
+        jhr = np.empty(upsample_shape, dtype=real_dtype)
+        update = np.zeros(param_shape, dtype=real_dtype)
+
+        jhj_jhr_imdry = jhj_jhr_itermediaries(jhj, jhr)
+        solver_imdry = solver_intermediaries(
+            jhj[:param_shape[0]],
+            jhr[:param_shape[0]],
+            update
+        )
 
         scaled_cf = term_args.chan_freqs.copy()  # Don't mutate.
         min_freq = np.min(scaled_cf)
@@ -97,9 +133,13 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
             compute_jhj_jhr(base_args,
                             term_args,
                             meta_args,
-                            solver_imdry,
+                            jhj_jhr_imdry,
+                            extents,
                             scaled_cf,
                             corr_mode)
+
+            if upsample_shape != param_shape:
+                downsample_jhj_jhr(jhj, jhr, downsample_t_map)
 
             if solve_per == "array":
                 per_array_jhj_jhr(solver_imdry)
@@ -149,7 +189,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
         active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
 
-        return jhj, term_conv_info(loop_idx + 1, conv_perc)
+        return solver_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
     return impl
 
@@ -163,7 +203,8 @@ def compute_jhj_jhr(
     base_args,
     term_args,
     meta_args,
-    solver_imdry,
+    jhj_jhr_imdry,
+    extents,
     scaled_cf,
     corr_mode
 ):
@@ -190,7 +231,8 @@ def compute_jhj_jhr(
         base_args,
         term_args,
         meta_args,
-        solver_imdry,
+        jhj_jhr_imdry,
+        extents,
         scaled_cf,
         corr_mode
     ):
@@ -209,11 +251,15 @@ def compute_jhj_jhr(
         gains = base_args.gains
         t_map_arr = base_args.t_map_arr[0]  # We only need the gain mappings.
         f_map_arr_g = base_args.f_map_arr[0]
-        f_map_arr_p = base_args.f_map_arr[1]
         d_map_arr = base_args.d_map_arr
 
-        jhj = solver_imdry.jhj
-        jhr = solver_imdry.jhr
+        jhj = jhj_jhr_imdry.jhj
+        jhr = jhj_jhr_imdry.jhr
+
+        row_starts = extents.row_starts
+        row_stops = extents.row_stops
+        chan_starts = extents.chan_starts
+        chan_stops = extents.chan_stops
 
         _, n_chan, n_dir, n_corr = model.shape
 
@@ -227,17 +273,6 @@ def compute_jhj_jhr(
         weight_dtype = weights.dtype
 
         n_gains = len(gains)
-
-        # Determine the starts and stops of the rows and channels associated
-        # with each solution interval. This could even be moved out for speed.
-        row_starts, row_stops = get_row_extents(t_map_arr,
-                                                active_term,
-                                                n_tint)
-
-        chan_starts, chan_stops = get_chan_extents(f_map_arr_p,
-                                                   active_term,
-                                                   n_fint,
-                                                   n_chan)
 
         # Determine loop variables based on where we are in the chain.
         # gt means greater than (n>j) and lt means less than (n<j).

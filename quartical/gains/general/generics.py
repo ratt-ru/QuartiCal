@@ -17,6 +17,14 @@ solver_intermediaries = namedtuple(
     )
 )
 
+jhj_jhr_itermediaries = namedtuple(
+    "jhj_jhr_intermediaries",
+    (
+        "jhj",
+        "jhr"
+    )
+)
+
 
 qcgjit = generated_jit(nopython=True,
                        fastmath=True,
@@ -444,5 +452,84 @@ def per_array_jhj_jhr(solver_imdry):
                 for a in range(1, n_ant):
                     jhj[t, f, a] = jhj[t, f, 0]
                     jhr[t, f, a] = jhr[t, f, 0]
+
+    return impl
+
+
+@qcgjit
+def resample_solints(native_map, native_shape, n_thread):
+
+    def impl(native_map, native_shape, n_thread):
+
+        n_tint, n_fint = native_shape[:2]
+        n_int = n_tint * n_fint
+
+        if n_int < n_thread:  # TODO: Maybe put some integer factor here?
+
+            remap_factor = np.ceil(n_thread/n_int)
+
+            target_n_int = int(n_int * remap_factor)
+
+            upsample_map = np.empty_like(native_map)
+            downsample_map = np.empty(target_n_int, dtype=np.int32)
+            remap_id = 0
+
+            for i in range(n_int):
+
+                sel = np.where(native_map == i)
+
+                sel_n_row = sel[0].size
+
+                upsample_n_row = int(np.ceil(sel_n_row/remap_factor))
+
+                consumed_rows = 0
+
+                for start in range(0, sel_n_row, upsample_n_row):
+
+                    stop = min(start + upsample_n_row, sel_n_row)
+
+                    upsample_map[start:stop] = remap_id
+                    downsample_map[remap_id] = i
+
+                    consumed_rows -= upsample_n_row
+                    remap_id += 1
+
+            upsample_shape = (target_n_int,) + native_shape[1:]
+
+        else:
+
+            upsample_map = native_map
+            downsample_map = np.empty(0, dtype=np.int32)
+            upsample_shape = native_shape
+
+        return upsample_shape, upsample_map, downsample_map
+
+    return impl
+
+
+@qcgjit
+def downsample_jhj_jhr(jhj, jhr, downsample_t_map):
+
+    def impl(jhj, jhr, downsample_t_map):
+
+        n_tint, n_fint, n_ant, n_dir = jhj.shape[:4]
+
+        prev_out_ti = -1
+
+        for ti in range(n_tint):
+            for fi in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+
+                        out_ti = downsample_t_map[ti]
+
+                        if prev_out_ti != out_ti:
+                            jhj[out_ti, fi, a, d] = jhj[ti, fi, a, d]
+                            jhr[out_ti, fi, a, d] = jhr[ti, fi, a, d]
+                        else:
+                            jhj[out_ti, fi, a, d] += jhj[ti, fi, a, d]
+                            jhr[out_ti, fi, a, d] += jhr[ti, fi, a, d]
+
+                        prev_out_ti = out_ti
 
     return impl
