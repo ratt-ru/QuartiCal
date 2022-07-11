@@ -99,7 +99,7 @@ def update_etas(residuals, flags, etas, icovariance, dof, flag_threshold,
                     denominator = dof + update_etas_inner(residuals[r, f],
                                                           icovariance)
                     etan = numerator/denominator
-                    if etas[r, f] != 0  and etan/etas[r, f]  < flag_threshold:
+                    if etas[r, f] != 0 and etan/etas[r, f] < flag_threshold:
                         etas[r, f] = 0
                     else:
                         etas[r, f] = etan

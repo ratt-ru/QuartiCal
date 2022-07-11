@@ -150,11 +150,11 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                     etas,
                     icovariance,
                     dof,
-                    solver_opts.weight_flag_threshold,
+                    solver_opts.reweighting_flag_threshold,
                     kwargs["corr_mode"])
 
                 # propagate robust flags
-                if solver_opts.propagate_flags:
+                if solver_opts.reweighting_flag_threshold:
                     fsel = etas == 0
                     results_dict["flags"][fsel] = 1
 
