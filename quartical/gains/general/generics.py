@@ -544,11 +544,12 @@ def downsample_jhj_jhr(upsampled_imdry, downsample_t_map):
         prev_out_ti = -1
 
         for ti in range(n_tint):
+
+            out_ti = downsample_t_map[ti]
+
             for fi in range(n_fint):
                 for a in range(n_ant):
                     for d in range(n_dir):
-
-                        out_ti = downsample_t_map[ti]
 
                         if prev_out_ti != out_ti:
                             jhj[out_ti, fi, a, d] = jhj[ti, fi, a, d]
@@ -557,6 +558,6 @@ def downsample_jhj_jhr(upsampled_imdry, downsample_t_map):
                             jhj[out_ti, fi, a, d] += jhj[ti, fi, a, d]
                             jhr[out_ti, fi, a, d] += jhr[ti, fi, a, d]
 
-                        prev_out_ti = out_ti
+            prev_out_ti = out_ti
 
     return impl
