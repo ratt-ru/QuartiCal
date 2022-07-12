@@ -82,14 +82,14 @@ def crosshand_phase_solver(base_args, term_args, meta_args, corr_mode):
         param_shape = active_params.shape
 
         active_t_map_g = base_args.t_map_arr[0, :, active_term]
-        active_f_map_p = base_args.f_map_arr[1, :, active_term]
+        active_f_map_g = base_args.f_map_arr[0, :, active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, param_shape, n_thread)
 
         # Determine the starts and stops of the rows and channels associated
         # with each solution interval.
-        extents = get_extents(resampler.upsample_t_map, active_f_map_p)
+        extents = get_extents(resampler.upsample_t_map, active_f_map_g)
 
         upsample_shape = resampler.upsample_shape
         upsampled_jhj = np.empty(upsample_shape + (upsample_shape[-1],),
