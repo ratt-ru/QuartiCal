@@ -2,13 +2,17 @@
 import numpy as np
 from numba import generated_jit
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.generics import (solver_intermediaries,
-                                              per_array_jhj_jhr)
+from quartical.gains.general.generics import (native_intermediaries,
+                                              upsampled_itermediaries,
+                                              per_array_jhj_jhr,
+                                              resample_solints,
+                                              downsample_jhj_jhr)
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
                                               apply_gain_flags,
                                               update_param_flags)
+from quartical.gains.general.convenience import get_extents
 from quartical.gains.delay.kernel import (compute_jhj_jhr,
                                           compute_update,
                                           finalize_update)
@@ -65,6 +69,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         max_iter = meta_args.iters
         solve_per = meta_args.solve_per
         dd_term = meta_args.dd_term
+        n_thread = meta_args.threads
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
@@ -77,13 +82,30 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         flag_imdry = \
             flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
 
-        # Set up some intemediaries used for solving. TODO: Move?
+        # Set up some intemediaries used for solving.
         real_dtype = active_gain.real.dtype
-        pshape = active_params.shape
-        jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
-        jhr = np.empty(pshape, dtype=real_dtype)
-        update = np.zeros_like(jhr)
-        solver_imdry = solver_intermediaries(jhj, jhr, update)
+        param_shape = active_params.shape
+
+        active_t_map_g = base_args.t_map_arr[0, :, active_term]
+        active_f_map_p = base_args.f_map_arr[1, :, active_term]
+
+        # Create more work to do in paralllel when needed, else no-op.
+        resampler = resample_solints(active_t_map_g, param_shape, n_thread)
+
+        # Determine the starts and stops of the rows and channels associated
+        # with each solution interval.
+        extents = get_extents(resampler.upsample_t_map, active_f_map_p)
+
+        upsample_shape = resampler.upsample_shape
+        upsampled_jhj = np.empty(upsample_shape + (upsample_shape[-1],),
+                                 dtype=real_dtype)
+        upsampled_jhr = np.empty(upsample_shape, dtype=real_dtype)
+        jhj = upsampled_jhj[:param_shape[0]]
+        jhr = upsampled_jhr[:param_shape[0]]
+        update = np.zeros(param_shape, dtype=real_dtype)
+
+        upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
+        native_imdry = native_intermediaries(jhj, jhr, update)
 
         scaled_icf = term_args.chan_freqs.copy()  # Don't mutate.
         min_freq = np.min(scaled_icf)
@@ -95,20 +117,24 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
             compute_jhj_jhr(base_args,
                             term_args,
                             meta_args,
-                            solver_imdry,
+                            upsampled_imdry,
+                            extents,
                             scaled_icf,
                             corr_mode)
 
-            if solve_per == "array":
-                per_array_jhj_jhr(solver_imdry)
+            if resampler.active:
+                downsample_jhj_jhr(upsampled_imdry, resampler.downsample_t_map)
 
-            compute_update(solver_imdry,
+            if solve_per == "array":
+                per_array_jhj_jhr(native_imdry)
+
+            compute_update(native_imdry,
                            corr_mode)
 
             finalize_update(base_args,
                             term_args,
                             meta_args,
-                            solver_imdry,
+                            native_imdry,
                             scaled_icf,
                             loop_idx,
                             corr_mode)
@@ -147,6 +173,6 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
         active_params[..., 1::2] *= min_freq  # Undo scaling for SI units.
 
-        return jhj, term_conv_info(loop_idx + 1, conv_perc)
+        return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
     return impl
