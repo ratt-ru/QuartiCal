@@ -37,7 +37,7 @@ upsampled_itermediaries = namedtuple(
 resample_outputs = namedtuple(
     "resample_outputs",
     (
-        "required",
+        "active",
         "upsample_shape",
         "upsample_t_map",
         "downsample_t_map"
@@ -485,17 +485,17 @@ def resample_solints(native_map, native_shape, n_thread):
 
         if n_int < n_thread:  # TODO: Maybe put some integer factor here?
 
-            required = True
+            active = True
 
             remap_factor = np.ceil(n_thread/n_int)
 
-            target_n_int = int(n_int * remap_factor)
+            target_n_tint = int(n_tint * remap_factor)
 
             upsample_map = np.empty_like(native_map)
-            downsample_map = np.empty(target_n_int, dtype=np.int32)
+            downsample_map = np.empty(target_n_tint, dtype=np.int32)
             remap_id = 0
 
-            for i in range(n_int):
+            for i in range(n_tint):
 
                 sel = np.where(native_map == i)
 
@@ -515,17 +515,17 @@ def resample_solints(native_map, native_shape, n_thread):
                     consumed_rows -= upsample_n_row
                     remap_id += 1
 
-            upsample_shape = (target_n_int,) + native_shape[1:]
+            upsample_shape = (target_n_tint,) + native_shape[1:]
 
         else:
 
-            required = False
+            active = False
             upsample_map = native_map
             downsample_map = np.empty(0, dtype=np.int32)
             upsample_shape = native_shape
 
         return resample_outputs(
-            required, upsample_shape, upsample_map, downsample_map
+            active, upsample_shape, upsample_map, downsample_map
         )
 
     return impl

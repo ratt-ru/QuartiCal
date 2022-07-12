@@ -74,14 +74,14 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
         active_gain_flags = gain_flags[active_term]
         active_params = term_args.params[active_term]
 
-        # Set up some intemediaries used for flagging. TODO: Move?
+        # Set up some intemediaries used for flagging.
         km1_gain = active_gain.copy()
         km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
         abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
         flag_imdry = \
             flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
 
-        # Set up some intemediaries used for solving. TODO: Move?
+        # Set up some intemediaries used for solving.
         real_dtype = active_gain.real.dtype
         param_shape = active_params.shape
 
@@ -122,7 +122,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
                             scaled_cf,
                             corr_mode)
 
-            if upsample_shape != param_shape:
+            if resampler.active:
                 downsample_jhj_jhr(upsampled_imdry, resampler.downsample_t_map)
 
             if solve_per == "array":
