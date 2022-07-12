@@ -81,6 +81,16 @@ def get_row(row_ind, row_map):
 
 
 @qcjit
+def get_extents(t_map, f_map):
+    """Given the time/freq mappings, determine run start and stop indices."""
+
+    row_starts, row_stops = get_row_extents(t_map)
+    chan_starts, chan_stops = get_chan_extents(f_map)
+
+    return extent_tuple(row_starts, row_stops, chan_starts, chan_stops)
+
+
+@qcjit
 def get_chan_extents(f_map_arr):
     """Given the frequency mappings, determines the start/stop indices."""
 

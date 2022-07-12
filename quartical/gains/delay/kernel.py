@@ -13,9 +13,7 @@ from quartical.gains.general.flagging import (flag_intermediaries,
                                               apply_gain_flags,
                                               update_param_flags)
 from quartical.gains.general.convenience import (get_row,
-                                                 get_chan_extents,
-                                                 get_row_extents,
-                                                 extent_tuple)
+                                                 get_extents)
 import quartical.gains.general.factories as factories
 from quartical.gains.general.inversion import (invert_factory,
                                                inversion_buffer_factory)
@@ -100,15 +98,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
         # Determine the starts and stops of the rows and channels associated
         # with each solution interval.
-        row_starts, row_stops = get_row_extents(upsample_t_map)
-        chan_starts, chan_stops = get_chan_extents(active_f_map_p)
-
-        extents = extent_tuple(
-            row_starts,
-            row_stops,
-            chan_starts,
-            chan_stops
-        )
+        extents = get_extents(upsample_t_map, active_f_map_p)
 
         jhj = np.empty(upsample_shape + (upsample_shape[-1],),
                        dtype=real_dtype)
