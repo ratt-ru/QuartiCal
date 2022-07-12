@@ -2,21 +2,22 @@
 import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.generics import (solver_intermediaries,
-                                              per_array_jhj_jhr)
+from quartical.gains.general.generics import (native_intermediaries,
+                                              upsampled_itermediaries,
+                                              per_array_jhj_jhr,
+                                              resample_solints,
+                                              downsample_jhj_jhr)
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
                                               apply_gain_flags,
                                               update_param_flags)
 from quartical.gains.general.convenience import (get_row,
-                                                 get_chan_extents,
-                                                 get_row_extents)
+                                                 get_extents)
 import quartical.gains.general.factories as factories
 from quartical.gains.general.inversion import (invert_factory,
                                                inversion_buffer_factory)
 from collections import namedtuple
-
 
 # This can be done without a named tuple now. TODO: Add unpacking to
 # constructor.
@@ -63,44 +64,66 @@ def crosshand_phase_solver(base_args, term_args, meta_args, corr_mode):
         max_iter = meta_args.iters
         solve_per = meta_args.solve_per
         dd_term = meta_args.dd_term
+        n_thread = meta_args.threads
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
         active_params = term_args.params[active_term]
 
-        # Set up some intemediaries used for flagging. TODO: Move?
+        # Set up some intemediaries used for flagging.
         km1_gain = active_gain.copy()
         km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
         abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
         flag_imdry = \
             flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
 
-        # Set up some intemediaries used for solving. TODO: Move?
+        # Set up some intemediaries used for solving.
         real_dtype = active_gain.real.dtype
-        pshape = active_params.shape
-        jhj = np.empty(pshape + (pshape[-1],), dtype=real_dtype)
-        jhr = np.empty(pshape, dtype=real_dtype)
-        update = np.zeros_like(jhr)
-        solver_imdry = solver_intermediaries(jhj, jhr, update)
+        param_shape = active_params.shape
+
+        active_t_map_g = base_args.t_map_arr[0, :, active_term]
+        active_f_map_g = base_args.f_map_arr[0, :, active_term]
+
+        # Create more work to do in paralllel when needed, else no-op.
+        resampler = resample_solints(active_t_map_g, param_shape, n_thread)
+
+        # Determine the starts and stops of the rows and channels associated
+        # with each solution interval.
+        extents = get_extents(resampler.upsample_t_map, active_f_map_g)
+
+        upsample_shape = resampler.upsample_shape
+        upsampled_jhj = np.empty(upsample_shape + (upsample_shape[-1],),
+                                 dtype=real_dtype)
+        upsampled_jhr = np.empty(upsample_shape, dtype=real_dtype)
+        jhj = upsampled_jhj[:param_shape[0]]
+        jhr = upsampled_jhr[:param_shape[0]]
+        update = np.zeros(param_shape, dtype=real_dtype)
+
+        upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
+        native_imdry = native_intermediaries(jhj, jhr, update)
 
         for loop_idx in range(max_iter):
 
             compute_jhj_jhr(base_args,
                             term_args,
                             meta_args,
-                            solver_imdry,
+                            upsampled_imdry,
+                            extents,
                             corr_mode)
 
-            if solve_per == "array":
-                per_array_jhj_jhr(solver_imdry)
+            if resampler.active:
+                downsample_jhj_jhr(upsampled_imdry, resampler.downsample_t_map)
 
-            compute_update(solver_imdry,
+            if solve_per == "array":
+                per_array_jhj_jhr(native_imdry)
+
+            compute_update(native_imdry,
                            corr_mode)
 
             finalize_update(base_args,
                             term_args,
                             meta_args,
-                            solver_imdry,
+                            native_imdry,
                             loop_idx,
                             corr_mode)
 
@@ -136,7 +159,7 @@ def crosshand_phase_solver(base_args, term_args, meta_args, corr_mode):
             apply_gain_flags(base_args,
                              meta_args)
 
-        return jhj, term_conv_info(loop_idx + 1, conv_perc)
+        return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
     return impl
 
@@ -150,7 +173,8 @@ def compute_jhj_jhr(
     base_args,
     term_args,
     meta_args,
-    solver_imdry,
+    upsampled_imdry,
+    extents,
     corr_mode
 ):
 
@@ -176,7 +200,8 @@ def compute_jhj_jhr(
         base_args,
         term_args,
         meta_args,
-        solver_imdry,
+        upsampled_imdry,
+        extents,
         corr_mode
     ):
 
@@ -196,8 +221,8 @@ def compute_jhj_jhr(
         f_map_arr = base_args.f_map_arr[0]  # We only need the gain mappings.
         d_map_arr = base_args.d_map_arr
 
-        jhj = solver_imdry.jhj
-        jhr = solver_imdry.jhr
+        jhj = upsampled_imdry.jhj
+        jhr = upsampled_imdry.jhr
 
         _, n_chan, n_dir, n_corr = model.shape
 
@@ -212,16 +237,10 @@ def compute_jhj_jhr(
 
         n_gains = len(gains)
 
-        # Determine the starts and stops of the rows and channels associated
-        # with each solution interval. This could even be moved out for speed.
-        row_starts, row_stops = get_row_extents(t_map_arr,
-                                                active_term,
-                                                n_tint)
-
-        chan_starts, chan_stops = get_chan_extents(f_map_arr,
-                                                   active_term,
-                                                   n_fint,
-                                                   n_chan)
+        row_starts = extents.row_starts
+        row_stops = extents.row_stops
+        chan_starts = extents.chan_starts
+        chan_stops = extents.chan_stops
 
         # Determine loop variables based on where we are in the chain.
         # gt means greater than (n>j) and lt means less than (n<j).
@@ -382,20 +401,20 @@ def compute_jhj_jhr(
                parallel=True,
                cache=True,
                nogil=True)
-def compute_update(solver_imdry, corr_mode):
+def compute_update(native_imdry, corr_mode):
 
     # We want to dispatch based on this field so we need its type.
-    jhj = solver_imdry[solver_imdry.fields.index('jhj')]
+    jhj = native_imdry[native_imdry.fields.index('jhj')]
 
     generalised = jhj.ndim == 6
     inversion_buffer = inversion_buffer_factory(generalised=generalised)
     invert = invert_factory(corr_mode, generalised=generalised)
 
-    def impl(solver_imdry, corr_mode):
+    def impl(native_imdry, corr_mode):
 
-        jhj = solver_imdry.jhj
-        jhr = solver_imdry.jhr
-        update = solver_imdry.update
+        jhj = native_imdry.jhj
+        jhr = native_imdry.jhr
+        update = native_imdry.update
 
         n_tint, n_fint, n_ant, n_dir, n_param = jhr.shape
 
@@ -423,13 +442,13 @@ def compute_update(solver_imdry, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
+def finalize_update(base_args, term_args, meta_args, native_imdry, loop_idx,
                     corr_mode):
 
     set_identity = factories.set_identity_factory(corr_mode)
     param_to_gain = param_to_gain_factory(corr_mode)
 
-    def impl(base_args, term_args, meta_args, solver_imdry, loop_idx,
+    def impl(base_args, term_args, meta_args, native_imdry, loop_idx,
              corr_mode):
 
         active_term = meta_args.active_term
@@ -439,7 +458,7 @@ def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
 
         params = term_args.params[active_term]
 
-        update = solver_imdry.update
+        update = native_imdry.update
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
