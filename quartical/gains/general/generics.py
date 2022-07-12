@@ -8,6 +8,15 @@ import quartical.gains.general.factories as factories
 from quartical.gains.general.convenience import get_dims, get_row
 
 
+native_intermediaries = namedtuple(
+    "native_intermediaries",
+    (
+        "jhj",
+        "jhr",
+        "update"
+    )
+)
+
 solver_intermediaries = namedtuple(
     "solver_intermediaries",
     (
@@ -17,11 +26,21 @@ solver_intermediaries = namedtuple(
     )
 )
 
-jhj_jhr_itermediaries = namedtuple(
-    "jhj_jhr_intermediaries",
+upsampled_itermediaries = namedtuple(
+    "upsampled_intermediaries",
     (
         "jhj",
         "jhr"
+    )
+)
+
+resample_outputs = namedtuple(
+    "resample_outputs",
+    (
+        "required",
+        "upsample_shape",
+        "upsample_t_map",
+        "downsample_t_map"
     )
 )
 
@@ -466,6 +485,8 @@ def resample_solints(native_map, native_shape, n_thread):
 
         if n_int < n_thread:  # TODO: Maybe put some integer factor here?
 
+            required = True
+
             remap_factor = np.ceil(n_thread/n_int)
 
             target_n_int = int(n_int * remap_factor)
@@ -498,19 +519,25 @@ def resample_solints(native_map, native_shape, n_thread):
 
         else:
 
+            required = False
             upsample_map = native_map
             downsample_map = np.empty(0, dtype=np.int32)
             upsample_shape = native_shape
 
-        return upsample_shape, upsample_map, downsample_map
+        return resample_outputs(
+            required, upsample_shape, upsample_map, downsample_map
+        )
 
     return impl
 
 
 @qcgjit
-def downsample_jhj_jhr(jhj, jhr, downsample_t_map):
+def downsample_jhj_jhr(upsampled_imdry, downsample_t_map):
 
-    def impl(jhj, jhr, downsample_t_map):
+    def impl(upsampled_imdry, downsample_t_map):
+
+        jhj = upsampled_imdry.jhj
+        jhr = upsampled_imdry.jhr
 
         n_tint, n_fint, n_ant, n_dir = jhj.shape[:4]
 

@@ -2,8 +2,8 @@
 import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.generics import (solver_intermediaries,
-                                              jhj_jhr_itermediaries,
+from quartical.gains.general.generics import (native_intermediaries,
+                                              upsampled_itermediaries,
                                               per_array_jhj_jhr,
                                               resample_solints,
                                               downsample_jhj_jhr)
@@ -88,29 +88,23 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
         active_t_map_g = base_args.t_map_arr[0, :, active_term]
         active_f_map_p = base_args.f_map_arr[1, :, active_term]
 
-        resample_outputs = resample_solints(
-            active_t_map_g,
-            param_shape,
-            n_thread
-        )
-
-        upsample_shape, upsample_t_map, downsample_t_map = resample_outputs
+        # Create more work to do in paralllel when needed, else no-op.
+        resampler = resample_solints(active_t_map_g, param_shape, n_thread)
 
         # Determine the starts and stops of the rows and channels associated
         # with each solution interval.
-        extents = get_extents(upsample_t_map, active_f_map_p)
+        extents = get_extents(resampler.upsample_t_map, active_f_map_p)
 
-        jhj = np.empty(upsample_shape + (upsample_shape[-1],),
-                       dtype=real_dtype)
-        jhr = np.empty(upsample_shape, dtype=real_dtype)
+        upsample_shape = resampler.upsample_shape
+        upsampled_jhj = np.empty(upsample_shape + (upsample_shape[-1],),
+                                 dtype=real_dtype)
+        upsampled_jhr = np.empty(upsample_shape, dtype=real_dtype)
+        jhj = upsampled_jhj[:param_shape[0]]
+        jhr = upsampled_jhr[:param_shape[0]]
         update = np.zeros(param_shape, dtype=real_dtype)
 
-        jhj_jhr_imdry = jhj_jhr_itermediaries(jhj, jhr)
-        solver_imdry = solver_intermediaries(
-            jhj[:param_shape[0]],
-            jhr[:param_shape[0]],
-            update
-        )
+        upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
+        native_imdry = native_intermediaries(jhj, jhr, update)
 
         scaled_cf = term_args.chan_freqs.copy()  # Don't mutate.
         min_freq = np.min(scaled_cf)
@@ -123,24 +117,24 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
             compute_jhj_jhr(base_args,
                             term_args,
                             meta_args,
-                            jhj_jhr_imdry,
+                            upsampled_imdry,
                             extents,
                             scaled_cf,
                             corr_mode)
 
             if upsample_shape != param_shape:
-                downsample_jhj_jhr(jhj, jhr, downsample_t_map)
+                downsample_jhj_jhr(upsampled_imdry, resampler.downsample_t_map)
 
             if solve_per == "array":
-                per_array_jhj_jhr(solver_imdry)
+                per_array_jhj_jhr(native_imdry)
 
-            compute_update(solver_imdry,
+            compute_update(native_imdry,
                            corr_mode)
 
             finalize_update(base_args,
                             term_args,
                             meta_args,
-                            solver_imdry,
+                            native_imdry,
                             scaled_cf,
                             loop_idx,
                             corr_mode)
@@ -179,7 +173,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
 
         active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
 
-        return solver_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
+        return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
     return impl
 
@@ -193,7 +187,7 @@ def compute_jhj_jhr(
     base_args,
     term_args,
     meta_args,
-    jhj_jhr_imdry,
+    upsampled_imdry,
     extents,
     scaled_cf,
     corr_mode
@@ -221,7 +215,7 @@ def compute_jhj_jhr(
         base_args,
         term_args,
         meta_args,
-        jhj_jhr_imdry,
+        upsampled_imdry,
         extents,
         scaled_cf,
         corr_mode
@@ -243,8 +237,8 @@ def compute_jhj_jhr(
         f_map_arr_g = base_args.f_map_arr[0]
         d_map_arr = base_args.d_map_arr
 
-        jhj = jhj_jhr_imdry.jhj
-        jhr = jhj_jhr_imdry.jhr
+        jhj = upsampled_imdry.jhj
+        jhr = upsampled_imdry.jhr
 
         row_starts = extents.row_starts
         row_stops = extents.row_stops
@@ -427,20 +421,20 @@ def compute_jhj_jhr(
                parallel=True,
                cache=True,
                nogil=True)
-def compute_update(solver_imdry, corr_mode):
+def compute_update(native_imdry, corr_mode):
 
     # We want to dispatch based on this field so we need its type.
-    jhj = solver_imdry[solver_imdry.fields.index('jhj')]
+    jhj = native_imdry[native_imdry.fields.index('jhj')]
 
     generalised = jhj.ndim == 6
     inversion_buffer = inversion_buffer_factory(generalised=generalised)
     invert = invert_factory(corr_mode, generalised=generalised)
 
-    def impl(solver_imdry, corr_mode):
+    def impl(native_imdry, corr_mode):
 
-        jhj = solver_imdry.jhj
-        jhr = solver_imdry.jhr
-        update = solver_imdry.update
+        jhj = native_imdry.jhj
+        jhr = native_imdry.jhr
+        update = native_imdry.update
 
         n_tint, n_fint, n_ant, n_dir, n_param = jhr.shape
 
@@ -468,14 +462,14 @@ def compute_update(solver_imdry, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(base_args, term_args, meta_args, solver_imdry, scaled_cf,
+def finalize_update(base_args, term_args, meta_args, native_imdry, scaled_cf,
                     loop_idx, corr_mode):
 
     set_identity = factories.set_identity_factory(corr_mode)
     param_to_gain = param_to_gain_factory(corr_mode)
 
     if corr_mode.literal_value in (1, 2, 4):
-        def impl(base_args, term_args, meta_args, solver_imdry, scaled_cf,
+        def impl(base_args, term_args, meta_args, native_imdry, scaled_cf,
                  loop_idx, corr_mode):
 
             active_term = meta_args.active_term
@@ -487,7 +481,7 @@ def finalize_update(base_args, term_args, meta_args, solver_imdry, scaled_cf,
 
             params = term_args.params[active_term]
 
-            update = solver_imdry.update
+            update = native_imdry.update
 
             update /= 2
             params += update
