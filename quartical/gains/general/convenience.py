@@ -1,7 +1,18 @@
 # -*- coding: utf-8 -*-
 from numba import jit, types, generated_jit
 import numpy as np
+from collections import namedtuple
 
+
+extent_tuple = namedtuple(
+    "extent_tuple",
+    (
+        "row_starts",
+        "row_stops",
+        "chan_starts",
+        "chan_stops"
+    )
+)
 
 # Handy alias for functions that need to be jitted in this way.
 qcjit = jit(nogil=True,
@@ -70,8 +81,21 @@ def get_row(row_ind, row_map):
 
 
 @qcjit
-def get_chan_extents(f_map_arr, active_term, n_fint, n_chan):
+def get_extents(t_map, f_map):
+    """Given the time/freq mappings, determine run start and stop indices."""
+
+    row_starts, row_stops = get_row_extents(t_map)
+    chan_starts, chan_stops = get_chan_extents(f_map)
+
+    return extent_tuple(row_starts, row_stops, chan_starts, chan_stops)
+
+
+@qcjit
+def get_chan_extents(f_map_arr):
     """Given the frequency mappings, determines the start/stop indices."""
+
+    n_fint = f_map_arr.max() + 1
+    n_chan = f_map_arr.size
 
     chan_starts = np.empty(n_fint, dtype=np.int32)
     chan_starts[0] = 0
@@ -81,27 +105,27 @@ def get_chan_extents(f_map_arr, active_term, n_fint, n_chan):
 
     # NOTE: This might not be correct for decreasing channel freqs.
     if n_fint > 1:
-        chan_starts[1:] = 1 + np.where(
-            f_map_arr[1:, active_term] - f_map_arr[:-1, active_term])[0]
+        chan_starts[1:] = 1 + np.where(f_map_arr[1:] - f_map_arr[:-1])[0]
         chan_stops[:-1] = chan_starts[1:]
 
     return chan_starts, chan_stops
 
 
 @qcjit
-def get_row_extents(t_map_arr, active_term, n_tint):
+def get_row_extents(t_map_arr):
     """Given the time mappings, determines the row start/stop indices."""
+
+    n_tint = t_map_arr.max() + 1
 
     row_starts = np.empty(n_tint, dtype=np.int32)
     row_starts[0] = 0
 
     row_stops = np.empty(n_tint, dtype=np.int32)
-    row_stops[-1] = t_map_arr[:, active_term].size
+    row_stops[-1] = t_map_arr.size
 
     # NOTE: This assumes time ordered data (row runs).
     if n_tint > 1:
-        row_starts[1:] = 1 + np.where(
-            t_map_arr[1:, active_term] - t_map_arr[:-1, active_term])[0]
+        row_starts[1:] = 1 + np.where(t_map_arr[1:] - t_map_arr[:-1])[0]
         row_stops[:-1] = row_starts[1:]
 
     return row_starts, row_stops

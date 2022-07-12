@@ -8,12 +8,39 @@ import quartical.gains.general.factories as factories
 from quartical.gains.general.convenience import get_dims, get_row
 
 
+native_intermediaries = namedtuple(
+    "native_intermediaries",
+    (
+        "jhj",
+        "jhr",
+        "update"
+    )
+)
+
 solver_intermediaries = namedtuple(
     "solver_intermediaries",
     (
         "jhj",
         "jhr",
         "update"
+    )
+)
+
+upsampled_itermediaries = namedtuple(
+    "upsampled_intermediaries",
+    (
+        "jhj",
+        "jhr"
+    )
+)
+
+resample_outputs = namedtuple(
+    "resample_outputs",
+    (
+        "active",
+        "upsample_shape",
+        "upsample_t_map",
+        "downsample_t_map"
     )
 )
 
@@ -444,5 +471,93 @@ def per_array_jhj_jhr(solver_imdry):
                 for a in range(1, n_ant):
                     jhj[t, f, a] = jhj[t, f, 0]
                     jhr[t, f, a] = jhr[t, f, 0]
+
+    return impl
+
+
+@qcgjit
+def resample_solints(native_map, native_shape, n_thread):
+
+    def impl(native_map, native_shape, n_thread):
+
+        n_tint, n_fint = native_shape[:2]
+        n_int = n_tint * n_fint
+
+        if n_int < n_thread:  # TODO: Maybe put some integer factor here?
+
+            active = True
+
+            remap_factor = np.ceil(n_thread/n_int)
+
+            target_n_tint = int(n_tint * remap_factor)
+
+            upsample_map = np.empty_like(native_map)
+            downsample_map = np.empty(target_n_tint, dtype=np.int32)
+            remap_id = 0
+
+            for i in range(n_tint):
+
+                sel = np.where(native_map == i)
+
+                sel_n_row = sel[0].size
+
+                upsample_n_row = int(np.ceil(sel_n_row/remap_factor))
+
+                consumed_rows = 0
+
+                for start in range(0, sel_n_row, upsample_n_row):
+
+                    stop = min(start + upsample_n_row, sel_n_row)
+
+                    upsample_map[start:stop] = remap_id
+                    downsample_map[remap_id] = i
+
+                    consumed_rows -= upsample_n_row
+                    remap_id += 1
+
+            upsample_shape = (target_n_tint,) + native_shape[1:]
+
+        else:
+
+            active = False
+            upsample_map = native_map
+            downsample_map = np.empty(0, dtype=np.int32)
+            upsample_shape = native_shape
+
+        return resample_outputs(
+            active, upsample_shape, upsample_map, downsample_map
+        )
+
+    return impl
+
+
+@qcgjit
+def downsample_jhj_jhr(upsampled_imdry, downsample_t_map):
+
+    def impl(upsampled_imdry, downsample_t_map):
+
+        jhj = upsampled_imdry.jhj
+        jhr = upsampled_imdry.jhr
+
+        n_tint, n_fint, n_ant, n_dir = jhj.shape[:4]
+
+        prev_out_ti = -1
+
+        for ti in range(n_tint):
+
+            out_ti = downsample_t_map[ti]
+
+            for fi in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+
+                        if prev_out_ti != out_ti:
+                            jhj[out_ti, fi, a, d] = jhj[ti, fi, a, d]
+                            jhr[out_ti, fi, a, d] = jhr[ti, fi, a, d]
+                        else:
+                            jhj[out_ti, fi, a, d] += jhj[ti, fi, a, d]
+                            jhr[out_ti, fi, a, d] += jhr[ti, fi, a, d]
+
+            prev_out_ti = out_ti
 
     return impl

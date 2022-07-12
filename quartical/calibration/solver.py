@@ -15,6 +15,7 @@ meta_args_nt = namedtuple(
         "active_term",
         "stop_frac",
         "stop_crit",
+        "threads",
         "dd_term",
         "solve_per",
         "robust"
@@ -122,6 +123,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                  active_term,
                                  solver_opts.convergence_fraction,
                                  solver_opts.convergence_criteria,
+                                 solver_opts.threads,
                                  term_opts.direction_dependent,
                                  term_opts.solve_per,
                                  robust)
