@@ -85,7 +85,8 @@ class ModelInputs(Input):
 
 @dataclass
 class Outputs(Input):
-    directory: str = "outputs.qc"
+    gain_directory: str = "gains.qc"
+    log_directory: str = "logs.qc"
     overwrite: bool = False
     products: Optional[List[str]] = field(
         default=None,

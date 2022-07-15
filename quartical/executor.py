@@ -50,13 +50,10 @@ def _execute(exitstack):
     dask_opts = opts.dask
     chain_opts = internal.gains_to_chain(opts)  # Special handling.
 
-    # Make sure that the output directory is correctly cleaned up.
-    preprocess.prepare_output_directory(output_opts.directory)
-
     # Init the logging proxy - an object which helps us ensure that logging
     # works for both threads an processes. It is easily picklable.
 
-    proxy_logger = ProxyLogger(output_opts.directory)
+    proxy_logger = ProxyLogger(output_opts.log_directory)
     proxy_logger.configure()
 
     # Now that we know where to put the log, log the final config state.

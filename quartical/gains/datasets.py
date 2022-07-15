@@ -4,8 +4,6 @@ from quartical.config.internal import yield_from
 from loguru import logger  # noqa
 import numpy as np
 import dask.array as da
-from pathlib import Path
-import shutil
 from daskms.experimental.zarr import xds_to_zarr
 from quartical.gains import TERM_TYPES
 from quartical.utils.dask import blockwise_unique
@@ -345,8 +343,7 @@ def populate_net_xds_list(net_gain_xds_list,
 def write_gain_datasets(gain_xds_lod, net_xds_list, output_opts):
     """Write the contents of gain_xds_lol to zarr in accordance with opts."""
 
-    root_path = Path(output_opts.directory).absolute()
-    gain_path = root_path / Path("gains.qc")
+    gain_path = output_opts.gain_directory
 
     term_names = [xds.NAME for xds in gain_xds_lod[0].values()]
 
@@ -357,17 +354,6 @@ def write_gain_datasets(gain_xds_lod, net_xds_list, output_opts):
         net_name = net_xds_list[0].NAME
         term_names.append(net_name)
         writable_xds_dol[net_name] = net_xds_list
-
-    # If the directory in which we intend to store a gain already exists, we
-    # remove it to make sure that we don't end up with a mix of old and new.
-    for term_name in term_names:
-        term_path = gain_path.joinpath(term_name)
-        if term_path.is_dir():
-            logger.info(f"Removing preexisting gain folder {term_path}.")
-            try:
-                shutil.rmtree(term_path)
-            except Exception as e:
-                logger.warning(f"Failed to delete {term_path}. Reason: {e}.")
 
     gain_writes_lol = []
 
