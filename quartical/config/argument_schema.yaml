@@ -164,10 +164,18 @@ input_model:
         output.apply_p_jones_inv.
 
 output:
-    directory:
-      default: outputs.qc
+    gain_directory:
+      default: gains.qc
       info:
-        Name of directory in which various QuartiCal outputs will be stored.
+        Name of directory in which QuartiCal gain outputs will be stored.
+        Accepts both local and s3 paths. QuartiCal will always produce gain
+        outputs.
+
+    log_directory:
+      default: logs.qc
+      info:
+        Name of directory in which QuartiCal logging outputs will be stored.
+        s3 is not currently supported for these outputs.
 
     overwrite:
       dtype: bool
@@ -187,9 +195,9 @@ output:
         - model_data
       info:
         The desired output data products. Multiple data products can be
-        specified as a list e.g. [residual, corrected_residual]. QuartiCal
-        always produces gains. Any required measurement set outputs should be
-        specified here.
+        specified as a list e.g. [residual, corrected_residual]. Any required
+        measurement set outputs should be specified here. Note that the output
+        names of the desired products should be specified via output.columns.
 
     columns:
       dtype: Optional[List[str]]

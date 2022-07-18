@@ -1,5 +1,6 @@
 import dask.array as da
 import numpy as np
+from dask.distributed import performance_report
 from dask.base import tokenize
 from dask.array.core import HighLevelGraph
 from dask.highlevelgraph import MaterializedLayer
@@ -7,6 +8,17 @@ from operator import getitem
 from dask.utils import apply, funcname
 from collections import namedtuple
 from itertools import product
+from daskms.fsspec_store import DaskMSStore
+from contextlib import nullcontext
+
+
+def compute_context(dask_opts, output_opts, time_str):
+    if dask_opts.scheduler == "distributed":
+        store = DaskMSStore(output_opts.log_directory)
+        report_path = store.join([store.full_path, f"{time_str}.html.qc"])
+        return performance_report(filename=str(report_path))
+    else:
+        return nullcontext()
 
 
 class as_dict:
