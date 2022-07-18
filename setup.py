@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from ast import Import
 from setuptools import setup, find_packages
 
 with open('README.md') as f:
@@ -23,15 +22,14 @@ requirements = [
     "omegaconf",
     "colorama",
     "bokeh",
-    "xarray>=0.20.0",
-    "rich"
+    "xarray>=0.20.0"
 ]
 
-# If scabha is not pre-installed, add to requirements
-# This is just a transitionary hack: next release of stimela will include scabha,
-# so when that happens, we just add a stimela>=2 dependency at the top, and don't bother with this
+# If scabha is not already installed, add it to the requirements. This is just
+# a transitionary hack as the next release of stimela will include scabha.
+# Once stimela is released, we can add a stimela>=2 dependency and omit this.
 try:
-    import scabha
+    import scabha  # noqa
 except ImportError:
     requirements.append('scabha')
 

@@ -3,7 +3,6 @@ import os
 import textwrap
 import re
 from colorama import Fore, Style
-from pathlib import Path
 from omegaconf import OmegaConf as oc
 from dataclasses import fields, _MISSING_TYPE, is_dataclass
 from quartical.config.external import finalize_structure, get_config_sections
