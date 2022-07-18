@@ -4,10 +4,8 @@ from contextlib import ExitStack
 import sys
 from loguru import logger
 import dask
-from dask.distributed import Client, LocalCluster, performance_report
+from dask.distributed import Client, LocalCluster
 import time
-from contextlib import nullcontext
-from pathlib import Path
 from quartical.config import parser, preprocess, helper, internal
 from quartical.logging import (ProxyLogger, LoggerPlugin)
 from quartical.data_handling.ms_handler import (read_xds_list,
@@ -25,6 +23,7 @@ from quartical.statistics.logging import (embed_stats_logging,
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
+from quartical.utils.dask import compute_context
 
 
 @logger.catch(onerror=lambda _: sys.exit(1))
@@ -53,7 +52,8 @@ def _execute(exitstack):
     # Init the logging proxy - an object which helps us ensure that logging
     # works for both threads an processes. It is easily picklable.
 
-    proxy_logger = ProxyLogger(output_opts.log_directory)
+    time_str = time.strftime("%Y%m%d_%H%M%S")
+    proxy_logger = ProxyLogger(output_opts.log_directory, time_str)
     proxy_logger.configure()
 
     # Now that we know where to put the log, log the final config state.
@@ -151,17 +151,9 @@ def _execute(exitstack):
     logger.info("Computation starting. Please be patient - log messages will "
                 "only appear per completed chunk.")
 
-    def compute_context(dask_opts, output_opts):
-        if dask_opts.scheduler == "distributed":
-            root_path = Path(output_opts.directory).absolute()
-            report_path = root_path / Path("dask_report.html.qc")
-            return performance_report(filename=str(report_path))
-        else:
-            return nullcontext()
-
     t0 = time.time()
 
-    with compute_context(dask_opts, output_opts):
+    with compute_context(dask_opts, output_opts, time_str):
 
         _, _, stats_xds_list = dask.compute(
             ms_writes,
