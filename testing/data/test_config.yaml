@@ -29,7 +29,8 @@ solver:
   - 25
   - 25
 output:
-  directory: outputs.qc
+  gain_directory: gains.qc
+  log_directory: logs.qc
   overwrite: true
   products:
   - residual

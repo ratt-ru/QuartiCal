@@ -1,6 +1,6 @@
 from dataclasses import make_dataclass
-from pathlib import Path
 from quartical.config.external import Gain
+from daskms.fsspec_store import DaskMSStore
 
 
 def gains_to_chain(opts):
@@ -37,23 +37,25 @@ def additional_validation(config):
 
     chain = gains_to_chain(config)
 
-    root_path = Path(config.output.directory).absolute()
+    gain_directory = config.output.gain_directory
+    store = DaskMSStore.from_url_and_kw(gain_directory, {})
 
-    if root_path.exists() and not config.output.overwrite:
-        raise FileExistsError(f"{root_path} already exists. Specify "
+    if store.exists() and not config.output.overwrite:
+        raise FileExistsError(f"{store.url} already exists. Specify "
                               f"output.overwrite=1 to suppress this "
                               f"error and overwrite *.qc files/folders.")
+    elif store.exists():
+        store.rm(recursive=True)
 
-    gain_path = root_path / Path("gains.qc")
-    load_dirs = [Path(lf).absolute().parent
-                 for _, lf in yield_from(chain, "load_from") if lf]
+    load_stores = [DaskMSStore.from_url_and_kw(lf, {})
+                   for _, lf in yield_from(chain, "load_from") if lf]
 
     msg = (
-        f"Output directory {str(gain_path)} contains terms which will be "
+        f"Output directory {str(store.url)} contains terms which will be "
         f"loaded/interpolated. This is not supported. Please specify a "
         f"different output directory."
     )
 
-    assert all(gain_path != ld for ld in load_dirs), msg
+    assert not any(store.full_path in ll.full_path for ll in load_stores), msg
 
     return
