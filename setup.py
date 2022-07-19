@@ -13,7 +13,7 @@ requirements = [
     "columnar",
     "ruamel.yaml",
     "numpy",
-    "dask-ms[xarray, zarr]>=0.2.9",
+    "dask-ms[xarray, zarr, s3]>=0.2.9",
     "codex-africanus[dask, scipy, astropy, python-casacore]",
     "dask[array]",
     "astro-tigger-lsm",
