@@ -2,7 +2,6 @@ input_ms:
   path:
     required: true
     dtype: str
-    default: ''
     info:
       Path to input measurement set.
 
@@ -100,7 +99,6 @@ input_model:
     recipe:
       dtype: str
       required: true
-      default: ''
       info:
         Input model recipe. This is a string which describes how the model
         data should be constructed. Currently, measurement set columns and
