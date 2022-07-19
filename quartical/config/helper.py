@@ -42,7 +42,7 @@ def populate(typ, help_dict=None):
                 default = fld.default_factory()
             else:
                 default = fld.default
-            if default == "???":
+            if fld.metadata.get('required', False):
                 msg += f"{Fore.RED}MANDATORY. "
             else:
                 msg += f"Default: {default}. "
