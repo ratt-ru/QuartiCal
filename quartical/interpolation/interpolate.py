@@ -3,7 +3,6 @@ from loguru import logger  # noqa
 import dask.array as da
 import numpy as np
 import xarray
-import pathlib
 from daskms.experimental.zarr import xds_from_zarr
 from quartical.config.internal import yield_from
 from quartical.interpolation.interpolants import (interpolate_missing,
@@ -42,9 +41,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
             interp_xds_lol.append(term_xds_list)
             continue
         else:
-            term_path = pathlib.Path(term_path)
-
-        load_path = f"{term_path.parent}{'::' + term_path.stem}"
+            load_path = "::".join(term_path.rsplit('/', 1))
 
         load_xds_list = xds_from_zarr(load_path)
 
