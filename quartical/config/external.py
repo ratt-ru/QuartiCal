@@ -80,7 +80,13 @@ class BaseConfigSection:
             "User has specified solver.convergence_criteria below 1e-8."
 
     def __dask_post_init__(self):
-        pass
+        self.validate_choice_fields()
+        if self.address:
+            msg = (
+                "Scheduler address supplied but dask.scheduler has not "
+                "been set to distributed."
+            )
+            assert self.scheduler == "distributed", msg
 
     def __gain_post_init__(self):
         self.validate_choice_fields()
