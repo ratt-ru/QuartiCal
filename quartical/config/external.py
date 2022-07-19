@@ -158,6 +158,13 @@ class Dask(Input):
     def __post_init__(self):
         self.validate_choice_fields()
 
+        if self.address:
+            msg = (
+                "Scheduler address supplied but dask.scheduler has not "
+                "been set to distributed."
+            )
+            assert self.scheduler == "distributed", msg
+
 
 @dataclass
 class Gain(Input):
