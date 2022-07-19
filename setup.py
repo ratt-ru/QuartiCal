@@ -5,6 +5,9 @@ from setuptools import setup, find_packages
 with open('README.md') as f:
     long_description = f.read()
 
+# TODO: Dependence on stimela branch is temporary. Will be removed post after
+# stimela2 is released and this branch is merged.
+
 requirements = [
     "tbump",
     "columnar",
@@ -22,16 +25,9 @@ requirements = [
     "omegaconf",
     "colorama",
     "bokeh",
-    "xarray>=0.20.0"
+    "xarray>=0.20.0",
+    "stimela@git+https://github.com/caracal-pipeline/stimela2.git@issue-35"
 ]
-
-# If scabha is not already installed, add it to the requirements. This is just
-# a transitionary hack as the next release of stimela will include scabha.
-# Once stimela is released, we can add a stimela>=2 dependency and omit this.
-try:
-    import scabha  # noqa
-except ImportError:
-    requirements.append('scabha')
 
 setup(
     name='quartical',
