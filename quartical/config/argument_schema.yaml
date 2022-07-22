@@ -171,6 +171,9 @@ output:
 
     log_directory:
       default: logs.qc
+      dtype: Directory
+      writable: true
+      must_exist: false
       info:
         Name of directory in which QuartiCal logging outputs will be stored.
         s3 is not currently supported for these outputs.
