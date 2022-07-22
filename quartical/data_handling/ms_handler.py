@@ -269,9 +269,13 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
 
     logger.info("Outputs will be written to {}.", ", ".join(output_cols))
 
-    # TODO: Nasty hack due to bug in daskms. Remove ASAP.
-    xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ", "CHAN_WIDTH"],
-                              errors='ignore')
+    # Remove attrs added by QuartiCal so that they do not get written.
+    for xds in xds_list:
+        del xds.attrs["UTIME_CHUNKS"]
+        del xds.attrs["FIELD_NAME"]
+
+    # Remove coords added by QuartiCal so that they do not get written.
+    xds_list = [xds.drop_vars(["chan", "corr"], errors='ignore')
                 for xds in xds_list]
 
     with warnings.catch_warnings():  # We anticipate spurious warnings.
