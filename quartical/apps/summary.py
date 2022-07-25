@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 from daskms import xds_from_storage_ms, xds_from_storage_table
+from daskms.fsspec_store import DaskMSStore
 import numpy as np
 import dask.array as da
 from loguru import logger
@@ -318,18 +319,20 @@ def summary():
 
     parser.add_argument(
         'path',
-        type=Path,
-        help='Path to dataset.'
+        type=DaskMSStore,
+        help='Path to input measurement set, e.g. path/to/dir/foo.MS. Also '
+             'accepts valid s3 urls.'
     )
     parser.add_argument(
         'output_dir',
         type=Path,
-        help='Path to output directory.'
+        help='Path to output directory, e.g. summaries.qc. Local file system '
+             'only.'
     )
 
     args = parser.parse_args()
 
-    path = str(args.path.resolve())
+    path = args.path.url
     output_dir = str(args.output_dir.resolve())
 
     configure_loguru(output_dir)
