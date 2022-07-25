@@ -279,10 +279,6 @@ def populate_net_xds_list(
 
     net_terms = output_opts.net_gains
 
-    # User has not requested net gains. TODO: Move out?
-    if net_terms is None:
-        return net_gain_xds_lod
-
     net_names = [f"{''.join(lt)}-net" for lt in net_terms]
 
     net_map = dict(zip(net_names, net_terms))
@@ -358,9 +354,10 @@ def populate_net_xds_list(
                                "dir": net_xds.GAIN_SPEC.dchunk}
             )
 
-            net_gain = da.where(net_flags[..., None],
-                                identity_elements[corr_mode],
-                                net_gain)
+            net_gain = da.blockwise(np.where, "tfadc",
+                                    net_flags[..., None], "tfadc",
+                                    identity_elements[corr_mode], None,
+                                    net_gain, "tfadc")
 
             net_xds = net_xds.assign(
                 {

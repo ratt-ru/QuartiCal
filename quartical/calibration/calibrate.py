@@ -124,22 +124,25 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
         chain_opts
     )
 
-    # Construct an effective gain per data_xds. This is always at the full
-    # time and frequency resolution of the data.
-    net_xds_lod = make_net_xds_list(
-        data_xds_list,
-        coords_per_xds,
-        output_opts
-    )
+    if output_opts.net_gains:
+        # Construct an effective gain per data_xds. This is always at the full
+        # time and frequency resolution of the data.
+        net_xds_lod = make_net_xds_list(
+            data_xds_list,
+            coords_per_xds,
+            output_opts
+        )
 
-    net_xds_lod = populate_net_xds_list(
-        net_xds_lod,
-        gain_xds_lod,
-        t_bin_list,
-        f_map_list,
-        d_map_list,
-        output_opts
-    )
+        net_xds_lod = populate_net_xds_list(
+            net_xds_lod,
+            gain_xds_lod,
+            t_bin_list,
+            f_map_list,
+            d_map_list,
+            output_opts
+        )
+    else:
+        net_xds_lod = []
 
     # Update the data xarray.Datasets with visibility outputs.
     data_xds_list = make_visibility_output(
