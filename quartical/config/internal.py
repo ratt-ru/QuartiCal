@@ -37,18 +37,17 @@ def additional_validation(config):
 
     chain = gains_to_chain(config)
 
-    gain_directory = config.output.gain_directory
-    store = DaskMSStore.from_url_and_kw(gain_directory, {})
+    store = DaskMSStore(config.output.gain_directory)
 
     if store.exists() and not config.output.overwrite:
         raise FileExistsError(f"{store.url} already exists. Specify "
                               f"output.overwrite=1 to suppress this "
-                              f"error and overwrite *.qc files/folders.")
+                              f"error and overwrite files/folders.")
     elif store.exists():
         store.rm(recursive=True)
 
-    load_stores = [DaskMSStore.from_url_and_kw(lf, {})
-                   for _, lf in yield_from(chain, "load_from") if lf]
+    load_stores = \
+        [DaskMSStore(lf) for _, lf in yield_from(chain, "load_from") if lf]
 
     msg = (
         f"Output directory {str(store.url)} contains terms which will be "
