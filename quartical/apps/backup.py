@@ -1,7 +1,7 @@
 import argparse
 from daskms import xds_from_storage_ms, xds_to_storage_table
 from daskms.experimental.zarr import xds_to_zarr, xds_from_zarr
-from pathlib import Path
+from daskms.fsspec_store import DaskMSStore
 import time
 import dask
 
@@ -15,15 +15,17 @@ def backup():
 
     parser.add_argument(
         'ms_path',
-        type=Path,
-        help='Path to input measurement set, e.g. path/to/dir/foo.MS.'
+        type=DaskMSStore,
+        help='Path to input measurement set, e.g. path/to/dir/foo.MS. Also '
+             'accepts valid s3 urls.'
     )
     parser.add_argument(
         'zarr_dir',
-        type=Path,
+        type=DaskMSStore,
         help='Path to desired backup location. Note that this only allows '
              'the user to specify a directory and not the name of the backup '
-             'zarr that will be created, e.g. path/to/dir.'
+             'zarr that will be created, e.g. path/to/dir. Also '
+             'accepts valid s3 urls.'
     )
     parser.add_argument('column',
                         type=str,
@@ -31,22 +33,19 @@ def backup():
 
     args = parser.parse_args()
 
-    ms_path = args.ms_path.resolve()
-    zarr_dir = args.zarr_dir.resolve()
-
-    ms_name = ms_path.name
+    ms_name = args.ms_path.full_path.rsplit("/", 1)[1]
 
     timestamp = time.strftime("%Y%m%d-%H%M%S")
 
     data_xds_list = xds_from_storage_ms(
-        ms_path,
+        args.ms_path,
         columns=args.column,
         index_cols=("TIME",),
         group_cols=("DATA_DESC_ID",))
 
     bkp_xds_list = xds_to_zarr(
         data_xds_list,
-        f"{zarr_dir}::{timestamp}-{ms_name}-{args.column}.bkp.qc",
+        f"{args.zarr_dir.url}::{timestamp}-{ms_name}-{args.column}.bkp.qc",
     )
 
     dask.compute(bkp_xds_list)
@@ -59,14 +58,16 @@ def restore():
 
     parser.add_argument(
         'zarr_path',
-        type=Path,
+        type=DaskMSStore,
         help='Path to backup zarr column e.g. '
-             'path/to/dir/20211201-154457-foo.MS-FLAG.bkp.qc.'
+             'path/to/dir/20211201-154457-foo.MS-FLAG.bkp.qc. '
+             'Also accepts valid s3 urls.'
     )
     parser.add_argument(
         'ms_path',
-        type=Path,
-        help='Path to measurement set, e.g. path/to/dir/foo.MS.'
+        type=DaskMSStore,
+        help='Path to measurement set, e.g. path/to/dir/foo.MS. '
+             'Also accepts valid s3 urls.'
     )
     parser.add_argument(
         'column',
@@ -78,16 +79,13 @@ def restore():
 
     args = parser.parse_args()
 
-    zarr_path = args.zarr_path.resolve()
-    ms_path = args.ms_path.resolve()
+    zarr_root, zarr_name = args.zarr_path.url.rsplit("/", 1)
 
-    zarr_xds_list = xds_from_zarr(
-        f"{zarr_path.parent}::{zarr_path.name}",
-    )
+    zarr_xds_list = xds_from_zarr(f"{zarr_root}::{zarr_name}")
 
     restored_xds_list = xds_to_storage_table(
         zarr_xds_list,
-        str(ms_path),
+        args.ms_path,
         columns=(args.column,)
     )
 
