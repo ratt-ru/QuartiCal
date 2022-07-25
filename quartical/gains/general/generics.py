@@ -378,14 +378,15 @@ def compute_convergence(gain, last_gain, criteria):
 
 
 @qcgjit
-def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
-                  *gains):
+def combine_gains(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
+                  corr_mode, *gains):
 
     coerce_literal(combine_gains, ["corr_mode"])
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
 
-    def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode, *gains):
+    def impl(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape, corr_mode,
+             *gains):
         t_bin_arr = t_bin_arr[0]
         f_map_arr = f_map_arr[0]
 
@@ -399,13 +400,11 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
         net_gains[..., 0] = 1
         net_gains[..., -1] = 1
 
-        n_term = len(gains)
-
         for t in range(n_time):
             for f in range(n_freq):
                 for a in range(n_ant):
                     for d in range(n_dir):
-                        for gi in range(n_term):
+                        for gi in term_ids:
                             tm = t_bin_arr[t, gi]
                             fm = f_map_arr[f, gi]
                             dm = d_map_arr[gi, d]
@@ -419,9 +418,10 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
 
 
 @qcgjit
-def combine_flags(t_bin_arr, f_map_arr, d_map_arr, net_shape, *flags):
+def combine_flags(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
+                  *flags):
 
-    def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, *flags):
+    def impl(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape, *flags):
         t_bin_arr = t_bin_arr[0]
         f_map_arr = f_map_arr[0]
 
@@ -432,13 +432,11 @@ def combine_flags(t_bin_arr, f_map_arr, d_map_arr, net_shape, *flags):
 
         net_flags = np.zeros((n_time, n_freq, n_ant, n_dir), dtype=np.int8)
 
-        n_term = len(flags)
-
         for t in range(n_time):
             for f in range(n_freq):
                 for a in range(n_ant):
                     for d in range(n_dir):
-                        for gi in range(n_term):
+                        for gi in term_ids:
                             tm = t_bin_arr[t, gi]
                             fm = f_map_arr[f, gi]
                             dm = d_map_arr[gi, d]

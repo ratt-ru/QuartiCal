@@ -115,11 +115,13 @@ output:
     applied to the output visibilitites. This has the effect of derotating
     the output visibilities into the sky frame. Care must taken when using
     this option and input_model.apply_p_jones.
-  net_gain:
-    Output the effective/net gain per antenna per time per channel. This
-    is formed by multiplying all the gain terms together. This can be used
-    to reduce the computational load of solution transfer by transferring the
-    effective gain rather than each individual term.
+  net_gains:
+    Merge subsets of gains into an effective/net gain per antenna per time per
+    channel. This is formed by multiplying all the specified gains together.
+    This can be used to reduce the computational load of solution transfer by
+    transferring merged gains rather than each individual term. Accepts a list
+    or a list of lists e.g. ["K", "G", "X", "B"] or [["K", "G"], ["X", "B"]].
+    Results will be written to outputs.gain_directory as e.g. KGXB-net.
   subtract_directions:
     Which model directions to subtract when generating residuals. Must be
     specified as a list of integers e.g. [0, 5, 7]. The default will subtract
