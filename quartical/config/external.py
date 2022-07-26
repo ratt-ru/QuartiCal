@@ -67,6 +67,19 @@ class BaseConfigSection:
             assert len(self.products) == len(self.columns), \
                     "Number of products not equal to number of columns."
 
+        if self.net_gains:
+            nested = any(isinstance(i, list) for i in self.net_gains)
+            if nested:
+                assert all(isinstance(i, list) for i in self.net_gains), \
+                    ("Contents of outputs.net_gains not understood. "
+                     "Must be strictly a list or list of lists.")
+            else:
+                assert all(isinstance(i, str) for i in self.net_gains), \
+                    ("Contents of outputs.net_gains not understood. "
+                     "Must be strictly a list or list of lists.")
+                # In the non-nested case, introduce outer list (consistent).
+                self.net_gains = [self.net_gains]
+
     def __mad_flags_post_init__(self):
         pass
 

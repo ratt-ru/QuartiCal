@@ -231,14 +231,16 @@ output:
         specified as a list of integers e.g. [0, 5, 7]. The default will
         subtract all directions.
 
-    net_gain:
-      dtype: bool
-      default: False
+    net_gains:
+      dtype: Optional[List[Any]]
       info:
-        Output the effective/net gain per antenna per time per channel. This
-        is formed by multiplying all the gain terms together. This can be used
-        to reduce the computational load of solution transfer by transferring
-        the effective gain rather than each individual term.
+        Merge subsets of gains into an effective/net gain per antenna per time
+        per channel. This is formed by multiplying all the specified gains
+        together. This can be used to reduce the computational load of
+        solution transfer by transferring net/effective gains rather than each
+        individual term. Accepts a list or a list of lists e.g.
+        ["K", "G", "X", "B"] or [["K", "G"], ["X", "B"]]. Results will be
+        written to outputs.gain_directory as e.g. KGXB-net.
 
 mad_flags:
     enable:
