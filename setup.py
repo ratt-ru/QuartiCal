@@ -26,7 +26,7 @@ requirements = [
     "colorama",
     "bokeh",
     "xarray>=0.20.0",
-    "stimela@git+https://github.com/caracal-pipeline/stimela2.git@issue-35"
+    "stimela@git+https://github.com/caracal-pipeline/stimela2.git@kube"
 ]
 
 setup(
