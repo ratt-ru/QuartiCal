@@ -117,7 +117,7 @@ def _execute(exitstack):
 
     # Adds the dask graph describing the calibration of the data. TODO:
     # This call has excess functionality now. Split out mapping and outputs.
-    gain_xds_lod, net_xds_list, data_xds_list = add_calibration_graph(
+    gain_xds_lod, net_xds_lod, data_xds_list = add_calibration_graph(
         data_xds_list,
         solver_opts,
         chain_opts,
@@ -143,7 +143,7 @@ def _execute(exitstack):
                                output_opts)
 
     gain_writes = write_gain_datasets(gain_xds_lod,
-                                      net_xds_list,
+                                      net_xds_lod,
                                       output_opts)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)

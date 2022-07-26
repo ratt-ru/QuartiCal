@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field, make_dataclass, fields
 from omegaconf import OmegaConf as oc
-from typing import List, Optional
+from typing import List, Optional, Any
 from quartical.config.converters import as_time, as_freq
 
 
@@ -101,7 +101,7 @@ class Outputs(Input):
     flags: bool = True
     apply_p_jones_inv: bool = True
     subtract_directions: Optional[List[int]] = None
-    net_gain: bool = False
+    net_gains: Optional[List[Any]] = None
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -110,6 +110,18 @@ class Outputs(Input):
         if self.products:
             assert len(self.products) == len(self.columns), \
                    "Number of products not equal to number of columns."
+        if self.net_gains:
+            nested = any(isinstance(i, list) for i in self.net_gains)
+            if nested:
+                assert all(isinstance(i, list) for i in self.net_gains), \
+                    ("Contents of outputs.net_gains not understood. "
+                     "Must be strictly a list or list of lists.")
+            else:
+                assert all(isinstance(i, str) for i in self.net_gains), \
+                    ("Contents of outputs.net_gains not understood. "
+                     "Must be strictly a list or list of lists.")
+                # In the non-nested case, introduce outer list (consistent).
+                self.net_gains = [self.net_gains]
 
 
 @dataclass
