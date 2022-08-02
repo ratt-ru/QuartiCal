@@ -118,8 +118,10 @@ def process_bda_input(data_xds_list, spw_xds_list, weight_column):
         uintervals = blockwise_unique(interval_col)
         gcd = uintervals.map_blocks(lambda x: np.array(arr_gcd(x)),
                                     chunks=(1,))
-        # NOTE: Make the interval column "perfect" i.e. ignore small errors
-        # in the retiling. This may be optimistic.
+
+        # NOTE: Make the interval and time columns "perfect" i.e. ignore small
+        # errors in the prior averaging. This is very dodgy and is mostly a
+        # workaround.
         interval_col = da.round(interval_col/gcd).astype(np.int64) * gcd
         time_col = da.blockwise(fix_time_col, "r",
                                 time_col, "r",
@@ -137,8 +139,9 @@ def process_bda_input(data_xds_list, spw_xds_list, weight_column):
                                            dtype=np.float64,
                                            chunks=(upsample_size,))
 
-        # NOTE: Completely brittle but a neccessary evil for now. Cannot rely
-        # on the floating point calculations to be 100% correct.
+        # NOTE: Make the upsampled time column perfectly consistent. This is
+        # very brittle but is neccessary as we cannot trust the input time
+        # and interval values.
         upsampled_time_col = da.blockwise(fix_time_col, "r",
                                           upsampled_time_col, "r",
                                           dtype=np.float64)

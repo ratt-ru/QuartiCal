@@ -137,7 +137,10 @@ def compute_dataset_coords(data_xds_list,
 
         utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
 
-        unique_times = blockwise_unique(data_xds.TIME.data,
+        # NOTE: Use the BDA version of the column if it is present.
+        time_col = data_xds.get("UPSAMPLED_TIME", data_xds.TIME).data
+
+        unique_times = blockwise_unique(time_col,
                                         chunks=(utime_chunks,))
         unique_freqs = data_xds.CHAN_FREQ.data
 
