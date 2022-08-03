@@ -62,6 +62,14 @@ class MSInputs(Input):
         assert not (self.sigma_column and self.weight_column), \
             "sigma_column and weight_column are mutually exclusive."
 
+        if self.is_bda:
+            assert self.time_chunk == 0, \
+                ("input_ms.is_bda does not support chunking in time. Please "
+                 "set input_ms.time_chunk to 0.")
+            assert self.freq_chunk == 0, \
+                ("input_ms.is_bda does not support chunking in freq. Please "
+                 "set input_ms.freq_chunk to 0.")
+
 
 @dataclass
 class ModelInputs(Input):
@@ -105,7 +113,7 @@ class Outputs(Input):
 
     def __post_init__(self):
         self.validate_choice_fields()
-        assert not(bool(self.products) ^ bool(self.columns)), \
+        assert not (bool(self.products) ^ bool(self.columns)), \
             "Neither or both of products and columns must be specified."
         if self.products:
             assert len(self.products) == len(self.columns), \
