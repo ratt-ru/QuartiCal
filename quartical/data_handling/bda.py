@@ -17,11 +17,26 @@ def time_resampler(tcol, icol, reps, gcd, resample_size):
 
         for n in range(1, rep + 1):
 
-            resampled_time[offset] = start + 0.5 * n * gcd
+            resampled_time[offset] = start + 0.5 * gcd
+
+            start += gcd
 
             offset += 1
 
     return np.sort(resampled_time)
+
+
+def fix_time_col(time_col):
+
+    otc = time_col.copy()
+
+    for ind, (ele1, ele2) in enumerate(zip(otc[:-1], otc[1:])):
+        if np.abs(ele2 - ele1) < 0.05:
+            otc[ind + 1] = ele1
+        else:
+            otc[ind + 1] = ele2
+
+    return otc
 
 
 def process_bda_input(data_xds_list, spw_xds_list, weight_column):
@@ -103,12 +118,17 @@ def process_bda_input(data_xds_list, spw_xds_list, weight_column):
         uintervals = blockwise_unique(interval_col)
         gcd = uintervals.map_blocks(lambda x: np.array(arr_gcd(x)),
                                     chunks=(1,))
-        upsample_size = int(da.round(da.sum(interval_col)/gcd).compute())
 
-        upsample_reps = da.map_blocks(
-                lambda _ivl, _gcd: np.rint(_ivl/_gcd).astype(np.int64),
-                interval_col,
-                gcd)
+        # NOTE: Make the interval and time columns "perfect" i.e. ignore small
+        # errors in the prior averaging. This is very dodgy and is mostly a
+        # workaround.
+        interval_col = da.round(interval_col/gcd).astype(np.int64) * gcd
+        time_col = da.blockwise(fix_time_col, "r",
+                                time_col, "r",
+                                dtype=np.float64)
+
+        upsample_reps = da.rint(interval_col/gcd).astype(np.int64)
+        upsample_size = da.sum(upsample_reps).compute()
 
         upsampled_time_col = da.map_blocks(time_resampler,
                                            time_col,
@@ -118,6 +138,13 @@ def process_bda_input(data_xds_list, spw_xds_list, weight_column):
                                            upsample_size,
                                            dtype=np.float64,
                                            chunks=(upsample_size,))
+
+        # NOTE: Make the upsampled time column perfectly consistent. This is
+        # very brittle but is neccessary as we cannot trust the input time
+        # and interval values.
+        upsampled_time_col = da.blockwise(fix_time_col, "r",
+                                          upsampled_time_col, "r",
+                                          dtype=np.float64)
 
         # TODO: This assumes a consistent interval everywhere, as we are still
         # using the GCD logic. This will need to change when we have access to
