@@ -492,6 +492,7 @@ def resample_solints(native_map, native_shape, n_thread):
             upsample_map = np.empty_like(native_map)
             downsample_map = np.empty(target_n_tint, dtype=np.int32)
             remap_id = 0
+            offset = 0
 
             for i in range(n_tint):
 
@@ -501,17 +502,16 @@ def resample_solints(native_map, native_shape, n_thread):
 
                 upsample_n_row = int(np.ceil(sel_n_row/remap_factor))
 
-                consumed_rows = 0
+                for start in range(offset, offset + sel_n_row, upsample_n_row):
 
-                for start in range(0, sel_n_row, upsample_n_row):
-
-                    stop = min(start + upsample_n_row, sel_n_row)
+                    stop = min(start + upsample_n_row, offset + sel_n_row)
 
                     upsample_map[start:stop] = remap_id
                     downsample_map[remap_id] = i
 
-                    consumed_rows -= upsample_n_row
                     remap_id += 1
+
+                offset += sel_n_row
 
             upsample_shape = (target_n_tint,) + native_shape[1:]
 
