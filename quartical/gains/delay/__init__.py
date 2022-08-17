@@ -107,7 +107,7 @@ class Delay(Gain):
         data = data[sel]
         flags = flags[sel]
 
-        data[flags != 0] = 0
+        data[flags == 1] = 0  # Ignore UV-cut, otherwise there may be no est.
 
         utint = np.unique(t_map)
         ufint = np.unique(f_map)
@@ -143,8 +143,11 @@ class Delay(Gain):
                 sel_n_chan = fsel.size
                 n = int(np.ceil(2 ** 15 / sel_n_chan)) * sel_n_chan
 
+                fsel_data = ref_data[:, fsel]
+                valid_ant = fsel_data.any(axis=(1, 2))
+
                 fft_data = np.abs(
-                    np.fft.fft(ref_data[:, fsel], n=n, axis=1)
+                    np.fft.fft(fsel_data, n=n, axis=1)
                 )
                 fft_data = np.fft.fftshift(fft_data, axes=1)
 
@@ -154,10 +157,12 @@ class Delay(Gain):
 
                 delay_est_ind_00 = np.argmax(fft_data[..., 0], axis=1)
                 delay_est_00 = fft_freq[delay_est_ind_00]
+                delay_est_00[~valid_ant] = 0
 
                 if n_corr > 1:
                     delay_est_ind_11 = np.argmax(fft_data[..., -1], axis=1)
                     delay_est_11 = fft_freq[delay_est_ind_11]
+                    delay_est_11[~valid_ant] = 0
 
                 for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
                     if p == ref_ant:
