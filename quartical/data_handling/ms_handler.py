@@ -198,6 +198,9 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
     # dask-ms handle this. This also might need some further consideration,
     # as the fill_value might cause problems.
 
+    if not (output_opts.products or output_opts.flags):
+        return [None] * len(xds_list)  # Write nothing to the MS.
+
     pol_xds = xds_from_storage_table(ms_path + "::POLARIZATION")[0]
     corr_types = [CORR_TYPES[ct] for ct in pol_xds.CORR_TYPE.values[0]]
     ms_n_corr = len(corr_types)
