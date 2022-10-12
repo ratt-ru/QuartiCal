@@ -41,7 +41,7 @@ def backup():
         args.ms_path,
         columns=args.column,
         index_cols=("TIME",),
-        group_cols=("DATA_DESC_ID",))
+        group_cols=("FIELD_ID","DATA_DESC_ID","SCAN_NUMBER"))
 
     for i, ds in enumerate(data_xds_list):
         chunks = {'row':'auto'}
