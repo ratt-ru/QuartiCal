@@ -44,13 +44,12 @@ def backup():
         index_cols=("TIME",),
         group_cols=("FIELD_ID","DATA_DESC_ID","SCAN_NUMBER"))
 
-    for i, ds in enumerate(data_xds_list):
-        chunks = {'row':'auto'}
-        if 'chan' in ds.dims:
-            chunks['chan'] = 'auto'
-        data_xds_list[i] = ds.chunk(chunks)
 
-    data_xds_list = unify_chunks(data_xds_list)
+    for i, ds in enumerate(data_xds_list):
+        chunks = {'row':10000}
+        if 'chan' in ds.dims:
+            chunks['chan'] = 256
+        data_xds_list[i] = ds.chunk(chunks)
 
     bkp_xds_list = xds_to_zarr(
         data_xds_list,
