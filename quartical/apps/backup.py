@@ -43,6 +43,12 @@ def backup():
         index_cols=("TIME",),
         group_cols=("DATA_DESC_ID",))
 
+    for i, ds in enumerate(data_xds_list):
+        chunks = {'row':'auto'}
+        if 'chan' in ds.dims:
+            chunks['chan'] = 'auto'
+        data_xds_list[i] = ds.chunk(chunks)
+
     bkp_xds_list = xds_to_zarr(
         data_xds_list,
         f"{args.zarr_dir.url}::{timestamp}-{ms_name}-{args.column}.bkp.qc",
@@ -86,7 +92,8 @@ def restore():
     restored_xds_list = xds_to_storage_table(
         zarr_xds_list,
         args.ms_path,
-        columns=(args.column,)
+        columns=(args.column,),
+        rechunk=True
     )
 
     dask.compute(restored_xds_list)
