@@ -130,7 +130,7 @@ def add_mad_graph(data_xds_list, mad_opts):
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         n_ant = xds.dims["ant"]
-        n_t_chunk = residuals.numblocks[0]
+        n_t_chunk, n_f_chunk, _ = residuals.numblocks
 
         wres = da.blockwise(
             compute_whitened_residual, ("rowlike", "chan", "corr"),
@@ -142,7 +142,8 @@ def add_mad_graph(data_xds_list, mad_opts):
         )
 
         bl_mad_and_med = da.blockwise(
-            compute_bl_mad_and_med, ("rowlike", "ant1", "ant2", "corr", "est"),
+            compute_bl_mad_and_med,
+            ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
             wres, ("rowlike", "chan", "corr"),
             flag_col, ("rowlike", "chan"),
             ant1_col, ("rowlike",),
@@ -151,20 +152,22 @@ def add_mad_graph(data_xds_list, mad_opts):
             dtype=wres.dtype,
             align_arrays=False,
             concatenate=True,
-            adjust_chunks={"rowlike": (1,)*n_t_chunk},
+            adjust_chunks={"rowlike": (1,)*n_t_chunk,
+                           "chan": (1,)*n_f_chunk},
             new_axes={"ant1": n_ant,
                       "ant2": n_ant,
                       "est": 2}
         )
 
         gbl_mad_and_med = da.blockwise(
-            compute_gbl_mad_and_med, ("rowlike", "corr", "est"),
+            compute_gbl_mad_and_med, ("rowlike", "chan", "corr", "est"),
             wres, ("rowlike", "chan", "corr"),
             flag_col, ("rowlike", "chan"),
             dtype=wres.dtype,
             align_arrays=False,
             concatenate=True,
-            adjust_chunks={"rowlike": (1,)*n_t_chunk},
+            adjust_chunks={"rowlike": (1,)*n_t_chunk,
+                           "chan": (1,)*n_f_chunk},
             new_axes={"est": 2}
         )
 
@@ -173,8 +176,8 @@ def add_mad_graph(data_xds_list, mad_opts):
         mad_flags = da.blockwise(
             compute_mad_flags, ("rowlike", "chan"),
             wres, ("rowlike", "chan", "corr"),
-            gbl_mad_and_med, ("rowlike", "corr", "est"),
-            bl_mad_and_med, ("rowlike", "ant1", "ant2", "corr", "est"),
+            gbl_mad_and_med, ("rowlike", "chan", "corr", "est"),
+            bl_mad_and_med, ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             gbl_thresh, None,

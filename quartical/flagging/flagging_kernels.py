@@ -28,7 +28,7 @@ def compute_bl_mad_and_med(wres, flags, a1, a2, n_ant):
     n_corr = wres.shape[-1]
 
     # TODO: Make this a bl dim array, with computed indices.
-    mad_and_med = np.zeros((1, n_ant, n_ant, n_corr, 2), dtype=wres.dtype)
+    mad_and_med = np.zeros((1, 1, n_ant, n_ant, n_corr, 2), dtype=wres.dtype)
 
     for a in range(n_ant):
         for b in range(a + 1, n_ant):
@@ -50,8 +50,8 @@ def compute_bl_mad_and_med(wres, flags, a1, a2, n_ant):
                     bl_median = np.median(bl_wres[unflagged_sel])
                     bl_mad = \
                         np.median(np.abs(bl_wres - bl_median)[unflagged_sel])
-                    mad_and_med[0, a, b, c, 0] = bl_mad
-                    mad_and_med[0, a, b, c, 1] = bl_median
+                    mad_and_med[0, 0, a, b, c, 0] = bl_mad
+                    mad_and_med[0, 0, a, b, c, 1] = bl_median
 
     return mad_and_med
 
@@ -61,7 +61,7 @@ def compute_gbl_mad_and_med(wres, flags):
 
     n_corr = wres.shape[-1]
 
-    mad_and_med = np.zeros((1, n_corr, 2), dtype=wres.dtype)
+    mad_and_med = np.zeros((1, 1, n_corr, 2), dtype=wres.dtype)
 
     unflagged_sel = np.where(flags.flatten() == 0)
 
@@ -72,8 +72,8 @@ def compute_gbl_mad_and_med(wres, flags):
             gbl_median = np.median(gbl_chisq[unflagged_sel])
             gbl_mad = np.median(np.abs(gbl_chisq - gbl_median)[unflagged_sel])
 
-            mad_and_med[0, c, 0] = gbl_mad
-            mad_and_med[0, c, 1] = gbl_median
+            mad_and_med[0, 0, c, 0] = gbl_mad
+            mad_and_med[0, 0, c, 1] = gbl_median
 
     return mad_and_med
 
@@ -98,10 +98,10 @@ def compute_mad_flags(
 
     for corr in range(n_corr):
 
-        gbl_mad = gbl_mad_and_med[0, corr, 0]
-        gbl_med = gbl_mad_and_med[0, corr, 1]
-        bl_mad = bl_mad_and_med[0, :, :, corr, 0]
-        bl_med = bl_mad_and_med[0, :, :, corr, 1]
+        gbl_mad = gbl_mad_and_med[0, 0, corr, 0]
+        gbl_med = gbl_mad_and_med[0, 0, corr, 1]
+        bl_mad = bl_mad_and_med[0, 0, :, :, corr, 0]
+        bl_med = bl_mad_and_med[0, 0, :, :, corr, 1]
 
         if gbl_mad == 0:  # Indicates that all data was flagged.
             flags[:] = 1
