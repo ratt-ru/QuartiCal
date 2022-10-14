@@ -135,6 +135,7 @@ class Outputs(Input):
 @dataclass
 class MadFlags(Input):
     enable: bool = False
+    whiten: bool = True
     threshold_bl: float = 5
     threshold_global: float = 10
     max_deviation: float = 10

@@ -125,7 +125,13 @@ def add_mad_graph(data_xds_list, mad_opts):
 
     for xds in data_xds_list:
         residuals = xds._RESIDUAL.data
-        weight_col = xds._WEIGHT.data
+        if mad_opts.whiten:
+            weight_col = xds._WEIGHT.data
+        else:
+            weight_col = da.ones_like(
+                xds._WEIGHT.data,
+                name="unity_weights-" + uuid4().hex
+            )
         flag_col = xds.FLAG.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data

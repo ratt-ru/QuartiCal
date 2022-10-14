@@ -131,6 +131,11 @@ output:
 mad_flags:
   enable:
     Enables the MAD flagging routines.
+  whiten:
+    Determines whether the residuals are whitened (multiplied by the square
+    root of the weights) prior to performing MAD flagging. This is recommended
+    when the weights are known to be good. Disabling will do MAD flagging on
+    the unwhitened residuals.
   threshold_bl:
     Multiplicative factor which determines whether or not a chi-squared value
     is considered to deviate significantly from the median of a given baseline.
