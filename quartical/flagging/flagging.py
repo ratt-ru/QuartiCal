@@ -4,7 +4,7 @@ from uuid import uuid4
 from loguru import logger  # noqa
 from quartical.flagging.flagging_kernels import (compute_bl_mad_and_med,
                                                  compute_gbl_mad_and_med,
-                                                 compute_chisq,
+                                                 compute_whitened_residual,
                                                  compute_mad_flags)
 
 
@@ -132,53 +132,59 @@ def add_mad_graph(data_xds_list, mad_opts):
         n_ant = xds.dims["ant"]
         n_t_chunk = residuals.numblocks[0]
 
-        chisq = da.blockwise(compute_chisq, ("rowlike", "chan"),
-                             residuals, ("rowlike", "chan", "corr"),
-                             weight_col, ("rowlike", "chan", "corr"),
-                             dtype=residuals.real.dtype,
-                             align_arrays=False,
-                             concatenate=True)
+        wres = da.blockwise(
+            compute_whitened_residual, ("rowlike", "chan", "corr"),
+            residuals, ("rowlike", "chan", "corr"),
+            weight_col, ("rowlike", "chan", "corr"),
+            dtype=residuals.real.dtype,
+            align_arrays=False,
+            concatenate=True
+        )
 
         bl_mad_and_med = da.blockwise(
-            compute_bl_mad_and_med, ("rowlike", "ant1", "ant2"),
-            chisq, ("rowlike", "chan"),
+            compute_bl_mad_and_med, ("rowlike", "ant1", "ant2", "corr", "est"),
+            wres, ("rowlike", "chan", "corr"),
             flag_col, ("rowlike", "chan"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             n_ant, None,
-            dtype=chisq.dtype,
+            dtype=wres.dtype,
             align_arrays=False,
             concatenate=True,
-            adjust_chunks={"rowlike": (2,)*n_t_chunk},
+            adjust_chunks={"rowlike": (1,)*n_t_chunk},
             new_axes={"ant1": n_ant,
-                      "ant2": n_ant}
+                      "ant2": n_ant,
+                      "est": 2}
         )
 
         gbl_mad_and_med = da.blockwise(
-            compute_gbl_mad_and_med, ("rowlike",),
-            chisq, ("rowlike", "chan"),
+            compute_gbl_mad_and_med, ("rowlike", "corr", "est"),
+            wres, ("rowlike", "chan", "corr"),
             flag_col, ("rowlike", "chan"),
-            dtype=chisq.dtype,
+            dtype=wres.dtype,
             align_arrays=False,
             concatenate=True,
-            adjust_chunks={"rowlike": (2,)*n_t_chunk}
+            adjust_chunks={"rowlike": (1,)*n_t_chunk},
+            new_axes={"est": 2}
         )
 
         row_chunks = residuals.chunks[0]
 
-        mad_flags = da.blockwise(compute_mad_flags, ("rowlike", "chan"),
-                                 chisq, ("rowlike", "chan"),
-                                 gbl_mad_and_med, ("rowlike",),
-                                 bl_mad_and_med, ("rowlike", "ant1", "ant2"),
-                                 ant1_col, ("rowlike",),
-                                 ant2_col, ("rowlike",),
-                                 gbl_thresh, None,
-                                 bl_thresh, None,
-                                 max_deviation, None,
-                                 dtype=np.int8,
-                                 align_arrays=False,
-                                 concatenate=True,
-                                 adjust_chunks={"rowlike": row_chunks},)
+        mad_flags = da.blockwise(
+            compute_mad_flags, ("rowlike", "chan"),
+            wres, ("rowlike", "chan", "corr"),
+            gbl_mad_and_med, ("rowlike", "corr", "est"),
+            bl_mad_and_med, ("rowlike", "ant1", "ant2", "corr", "est"),
+            ant1_col, ("rowlike",),
+            ant2_col, ("rowlike",),
+            gbl_thresh, None,
+            bl_thresh, None,
+            max_deviation, None,
+            dtype=np.int8,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"rowlike": row_chunks},
+        )
 
         flag_col = da.where(mad_flags, 1, flag_col)
 
