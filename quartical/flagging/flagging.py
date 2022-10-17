@@ -142,20 +142,20 @@ def add_mad_graph(data_xds_list, mad_opts):
             compute_whitened_residual, ("rowlike", "chan", "corr"),
             residuals, ("rowlike", "chan", "corr"),
             weight_col, ("rowlike", "chan", "corr"),
-            dtype=residuals.real.dtype,
+            dtype=residuals.dtype,
             align_arrays=False,
             concatenate=True
         )
 
-        bl_mad_and_med = da.blockwise(
+        bl_mad_and_med_real = da.blockwise(
             compute_bl_mad_and_med,
             ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
-            wres, ("rowlike", "chan", "corr"),
+            wres.real, ("rowlike", "chan", "corr"),
             flag_col, ("rowlike", "chan"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             n_ant, None,
-            dtype=wres.dtype,
+            dtype=wres.real.dtype,
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"rowlike": (1,)*n_t_chunk,
@@ -165,11 +165,41 @@ def add_mad_graph(data_xds_list, mad_opts):
                       "est": 2}
         )
 
-        gbl_mad_and_med = da.blockwise(
-            compute_gbl_mad_and_med, ("rowlike", "chan", "corr", "est"),
-            wres, ("rowlike", "chan", "corr"),
+        bl_mad_and_med_imag = da.blockwise(
+            compute_bl_mad_and_med,
+            ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
+            wres.imag, ("rowlike", "chan", "corr"),
             flag_col, ("rowlike", "chan"),
-            dtype=wres.dtype,
+            ant1_col, ("rowlike",),
+            ant2_col, ("rowlike",),
+            n_ant, None,
+            dtype=wres.imag.dtype,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"rowlike": (1,)*n_t_chunk,
+                           "chan": (1,)*n_f_chunk},
+            new_axes={"ant1": n_ant,
+                      "ant2": n_ant,
+                      "est": 2}
+        )
+
+        gbl_mad_and_med_real = da.blockwise(
+            compute_gbl_mad_and_med, ("rowlike", "chan", "corr", "est"),
+            wres.real, ("rowlike", "chan", "corr"),
+            flag_col, ("rowlike", "chan"),
+            dtype=wres.real.dtype,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"rowlike": (1,)*n_t_chunk,
+                           "chan": (1,)*n_f_chunk},
+            new_axes={"est": 2}
+        )
+
+        gbl_mad_and_med_imag = da.blockwise(
+            compute_gbl_mad_and_med, ("rowlike", "chan", "corr", "est"),
+            wres.imag, ("rowlike", "chan", "corr"),
+            flag_col, ("rowlike", "chan"),
+            dtype=wres.imag.dtype,
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"rowlike": (1,)*n_t_chunk,
@@ -179,11 +209,12 @@ def add_mad_graph(data_xds_list, mad_opts):
 
         row_chunks = residuals.chunks[0]
 
-        mad_flags = da.blockwise(
+        mad_flags_real = da.blockwise(
             compute_mad_flags, ("rowlike", "chan"),
-            wres, ("rowlike", "chan", "corr"),
-            gbl_mad_and_med, ("rowlike", "chan", "corr", "est"),
-            bl_mad_and_med, ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
+            wres.real, ("rowlike", "chan", "corr"),
+            gbl_mad_and_med_real, ("rowlike", "chan", "corr", "est"),
+            bl_mad_and_med_real,
+            ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             gbl_thresh, None,
@@ -195,7 +226,24 @@ def add_mad_graph(data_xds_list, mad_opts):
             adjust_chunks={"rowlike": row_chunks},
         )
 
-        flag_col = da.where(mad_flags, 1, flag_col)
+        mad_flags_imag = da.blockwise(
+            compute_mad_flags, ("rowlike", "chan"),
+            wres.imag, ("rowlike", "chan", "corr"),
+            gbl_mad_and_med_imag, ("rowlike", "chan", "corr", "est"),
+            bl_mad_and_med_imag,
+            ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
+            ant1_col, ("rowlike",),
+            ant2_col, ("rowlike",),
+            gbl_thresh, None,
+            bl_thresh, None,
+            max_deviation, None,
+            dtype=np.int8,
+            align_arrays=False,
+            concatenate=True,
+            adjust_chunks={"rowlike": row_chunks},
+        )
+
+        flag_col = da.where(mad_flags_real | mad_flags_imag, 1, flag_col)
 
         flagged_data_xds = xds.assign({"FLAG": (("row", "chan"), flag_col)})
 

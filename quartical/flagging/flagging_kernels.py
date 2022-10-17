@@ -7,17 +7,16 @@ def compute_whitened_residual(resid_arr, weights):
 
     n_row, n_chan, n_corr = resid_arr.shape
 
-    wres = np.zeros((n_row, n_chan, n_corr), dtype=resid_arr.real.dtype)
+    wres = np.zeros((n_row, n_chan, n_corr), dtype=resid_arr.dtype)
 
     for r in range(n_row):
         for f in range(n_chan):
             for c in range(n_corr):
 
                 r_rfc = resid_arr[r, f, c]
-                r_rfc_conj = r_rfc.conjugate()
                 w_rfc = weights[r, f, c]
 
-                wres[r, f, c] = np.sqrt((r_rfc_conj * w_rfc * r_rfc).real)
+                wres[r, f, c] = np.sqrt(w_rfc) * r_rfc
 
     return wres
 
