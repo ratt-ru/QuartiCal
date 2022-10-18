@@ -62,14 +62,14 @@ def compute_gbl_mad_and_med(wres, flags):
 
     mad_and_med = np.zeros((1, 1, n_corr, 2), dtype=wres.dtype)
 
-    unflagged_sel = np.where(flags.flatten() == 0)
+    unflagged_sel = np.where(flags.ravel() == 0)
 
     if unflagged_sel[0].size:  # We have unflagged data.
         for c in range(n_corr):
-            gbl_chisq = wres[..., c].flatten()
+            gbl_wres = wres[..., c].ravel()[unflagged_sel]
 
-            gbl_median = np.median(gbl_chisq[unflagged_sel])
-            gbl_mad = np.median(np.abs(gbl_chisq - gbl_median)[unflagged_sel])
+            gbl_median = np.median(gbl_wres)
+            gbl_mad = np.median(np.abs(gbl_wres - gbl_median))
 
             mad_and_med[0, 0, c, 0] = gbl_mad
             mad_and_med[0, 0, c, 1] = gbl_median
