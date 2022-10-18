@@ -125,8 +125,10 @@ def add_mad_graph(data_xds_list, mad_opts):
 
     for xds in data_xds_list:
         residuals = xds._RESIDUAL.data
-        if mad_opts.whiten:
+        if mad_opts.whitening == "robust":
             weight_col = xds._WEIGHT.data
+        elif mad_opts.whitening == "native":
+            weight_col = xds.WEIGHT.data
         else:
             weight_col = da.ones_like(
                 xds._WEIGHT.data,
