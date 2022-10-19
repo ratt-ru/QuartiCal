@@ -46,9 +46,9 @@ def backup():
 
 
     for i, ds in enumerate(data_xds_list):
-        chunks = {'row':10000}
+        chunks = {'row':125000}
         if 'chan' in ds.dims:
-            chunks['chan'] = 256
+            chunks['chan'] = 128
         data_xds_list[i] = ds.chunk(chunks)
 
     bkp_xds_list = xds_to_zarr(
