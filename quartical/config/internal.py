@@ -57,4 +57,10 @@ def additional_validation(config):
 
     assert not any(store.full_path in ll.full_path for ll in load_stores), msg
 
+    if config.mad_flags.whitening == "robust":
+        assert config.solver.robust, (
+            "mad_flags.whitening specified as robust but solver.robust is "
+            "not enabled."
+        )
+
     return
