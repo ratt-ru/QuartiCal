@@ -86,7 +86,7 @@ def restore():
              'Also accepts valid s3 urls.'
     )
     parser.add_argument(
-        'column',
+        'column_name',
         type=str,
         help='Name of column to populate using the backup. Note that this '
              'does not have to be the same column as was used to create the '
@@ -102,7 +102,7 @@ def restore():
     restored_xds_list = xds_to_storage_table(
         zarr_xds_list,
         args.ms_path,
-        columns=(args.column,),
+        columns=(args.column_name,),
         rechunk=True
     )
 
