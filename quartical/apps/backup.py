@@ -4,7 +4,6 @@ from daskms.experimental.zarr import xds_to_zarr, xds_from_zarr
 from daskms.fsspec_store import DaskMSStore
 import time
 import dask
-from xarray import unify_chunks
 
 
 def backup():
@@ -44,11 +43,11 @@ def backup():
         index_cols=("TIME",),
         group_cols=("FIELD_ID","DATA_DESC_ID","SCAN_NUMBER"))
 
-
+    chunks = {'row':125000}
     for i, ds in enumerate(data_xds_list):
-        chunks = {'row':125000}
         if 'chan' in ds.dims:
-            chunks['chan'] = 128
+            chan_chunk = 256 // (ds.dims['corr'] if 'corr' in ds.dims else 1)
+            chunks['chan'] = chan_chunk
         data_xds_list[i] = ds.chunk(chunks)
 
     bkp_xds_list = xds_to_zarr(
