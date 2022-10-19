@@ -1,4 +1,5 @@
 import argparse
+from math import prod, ceil
 from daskms import xds_from_storage_ms, xds_to_storage_table
 from daskms.experimental.zarr import xds_to_zarr, xds_from_zarr
 from daskms.fsspec_store import DaskMSStore
@@ -27,32 +28,40 @@ def backup():
              'zarr that will be created, e.g. path/to/dir. Also '
              'accepts valid s3 urls.'
     )
-    parser.add_argument('column',
+    parser.add_argument('column_name',
                         type=str,
                         help='Name of column to be backed up.')
 
     args = parser.parse_args()
 
     ms_name = args.ms_path.full_path.rsplit("/", 1)[1]
+    column_name = args.column_name
 
     timestamp = time.strftime("%Y%m%d-%H%M%S")
 
+    # This call exists purely to get the relevant shape and dtype info.
     data_xds_list = xds_from_storage_ms(
         args.ms_path,
-        columns=args.column,
+        columns=column_name,
         index_cols=("TIME",),
-        group_cols=("FIELD_ID","DATA_DESC_ID","SCAN_NUMBER"))
+        group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),
+    )
 
-    chunks = {'row':125000}
-    for i, ds in enumerate(data_xds_list):
-        if 'chan' in ds.dims:
-            chan_chunk = 256 // (ds.dims['corr'] if 'corr' in ds.dims else 1)
-            chunks['chan'] = chan_chunk
-        data_xds_list[i] = ds.chunk(chunks)
+    # Compute appropriate chunks (256MB by default) to keep zarr happy.
+    chunks = [chunk_by_size(xds[column_name]) for xds in data_xds_list]
+
+    # Repeat of above call but now with correct chunking information.
+    data_xds_list = xds_from_storage_ms(
+        args.ms_path,
+        columns=column_name,
+        index_cols=("TIME",),
+        group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),
+        chunks=chunks
+    )
 
     bkp_xds_list = xds_to_zarr(
         data_xds_list,
-        f"{args.zarr_dir.url}::{timestamp}-{ms_name}-{args.column}.bkp.qc",
+        f"{args.zarr_dir.url}::{timestamp}-{ms_name}-{column_name}.bkp.qc",
     )
 
     dask.compute(bkp_xds_list)
@@ -98,3 +107,32 @@ def restore():
     )
 
     dask.compute(restored_xds_list)
+
+
+def chunk_by_size(data_array, nbytes=256*1e6):
+    """Compute chunking for a specific chunk size in bytes.
+
+    Args:
+        data_array: An xarray.DataArray object.
+        nbytes: An interger number of bytes describing the chunk size.
+
+    Returns:
+        chunks: A dict containing chunking consistent with nbytes.
+    """
+
+    assert data_array.dims[0] == 'row', (
+        "chunk_by_size expects first dimension of DataArray to be 'row'."
+    )
+
+    dtype = data_array.dtype
+    dtype_nbytes = dtype.itemsize
+    shape = data_array.shape
+
+    row_nbytes = dtype_nbytes * prod(shape[1:])
+
+    optimal_nrow = ceil(nbytes / row_nbytes)
+
+    chunks = {k: -1 for k in data_array.dims}
+    chunks['row'] = optimal_nrow
+
+    return chunks
