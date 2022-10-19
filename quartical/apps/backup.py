@@ -28,9 +28,17 @@ def backup():
              'zarr that will be created, e.g. path/to/dir. Also '
              'accepts valid s3 urls.'
     )
-    parser.add_argument('column_name',
-                        type=str,
-                        help='Name of column to be backed up.')
+    parser.add_argument(
+        'column_name',
+        type=str,
+        help='Name of column to be backed up.'
+    )
+    parser.add_argument(
+        '--nthread',
+        type=int,
+        default=1,
+        help='Number of threads to use.'
+    )
 
     args = parser.parse_args()
 
@@ -64,7 +72,7 @@ def backup():
         f"{args.zarr_dir.url}::{timestamp}-{ms_name}-{column_name}.bkp.qc",
     )
 
-    dask.compute(bkp_xds_list)
+    dask.compute(bkp_xds_list, num_workers=args.nthread)
 
 
 def restore():
@@ -92,6 +100,12 @@ def restore():
              'does not have to be the same column as was used to create the '
              'backup.'
     )
+    parser.add_argument(
+        '--nthread',
+        type=int,
+        default=1,
+        help='Number of threads to use.'
+    )
 
     args = parser.parse_args()
 
@@ -106,7 +120,7 @@ def restore():
         rechunk=True
     )
 
-    dask.compute(restored_xds_list)
+    dask.compute(restored_xds_list, num_workers=args.nthread)
 
 
 def chunk_by_size(data_array, nbytes=256*1e6):
