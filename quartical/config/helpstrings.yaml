@@ -131,6 +131,13 @@ output:
 mad_flags:
   enable:
     Enables the MAD flagging routines.
+  whitening:
+    Determines whether and how the residuals are whitened (multiplied by the
+    square root of the weights) prior to performing MAD flagging. "native"
+    whitening will use the original weights (specified in the input_ms
+    section). "robust" will use the weights produced when solver.robust=True.
+    "disabled" will result in the MAD estimate being performed on the
+    unwhitened residuals.
   threshold_bl:
     Multiplicative factor which determines whether or not a chi-squared value
     is considered to deviate significantly from the median of a given baseline.

@@ -135,9 +135,13 @@ class Outputs(Input):
 @dataclass
 class MadFlags(Input):
     enable: bool = False
+    whitening: str = field(
+        default="disabled",
+        metadata=dict(choices=["disabled", "native", "robust"])
+    )
     threshold_bl: float = 5
-    threshold_global: float = 5
-    max_deviation: float = 5
+    threshold_global: float = 10
+    max_deviation: float = 10
 
     def __post_init__(self):
         self.validate_choice_fields()
