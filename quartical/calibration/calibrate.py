@@ -59,7 +59,13 @@ def dask_corrected_weights(weights, a1, a2, t_map_arr, f_map_arr,
                                      row_weights, corr_mode)
 
 
-def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
+def add_calibration_graph(
+    data_xds_list,
+    stats_xds_list,
+    solver_opts,
+    chain_opts,
+    output_opts
+):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -113,8 +119,9 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
     gain_xds_lod = load_and_interpolate_gains(gain_xds_lod, chain_opts)
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
-    gain_xds_lod, data_xds_list = construct_solver(
+    gain_xds_lod, data_xds_list, stats_xds_list = construct_solver(
         data_xds_list,
+        stats_xds_list,
         gain_xds_lod,
         t_bin_list,
         t_map_list,
@@ -155,7 +162,7 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
     )
 
     # Return the resulting graphs for the gains and updated xds.
-    return gain_xds_lod, net_xds_lod, data_xds_list
+    return gain_xds_lod, net_xds_lod, data_xds_list, stats_xds_list
 
 
 def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,

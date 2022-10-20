@@ -9,6 +9,7 @@ aux_info_fields = ("SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID")
 
 
 def construct_solver(data_xds_list,
+                     stats_xds_list,
                      gain_xds_lod,
                      t_bin_list,
                      t_map_list,
@@ -39,8 +40,11 @@ def construct_solver(data_xds_list,
 
     solved_gain_xds_lod = []
     output_data_xds_list = []
+    output_stats_xds_list = []
 
-    for xds_ind, data_xds in enumerate(data_xds_list):
+    itr = enumerate(zip(data_xds_list, stats_xds_list))
+
+    for xds_ind, (data_xds, stats_xds) in itr:
 
         model_col = data_xds.MODEL_DATA.data
         data_col = data_xds.DATA.data
@@ -117,6 +121,16 @@ def construct_solver(data_xds_list,
                            flag_col.chunks,
                            flag_col.dtype)
 
+        blocker.add_output("presolve_chisq",
+                           "rf",
+                           ((1,), (1,)),
+                           np.float64)
+
+        blocker.add_output("postsolve_chisq",
+                           "rf",
+                           ((1,), (1,)),
+                           np.float64)
+
         for term_name, term_xds in gain_terms.items():
 
             blocker.add_output(f"{term_name}-gain",
@@ -170,6 +184,17 @@ def construct_solver(data_xds_list,
         )
         output_data_xds_list.append(output_data_xds)
 
+        presolve_chisq = output_dict["presolve_chisq"]
+        postsolve_chisq = output_dict["postsolve_chisq"]
+
+        stats_xds = stats_xds.assign(
+            {
+                "PRESOLVE_CHISQ": (("t_chunk", "f_chunk"), presolve_chisq),
+                "POSTSOLVE_CHISQ": (("t_chunk", "f_chunk"), postsolve_chisq)
+            }
+        )
+        output_stats_xds_list.append(stats_xds)
+
         # Assign results to the relevant gain xarray.Dataset object.
         solved_gain_dict = {}
 
@@ -206,7 +231,7 @@ def construct_solver(data_xds_list,
 
         solved_gain_xds_lod.append(solved_gain_dict)
 
-    return solved_gain_xds_lod, output_data_xds_list
+    return solved_gain_xds_lod, output_data_xds_list, output_stats_xds_list
 
 
 def expand_specs(gain_terms):

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# Sets up logger - hereafter import logger from Loguru.
 from contextlib import ExitStack
 import sys
 from loguru import logger
@@ -15,11 +14,8 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.data_handling.angles import make_parangle_xds_list
 from quartical.calibration.calibrate import add_calibration_graph
-from quartical.statistics.statistics import (make_stats_xds_list,
-                                             assign_presolve_chisq,
-                                             assign_postsolve_chisq)
-from quartical.statistics.logging import (embed_stats_logging,
-                                          log_summary_stats)
+from quartical.statistics.statistics import make_stats_xds_list
+from quartical.statistics.logging import log_summary_stats
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
@@ -115,19 +111,18 @@ def _execute(exitstack):
                                     model_opts)
 
     stats_xds_list = make_stats_xds_list(data_xds_list)
-    stats_xds_list = assign_presolve_chisq(data_xds_list, stats_xds_list)
 
     # Adds the dask graph describing the calibration of the data. TODO:
     # This call has excess functionality now. Split out mapping and outputs.
-    gain_xds_lod, net_xds_lod, data_xds_list = add_calibration_graph(
+    cal_outputs = add_calibration_graph(
         data_xds_list,
+        stats_xds_list,
         solver_opts,
         chain_opts,
         output_opts
     )
 
-    stats_xds_list = assign_postsolve_chisq(data_xds_list, stats_xds_list)
-    stats_xds_list = embed_stats_logging(stats_xds_list)
+    gain_xds_lod, net_xds_lod, data_xds_list, stats_xds_list = cal_outputs
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
