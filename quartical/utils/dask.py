@@ -34,7 +34,7 @@ def get_block_id_arr(arr):
     block_id_arr = arr.map_blocks(
         _get_block_ids,
         meta=np.array((0,)*arr.ndim, dtype=np.int64),
-        chunks=(1, 1, arr.ndim)
+        chunks=(1,) * (arr.ndim - 1) + (arr.ndim,)
     )
 
     return block_id_arr
