@@ -23,7 +23,14 @@ meta_args_nt = namedtuple(
     )
 
 
-def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
+def solver_wrapper(
+    term_spec_list,
+    solver_opts,
+    chain_opts,
+    block_id_arr,
+    aux_block_info,
+    **kwargs
+):
     """A Python wrapper for the solvers written in Numba.
 
     This wrapper facilitates getting values in and out of the Numba code and
@@ -37,6 +44,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     Returns:
         results_dict: A dictionary containing the results of the solvers.
     """
+
+    block_id = tuple(block_id_arr.squeeze())
 
     set_num_threads(solver_opts.threads)
     ref_ant = solver_opts.reference_antenna

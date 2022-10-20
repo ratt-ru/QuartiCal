@@ -1,10 +1,11 @@
 import numpy as np
 from quartical.calibration.solver import solver_wrapper
-from quartical.utils.dask import Blocker
+from quartical.utils.dask import Blocker, get_block_id_arr
 from collections import namedtuple
 
 
 term_spec_tup = namedtuple("term_spec_tup", "name type shape pshape")
+aux_info_fields = ("SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID")
 
 
 def construct_solver(data_xds_list,
@@ -55,6 +56,11 @@ def construct_solver(data_xds_list,
         gain_terms = gain_xds_lod[xds_ind]
         corr_mode = data_xds.dims["corr"]
 
+        block_id_arr = get_block_id_arr(data_col)
+        aux_block_info = {
+            k: data_xds.attrs.get(k, "?") for k in aux_info_fields
+        }
+
         # Grab the number of input chunks - doing this on the data should be
         # safe.
         n_t_chunks, n_f_chunks, _ = data_col.numblocks
@@ -80,6 +86,8 @@ def construct_solver(data_xds_list,
         blocker.add_input("corr_mode", corr_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
         blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
+        blocker.add_input("block_id_arr", block_id_arr, "rfc")
+        blocker.add_input("aux_block_info", aux_block_info)
         blocker.add_input("solver_opts", solver_opts)
         blocker.add_input("chain_opts", chain_opts)
 
