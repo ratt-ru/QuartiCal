@@ -21,6 +21,25 @@ def compute_context(dask_opts, output_opts, time_str):
         return nullcontext()
 
 
+def get_block_id_arr(arr):
+
+    def _get_block_ids(arr, block_id=None):
+
+        assert arr.ndim != 0, "Array must have one or more dimensions"
+
+        sel = (np.newaxis,) * (arr.ndim - 1) + (slice(None),)
+
+        return np.array(block_id)[sel]
+
+    block_id_arr = arr.map_blocks(
+        _get_block_ids,
+        meta=np.array((0,)*arr.ndim, dtype=np.int64),
+        chunks=(1, 1, arr.ndim)
+    )
+
+    return block_id_arr
+
+
 class as_dict:
     """Decorator which turns function outputs into dictionary entries."""
     def __init__(self, func, *keys):
