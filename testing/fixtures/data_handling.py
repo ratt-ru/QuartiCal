@@ -3,6 +3,7 @@ from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.data_handling.angles import make_parangle_xds_list
+from quartical.statistics.statistics import make_stats_xds_list
 
 
 @pytest.fixture(scope="module")
@@ -35,6 +36,11 @@ def predicted_xds_list(preprocessed_xds_list, parangle_xds_list, recipe,
                        ms_name, model_opts):
     return add_model_graph(preprocessed_xds_list, parangle_xds_list, recipe,
                            ms_name, model_opts)
+
+
+@pytest.fixture(scope="module")
+def stats_xds_list(predicted_xds_list):
+    return make_stats_xds_list(predicted_xds_list)
 
 
 @pytest.fixture(scope="module")

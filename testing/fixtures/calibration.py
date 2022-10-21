@@ -8,10 +8,10 @@ from quartical.calibration.mapping import (make_t_maps,
 
 
 @pytest.fixture(scope="module")
-def add_calibration_graph_outputs(predicted_xds_list, solver_opts, chain_opts,
-                                  output_opts):
-    return add_calibration_graph(predicted_xds_list, solver_opts, chain_opts,
-                                 output_opts)
+def add_calibration_graph_outputs(predicted_xds_list, stats_xds_list,
+                                  solver_opts, chain_opts, output_opts):
+    return add_calibration_graph(predicted_xds_list, stats_xds_list,
+                                 solver_opts, chain_opts, output_opts)
 
 
 @pytest.fixture(scope="module")

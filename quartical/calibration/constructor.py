@@ -123,12 +123,12 @@ def construct_solver(data_xds_list,
 
         blocker.add_output("presolve_chisq",
                            "rf",
-                           ((1,), (1,)),
+                           ((1,)*n_t_chunks, (1,)*n_f_chunks),
                            np.float64)
 
         blocker.add_output("postsolve_chisq",
                            "rf",
-                           ((1,), (1,)),
+                           ((1,)*n_t_chunks, (1,)*n_f_chunks),
                            np.float64)
 
         for term_name, term_xds in gain_terms.items():
