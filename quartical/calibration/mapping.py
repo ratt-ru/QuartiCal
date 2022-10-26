@@ -61,7 +61,11 @@ def make_t_maps(data_xds_list, chain_opts):
                 chunks=utime_loc.chunks,
                 dtype=np.int32)
         else:
-            utime_scan_numbers = da.zeros_like(utime_intervals, dtype=np.int32)
+            utime_scan_numbers = da.zeros_like(
+                utime_intervals,
+                dtype=np.int32,
+                name="scan_number-" + uuid4().hex
+            )
 
         # Daskify the chunks per array - these are already known from the
         # initial chunking step.
