@@ -89,6 +89,8 @@ def _execute(exitstack):
         # less convenient pattern.
         client.run_on_scheduler(install_plugin)
 
+        client.wait_for_workers(dask_opts.workers)
+
         logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
