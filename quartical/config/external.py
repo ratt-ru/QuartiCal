@@ -85,7 +85,7 @@ class ModelInputs(Input):
     )
     invert_uvw: bool = True
     source_chunks: int = 500
-    apply_p_jones: bool = True
+    apply_p_jones: bool = False
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -107,7 +107,7 @@ class Outputs(Input):
     )
     columns: Optional[List[str]] = None
     flags: bool = True
-    apply_p_jones_inv: bool = True
+    apply_p_jones_inv: bool = False
     subtract_directions: Optional[List[int]] = None
     net_gains: Optional[List[Any]] = None
 

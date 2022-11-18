@@ -41,7 +41,18 @@ def add_model_graph(data_xds_list, parangle_xds_list, model_vis_recipe,
     # which require them. P Jones is applied to predicted components
     # internally, so we only need to consider model columns for now.
 
+    n_corr = {xds.dims["corr"] for xds in data_xds_list}.pop()
+
     if model_opts.apply_p_jones:
+        # NOTE: Applying parallactic angle when there are fewer than four
+        # correlations is problematic for linear feeds as it amounts to
+        # rotating information into correlations which are not present i.e.
+        # it is not reversible. Thus, we elect not to support it.
+        if n_corr != 4:
+            raise ValueError(
+                "input_model.apply_p_jones is not supported for data with "
+                "less than four correlations. Please disable this setting."
+            )
         model_columns = model_vis_recipe.ingredients.model_columns
         data_xds_list = apply_parangles(data_xds_list,
                                         parangle_xds_list,
