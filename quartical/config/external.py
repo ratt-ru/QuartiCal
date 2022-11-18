@@ -95,6 +95,7 @@ class ModelInputs(Input):
 class Outputs(Input):
     gain_directory: str = "gains.qc"
     log_directory: str = "logs.qc"
+    log_to_terminal: bool = True
     overwrite: bool = False
     products: Optional[List[str]] = field(
         default=None,
