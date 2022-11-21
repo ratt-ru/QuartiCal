@@ -394,7 +394,7 @@ def postprocess_xds_list(data_xds_list, parangle_xds_list, output_opts):
     if output_opts.apply_p_jones_inv:
         # NOTE: Applying parallactic angle when there are fewer than four
         # correlations is problematic for linear feeds as it amounts to
-        # rotating information into correlations which are not present i.e.
+        # rotating information to/from correlations which are not present i.e.
         # it is not reversible. Thus, we elect not to support it.
         if n_corr != 4:
             raise ValueError(
