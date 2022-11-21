@@ -34,7 +34,7 @@ def _execute(exitstack):
     helper.help()  # Check to see if the user asked for help.
 
     # Get all the config. This should never be used directly.
-    opts = parser.parse_inputs()
+    opts, config_files = parser.parse_inputs()
 
     # Split out all the configuration objects. Mitigates god-object problems.
     ms_opts = opts.input_ms
@@ -49,11 +49,15 @@ def _execute(exitstack):
     # works for both threads an processes. It is easily picklable.
 
     time_str = time.strftime("%Y%m%d_%H%M%S")
-    proxy_logger = ProxyLogger(output_opts.log_directory, time_str)
+    proxy_logger = ProxyLogger(
+        output_opts.log_directory,
+        time_str,
+        output_opts.log_to_terminal
+    )
     proxy_logger.configure()
 
     # Now that we know where to put the log, log the final config state.
-    parser.log_final_config(opts)
+    parser.log_final_config(opts, config_files)
 
     model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
 
