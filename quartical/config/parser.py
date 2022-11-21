@@ -40,7 +40,7 @@ def create_user_config():
     return
 
 
-def log_final_config(config):
+def log_final_config(config, config_files=[]):
     """Logs the final state of the configuration object.
 
     Given the overlapping nature of the various configuration options, this
@@ -48,6 +48,7 @@ def log_final_config(config):
 
     Args:
         config: A FinalConfig object.
+        config_files: A list of filenames.
     """
 
     config = oc.structured(config)
@@ -58,6 +59,9 @@ def log_final_config(config):
         columns, _ = os.get_terminal_size(0)
     else:
         columns = 80  # Fall over to some sensible default.
+
+    for cf in config_files:
+        logger.info(f"Using user-defined config file: {cf}")
 
     log_message = "Final configuration state:"
 
@@ -106,8 +110,6 @@ def parse_inputs(bypass_sysargv=None):
                 raise ValueError(f"Config file {arg} is duplicated.")
             config_files.append(arg)
 
-            logger.info("User defined config file: {}", arg)
-
     for file in config_files:
         (bypass_sysargv or sys.argv).remove(file)  # Remove config files.
 
@@ -128,4 +130,4 @@ def parse_inputs(bypass_sysargv=None):
 
     additional_validation(config_obj)
 
-    return config_obj
+    return config_obj, config_files

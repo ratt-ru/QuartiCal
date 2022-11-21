@@ -95,6 +95,8 @@ output:
   log_directory:
     Name of directory in which QuartiCal logging outputs will be stored. s3
     is not currently supported for these outputs.
+  log_to_terminal:
+    Enable or disable logging to terminal.
   overwrite:
     Whether or not the contents of the output directory may be overwritten.
     Will trigger an error when False and output.directory already exists.

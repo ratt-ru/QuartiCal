@@ -27,13 +27,14 @@ class InterceptHandler(logging.Handler):
 
 class ProxyLogger(object):
 
-    def __init__(self, output_dir, birth=None):
+    def __init__(self, output_dir, birth=None, log_to_term=True):
 
         self.birth = birth or time.strftime("%Y%m%d_%H%M%S")
         self.output_dir = Path(output_dir)
+        self.log_to_term = log_to_term
 
     def __reduce__(self):
-        return (ProxyLogger, (self.output_dir, self.birth))
+        return (ProxyLogger, (self.output_dir, self.birth, self.log_to_term))
 
     def configure(self):
         logging.basicConfig(handlers=[InterceptHandler()], level="WARNING")
@@ -52,13 +53,14 @@ class ProxyLogger(object):
 
         logger.remove()  # Remove existing handlers.
 
-        logger.add(
-            sys.stderr,
-            level="INFO",
-            format=fmt,
-            enqueue=True,
-            colorize=True
-        )
+        if self.log_to_term:
+            logger.add(
+                sys.stderr,
+                level="INFO",
+                format=fmt,
+                enqueue=True,
+                colorize=True
+            )
 
         logger.add(
             str(output_path / output_name),
