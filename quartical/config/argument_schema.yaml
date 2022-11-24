@@ -154,7 +154,7 @@ input_model:
 
     apply_p_jones:
       dtype: bool
-      default: true
+      default: false
       info:
         Determines whether P-Jones (parallactic angle rotation) is applied to
         the model. This affects both measurement set columns and predicted
@@ -176,6 +176,12 @@ output:
       info:
         Name of directory in which QuartiCal logging outputs will be stored.
         s3 is not currently supported for these outputs.
+
+    log_to_terminal:
+      default: true
+      dtype: bool
+      info:
+        Enable or disable logging to terminal.
 
     overwrite:
       dtype: bool
@@ -216,7 +222,7 @@ output:
 
     apply_p_jones_inv:
       dtype: bool
-      default: True
+      default: false
       info:
         Determines whether the inverse of P-Jones (parallactic angle rotation)
         is applied to the output visibilitites. This has the effect of

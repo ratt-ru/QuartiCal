@@ -131,7 +131,7 @@ def base_opts(ms_name):
     """Get basic config from .yaml file."""
 
     # We use bypass_sysargv to avoid mucking with the CLI.
-    options = parse_inputs(bypass_sysargv=['goquartical', str(conf_path)])
+    options, _ = parse_inputs(bypass_sysargv=['goquartical', str(conf_path)])
     options.input_ms.path = ms_name  # Ensure the ms path is correct.
 
     return options
