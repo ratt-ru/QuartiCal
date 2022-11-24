@@ -198,7 +198,10 @@ def make_stimela_schema(params: Dict[str, Any],
 
     inputs = inputs.copy()
 
-    terms = params.get('solver.terms', None)
+    if 'solver' in params:
+        terms = params['solver'].get('terms', None)
+    else:
+        terms = params.get('solver.terms', None)
     if terms is None:
         terms = _config_dataclasses["solver"]().terms
 
