@@ -41,7 +41,19 @@ def add_model_graph(data_xds_list, parangle_xds_list, model_vis_recipe,
     # which require them. P Jones is applied to predicted components
     # internally, so we only need to consider model columns for now.
 
+    n_corr = {xds.dims["corr"] for xds in data_xds_list}.pop()
+
     if model_opts.apply_p_jones:
+        # NOTE: Applying parallactic angle when there are fewer than four
+        # correlations is problematic for linear feeds as it amounts to
+        # rotating information to/from correlations which are not present i.e.
+        # it is not reversible. We support it for input models but warn the
+        # user that it is not a good idea.
+        if n_corr != 4:
+            logger.warning(
+                "input_model.apply_p_jones is not recommended for data with "
+                "less than four correlations. Proceed with caution."
+            )
         model_columns = model_vis_recipe.ingredients.model_columns
         data_xds_list = apply_parangles(data_xds_list,
                                         parangle_xds_list,
@@ -103,9 +115,10 @@ def add_model_graph(data_xds_list, parangle_xds_list, model_vis_recipe,
                 # direction only.
 
                 if len(in_a) > 1 and len(in_b) > 1:
-                    raise(ValueError("Model recipes do not support add or "
-                                     "subtract operations between two "
-                                     "direction-dependent inputs."))
+                    raise ValueError(
+                        "Model recipes do not support add or subtract "
+                        "operations between two direction-dependent inputs."
+                    )
                 elif len(in_a) > len(in_b):
                     result = [op(in_a[0], in_b[0]), *in_a[1:]]
                 elif len(in_a) < len(in_b):

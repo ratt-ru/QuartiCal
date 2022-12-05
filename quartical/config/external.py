@@ -85,7 +85,7 @@ class ModelInputs(Input):
     )
     invert_uvw: bool = True
     source_chunks: int = 500
-    apply_p_jones: bool = True
+    apply_p_jones: bool = False
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -95,6 +95,7 @@ class ModelInputs(Input):
 class Outputs(Input):
     gain_directory: str = "gains.qc"
     log_directory: str = "logs.qc"
+    log_to_terminal: bool = True
     overwrite: bool = False
     products: Optional[List[str]] = field(
         default=None,
@@ -107,7 +108,7 @@ class Outputs(Input):
     )
     columns: Optional[List[str]] = None
     flags: bool = True
-    apply_p_jones_inv: bool = True
+    apply_p_jones_inv: bool = False
     subtract_directions: Optional[List[int]] = None
     net_gains: Optional[List[Any]] = None
 
