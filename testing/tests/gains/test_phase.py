@@ -115,10 +115,10 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
 
 @pytest.fixture(scope="module")
-def add_calibration_graph_outputs(corrupted_data_xds_list,
+def add_calibration_graph_outputs(corrupted_data_xds_list, stats_xds_list,
                                   solver_opts, chain_opts, output_opts):
     # Overload this fixture as we need to use the corrupted xdss.
-    return add_calibration_graph(corrupted_data_xds_list,
+    return add_calibration_graph(corrupted_data_xds_list, stats_xds_list,
                                  solver_opts, chain_opts, output_opts)
 
 
