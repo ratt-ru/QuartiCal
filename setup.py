@@ -31,7 +31,7 @@ requirements = [
 
 setup(
     name='quartical',
-    version='0.1.8',
+    version='0.1.9',
     description="Fast calibration implementation exploiting complex "
                 "optimisation.",
     url='https://github.com/JSKenyon/QuartiCal',
