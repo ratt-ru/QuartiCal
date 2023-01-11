@@ -39,7 +39,7 @@ def compute_bl_mad_and_med(wres, flags, a1, a2, n_ant):
                 continue
 
             bl_flags = flags[bl_sel].ravel()
-            unflagged_sel = np.where(bl_flags == 0)
+            unflagged_sel = np.where(bl_flags != 1)
 
             if unflagged_sel[0].size:  # Not fully flagged.
                 for c in range(n_corr):
@@ -62,7 +62,7 @@ def compute_gbl_mad_and_med(wres, flags):
 
     mad_and_med = np.zeros((1, 1, n_corr, 2), dtype=wres.dtype)
 
-    unflagged_sel = np.where(flags.ravel() == 0)
+    unflagged_sel = np.where(flags.ravel() != 1)
 
     if unflagged_sel[0].size:  # We have unflagged data.
         for c in range(n_corr):
