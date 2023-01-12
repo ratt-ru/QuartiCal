@@ -138,6 +138,7 @@ def add_mad_graph(data_xds_list, mad_opts):
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
         n_ant = xds.dims["ant"]
+        n_bl_w_autos = (n_ant * (n_ant - 1))/2 + n_ant
         n_t_chunk, n_f_chunk, _ = residuals.numblocks
 
         wres = da.blockwise(
@@ -151,7 +152,7 @@ def add_mad_graph(data_xds_list, mad_opts):
 
         bl_mad_and_med_real = da.blockwise(
             compute_bl_mad_and_med,
-            ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
+            ("rowlike", "chan", "bl", "corr", "est"),
             wres.real, ("rowlike", "chan", "corr"),
             flag_col, ("rowlike", "chan"),
             ant1_col, ("rowlike",),
@@ -162,14 +163,13 @@ def add_mad_graph(data_xds_list, mad_opts):
             concatenate=True,
             adjust_chunks={"rowlike": (1,)*n_t_chunk,
                            "chan": (1,)*n_f_chunk},
-            new_axes={"ant1": n_ant,
-                      "ant2": n_ant,
+            new_axes={"bl": n_bl_w_autos,
                       "est": 2}
         )
 
         bl_mad_and_med_imag = da.blockwise(
             compute_bl_mad_and_med,
-            ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
+            ("rowlike", "chan", "bl", "corr", "est"),
             wres.imag, ("rowlike", "chan", "corr"),
             flag_col, ("rowlike", "chan"),
             ant1_col, ("rowlike",),
@@ -180,8 +180,7 @@ def add_mad_graph(data_xds_list, mad_opts):
             concatenate=True,
             adjust_chunks={"rowlike": (1,)*n_t_chunk,
                            "chan": (1,)*n_f_chunk},
-            new_axes={"ant1": n_ant,
-                      "ant2": n_ant,
+            new_axes={"bl": n_bl_w_autos,
                       "est": 2}
         )
 
