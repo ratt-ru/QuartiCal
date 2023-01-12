@@ -229,29 +229,7 @@ def add_mad_graph(data_xds_list, mad_opts):
             adjust_chunks={"rowlike": row_chunks},
         )
 
-        # import ipdb; ipdb.set_trace()
-
-        import matplotlib
-        import matplotlib.pyplot as plt
-        # matplotlib.use('Agg')
-
-        mad_flags, flag_col, wres = da.compute(mad_flags, flag_col, wres)
-
-        wres[flag_col==1] = np.nan + 1j*np.nan
-
-        foo = wres[np.where(mad_flags==1)]
-
-        print(mad_flags.sum()/mad_flags.size)
-
-        # import ipdb; ipdb.set_trace()
-
-        plt.scatter(wres[...,0].real, wres[...,0].imag, c='k')
-        plt.scatter(foo[...,0].real, foo[...,0].imag, c='r')
-        plt.show()
-
-        import ipdb; ipdb.set_trace()
-
-        flag_col = da.where(mad_flags_real | mad_flags_imag, 1, flag_col)
+        flag_col = da.where(mad_flags, 1, flag_col)
 
         flagged_data_xds = xds.assign({"FLAG": (("row", "chan"), flag_col)})
 
