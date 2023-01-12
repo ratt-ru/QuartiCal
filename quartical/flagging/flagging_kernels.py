@@ -123,7 +123,7 @@ def compute_mad_flags(
         bl_med_imag = bl_mad_and_med_imag[0, 0, :, corr, 1]
 
         # Catch fully flagged chunks i.e. which have no estimates.
-        if (gbl_mad_real == 0) & (gbl_mad_imag == 0):
+        if (gbl_mad_real == 0) or (gbl_mad_imag == 0):
             flags[:] = 1
             continue
 
@@ -152,6 +152,11 @@ def compute_mad_flags(
 
             mad_pq_im = bl_mad_imag[bl_id]
             med_pq_im = bl_med_imag[bl_id]
+
+            # No/bad mad estimates for this baseline. Likely already flagged.
+            if (mad_pq_re == 0) or (mad_pq_im == 0):
+                flags[row] = 1
+                continue
 
             bl_mean_dev_re = \
                 np.abs(mad_pq_re - bl_mad_mean_re)/bl_mad_std_re
