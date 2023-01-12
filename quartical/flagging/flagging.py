@@ -210,39 +210,46 @@ def add_mad_graph(data_xds_list, mad_opts):
 
         row_chunks = residuals.chunks[0]
 
-        mad_flags_real = da.blockwise(
+        mad_flags = da.blockwise(
             compute_mad_flags, ("rowlike", "chan"),
-            wres.real, ("rowlike", "chan", "corr"),
+            wres, ("rowlike", "chan", "corr"),
             gbl_mad_and_med_real, ("rowlike", "chan", "corr", "est"),
-            bl_mad_and_med_real,
-            ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
+            gbl_mad_and_med_imag, ("rowlike", "chan", "corr", "est"),
+            bl_mad_and_med_real, ("rowlike", "chan", "bl", "corr", "est"),
+            bl_mad_and_med_imag, ("rowlike", "chan", "bl", "corr", "est"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             gbl_thresh, None,
             bl_thresh, None,
             max_deviation, None,
+            n_ant, None,
             dtype=np.int8,
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"rowlike": row_chunks},
         )
 
-        mad_flags_imag = da.blockwise(
-            compute_mad_flags, ("rowlike", "chan"),
-            wres.imag, ("rowlike", "chan", "corr"),
-            gbl_mad_and_med_imag, ("rowlike", "chan", "corr", "est"),
-            bl_mad_and_med_imag,
-            ("rowlike", "chan", "ant1", "ant2", "corr", "est"),
-            ant1_col, ("rowlike",),
-            ant2_col, ("rowlike",),
-            gbl_thresh, None,
-            bl_thresh, None,
-            max_deviation, None,
-            dtype=np.int8,
-            align_arrays=False,
-            concatenate=True,
-            adjust_chunks={"rowlike": row_chunks},
-        )
+        # import ipdb; ipdb.set_trace()
+
+        import matplotlib
+        import matplotlib.pyplot as plt
+        # matplotlib.use('Agg')
+
+        mad_flags, flag_col, wres = da.compute(mad_flags, flag_col, wres)
+
+        wres[flag_col==1] = np.nan + 1j*np.nan
+
+        foo = wres[np.where(mad_flags==1)]
+
+        print(mad_flags.sum()/mad_flags.size)
+
+        # import ipdb; ipdb.set_trace()
+
+        plt.scatter(wres[...,0].real, wres[...,0].imag, c='k')
+        plt.scatter(foo[...,0].real, foo[...,0].imag, c='r')
+        plt.show()
+
+        import ipdb; ipdb.set_trace()
 
         flag_col = da.where(mad_flags_real | mad_flags_imag, 1, flag_col)
 

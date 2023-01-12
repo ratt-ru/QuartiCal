@@ -87,63 +87,97 @@ def compute_gbl_mad_and_med(wres, flags):
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
 def compute_mad_flags(
     wres,
-    gbl_mad_and_med,
-    bl_mad_and_med,
+    gbl_mad_and_med_real,
+    gbl_mad_and_med_imag,
+    bl_mad_and_med_real,
+    bl_mad_and_med_imag,
     ant1,
     ant2,
     gbl_threshold,
     bl_threshold,
-    max_deviation
+    max_deviation,
+    n_ant
 ):
 
     n_row, n_chan, n_corr = wres.shape
+
+    bl_ids = get_bl_ids(ant1, ant2, n_ant)
 
     flags = np.zeros((n_row, n_chan), dtype=np.int8)
 
     scale_factor = 1.4826
 
+    bl_threshold2 = bl_threshold ** 2
+    gbl_threshold2 = gbl_threshold ** 2
+    max_deviation2 = max_deviation ** 2
+
     for corr in range(n_corr):
 
-        gbl_mad = gbl_mad_and_med[0, 0, corr, 0]
-        gbl_med = gbl_mad_and_med[0, 0, corr, 1]
-        bl_mad = bl_mad_and_med[0, 0, :, :, corr, 0]
-        bl_med = bl_mad_and_med[0, 0, :, :, corr, 1]
+        gbl_mad_real = gbl_mad_and_med_real[0, 0, corr, 0] * scale_factor
+        gbl_med_real = gbl_mad_and_med_real[0, 0, corr, 1]
+        gbl_mad_imag = gbl_mad_and_med_imag[0, 0, corr, 0] * scale_factor
+        gbl_med_imag = gbl_mad_and_med_imag[0, 0, corr, 1]
+        bl_mad_real = bl_mad_and_med_real[0, 0, :, corr, 0] * scale_factor
+        bl_med_real = bl_mad_and_med_real[0, 0, :, corr, 1]
+        bl_mad_imag = bl_mad_and_med_imag[0, 0, :, corr, 0] * scale_factor
+        bl_med_imag = bl_mad_and_med_imag[0, 0, :, corr, 1]
 
-        if gbl_mad == 0:  # Indicates that all data was flagged.
+        # Catch fully flagged chunks i.e. which have no estimates.
+        if (gbl_mad_real == 0) & (gbl_mad_imag == 0):
             flags[:] = 1
             continue
 
-        gbl_std = scale_factor * gbl_mad  # MAD to standard deviation.
-        gbl_cutoff = gbl_threshold * gbl_std
+        # The per-baseline MAD values should be relatively unbiased estimates
+        # of the standard deviation of the whitened residuals. As such, we may
+        # want to flag out baselines with MAD values which point to
+        # inconsistent statistics.
 
-        # This is the MAD estimate of the baseline MAD estimates. We want to
-        # use this to find bad baselines.
-        valid_bl_mad = bl_mad.flatten()[bl_mad.flatten() > 0]
-        valid_bl_mad_median = np.median(valid_bl_mad)
-        bl_mad_mad = np.median(np.abs(valid_bl_mad - valid_bl_mad_median))
+        bl_mad_mean_re = np.mean(bl_mad_real[bl_mad_real > 0])
+        bl_mad_mean_im = np.mean(bl_mad_imag[bl_mad_imag > 0])
+        bl_mad_std_re = np.std(bl_mad_real[bl_mad_real > 0])
+        bl_mad_std_im = np.std(bl_mad_imag[bl_mad_imag > 0])
 
         for row in range(n_row):
 
             a1_m, a2_m = ant1[row], ant2[row]
 
-            mad_pq = bl_mad[a1_m, a2_m]
-            med_pq = bl_med[a1_m, a2_m]
+            # Do not attempt to flag autocorrelations.
+            if a1_m == a2_m:
+                continue
 
-            bl_mad_deviation = np.abs(mad_pq - valid_bl_mad_median)/bl_mad_mad
+            bl_id = bl_ids[row]
 
-            if bl_mad_deviation > max_deviation:
+            mad_pq_re = bl_mad_real[bl_id]
+            med_pq_re = bl_med_real[bl_id]
+
+            mad_pq_im = bl_mad_imag[bl_id]
+            med_pq_im = bl_med_imag[bl_id]
+
+            bl_mean_dev_re = \
+                np.abs(mad_pq_re - bl_mad_mean_re)/bl_mad_std_re
+            bl_mean_dev_im = \
+                np.abs(mad_pq_im - bl_mad_mean_im)/bl_mad_std_im
+
+            if (bl_mean_dev_re**2 + bl_mean_dev_im**2) > max_deviation2:
                 flags[row] = 1
                 continue
 
-            bl_std = scale_factor * mad_pq
-            bl_cutoff = bl_threshold * bl_std
-
             for chan in range(n_chan):
 
-                if np.abs(wres[row, chan, corr] - med_pq) > bl_cutoff:
+                bl_dev_re = \
+                    np.abs(wres[row, chan, corr] - med_pq_re)/mad_pq_re
+                bl_dev_im = \
+                    np.abs(wres[row, chan, corr] - med_pq_im)/mad_pq_im
+
+                if (bl_dev_re**2 + bl_dev_im**2) > bl_threshold2:
                     flags[row, chan] = 1
 
-                if np.abs(wres[row, chan, corr] - gbl_med) > gbl_cutoff:
+                gbl_dev_re = \
+                    np.abs(wres[row, chan, corr] - gbl_med_real)/gbl_mad_real
+                gbl_dev_im = \
+                    np.abs(wres[row, chan, corr] - gbl_med_imag)/gbl_mad_imag
+
+                if (gbl_dev_re**2 + gbl_dev_im**2) > gbl_threshold2:
                     flags[row, chan] = 1
 
     return flags
