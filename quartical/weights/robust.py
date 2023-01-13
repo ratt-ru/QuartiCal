@@ -31,7 +31,7 @@ def update_icovariance(residuals, flags, etas, icovariance, mode):
 
         for r in range(n_row):
             for f in range(n_chan):
-                if flags[r, f]:
+                if flags[r, f] == 1:
                     n_unflagged -= 1
                     continue
                 else:
@@ -90,7 +90,7 @@ def update_etas(residuals, flags, etas, icovariance, dof, mode):
 
         for r in range(n_row):
             for f in range(n_chan):
-                if flags[r, f]:
+                if flags[r, f] == 1:
                     continue
                 else:
                     numerator = dof + n_corr  # Not correct for diagonal terms.
@@ -169,7 +169,7 @@ def dof_constant(etas, flags, dof, n_corr):
     constant = 0
     for r in range(n_row):
         for f in range(n_chan):
-            if flags[r, f]:
+            if flags[r, f] == 1:
                 n_unflagged -= 1
                 continue
             else:
@@ -217,7 +217,7 @@ def mean_weight(weights, flags):
 
     for r in range(n_row):
         for f in range(n_chan):
-            if flags[r, f]:
+            if flags[r, f] == 1:
                 n_unflagged -= 1
                 continue
             else:
