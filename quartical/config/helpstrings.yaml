@@ -67,7 +67,8 @@ input_model:
     Combining all of the above it is possible to do things like
     "COL1~LSM1:LSM1@dE" which will create a model with multiple
     directions, the first given by COL1 minus LSM1 and the remainder given
-    given by the dE tagged clusters in LSM1.
+    given by the dE tagged clusters in LSM1. Leaving this value unset
+    (the default) will use an identity model.
   beam:
     Path to beams. Apply beams during predict if specified eg.
     'beam_$(corr)_$(reim).fits' or 'beam_$(CORR)_$(REIM).fits'.
