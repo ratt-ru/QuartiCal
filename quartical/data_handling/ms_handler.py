@@ -99,7 +99,7 @@ def read_xds_list(model_columns, ms_opts):
             table_schema=["MS", {**schema}])
     except RuntimeError as e:
         raise RuntimeError(
-            f"Invalid/missing column specified. Unerlying error: {e}."
+            f"Invalid/missing column specified. Underlying error: {e}."
         ) from e
 
     spw_xds_list = xds_from_storage_table(
