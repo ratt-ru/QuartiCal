@@ -73,7 +73,7 @@ class MSInputs(Input):
 
 @dataclass
 class ModelInputs(Input):
-    recipe: str = "???"
+    recipe: Optional[str] = None
     beam: Optional[str] = None
     beam_l_axis: str = field(
         default="X",
