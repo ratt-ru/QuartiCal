@@ -83,23 +83,24 @@ def read_xds_list(model_columns, ms_opts):
         ("SCAN_NUMBER",) if "SCAN_NUMBER" not in ms_opts.group_by else ()
     columns += (*model_columns,)
 
-    available_columns = list(xds_from_storage_ms(ms_opts.path)[0].keys())
-    assert all(c in available_columns for c in columns), \
-           f"One or more columns in: {columns} is not present in the data."
-
     schema = {cn: {'dims': ('chan', 'corr')} for cn in model_columns}
 
     known_weight_cols = ("WEIGHT", "WEIGHT_SPECTRUM")
     if ms_opts.weight_column not in known_weight_cols:
         schema[ms_opts.weight_column] = {'dims': ('chan', 'corr')}
 
-    data_xds_list = xds_from_storage_ms(
-        ms_opts.path,
-        columns=columns,
-        index_cols=("TIME",),
-        group_cols=ms_opts.group_by,
-        chunks=chunking_per_data_xds,
-        table_schema=["MS", {**schema}])
+    try:
+        data_xds_list = xds_from_storage_ms(
+            ms_opts.path,
+            columns=columns,
+            index_cols=("TIME",),
+            group_cols=ms_opts.group_by,
+            chunks=chunking_per_data_xds,
+            table_schema=["MS", {**schema}])
+    except RuntimeError as e:
+        raise RuntimeError(
+            f"Invalid/missing column specified. Unerlying error: {e}."
+        ) from e
 
     spw_xds_list = xds_from_storage_table(
         ms_opts.path + "::SPECTRAL_WINDOW",
