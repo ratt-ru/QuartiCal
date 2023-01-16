@@ -97,8 +97,7 @@ input_ms:
 
 input_model:
     recipe:
-      dtype: str
-      required: true
+      dtype: Optional[str]
       info:
         Input model recipe. This is a string which describes how the model
         data should be constructed. Currently, measurement set columns and
@@ -117,7 +116,8 @@ input_model:
         Combining all of the above it is possible to do things like
         "COL1~LSM1:LSM1@dE" which will create a model with multiple
         directions, the first given by COL1 minus LSM1 and the remainder given
-        given by the dE tagged clusters in LSM1.
+        given by the dE tagged clusters in LSM1. Leaving this value unset
+        (the default) will use an identity model.
 
     beam:
       dtype: Optional[str]

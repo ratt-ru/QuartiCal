@@ -108,11 +108,13 @@ def _execute(exitstack):
     parangle_xds_list = make_parangle_xds_list(ms_opts.path, data_xds_list)
 
     # A list of xdss onto which appropriate model data has been assigned.
-    data_xds_list = add_model_graph(data_xds_list,
-                                    parangle_xds_list,
-                                    model_vis_recipe,
-                                    ms_opts.path,
-                                    model_opts)
+    data_xds_list = add_model_graph(
+        data_xds_list,
+        parangle_xds_list,
+        model_vis_recipe,
+        ms_opts.path,
+        model_opts
+    )
 
     stats_xds_list = make_stats_xds_list(data_xds_list)
 
