@@ -82,6 +82,18 @@ def add_calibration_graph(
         data_xds_list: A list of xarra.Datasets containing the MS data with
             added visibility outputs.
     """
+
+    if (
+        {xds.dims['dir'] for xds in data_xds_list}.pop() > 1
+        and
+        not any(term.direction_dependent for term in chain_opts)
+    ):
+        logger.warning(
+            "User has specified a direction-dependent model but no gain term "
+            "has term.direction_dependent enabled. This is supported but may "
+            "indicate user error."
+        )
+
     # Figure out all mappings between data and solution intervals.
     t_bin_list, t_map_list = make_t_maps(data_xds_list, chain_opts)
     f_map_list = make_f_maps(data_xds_list, chain_opts)
