@@ -13,7 +13,7 @@ def flat_ident_like(arr):
         arr: A dask.array with a given shape, dtype and chunking.
 
     Returns:
-        A "identity" dask.array with identical shape, dtype and chunking. 
+        A "identity" dask.array with identical shape, dtype and chunking.
     """
 
     if arr.shape[-1] not in (1, 2, 4):

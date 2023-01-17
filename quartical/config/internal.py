@@ -3,13 +3,33 @@ from quartical.config.external import Gain
 from daskms.fsspec_store import DaskMSStore
 
 
+class ChainIter:
+
+    def __init__(self, chain):
+        self._chain = chain
+        self._term_names = list(chain.__dataclass_fields__.keys())
+        self._n_term = len(self._term_names)
+        self._current_index = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._current_index < self._n_term:
+            term = getattr(self._chain, self._term_names[self._current_index])
+            self._current_index += 1
+            return term
+        raise StopIteration
+
+
 def gains_to_chain(opts):
 
     terms = opts.solver.terms
 
     Chain = make_dataclass(
         "Chain",
-        [(t, Gain, Gain()) for t in terms]
+        [(t, Gain, Gain()) for t in terms],
+        namespace={"__iter__": lambda self: ChainIter(self)}
     )
 
     chain = Chain()
