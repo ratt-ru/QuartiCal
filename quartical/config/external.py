@@ -202,7 +202,8 @@ class Gain(Input):
                                "phase",
                                "tec",
                                "rotation_measure",
-                               "crosshand_phase"])
+                               "crosshand_phase",
+                               "leakage"])
     )
     solve_per: str = field(
         default="antenna",
