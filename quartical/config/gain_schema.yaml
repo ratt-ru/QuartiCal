@@ -11,6 +11,7 @@ gain:
       - tec
       - rotation_measure
       - crosshand_phase
+      - leakage
     info:
       Type of gain to solve for.
 
