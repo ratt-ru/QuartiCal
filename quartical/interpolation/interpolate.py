@@ -5,6 +5,7 @@ import numpy as np
 import xarray
 from daskms.experimental.zarr import xds_from_zarr
 from quartical.config.internal import yield_from
+from quartical.utils.array import flat_ident_like
 from quartical.interpolation.interpolants import (interpolate_missing,
                                                   linear2d_interpolate_gains,
                                                   spline2d_interpolate_gains)
@@ -89,7 +90,7 @@ def convert_and_drop(load_xds_list, interp_mode):
             # Convert the complex gain into amplitide and phase.
             converted_xds = load_xds.assign(
                 {"phase": (dims, da.angle(load_xds.gains.data)),
-                 "amp": (dims, da.absolute(load_xds.gains.data))})
+                 "amp": (dims, da.abs(load_xds.gains.data))})
             keep_vars = {"phase", "amp", "gain_flags"}
         elif interp_mode == "reim":
             # Convert the complex gain into its real and imaginary parts.
@@ -97,6 +98,18 @@ def convert_and_drop(load_xds_list, interp_mode):
                 {"re": (dims, load_xds.gains.data.real),
                  "im": (dims, load_xds.gains.data.imag)})
             keep_vars = {"re", "im", "gain_flags"}
+        elif interp_mode == "amp":
+            # Convert the complex gain into amplitide and phase.
+            converted_xds = load_xds.assign(
+                {"phase": (dims, da.zeros_like(load_xds.gains.data)),
+                 "amp": (dims, da.abs(load_xds.gains.data))})
+            keep_vars = {"phase", "amp", "gain_flags"}
+        elif interp_mode == "phase":
+            # Convert the complex gain into amplitide and phase.
+            converted_xds = load_xds.assign(
+                {"phase": (dims, da.angle(load_xds.gains.data)),
+                 "amp": (dims, da.abs(flat_ident_like(load_xds.gains.data)))})
+            keep_vars = {"phase", "amp", "gain_flags"}
 
         # Drop the unecessary dims and data vars. TODO: At present, QuartiCal
         # will always interpolate a gain, not the parameters. This makes it
@@ -212,7 +225,7 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
 
     for term_xds, concat_xds in zip(term_xds_list, concat_xds_list):
 
-        if interp_mode == "ampphase":
+        if interp_mode in ("ampphase", "amp", "phase"):
             amp_sel = da.where(concat_xds.gain_flags.data[..., None],
                                np.nan,
                                concat_xds.amp.data)
@@ -260,7 +273,7 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
             interp_xds = interp_xds.sel({"corr": term_xds.corr})
 
         # Convert the interpolated quantities back to gains.
-        if interp_mode == "ampphase":
+        if interp_mode in ("ampphase", "amp", "phase"):
             gains = interp_xds.amp.data*da.exp(1j*interp_xds.phase.data)
             interp_xds = term_xds.assign(
                 {"gains": (term_xds.GAIN_AXES, gains)}
