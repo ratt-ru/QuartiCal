@@ -199,6 +199,7 @@ class Gain(Input):
                                "diag_complex",
                                "amplitude",
                                "delay",
+                               "pure_delay",
                                "phase",
                                "tec",
                                "rotation_measure",

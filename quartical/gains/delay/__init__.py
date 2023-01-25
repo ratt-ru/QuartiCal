@@ -1,5 +1,6 @@
 from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
 from quartical.gains.delay.kernel import delay_solver, delay_args
+from quartical.gains.delay.pure_kernel import pure_delay_solver
 import numpy as np
 
 
@@ -183,3 +184,20 @@ class Delay(Gain):
 
                 if n_corr > 1:
                     gain[ut, f, :, :, -1] = np.exp(cf * param[ut, fm, :, :, 3])
+
+
+class PureDelay(Delay):
+
+    solver = pure_delay_solver
+
+    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
+
+        Delay.__init__(
+            self,
+            term_name,
+            term_opts,
+            data_xds,
+            coords,
+            tipc,
+            fipc
+        )
