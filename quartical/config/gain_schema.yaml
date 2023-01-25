@@ -53,7 +53,7 @@ gain:
   interp_mode:
     dtype: str
     default: reim
-    choices: [reim, ampphase]
+    choices: [reim, ampphase, amp, phase]
     info:
       Set interpolation mode.
 
