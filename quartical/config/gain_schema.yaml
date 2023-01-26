@@ -6,6 +6,7 @@ gain:
       - complex
       - diag_complex
       - amplitude
+      - pure_delay
       - delay
       - phase
       - tec
