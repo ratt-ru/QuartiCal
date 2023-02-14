@@ -12,7 +12,7 @@ requirements = [
     "numpy",
     "dask-ms[xarray, zarr, s3]>=0.2.9",
     "codex-africanus[dask, scipy, astropy, python-casacore]",
-    "dask[array]",
+    "dask[array,diagnostics]",
     "astro-tigger-lsm",
     "loguru",
     "numba>=0.55.0",
@@ -21,7 +21,6 @@ requirements = [
     "pytest",
     "omegaconf",
     "colorama",
-    "bokeh",
     "xarray>=0.20.0"
 ]
 
