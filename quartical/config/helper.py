@@ -38,6 +38,8 @@ def populate(typ, help_dict=None):
             msg = f"{fld.metadata.get('help', '')} "
             if fld.metadata.get("choices", None):
                 msg += f"Choices: {fld.metadata['choices']}. "
+            if fld.metadata.get("element_choices", None):
+                msg += f"Choices: {fld.metadata['element_choices']}. "
             if isinstance(fld.default, _MISSING_TYPE):
                 default = fld.default_factory()
             else:
