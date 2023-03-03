@@ -129,6 +129,13 @@ output:
     Which model directions to subtract when generating residuals. Must be
     specified as a list of integers e.g. [0, 5, 7]. The default will subtract
     all directions.
+  compute_baseline_corrections:
+    Enable or disable computation of baseline-based corrections. Functionality
+    is currently limited to a solution per-channel, per-chunk. These solutions
+    are useful for analysis and are stored in output.gain_directory.
+  apply_baseline_corrections:
+    Enable or disable application of baseline-based corrections. Extreme
+    caution advised - this can and will lead to overfitting.
 
 
 mad_flags:

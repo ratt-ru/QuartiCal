@@ -19,6 +19,7 @@ from quartical.statistics.logging import log_summary_stats
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
+from quartical.gains.baseline import write_baseline_datasets
 from quartical.utils.dask import compute_context
 
 
@@ -128,7 +129,11 @@ def _execute(exitstack):
         output_opts
     )
 
-    gain_xds_lod, net_xds_lod, data_xds_list, stats_xds_list = cal_outputs
+    (gain_xds_lod,
+     net_xds_lod,
+     data_xds_list,
+     stats_xds_list,
+     bl_corr_xds_list) = cal_outputs
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
@@ -149,6 +154,9 @@ def _execute(exitstack):
                                       net_xds_lod,
                                       output_opts)
 
+    bl_corr_writes = write_baseline_datasets(bl_corr_xds_list,
+                                             output_opts)
+
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     logger.info("Computation starting. Please be patient - log messages will "
@@ -158,10 +166,11 @@ def _execute(exitstack):
 
     with compute_context(dask_opts, output_opts, time_str):
 
-        _, _, stats_xds_list = dask.compute(
+        _, _, stats_xds_list, _ = dask.compute(
             ms_writes,
             gain_writes,
             stats_xds_list,
+            bl_corr_writes,
             num_workers=dask_opts.threads,
             optimize_graph=True,
             scheduler=dask_opts.scheduler
