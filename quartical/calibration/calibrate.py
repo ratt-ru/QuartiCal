@@ -11,6 +11,8 @@ from quartical.gains.datasets import (make_gain_xds_lod,
                                       make_net_xds_list,
                                       populate_net_xds_list)
 from quartical.interpolation.interpolate import load_and_interpolate_gains
+from quartical.gains.baseline import (compute_baseline_corrections,
+                                      apply_baseline_corrections)
 from loguru import logger  # noqa
 from collections import namedtuple
 
@@ -163,6 +165,17 @@ def add_calibration_graph(
     else:
         net_xds_lod = []
 
+    if output_opts.compute_baseline_corrections:
+        bl_corr_xds_list = compute_baseline_corrections(
+            data_xds_list,
+            gain_xds_lod,
+            t_map_list,
+            f_map_list,
+            d_map_list
+        )
+    else:
+        bl_corr_xds_list = None
+
     # Update the data xarray.Datasets with visibility outputs.
     data_xds_list = make_visibility_output(
         data_xds_list,
@@ -173,8 +186,20 @@ def add_calibration_graph(
         output_opts
     )
 
+    if output_opts.apply_baseline_corrections:
+        data_xds_list = apply_baseline_corrections(
+            data_xds_list,
+            bl_corr_xds_list
+        )
+
     # Return the resulting graphs for the gains and updated xds.
-    return gain_xds_lod, net_xds_lod, data_xds_list, stats_xds_list
+    return (
+        gain_xds_lod,
+        net_xds_lod,
+        data_xds_list,
+        stats_xds_list,
+        bl_corr_xds_list
+    )
 
 
 def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,

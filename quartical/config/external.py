@@ -111,6 +111,8 @@ class Outputs(Input):
     apply_p_jones_inv: bool = False
     subtract_directions: Optional[List[int]] = None
     net_gains: Optional[List[Any]] = None
+    compute_baseline_corrections: bool = False
+    apply_baseline_corrections: bool = False
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -131,6 +133,10 @@ class Outputs(Input):
                      "Must be strictly a list or list of lists.")
                 # In the non-nested case, introduce outer list (consistent).
                 self.net_gains = [self.net_gains]
+        if self.apply_baseline_corrections:
+            assert self.compute_baseline_corrections, \
+                ("output.compute_baseline_corrections must be enabled if "
+                 "output.apply_baseline corrections is enabled.")
 
 
 @dataclass
