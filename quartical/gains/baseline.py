@@ -57,7 +57,8 @@ def compute_baseline_corrections(
         n_bla = int((n_ant*(n_ant - 1))/2 + n_ant)
 
         bl_corr = da.blockwise(
-            dask_compute_baseline_corrections, ("rowlike", "chan", "corr"),
+            dask_compute_baseline_corrections,
+            ("rowlike", "baseline", "chan", "corr"),
             data_col, ("rowlike", "chan", "corr"),
             model_col, ("rowlike", "chan", "dir", "corr"),
             weight_col, ("rowlike", "chan", "corr"),
@@ -74,15 +75,17 @@ def compute_baseline_corrections(
             dtype=data_col.dtype,
             align_arrays=False,
             concatenate=True,
-            adjust_chunks={"rowlike": (n_bla,),
+            new_axes={"baseline": n_bla},
+            adjust_chunks={"rowlike": ((1,)*len(data_xds.chunks['row'])),
                            "chan": data_col.chunks[1]})
 
         a1_inds = [x for x in range(n_ant) for _ in range(x, n_ant)]
         a2_inds = [y for x in range(n_ant) for y in range(x, n_ant)]
 
         bl_corr_xds = xarray.Dataset(
-            {"bl_correction": (("bl_id", "chan", "corr"), bl_corr)},
+            {"bl_correction": (("time", "bl_id", "chan", "corr"), bl_corr)},
             coords={
+                "time": (("time",), np.arange(len(data_xds.chunks['row']))),
                 "bl_id": (("bl_id",), np.arange(n_bla)),
                 "chan": (("chan",), data_xds.chan.values),
                 "corr": (("corr",), data_xds.corr.values),
@@ -229,7 +232,7 @@ def _compute_baseline_corrections(
 
         bl_corrections[sel] = jhr.ravel()[sel]/jhj.ravel()[sel]
 
-        return bl_corrections.reshape(jhr.shape)
+        return bl_corrections.reshape((1, n_bla, n_chan, n_corr))
 
     return impl
 
@@ -249,7 +252,7 @@ def apply_baseline_corrections(data_xds_list, bl_xds_list):
         corres = da.blockwise(
             dask_apply_baseline_corrections, ("rowlike", "chan", "corr"),
             data_col, ("rowlike", "chan", "corr"),
-            bl_corrections, ("rowlike", "chan", "corr"),
+            bl_corrections, ("rowlike", "baseline", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
             corr_mode, None,

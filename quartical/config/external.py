@@ -111,7 +111,7 @@ class Outputs(Input):
     apply_p_jones_inv: bool = False
     subtract_directions: Optional[List[int]] = None
     net_gains: Optional[List[Any]] = None
-    compute_baseline_corrections: bool = True
+    compute_baseline_corrections: bool = False
     apply_baseline_corrections: bool = False
 
     def __post_init__(self):
