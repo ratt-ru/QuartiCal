@@ -247,7 +247,6 @@ def apply_baseline_corrections(data_xds_list, bl_xds_list):
         bl_corrections = blxds.bl_correction.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
-        corr_mode = xds.dims["corr"]
 
         corres = da.blockwise(
             dask_apply_baseline_corrections, ("rowlike", "chan", "corr"),
@@ -255,7 +254,6 @@ def apply_baseline_corrections(data_xds_list, bl_xds_list):
             bl_corrections, ("rowlike", "baseline", "chan", "corr"),
             ant1_col, ("rowlike",),
             ant2_col, ("rowlike",),
-            corr_mode, None,
             dtype=data_col.dtype,
             align_arrays=False,
             concatenate=True,
@@ -278,7 +276,6 @@ def dask_apply_baseline_corrections(
     bl_corrections,
     a1,
     a2,
-    corr_mode
 ):
 
     return _apply_baseline_corrections(
@@ -286,7 +283,6 @@ def dask_apply_baseline_corrections(
         bl_corrections,
         a1,
         a2,
-        corr_mode
     )
 
 
@@ -313,7 +309,7 @@ def _apply_baseline_corrections(data, bl_corrections, a1, a2):
 
                 v = data[row, f]
 
-                blg = 1/bl_corrections[bl_m, f]
+                blg = 1/bl_corrections[0, bl_m, f]
 
                 data[row, f] = blg * v
 
