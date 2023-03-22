@@ -150,7 +150,7 @@ class TEC(Gain):
                 #delta_freq is the smallest difference between the frequency values
                 delta_freq = invfreq[-2] - invfreq[-1]
                 max_tec = 2 * np.pi/ (delta_freq)
-                super_res = 1000
+                super_res = 10
                 nyq_freq = 1./(2*(invfreq.max()-invfreq.min()))
                 lim0 = 0.5 * max_tec
 
@@ -189,7 +189,7 @@ class TEC(Gain):
         for ut in utint:
             for f in range(n_chan):
                 fm = f_map[f]
-                cf = 2j * np.pi/ chan_freq[f]
+                cf = 1j/ chan_freq[f]
                 gain[ut, f, :, :, 0] = np.exp(cf * param[ut, fm, :, :, 1])
 
                 if n_corr > 1:
