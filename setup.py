@@ -21,7 +21,8 @@ requirements = [
     "pytest",
     "omegaconf",
     "colorama",
-    "xarray>=0.20.0"
+    "xarray>=0.20.0",
+    "finufft>=2.1.0"
 ]
 
 setup(
