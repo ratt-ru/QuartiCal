@@ -512,11 +512,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             res[1] = 0
             res[2] = 0
 
-            # Effectively apply zero weight to off-diagonal terms.
-            # TODO: Can be tidied but requires moving other weighting code.
-            res[1] = 0
-            res[2] = 0
-
             # Accumulate an element of jhwr.
             v1_imul_v2(res, rop, res)
             v1_imul_v2(lop, res, res)

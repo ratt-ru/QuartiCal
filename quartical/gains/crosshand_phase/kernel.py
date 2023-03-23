@@ -511,7 +511,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             imul(res, normf)  # Apply normalization factor to r.
 
             # Accumulate an element of jhwr.
-            imul(res, normf)  # Apply normalization factor to r.
             v1_imul_v2(res, rop, res)
             v1_imul_v2(lop, res, res)
 
