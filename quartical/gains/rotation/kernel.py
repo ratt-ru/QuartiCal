@@ -303,6 +303,7 @@ def compute_jhj_jhr(
                     rop_pq_arr[:] = 0
                     lop_qp_arr[:] = 0
                     rop_qp_arr[:] = 0
+                    v_pq[:] = 0
 
                     rm_f = f_map_arr_p[f, active_term]
 
