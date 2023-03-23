@@ -118,6 +118,7 @@ class Delay(Gain):
             ant_map_pq = np.where(a1[sel] == ref_ant, a2[sel], 0)
             ant_map_qp = np.where(a2[sel] == ref_ant, a1[sel], 0)
             ant_map = ant_map_pq + ant_map_qp
+
             ref_data = np.zeros((n_ant, n_chan, n_corr), dtype=np.complex128)
             counts = np.zeros((n_ant, n_chan), dtype=int)
             np.add.at(
