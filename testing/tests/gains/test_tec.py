@@ -63,9 +63,6 @@ def true_gain_list(predicted_xds_list, solve_per):
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
                       chunks=chunking)
 
-        if n_corr == 4:  # This solver only considers the diagonal elements.
-            amp *= da.array([1, 0, 0, 1])
-
         gains = amp*da.exp(1j*tec*chan_freq[None, :, None, None, None])
 
         if solve_per == "array":
