@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field, make_dataclass, fields
 from omegaconf import OmegaConf as oc
-from typing import List, Optional
+from typing import List, Optional, Any
 from quartical.config.converters import as_time, as_freq
 
 
@@ -62,10 +62,18 @@ class MSInputs(Input):
         assert not (self.sigma_column and self.weight_column), \
             "sigma_column and weight_column are mutually exclusive."
 
+        if self.is_bda:
+            assert self.time_chunk == 0, \
+                ("input_ms.is_bda does not support chunking in time. Please "
+                 "set input_ms.time_chunk to 0.")
+            assert self.freq_chunk == 0, \
+                ("input_ms.is_bda does not support chunking in freq. Please "
+                 "set input_ms.freq_chunk to 0.")
+
 
 @dataclass
 class ModelInputs(Input):
-    recipe: str = "???"
+    recipe: Optional[str] = None
     beam: Optional[str] = None
     beam_l_axis: str = field(
         default="X",
@@ -77,7 +85,7 @@ class ModelInputs(Input):
     )
     invert_uvw: bool = True
     source_chunks: int = 500
-    apply_p_jones: bool = True
+    apply_p_jones: bool = False
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -85,7 +93,9 @@ class ModelInputs(Input):
 
 @dataclass
 class Outputs(Input):
-    directory: str = "outputs.qc"
+    gain_directory: str = "gains.qc"
+    log_directory: str = "logs.qc"
+    log_to_terminal: bool = True
     overwrite: bool = False
     products: Optional[List[str]] = field(
         default=None,
@@ -98,25 +108,47 @@ class Outputs(Input):
     )
     columns: Optional[List[str]] = None
     flags: bool = True
-    apply_p_jones_inv: bool = True
+    apply_p_jones_inv: bool = False
     subtract_directions: Optional[List[int]] = None
-    net_gain: bool = False
+    net_gains: Optional[List[Any]] = None
+    compute_baseline_corrections: bool = False
+    apply_baseline_corrections: bool = False
 
     def __post_init__(self):
         self.validate_choice_fields()
-        assert not(bool(self.products) ^ bool(self.columns)), \
+        assert not (bool(self.products) ^ bool(self.columns)), \
             "Neither or both of products and columns must be specified."
         if self.products:
             assert len(self.products) == len(self.columns), \
                    "Number of products not equal to number of columns."
+        if self.net_gains:
+            nested = any(isinstance(i, list) for i in self.net_gains)
+            if nested:
+                assert all(isinstance(i, list) for i in self.net_gains), \
+                    ("Contents of outputs.net_gains not understood. "
+                     "Must be strictly a list or list of lists.")
+            else:
+                assert all(isinstance(i, str) for i in self.net_gains), \
+                    ("Contents of outputs.net_gains not understood. "
+                     "Must be strictly a list or list of lists.")
+                # In the non-nested case, introduce outer list (consistent).
+                self.net_gains = [self.net_gains]
+        if self.apply_baseline_corrections:
+            assert self.compute_baseline_corrections, \
+                ("output.compute_baseline_corrections must be enabled if "
+                 "output.apply_baseline corrections is enabled.")
 
 
 @dataclass
 class MadFlags(Input):
     enable: bool = False
+    whitening: str = field(
+        default="disabled",
+        metadata=dict(choices=["disabled", "native", "robust"])
+    )
     threshold_bl: float = 5
-    threshold_global: float = 5
-    max_deviation: float = 5
+    threshold_global: float = 10
+    max_deviation: float = 10
 
     def __post_init__(self):
         self.validate_choice_fields()
@@ -157,21 +189,29 @@ class Dask(Input):
     def __post_init__(self):
         self.validate_choice_fields()
 
+        if self.address:
+            msg = (
+                "Scheduler address supplied but dask.scheduler has not "
+                "been set to distributed."
+            )
+            assert self.scheduler == "distributed", msg
+
 
 @dataclass
 class Gain(Input):
     type: str = field(
         default="complex",
         metadata=dict(choices=["complex",
-                               "approx_complex",
                                "diag_complex",
                                "amplitude",
                                "delay",
+                               "pure_delay",
                                "phase",
                                "tec",
                                "rotation",
                                "rotation_measure",
-                               "crosshand_phase"])
+                               "crosshand_phase",
+                               "leakage"])
     )
     solve_per: str = field(
         default="antenna",
@@ -181,12 +221,15 @@ class Gain(Input):
     direction_dependent: bool = False
     time_interval: str = "1"
     freq_interval: str = "1"
+    respect_scan_boundaries: bool = True
     initial_estimate: bool = True
     load_from: Optional[str] = None
     interp_mode: str = field(
         default="reim",
         metadata=dict(choices=["reim",
-                               "ampphase"])
+                               "ampphase",
+                               "amp",
+                               "phase"])
     )
     interp_method: str = field(
         default="2dlinear",

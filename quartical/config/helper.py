@@ -22,7 +22,7 @@ HELP_MSG = f"For full help, use 'goquartical help'. For help with a " \
            f"specific section, use e.g. 'goquartical help='[section1," \
            f"section2]''. Help is available for " \
            f"[{', '.join(HELPSTRINGS.keys())}]. Other command line " \
-           f"utilitites: [goquartical-backup, goquartical-restore]."
+           f"utilities: [goquartical-backup, goquartical-restore]."
 
 
 def populate(typ, help_str, help_dict=None):

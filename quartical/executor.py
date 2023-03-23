@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
-# Sets up logger - hereafter import logger from Loguru.
 from contextlib import ExitStack
 import sys
 from loguru import logger
 import dask
-from dask.distributed import Client, LocalCluster, performance_report
+from dask.distributed import Client, LocalCluster
 import time
-from contextlib import nullcontext
-from pathlib import Path
 from quartical.config import parser, preprocess, helper, internal
 from quartical.logging import (ProxyLogger, LoggerPlugin)
 from quartical.data_handling.ms_handler import (read_xds_list,
@@ -17,15 +14,13 @@ from quartical.data_handling.ms_handler import (read_xds_list,
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.data_handling.angles import make_parangle_xds_list
 from quartical.calibration.calibrate import add_calibration_graph
-from quartical.statistics.statistics import (make_stats_xds_list,
-                                             assign_presolve_chisq,
-                                             assign_postsolve_chisq)
-from quartical.statistics.logging import (embed_stats_logging,
-                                          log_summary_stats)
+from quartical.statistics.statistics import make_stats_xds_list
+from quartical.statistics.logging import log_summary_stats
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
 from quartical.gains.datasets import write_gain_datasets
-# from daskms.experimental.zarr import xds_from_zarr, xds_to_zarr
+from quartical.gains.baseline import write_baseline_datasets
+from quartical.utils.dask import compute_context
 
 
 @logger.catch(onerror=lambda _: sys.exit(1))
@@ -40,7 +35,7 @@ def _execute(exitstack):
     helper.help()  # Check to see if the user asked for help.
 
     # Get all the config. This should never be used directly.
-    opts = parser.parse_inputs()
+    opts, config_files = parser.parse_inputs()
 
     # Split out all the configuration objects. Mitigates god-object problems.
     ms_opts = opts.input_ms
@@ -51,17 +46,19 @@ def _execute(exitstack):
     dask_opts = opts.dask
     chain_opts = internal.gains_to_chain(opts)  # Special handling.
 
-    # Make sure that the output directory is correctly cleaned up.
-    preprocess.prepare_output_directory(output_opts.directory)
-
     # Init the logging proxy - an object which helps us ensure that logging
     # works for both threads an processes. It is easily picklable.
 
-    proxy_logger = ProxyLogger(output_opts.directory)
+    time_str = time.strftime("%Y%m%d_%H%M%S")
+    proxy_logger = ProxyLogger(
+        output_opts.log_directory,
+        time_str,
+        output_opts.log_to_terminal
+    )
     proxy_logger.configure()
 
     # Now that we know where to put the log, log the final config state.
-    parser.log_final_config(opts)
+    parser.log_final_config(opts, config_files)
 
     model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
 
@@ -93,6 +90,8 @@ def _execute(exitstack):
         # less convenient pattern.
         client.run_on_scheduler(install_plugin)
 
+        client.wait_for_workers(dask_opts.workers)
+
         logger.info("Distributed client sucessfully initialized.")
 
     t0 = time.time()
@@ -110,26 +109,31 @@ def _execute(exitstack):
     parangle_xds_list = make_parangle_xds_list(ms_opts.path, data_xds_list)
 
     # A list of xdss onto which appropriate model data has been assigned.
-    data_xds_list = add_model_graph(data_xds_list,
-                                    parangle_xds_list,
-                                    model_vis_recipe,
-                                    ms_opts.path,
-                                    model_opts)
+    data_xds_list = add_model_graph(
+        data_xds_list,
+        parangle_xds_list,
+        model_vis_recipe,
+        ms_opts.path,
+        model_opts
+    )
 
     stats_xds_list = make_stats_xds_list(data_xds_list)
-    stats_xds_list = assign_presolve_chisq(data_xds_list, stats_xds_list)
 
     # Adds the dask graph describing the calibration of the data. TODO:
     # This call has excess functionality now. Split out mapping and outputs.
-    gain_xds_lod, net_xds_list, data_xds_list = add_calibration_graph(
+    cal_outputs = add_calibration_graph(
         data_xds_list,
+        stats_xds_list,
         solver_opts,
         chain_opts,
         output_opts
     )
 
-    stats_xds_list = assign_postsolve_chisq(data_xds_list, stats_xds_list)
-    stats_xds_list = embed_stats_logging(stats_xds_list)
+    (gain_xds_lod,
+     net_xds_lod,
+     data_xds_list,
+     stats_xds_list,
+     bl_corr_xds_list) = cal_outputs
 
     if mad_flag_opts.enable:
         data_xds_list = add_mad_graph(data_xds_list, mad_flag_opts)
@@ -147,30 +151,26 @@ def _execute(exitstack):
                                output_opts)
 
     gain_writes = write_gain_datasets(gain_xds_lod,
-                                      net_xds_list,
+                                      net_xds_lod,
                                       output_opts)
+
+    bl_corr_writes = write_baseline_datasets(bl_corr_xds_list,
+                                             output_opts)
 
     logger.success("{:.2f} seconds taken to build graph.", time.time() - t0)
 
     logger.info("Computation starting. Please be patient - log messages will "
                 "only appear per completed chunk.")
 
-    def compute_context(dask_opts, output_opts):
-        if dask_opts.scheduler == "distributed":
-            root_path = Path(output_opts.directory).absolute()
-            report_path = root_path / Path("dask_report.html.qc")
-            return performance_report(filename=str(report_path))
-        else:
-            return nullcontext()
-
     t0 = time.time()
 
-    with compute_context(dask_opts, output_opts):
+    with compute_context(dask_opts, output_opts, time_str):
 
-        _, _, stats_xds_list = dask.compute(
+        _, _, stats_xds_list, _ = dask.compute(
             ms_writes,
             gain_writes,
             stats_xds_list,
+            bl_corr_writes,
             num_workers=dask_opts.threads,
             optimize_graph=True,
             scheduler=dask_opts.scheduler

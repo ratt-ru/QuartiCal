@@ -1,12 +1,20 @@
 # -*- coding: utf-8 -*-
 import dask.array as da
+import numpy as np
 from quartical.data_handling.predict import predict
 from quartical.data_handling.angles import apply_parangles
+from quartical.config.preprocess import IdentityRecipe, Ingredients
+from quartical.utils.array import flat_ident_like
 from loguru import logger  # noqa
 
 
-def add_model_graph(data_xds_list, parangle_xds_list, model_vis_recipe,
-                    ms_path, model_opts):
+def add_model_graph(
+    data_xds_list,
+    parangle_xds_list,
+    model_vis_recipe,
+    ms_path,
+    model_opts
+):
     """Creates the graph necessary to produce a model per xds.
 
     Given a list of input xarray data sets and the options, constructs a graph
@@ -36,12 +44,29 @@ def add_model_graph(data_xds_list, parangle_xds_list, model_vis_recipe,
     else:
         predict_schemes = [{}]*len(data_xds_list)
 
+    # Special case: in the event that we have an IdentityRecipe, modify the
+    # datasets and model appropriately.
+    if isinstance(model_vis_recipe, IdentityRecipe):
+        data_xds_list, model_vis_recipe = assign_identity_model(data_xds_list)
+
     # NOTE: At this point we are ready to construct the model array. First,
     # however, we need to apply parallactic angle corrections to model columns
     # which require them. P Jones is applied to predicted components
     # internally, so we only need to consider model columns for now.
 
+    n_corr = {xds.dims["corr"] for xds in data_xds_list}.pop()
+
     if model_opts.apply_p_jones:
+        # NOTE: Applying parallactic angle when there are fewer than four
+        # correlations is problematic for linear feeds as it amounts to
+        # rotating information to/from correlations which are not present i.e.
+        # it is not reversible. We support it for input models but warn the
+        # user that it is not a good idea.
+        if n_corr != 4:
+            logger.warning(
+                "input_model.apply_p_jones is not recommended for data with "
+                "less than four correlations. Proceed with caution."
+            )
         model_columns = model_vis_recipe.ingredients.model_columns
         data_xds_list = apply_parangles(data_xds_list,
                                         parangle_xds_list,
@@ -103,9 +128,10 @@ def add_model_graph(data_xds_list, parangle_xds_list, model_vis_recipe,
                 # direction only.
 
                 if len(in_a) > 1 and len(in_b) > 1:
-                    raise(ValueError("Model recipes do not support add or "
-                                     "subtract operations between two "
-                                     "direction-dependent inputs."))
+                    raise ValueError(
+                        "Model recipes do not support add or subtract "
+                        "operations between two direction-dependent inputs."
+                    )
                 elif len(in_a) > len(in_b):
                     result = [op(in_a[0], in_b[0]), *in_a[1:]]
                 elif len(in_a) < len(in_b):
@@ -129,3 +155,60 @@ def add_model_graph(data_xds_list, parangle_xds_list, model_vis_recipe,
         model_xds_list.append(modified_xds)
 
     return model_xds_list
+
+
+def assign_identity_model(data_xds_list):
+    """Given dataset list, creates recipe and assigns an identity model.
+
+    This is a special case where we have no input model and simply want to use
+    the identity. This is common when constraining phase solutions on a
+    calibrator.
+
+    Args:
+        data_xds_list: A list of xarray.Datasets objects containing MS data.
+
+    Returns:
+        data_xds_list: A list of xarray.Datasets with new model assigned.
+        recipe: A modified Recipe object consistent with this case.
+    """
+
+    ingredients = Ingredients({"__IDENT__"}, set())
+    instructions = {0: ["__IDENT__"]}
+
+    recipe = IdentityRecipe(ingredients, instructions)
+
+    model_dims = [
+        (
+            xds.dims['row'],
+            xds.dims['chan'],
+            xds.dims['corr']
+        )
+        for xds in data_xds_list
+    ]
+
+    model_chunks = [
+        (
+            xds.chunks['row'],
+            xds.chunks['chan'],
+            xds.chunks['corr']
+        )
+        for xds in data_xds_list
+    ]
+
+    data_xds_list = [
+        xds.assign(
+            {
+                "__IDENT__": (
+                    ("row", "chan", "corr"),
+                    flat_ident_like(
+                        da.empty(dims, chunks=chunks, dtype=np.complex64)
+                    )
+                )
+            }
+        )
+        for xds, dims, chunks in zip(
+            data_xds_list, model_dims, model_chunks
+        )
+    ]
+
+    return data_xds_list, recipe

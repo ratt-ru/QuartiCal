@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
-from daskms import xds_from_ms, xds_from_table
+from daskms import xds_from_storage_ms, xds_from_storage_table
+from daskms.fsspec_store import DaskMSStore
 import numpy as np
 import dask.array as da
 from loguru import logger
@@ -42,7 +43,8 @@ def configure_loguru(output_dir):
 
 def antenna_info(path):
 
-    ant_xds = xds_from_table(path + "::ANTENNA")[0]  # Assume one for now.
+    # NOTE: Assume one dataset for now.
+    ant_xds = xds_from_storage_table(path + "::ANTENNA")[0]
 
     antenna_names = ant_xds.NAME.values
     antenna_mounts = ant_xds.MOUNT.values
@@ -62,7 +64,7 @@ def antenna_info(path):
 
 def data_desc_info(path):
 
-    dd_xds_list = xds_from_table(  # noqa
+    dd_xds_list = xds_from_storage_table(  # noqa
         path + "::DATA_DESCRIPTION",
         group_cols=["__row__"],
         chunks={"row": 1, "chan": -1}
@@ -74,7 +76,7 @@ def data_desc_info(path):
 
 def feed_info(path):
 
-    feed_xds_list = xds_from_table(
+    feed_xds_list = xds_from_storage_table(
         path + "::FEED",
         group_cols=["SPECTRAL_WINDOW_ID"],
         chunks={"row": -1}
@@ -104,7 +106,7 @@ def feed_info(path):
 
 def flag_cmd_info(path):
 
-    flag_cmd_xds = xds_from_table(path + "::FLAG_CMD")  # noqa
+    flag_cmd_xds = xds_from_storage_table(path + "::FLAG_CMD")  # noqa
 
     # Not printing any summary information for this subtable yet - not sure
     # what is relevant.
@@ -112,7 +114,7 @@ def flag_cmd_info(path):
 
 def field_info(path):
 
-    field_xds = xds_from_table(path + "::FIELD")[0]
+    field_xds = xds_from_storage_table(path + "::FIELD")[0]
 
     ids = [i for i in field_xds.SOURCE_ID.values]
     names = [n for n in field_xds.NAME.values]
@@ -139,7 +141,7 @@ def field_info(path):
 
 def history_info(path):
 
-    history_xds = xds_from_table(path + "::HISTORY")[0]  # noqa
+    history_xds = xds_from_storage_table(path + "::HISTORY")[0]  # noqa
 
     # Not printing any summary information for this subtable yet - not sure
     # what is relevant.
@@ -147,7 +149,7 @@ def history_info(path):
 
 def observation_info(path):
 
-    observation_xds = xds_from_table(path + "::OBSERVATION")[0]  # noqa
+    observation_xds = xds_from_storage_table(path + "::OBSERVATION")[0]  # noqa
 
     # Not printing any summary information for this subtable yet - not sure
     # what is relevant.
@@ -155,7 +157,7 @@ def observation_info(path):
 
 def polarization_info(path):
 
-    polarization_xds = xds_from_table(path + "::POLARIZATION")[0]
+    polarization_xds = xds_from_storage_table(path + "::POLARIZATION")[0]
 
     corr_types = polarization_xds.CORR_TYPE.values
 
@@ -173,7 +175,7 @@ def polarization_info(path):
 
 def processor_info(path):
 
-    processor_xds = xds_from_table(path + "::PROCESSOR")[0]  # noqa
+    processor_xds = xds_from_storage_table(path + "::PROCESSOR")[0]  # noqa
 
     # Not printing any summary information for this subtable yet - not sure
     # what is relevant.
@@ -181,7 +183,7 @@ def processor_info(path):
 
 def spw_info(path):
 
-    spw_xds_list = xds_from_table(
+    spw_xds_list = xds_from_storage_table(
         path + "::SPECTRAL_WINDOW",
         group_cols=["__row__"],
         chunks={"row": 1, "chan": -1}
@@ -205,7 +207,7 @@ def spw_info(path):
 
 def state_info(path):
 
-    state_xds = xds_from_table(path + "::STATE")[0]  # noqa
+    state_xds = xds_from_storage_table(path + "::STATE")[0]  # noqa
 
     # Not printing any summary information for this subtable yet - not sure
     # what is relevant.
@@ -213,6 +215,7 @@ def state_info(path):
 
 def source_info(path):
 
+    # NOTE: Skip reading this for now - it can break dask-ms.
     # source_xds = xds_from_table(path + "::SOURCE")[0]  # noqa
 
     return
@@ -223,7 +226,7 @@ def source_info(path):
 
 def pointing_info(path):
 
-    pointing_xds = xds_from_table(path + "::POINTING")[0]  # noqa
+    pointing_xds = xds_from_storage_table(path + "::POINTING")[0]  # noqa
 
     # Not printing any summary information for this subtable yet - not sure
     # what is relevant.
@@ -316,18 +319,20 @@ def summary():
 
     parser.add_argument(
         'path',
-        type=Path,
-        help='Path to dataset.'
+        type=DaskMSStore,
+        help='Path to input measurement set, e.g. path/to/dir/foo.MS. Also '
+             'accepts valid s3 urls.'
     )
     parser.add_argument(
         'output_dir',
         type=Path,
-        help='Path to output directory.'
+        help='Path to output directory, e.g. summaries.qc. Local file system '
+             'only.'
     )
 
     args = parser.parse_args()
 
-    path = str(args.path.resolve())
+    path = args.path.url
     output_dir = str(args.output_dir.resolve())
 
     configure_loguru(output_dir)
@@ -350,7 +355,7 @@ def summary():
     # Open the data, grouping by the usual columns. Use these datasets to
     # produce some useful summaries.
 
-    data_xds_list = xds_from_ms(
+    data_xds_list = xds_from_storage_ms(
         path,
         index_cols=("TIME",),
         columns=("TIME", "FLAG", "FLAG_ROW", "DATA"),

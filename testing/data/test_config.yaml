@@ -29,13 +29,14 @@ solver:
   - 25
   - 25
 output:
-  directory: outputs.qc
+  gain_directory: gains.qc
+  log_directory: logs.qc
   overwrite: true
   products:
   - residual
   columns:
   - TEST_RESIDUALS
-  net_gain: False
+  net_gains:
 mad_flags:
   enable: false
   threshold_bl: 10

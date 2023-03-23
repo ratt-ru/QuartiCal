@@ -1,6 +1,25 @@
 from dataclasses import make_dataclass
-from pathlib import Path
 from quartical.config.external import Gain
+from daskms.fsspec_store import DaskMSStore
+
+
+class ChainIter:
+
+    def __init__(self, chain):
+        self._chain = chain
+        self._term_names = list(chain.__dataclass_fields__.keys())
+        self._n_term = len(self._term_names)
+        self._current_index = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._current_index < self._n_term:
+            term = getattr(self._chain, self._term_names[self._current_index])
+            self._current_index += 1
+            return term
+        raise StopIteration
 
 
 def gains_to_chain(opts):
@@ -9,7 +28,8 @@ def gains_to_chain(opts):
 
     Chain = make_dataclass(
         "Chain",
-        [(t, Gain, Gain()) for t in terms]
+        [(t, Gain, Gain()) for t in terms],
+        namespace={"__iter__": lambda self: ChainIter(self)}
     )
 
     chain = Chain()
@@ -37,23 +57,30 @@ def additional_validation(config):
 
     chain = gains_to_chain(config)
 
-    root_path = Path(config.output.directory).absolute()
+    store = DaskMSStore(config.output.gain_directory)
 
-    if root_path.exists() and not config.output.overwrite:
-        raise FileExistsError(f"{root_path} already exists. Specify "
+    if store.exists() and not config.output.overwrite:
+        raise FileExistsError(f"{store.url} already exists. Specify "
                               f"output.overwrite=1 to suppress this "
-                              f"error and overwrite *.qc files/folders.")
+                              f"error and overwrite files/folders.")
+    elif store.exists():
+        store.rm(recursive=True)
 
-    gain_path = root_path / Path("gains.qc")
-    load_dirs = [Path(lf).absolute().parent
-                 for _, lf in yield_from(chain, "load_from") if lf]
+    load_stores = \
+        [DaskMSStore(lf) for _, lf in yield_from(chain, "load_from") if lf]
 
     msg = (
-        f"Output directory {str(gain_path)} contains terms which will be "
+        f"Output directory {str(store.url)} contains terms which will be "
         f"loaded/interpolated. This is not supported. Please specify a "
         f"different output directory."
     )
 
-    assert all(gain_path != ld for ld in load_dirs), msg
+    assert not any(store.full_path in ll.full_path for ll in load_stores), msg
+
+    if config.mad_flags.whitening == "robust":
+        assert config.solver.robust, (
+            "mad_flags.whitening specified as robust but solver.robust is "
+            "not enabled."
+        )
 
     return

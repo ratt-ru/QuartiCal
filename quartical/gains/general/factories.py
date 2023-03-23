@@ -688,7 +688,36 @@ def iabsdiv_factory(mode):
     return qcjit(impl)
 
 
-def v1_iabsdiv_v2_factory(mode):
+def iabsdivsq_factory(mode):
+
+    unpack = unpack_factory(mode)
+
+    if mode.literal_value == 4:
+        def impl(v1):
+            v1_0, v1_1, v1_2, v1_3 = unpack(v1)
+
+            v1[0] = 0 if v1_0 == 0 else 1/(v1_0.real**2 + v1_0.imag**2)
+            v1[1] = 0 if v1_1 == 0 else 1/(v1_1.real**2 + v1_1.imag**2)
+            v1[2] = 0 if v1_2 == 0 else 1/(v1_2.real**2 + v1_2.imag**2)
+            v1[3] = 0 if v1_3 == 0 else 1/(v1_3.real**2 + v1_3.imag**2)
+    elif mode.literal_value == 2:
+        def impl(v1):
+            v1_0, v1_1 = unpack(v1)
+
+            v1[0] = 0 if v1_0 == 0 else 1/(v1_0.real**2 + v1_0.imag**2)
+            v1[1] = 0 if v1_1 == 0 else 1/(v1_1.real**2 + v1_1.imag**2)
+    elif mode.literal_value == 1:
+        def impl(v1):
+            v1_0 = unpack(v1)
+
+            v1[0] = 0 if v1_0 == 0 else 1/(v1_0.real**2 + v1_0.imag**2)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def v1_idiv_absv2_factory(mode):
 
     if mode.literal_value == 4:
         def impl(v1, v2, o1):
@@ -703,6 +732,41 @@ def v1_iabsdiv_v2_factory(mode):
     elif mode.literal_value == 1:
         def impl(v1, v2, o1):
             o1[0] = 0 if v2[0] == 0 else v1[0]/np.abs(v2[0])
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def absv1_idiv_absv2_factory(mode):
+
+    if mode.literal_value == 4:
+        def impl(v1, v2, o1):
+            o1[0] = 0 if v2[0] == 0 else np.sqrt(
+                (v1[0].real**2 + v1[0].imag**2)/(v2[0].real**2 + v2[0].imag**2)
+            )
+            o1[1] = 0 if v2[1] == 0 else np.sqrt(
+                (v1[1].real**2 + v1[1].imag**2)/(v2[1].real**2 + v2[1].imag**2)
+            )
+            o1[2] = 0 if v2[2] == 0 else np.sqrt(
+                (v1[2].real**2 + v1[2].imag**2)/(v2[2].real**2 + v2[2].imag**2)
+            )
+            o1[3] = 0 if v2[3] == 0 else np.sqrt(
+                (v1[3].real**2 + v1[3].imag**2)/(v2[3].real**2 + v2[3].imag**2)
+            )
+    elif mode.literal_value == 2:
+        def impl(v1, v2, o1):
+            o1[0] = 0 if v2[0] == 0 else np.sqrt(
+                (v1[0].real**2 + v1[0].imag**2)/(v2[0].real**2 + v2[0].imag**2)
+            )
+            o1[1] = 0 if v2[1] == 0 else np.sqrt(
+                (v1[1].real**2 + v1[1].imag**2)/(v2[1].real**2 + v2[1].imag**2)
+            )
+    elif mode.literal_value == 1:
+        def impl(v1, v2, o1):
+            o1[0] = 0 if v2[0] == 0 else np.sqrt(
+                (v1[0].real**2 + v1[0].imag**2)/(v2[0].real**2 + v2[0].imag**2)
+            )
     else:
         raise ValueError("Unsupported number of correlations.")
 

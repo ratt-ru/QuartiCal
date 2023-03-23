@@ -2,16 +2,17 @@
 import numpy as np
 from numba import prange, generated_jit
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.generics import (solver_intermediaries,
-                                              compute_residual_solver,
-                                              per_array_jhj_jhr)
+from quartical.gains.general.generics import (native_intermediaries,
+                                              upsampled_itermediaries,
+                                              per_array_jhj_jhr,
+                                              resample_solints,
+                                              downsample_jhj_jhr)
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
                                               apply_gain_flags)
 from quartical.gains.general.convenience import (get_row,
-                                                 get_chan_extents,
-                                                 get_row_extents)
+                                                 get_extents)
 import quartical.gains.general.factories as factories
 from quartical.gains.general.inversion import (invert_factory,
                                                inversion_buffer_factory)
@@ -39,7 +40,6 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
 
     def impl(base_args, term_args, meta_args, corr_mode):
 
-        data = base_args.data
         gains = base_args.gains
         gain_flags = base_args.gain_flags
 
@@ -47,6 +47,7 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
         max_iter = meta_args.iters
         solve_per = meta_args.solve_per
         dd_term = meta_args.dd_term
+        n_thread = meta_args.threads
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
@@ -58,36 +59,52 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
         flag_imdry = \
             flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
 
-        # Set up some intemediaries used for solving. TODO: Move?
-        jhj = np.empty_like(active_gain)
-        jhr = np.empty_like(active_gain)
-        residual = data.astype(np.complex128)  # Make a high precision copy.
-        update = np.zeros_like(active_gain)
-        solver_imdry = solver_intermediaries(jhj, jhr, residual, update)
+        # Set up some intemediaries used for solving.
+        complex_dtype = active_gain.dtype
+        gain_shape = active_gain.shape
+
+        active_t_map_g = base_args.t_map_arr[0, :, active_term]
+        active_f_map_g = base_args.f_map_arr[0, :, active_term]
+
+        # Create more work to do in paralllel when needed, else no-op.
+        resampler = resample_solints(active_t_map_g, gain_shape, n_thread)
+
+        # Determine the starts and stops of the rows and channels associated
+        # with each solution interval.
+        extents = get_extents(resampler.upsample_t_map, active_f_map_g)
+
+        upsample_shape = resampler.upsample_shape
+        upsampled_jhj = np.empty(upsample_shape, dtype=complex_dtype)
+        upsampled_jhr = np.empty(upsample_shape, dtype=complex_dtype)
+        jhj = upsampled_jhj[:gain_shape[0]]
+        jhr = upsampled_jhr[:gain_shape[0]]
+        update = np.zeros(gain_shape, dtype=complex_dtype)
+
+        upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
+        native_imdry = native_intermediaries(jhj, jhr, update)
 
         for loop_idx in range(max_iter):
-
-            if dd_term:
-                compute_residual_solver(base_args,
-                                        solver_imdry,
-                                        corr_mode)
 
             compute_jhj_jhr(base_args,
                             term_args,
                             meta_args,
-                            solver_imdry,
+                            upsampled_imdry,
+                            extents,
                             corr_mode)
 
-            if solve_per == "array":
-                per_array_jhj_jhr(solver_imdry)
+            if resampler.active:
+                downsample_jhj_jhr(upsampled_imdry, resampler.downsample_t_map)
 
-            compute_update(solver_imdry,
+            if solve_per == "array":
+                per_array_jhj_jhr(native_imdry)
+
+            compute_update(native_imdry,
                            corr_mode)
 
             finalize_update(base_args,
                             term_args,
                             meta_args,
-                            solver_imdry,
+                            native_imdry,
                             loop_idx,
                             corr_mode)
 
@@ -116,7 +133,7 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
             apply_gain_flags(base_args,
                              meta_args)
 
-        return jhj, term_conv_info(loop_idx + 1, conv_perc)
+        return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
     return impl
 
@@ -126,12 +143,19 @@ def diag_complex_solver(base_args, term_args, meta_args, corr_mode):
                parallel=True,
                cache=True,
                nogil=True)
-def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
+def compute_jhj_jhr(
+    base_args,
+    term_args,
+    meta_args,
+    upsampled_imdry,
+    extents,
+    corr_mode
+):
 
     # We want to dispatch based on this field so we need its type.
-    row_weights = base_args[base_args.fields.index('row_weights')]
+    row_weight_type = base_args[base_args.fields.index('row_weights')]
 
-    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
+    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weight_type)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
     v1ct_imul_v2 = factories.v1ct_imul_v2_factory(corr_mode)
@@ -139,20 +163,29 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
     iunpackct = factories.iunpackct_factory(corr_mode)
     imul = factories.imul_factory(corr_mode)
     iadd = factories.iadd_factory(corr_mode)
+    isub = factories.isub_factory(corr_mode)
     valloc = factories.valloc_factory(corr_mode)
     make_loop_vars = factories.loop_var_factory(corr_mode)
     set_identity = factories.set_identity_factory(corr_mode)
     compute_jhwj_jhwr_elem = compute_jhwj_jhwr_elem_factory(corr_mode)
 
-    def impl(base_args, term_args, meta_args, solver_imdry, corr_mode):
+    def impl(
+        base_args,
+        term_args,
+        meta_args,
+        upsampled_imdry,
+        extents,
+        corr_mode
+    ):
 
         active_term = meta_args.active_term
 
+        data = base_args.data
         model = base_args.model
         weights = base_args.weights
         flags = base_args.flags
-        a1 = base_args.a1
-        a2 = base_args.a2
+        antenna1 = base_args.a1
+        antenna2 = base_args.a2
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
@@ -161,9 +194,8 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
         f_map_arr = base_args.f_map_arr[0]  # We only need the gain mappings.
         d_map_arr = base_args.d_map_arr
 
-        jhj = solver_imdry.jhj
-        jhr = solver_imdry.jhr
-        residual = solver_imdry.residual
+        jhj = upsampled_imdry.jhj
+        jhr = upsampled_imdry.jhr
 
         _, n_chan, n_dir, n_corr = model.shape
 
@@ -174,19 +206,14 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
         n_int = n_tint*n_fint
 
         complex_dtype = gains[active_term].dtype
+        weight_dtype = weights.dtype
 
         n_gains = len(gains)
 
-        # Determine the starts and stops of the rows and channels associated
-        # with each solution interval. This could even be moved out for speed.
-        row_starts, row_stops = get_row_extents(t_map_arr,
-                                                active_term,
-                                                n_tint)
-
-        chan_starts, chan_stops = get_chan_extents(f_map_arr,
-                                                   active_term,
-                                                   n_fint,
-                                                   n_chan)
+        row_starts = extents.row_starts
+        row_stops = extents.row_stops
+        chan_starts = extents.chan_starts
+        chan_stops = extents.chan_stops
 
         # Determine loop variables based on where we are in the chain.
         # gt means greater than (n>j) and lt means less than (n<j).
@@ -207,8 +234,13 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
             rop_qp = valloc(complex_dtype)  # Right-multiply operator for qp.
             lop_pq = valloc(complex_dtype)  # Left-multiply operator for pq.
             lop_qp = valloc(complex_dtype)  # Left-multiply operator for qp.
+
+            w = valloc(weight_dtype)
             r_pq = valloc(complex_dtype)
-            r_qp = valloc(complex_dtype)
+            wr_pq = valloc(complex_dtype)
+            wr_qp = valloc(complex_dtype)
+            v_pqd = valloc(complex_dtype)
+            v_pq = valloc(complex_dtype)
 
             gains_p = valloc(complex_dtype, leading_dims=(n_gains,))
             gains_q = valloc(complex_dtype, leading_dims=(n_gains,))
@@ -219,26 +251,28 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
             rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
 
             tmp_kprod = np.zeros((4, 4), dtype=complex_dtype)
-            tmp_jhr = jhr[ti, fi]
-            tmp_jhj = jhj[ti, fi]
+            jhr_tifi = jhr[ti, fi]
+            jhj_tifi = jhj[ti, fi]
 
             for row_ind in range(rs, re):
 
                 row = get_row(row_ind, row_map)
-                a1_m, a2_m = a1[row], a2[row]
+                a1_m, a2_m = antenna1[row], antenna2[row]
 
                 for f in range(fs, fe):
 
                     if flags[row, f]:  # Skip flagged data points.
                         continue
 
-                    r = residual[row, f]
-                    w = weights[row, f]  # Consider a map?
+                    # Apply row weights in the BDA case, otherwise a no-op.
+                    imul_rweight(weights[row, f], w, row_weights, row_ind)
+                    iunpack(r_pq, data[row, f])
 
                     lop_pq_arr[:] = 0
                     rop_pq_arr[:] = 0
                     lop_qp_arr[:] = 0
                     rop_qp_arr[:] = 0
+                    v_pq[:] = 0
 
                     for d in range(n_dir):
 
@@ -258,7 +292,7 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                             iunpack(gains_q[gi], gain[a2_m, d_m])
 
                         m = model[row, f, d]
-                        imul_rweight(m, rop_qp, row_weights, row_ind)
+                        iunpack(rop_qp, m)
                         iunpackct(rop_pq, rop_qp)
 
                         for g in all_terms:
@@ -293,11 +327,17 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                         iunpack(lop_qp_arr[out_d], lop_qp)
                         iadd(rop_qp_arr[out_d], rop_qp)
 
+                        v1ct_imul_v2(lop_pq, gains_p[active_term], v_pqd)
+                        v1_imul_v2ct(v_pqd, rop_pq, v_pqd)
+                        iadd(v_pq, v_pqd)
+
+                    isub(r_pq, v_pq)
+
                     for d in range(n_gdir):
 
-                        imul_rweight(r, r_pq, row_weights, row_ind)
-                        imul(r_pq, w)
-                        iunpackct(r_qp, r_pq)
+                        iunpack(wr_pq, r_pq)
+                        imul(wr_pq, w)
+                        iunpackct(wr_qp, wr_pq)
 
                         lop_pq_d = lop_pq_arr[d]
                         rop_pq_d = rop_pq_arr[d]
@@ -306,9 +346,9 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                                                rop_pq_d,
                                                w,
                                                tmp_kprod,
-                                               r_pq,
-                                               tmp_jhr[a1_m, d],
-                                               tmp_jhj[a1_m, d])
+                                               wr_pq,
+                                               jhr_tifi[a1_m, d],
+                                               jhj_tifi[a1_m, d])
 
                         lop_qp_d = lop_qp_arr[d]
                         rop_qp_d = rop_qp_arr[d]
@@ -317,9 +357,9 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                                                rop_qp_d,
                                                w,
                                                tmp_kprod,
-                                               r_qp,
-                                               tmp_jhr[a2_m, d],
-                                               tmp_jhj[a2_m, d])
+                                               wr_qp,
+                                               jhr_tifi[a2_m, d],
+                                               jhj_tifi[a2_m, d])
         return
     return impl
 
@@ -329,20 +369,20 @@ def compute_jhj_jhr(base_args, term_args, meta_args, solver_imdry, corr_mode):
                parallel=True,
                cache=True,
                nogil=True)
-def compute_update(solver_imdry, corr_mode):
+def compute_update(native_imdry, corr_mode):
 
     # We want to dispatch based on this field so we need its type.
-    jhj = solver_imdry[solver_imdry.fields.index('jhj')]
+    jhj = native_imdry[native_imdry.fields.index('jhj')]
 
     generalised = jhj.ndim == 6
     inversion_buffer = inversion_buffer_factory(generalised=generalised)
     invert = invert_factory(corr_mode, generalised=generalised)
 
-    def impl(solver_imdry, corr_mode):
+    def impl(native_imdry, corr_mode):
 
-        jhj = solver_imdry.jhj
-        jhr = solver_imdry.jhr
-        update = solver_imdry.update
+        jhj = native_imdry.jhj
+        jhr = native_imdry.jhr
+        update = native_imdry.update
 
         n_tint, n_fint, n_ant, n_dir, n_param = jhr.shape
 
@@ -370,12 +410,12 @@ def compute_update(solver_imdry, corr_mode):
 
 @generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
                nogil=True)
-def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
+def finalize_update(base_args, term_args, meta_args, native_imdry, loop_idx,
                     corr_mode):
 
     set_identity = factories.set_identity_factory(corr_mode)
 
-    def impl(base_args, term_args, meta_args, solver_imdry, loop_idx,
+    def impl(base_args, term_args, meta_args, native_imdry, loop_idx,
              corr_mode):
 
         dd_term = meta_args.dd_term
@@ -384,7 +424,7 @@ def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
         gain = base_args.gains[active_term]
         gain_flags = base_args.gain_flags[active_term]
 
-        update = solver_imdry.update
+        update = native_imdry.update
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
@@ -399,14 +439,11 @@ def finalize_update(base_args, term_args, meta_args, solver_imdry, loop_idx,
 
                         if fl == 1:
                             set_identity(g)
-                        elif dd_term:
+                        elif dd_term or (loop_idx % 2 == 0):
                             upd /= 2
                             g += upd
-                        elif loop_idx % 2 == 0:
-                            g[:] = upd
                         else:
                             g += upd
-                            g /= 2
 
     return impl
 

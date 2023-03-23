@@ -1,13 +1,15 @@
 import numpy as np
 from quartical.calibration.solver import solver_wrapper
-from quartical.utils.dask import Blocker
+from quartical.utils.dask import Blocker, get_block_id_arr
 from collections import namedtuple
 
 
 term_spec_tup = namedtuple("term_spec_tup", "name type shape pshape")
+aux_info_fields = ("SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID")
 
 
 def construct_solver(data_xds_list,
+                     stats_xds_list,
                      gain_xds_lod,
                      t_bin_list,
                      t_map_list,
@@ -38,8 +40,11 @@ def construct_solver(data_xds_list,
 
     solved_gain_xds_lod = []
     output_data_xds_list = []
+    output_stats_xds_list = []
 
-    for xds_ind, data_xds in enumerate(data_xds_list):
+    itr = enumerate(zip(data_xds_list, stats_xds_list))
+
+    for xds_ind, (data_xds, stats_xds) in itr:
 
         model_col = data_xds.MODEL_DATA.data
         data_col = data_xds.DATA.data
@@ -54,6 +59,11 @@ def construct_solver(data_xds_list,
         d_map_arr = d_map_list[xds_ind]
         gain_terms = gain_xds_lod[xds_ind]
         corr_mode = data_xds.dims["corr"]
+
+        block_id_arr = get_block_id_arr(data_col)
+        aux_block_info = {
+            k: data_xds.attrs.get(k, "?") for k in aux_info_fields
+        }
 
         # Grab the number of input chunks - doing this on the data should be
         # safe.
@@ -80,6 +90,8 @@ def construct_solver(data_xds_list,
         blocker.add_input("corr_mode", corr_mode)
         blocker.add_input("term_spec_list", spec_list, "rf")
         blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
+        blocker.add_input("block_id_arr", block_id_arr, "rfc")
+        blocker.add_input("aux_block_info", aux_block_info)
         blocker.add_input("solver_opts", solver_opts)
         blocker.add_input("chain_opts", chain_opts)
 
@@ -108,6 +120,16 @@ def construct_solver(data_xds_list,
                            "rf",
                            flag_col.chunks,
                            flag_col.dtype)
+
+        blocker.add_output("presolve_chisq",
+                           "rf",
+                           ((1,)*n_t_chunks, (1,)*n_f_chunks),
+                           np.float64)
+
+        blocker.add_output("postsolve_chisq",
+                           "rf",
+                           ((1,)*n_t_chunks, (1,)*n_f_chunks),
+                           np.float64)
 
         for term_name, term_xds in gain_terms.items():
 
@@ -162,6 +184,17 @@ def construct_solver(data_xds_list,
         )
         output_data_xds_list.append(output_data_xds)
 
+        presolve_chisq = output_dict["presolve_chisq"]
+        postsolve_chisq = output_dict["postsolve_chisq"]
+
+        stats_xds = stats_xds.assign(
+            {
+                "PRESOLVE_CHISQ": (("t_chunk", "f_chunk"), presolve_chisq),
+                "POSTSOLVE_CHISQ": (("t_chunk", "f_chunk"), postsolve_chisq)
+            }
+        )
+        output_stats_xds_list.append(stats_xds)
+
         # Assign results to the relevant gain xarray.Dataset object.
         solved_gain_dict = {}
 
@@ -198,7 +231,7 @@ def construct_solver(data_xds_list,
 
         solved_gain_xds_lod.append(solved_gain_dict)
 
-    return solved_gain_xds_lod, output_data_xds_list
+    return solved_gain_xds_lod, output_data_xds_list, output_stats_xds_list
 
 
 def expand_specs(gain_terms):

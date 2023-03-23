@@ -1,5 +1,6 @@
 import dask.array as da
 import numpy as np
+from dask.distributed import performance_report
 from dask.base import tokenize
 from dask.array.core import HighLevelGraph
 from dask.highlevelgraph import MaterializedLayer
@@ -7,6 +8,36 @@ from operator import getitem
 from dask.utils import apply, funcname
 from collections import namedtuple
 from itertools import product
+from daskms.fsspec_store import DaskMSStore
+from contextlib import nullcontext
+
+
+def compute_context(dask_opts, output_opts, time_str):
+    if dask_opts.scheduler == "distributed":
+        store = DaskMSStore(output_opts.log_directory)
+        report_path = store.join([store.full_path, f"{time_str}.html.qc"])
+        return performance_report(filename=str(report_path))
+    else:
+        return nullcontext()
+
+
+def get_block_id_arr(arr):
+
+    def _get_block_ids(arr, block_id=None):
+
+        assert arr.ndim != 0, "Array must have one or more dimensions"
+
+        sel = (np.newaxis,) * (arr.ndim - 1) + (slice(None),)
+
+        return np.array(block_id)[sel]
+
+    block_id_arr = arr.map_blocks(
+        _get_block_ids,
+        meta=np.array((0,)*arr.ndim, dtype=np.int64),
+        chunks=(1,) * (arr.ndim - 1) + (arr.ndim,)
+    )
+
+    return block_id_arr
 
 
 class as_dict:

@@ -10,12 +10,13 @@ from quartical.gains.general.generics import (native_intermediaries,
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
-                                              apply_gain_flags,
-                                              update_param_flags)
+                                              apply_gain_flags)
 from quartical.gains.general.convenience import get_extents
-from quartical.gains.delay.kernel import (compute_jhj_jhr,
-                                          compute_update,
-                                          finalize_update)
+import quartical.gains.general.factories as factories
+from quartical.gains.complex.kernel import (get_jhj_dims_factory,
+                                            compute_jhj_jhr,
+                                            compute_update)
+
 from collections import namedtuple
 
 
@@ -26,25 +27,7 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
-tec_args = namedtuple(
-    "tec_args",
-    (
-        "params",
-        "param_flags",
-        "chan_freqs",
-        "t_bin_arr"
-    )
-)
-
-
-def get_identity_params(corr_mode):
-
-    if corr_mode.literal_value in (2, 4):
-        return np.zeros((4,), dtype=np.float64)
-    elif corr_mode.literal_value == 1:
-        return np.zeros((2,), dtype=np.float64)
-    else:
-        raise ValueError("Unsupported number of correlations.")
+leakage_args = namedtuple("leakage_args", ())
 
 
 @generated_jit(nopython=True,
@@ -52,13 +35,11 @@ def get_identity_params(corr_mode):
                parallel=False,
                cache=True,
                nogil=True)
-def tec_solver(base_args, term_args, meta_args, corr_mode):
+def leakage_solver(base_args, term_args, meta_args, corr_mode):
 
-    # NOTE: This just reuses delay solver functionality.
+    coerce_literal(leakage_solver, ["corr_mode"])
 
-    coerce_literal(tec_solver, ["corr_mode"])
-
-    identity_params = get_identity_params(corr_mode)
+    get_jhj_dims = get_jhj_dims_factory(corr_mode)
 
     def impl(base_args, term_args, meta_args, corr_mode):
 
@@ -73,7 +54,6 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
-        active_params = term_args.params[active_term]
 
         # Set up some intemediaries used for flagging. TODO: Move?
         km1_gain = active_gain.copy()
@@ -83,34 +63,29 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
             flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
 
         # Set up some intemediaries used for solving.
-        real_dtype = active_gain.real.dtype
-        param_shape = active_params.shape
+        complex_dtype = active_gain.dtype
+        gain_shape = active_gain.shape
 
         active_t_map_g = base_args.t_map_arr[0, :, active_term]
-        active_f_map_p = base_args.f_map_arr[1, :, active_term]
+        active_f_map_g = base_args.f_map_arr[0, :, active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
-        resampler = resample_solints(active_t_map_g, param_shape, n_thread)
+        resampler = resample_solints(active_t_map_g, gain_shape, n_thread)
 
         # Determine the starts and stops of the rows and channels associated
         # with each solution interval.
-        extents = get_extents(resampler.upsample_t_map, active_f_map_p)
+        extents = get_extents(resampler.upsample_t_map, active_f_map_g)
 
         upsample_shape = resampler.upsample_shape
-        upsampled_jhj = np.empty(upsample_shape + (upsample_shape[-1],),
-                                 dtype=real_dtype)
-        upsampled_jhr = np.empty(upsample_shape, dtype=real_dtype)
-        jhj = upsampled_jhj[:param_shape[0]]
-        jhr = upsampled_jhr[:param_shape[0]]
-        update = np.zeros(param_shape, dtype=real_dtype)
+        upsampled_jhj = np.empty(get_jhj_dims(upsample_shape),
+                                 dtype=complex_dtype)
+        upsampled_jhr = np.empty(upsample_shape, dtype=complex_dtype)
+        jhj = upsampled_jhj[:gain_shape[0]]
+        jhr = upsampled_jhr[:gain_shape[0]]
+        update = np.zeros(gain_shape, dtype=complex_dtype)
 
         upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
         native_imdry = native_intermediaries(jhj, jhr, update)
-
-        scaled_icf = term_args.chan_freqs.copy()  # Don't mutate.
-        min_freq = np.min(scaled_icf)
-        scaled_icf = min_freq/scaled_icf  # Scale freqs to avoid precision.
-        active_params[..., 1::2] /= min_freq  # Scale consistently with freq.
 
         for loop_idx in range(max_iter):
 
@@ -119,7 +94,6 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
                             meta_args,
                             upsampled_imdry,
                             extents,
-                            scaled_icf,
                             corr_mode)
 
             if resampler.active:
@@ -135,7 +109,6 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
                             term_args,
                             meta_args,
                             native_imdry,
-                            scaled_icf,
                             loop_idx,
                             corr_mode)
 
@@ -147,14 +120,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
                                           meta_args,
                                           flag_imdry,
                                           loop_idx,
-                                          corr_mode,
-                                          numbness=1e9)
-
-            # Propagate gain flags to parameter flags.
-            update_param_flags(base_args,
-                               term_args,
-                               meta_args,
-                               identity_params)
+                                          corr_mode)
 
             if conv_perc >= meta_args.stop_frac:
                 break
@@ -171,8 +137,49 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
             apply_gain_flags(base_args,
                              meta_args)
 
-        active_params[..., 1::2] *= min_freq  # Undo scaling for SI units.
-
         return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
+
+    return impl
+
+
+@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
+               nogil=True)
+def finalize_update(base_args, term_args, meta_args, native_imdry, loop_idx,
+                    corr_mode):
+
+    set_identity = factories.set_identity_factory(corr_mode)
+
+    def impl(base_args, term_args, meta_args, native_imdry, loop_idx,
+             corr_mode):
+
+        dd_term = meta_args.dd_term
+        active_term = meta_args.active_term
+
+        gain = base_args.gains[active_term]
+        gain_flags = base_args.gain_flags[active_term]
+
+        update = native_imdry.update
+
+        n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
+
+        for ti in range(n_tint):
+            for fi in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+
+                        g = gain[ti, fi, a, d]
+                        fl = gain_flags[ti, fi, a, d]
+                        upd = update[ti, fi, a, d]
+
+                        upd[0] = 0
+                        upd[3] = 0
+
+                        if fl == 1:
+                            set_identity(g)
+                        elif dd_term or (loop_idx % 2 == 0):
+                            upd /= 2
+                            g += upd
+                        else:
+                            g += upd
 
     return impl

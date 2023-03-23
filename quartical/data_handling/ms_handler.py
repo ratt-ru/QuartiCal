@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
+import warnings
 import dask.array as da
 import numpy as np
-from daskms import xds_from_ms, xds_from_table, xds_to_table
+from daskms import (xds_from_storage_ms,
+                    xds_from_storage_table,
+                    xds_to_storage_table)
 from dask.graph_manipulation import clone
 from loguru import logger
 from quartical.weights.weights import initialize_weights
@@ -25,7 +28,7 @@ def read_xds_list(model_columns, ms_opts):
         data_xds_list: A list of appropriately chunked xarray datasets.
     """
 
-    antenna_xds = xds_from_table(ms_opts.path + "::ANTENNA")[0]
+    antenna_xds = xds_from_storage_table(ms_opts.path + "::ANTENNA")[0]
 
     n_ant = antenna_xds.dims["row"]
 
@@ -33,7 +36,7 @@ def read_xds_list(model_columns, ms_opts):
                 "observation.", n_ant)
 
     # Determine the number/type of correlations present in the measurement set.
-    pol_xds = xds_from_table(ms_opts.path + "::POLARIZATION")[0]
+    pol_xds = xds_from_storage_table(ms_opts.path + "::POLARIZATION")[0]
 
     try:
         corr_types = [CORR_TYPES[ct] for ct in pol_xds.CORR_TYPE.values[0]]
@@ -53,7 +56,7 @@ def read_xds_list(model_columns, ms_opts):
     # probably need to be done on a per xds basis. Can probably be accomplished
     # by merging the field xds grouped by DDID into data grouped by DDID.
 
-    field_xds = xds_from_table(ms_opts.path + "::FIELD")[0]
+    field_xds = xds_from_storage_table(ms_opts.path + "::FIELD")[0]
     phase_dir = np.squeeze(field_xds.PHASE_DIR.values)
     field_names = field_xds.NAME.values
 
@@ -76,11 +79,9 @@ def read_xds_list(model_columns, ms_opts):
     columns += (ms_opts.data_column,)
     columns += (ms_opts.weight_column,) if ms_opts.weight_column else ()
     columns += (ms_opts.sigma_column,) if ms_opts.sigma_column else ()
+    columns += \
+        ("SCAN_NUMBER",) if "SCAN_NUMBER" not in ms_opts.group_by else ()
     columns += (*model_columns,)
-
-    available_columns = list(xds_from_ms(ms_opts.path)[0].keys())
-    assert all(c in available_columns for c in columns), \
-           f"One or more columns in: {columns} is not present in the data."
 
     schema = {cn: {'dims': ('chan', 'corr')} for cn in model_columns}
 
@@ -88,15 +89,20 @@ def read_xds_list(model_columns, ms_opts):
     if ms_opts.weight_column not in known_weight_cols:
         schema[ms_opts.weight_column] = {'dims': ('chan', 'corr')}
 
-    data_xds_list = xds_from_ms(
-        ms_opts.path,
-        columns=columns,
-        index_cols=("TIME",),
-        group_cols=ms_opts.group_by,
-        chunks=chunking_per_data_xds,
-        table_schema=["MS", {**schema}])
+    try:
+        data_xds_list = xds_from_storage_ms(
+            ms_opts.path,
+            columns=columns,
+            index_cols=("TIME",),
+            group_cols=ms_opts.group_by,
+            chunks=chunking_per_data_xds,
+            table_schema=["MS", {**schema}])
+    except RuntimeError as e:
+        raise RuntimeError(
+            f"Invalid/missing column specified. Underlying error: {e}."
+        ) from e
 
-    spw_xds_list = xds_from_table(
+    spw_xds_list = xds_from_storage_table(
         ms_opts.path + "::SPECTRAL_WINDOW",
         group_cols=["__row__"],
         columns=["CHAN_FREQ", "CHAN_WIDTH"],
@@ -165,11 +171,11 @@ def read_xds_list(model_columns, ms_opts):
         try:
             data_xds_list = [xds.isel(corr=ms_opts.select_corr)
                              for xds in data_xds_list]
-        except KeyError:
-            raise KeyError(f"--input-ms-select-corr attempted to select "
-                           f"correlations not present in the data - this MS "
-                           f"contains {n_corr} correlations. User "
-                           f"attempted to select {ms_opts.select_corr}.")
+        except IndexError:
+            raise IndexError(f"input-ms.select-corr attempted to select "
+                             f"correlations not present in the data - this MS "
+                             f"contains {n_corr} correlations. User "
+                             f"attempted to select {ms_opts.select_corr}.")
 
     return data_xds_list, ref_xds_list
 
@@ -193,7 +199,10 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
     # dask-ms handle this. This also might need some further consideration,
     # as the fill_value might cause problems.
 
-    pol_xds = xds_from_table(ms_path + "::POLARIZATION")[0]
+    if not (output_opts.products or output_opts.flags):
+        return [None] * len(xds_list)  # Write nothing to the MS.
+
+    pol_xds = xds_from_storage_table(ms_path + "::POLARIZATION")[0]
     corr_types = [CORR_TYPES[ct] for ct in pol_xds.CORR_TYPE.values[0]]
     ms_n_corr = len(corr_types)
 
@@ -264,12 +273,23 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
 
     logger.info("Outputs will be written to {}.", ", ".join(output_cols))
 
-    # TODO: Nasty hack due to bug in daskms. Remove ASAP.
-    xds_list = [xds.drop_vars(["ANT_NAME", "CHAN_FREQ", "CHAN_WIDTH"],
-                              errors='ignore')
+    # Remove attrs added by QuartiCal so that they do not get written.
+    for xds in xds_list:
+        xds.attrs.pop("UTIME_CHUNKS", None)
+        xds.attrs.pop("FIELD_NAME", None)
+
+    # Remove coords added by QuartiCal so that they do not get written.
+    xds_list = [xds.drop_vars(["chan", "corr"], errors='ignore')
                 for xds in xds_list]
 
-    write_xds_list = xds_to_table(xds_list, ms_path, columns=output_cols)
+    with warnings.catch_warnings():  # We anticipate spurious warnings.
+        warnings.simplefilter("ignore")
+        write_xds_list = xds_to_storage_table(
+            xds_list,
+            ms_path,
+            columns=output_cols,
+            rechunk=True  # Needed to ensure zarr chunks map correctly to disk.
+        )
 
     return write_xds_list
 
@@ -370,7 +390,18 @@ def postprocess_xds_list(data_xds_list, parangle_xds_list, output_opts):
             data with postprocessing operations applied.
     """
 
+    n_corr = {xds.dims["corr"] for xds in data_xds_list}.pop()
+
     if output_opts.apply_p_jones_inv:
+        # NOTE: Applying parallactic angle when there are fewer than four
+        # correlations is problematic for linear feeds as it amounts to
+        # rotating information to/from correlations which are not present i.e.
+        # it is not reversible. Thus, we elect not to support it.
+        if n_corr != 4:
+            raise ValueError(
+                "output.apply_p_jones_inv is not supported for data with "
+                "less than four correlations. Please disable this setting."
+            )
         derot_vars = ["_RESIDUAL", "_CORRECTED_DATA", "_CORRECTED_RESIDUAL"]
 
         output_data_xds_list = apply_parangles(data_xds_list,

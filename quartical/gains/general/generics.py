@@ -8,13 +8,39 @@ import quartical.gains.general.factories as factories
 from quartical.gains.general.convenience import get_dims, get_row
 
 
+native_intermediaries = namedtuple(
+    "native_intermediaries",
+    (
+        "jhj",
+        "jhr",
+        "update"
+    )
+)
+
 solver_intermediaries = namedtuple(
     "solver_intermediaries",
     (
         "jhj",
         "jhr",
-        "residual",
         "update"
+    )
+)
+
+upsampled_itermediaries = namedtuple(
+    "upsampled_intermediaries",
+    (
+        "jhj",
+        "jhr"
+    )
+)
+
+resample_outputs = namedtuple(
+    "resample_outputs",
+    (
+        "active",
+        "upsample_shape",
+        "upsample_t_map",
+        "downsample_t_map"
     )
 )
 
@@ -24,6 +50,12 @@ qcgjit = generated_jit(nopython=True,
                        parallel=False,
                        cache=True,
                        nogil=True)
+
+qcgjit_parallel = generated_jit(nopython=True,
+                                fastmath=True,
+                                parallel=True,
+                                cache=True,
+                                nogil=True)
 
 
 @qcgjit
@@ -118,262 +150,6 @@ def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
                     isub(r, v)
 
         return residual
-
-    return impl
-
-
-@qcgjit
-def compute_residual_solver(base_args, solver_imdry, corr_mode, sub_dirs=None):
-
-    coerce_literal(compute_residual_solver, ["corr_mode"])
-
-    # We want to dispatch based on this field so we need its type.
-    row_weights = base_args[base_args.fields.index('row_weights')]
-
-    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
-    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
-    isub = factories.isub_factory(corr_mode)
-    iunpack = factories.iunpack_factory(corr_mode)
-    valloc = factories.valloc_factory(corr_mode)
-
-    def impl(base_args, solver_imdry, corr_mode, sub_dirs=None):
-
-        data = base_args.data
-        model = base_args.model
-        model = base_args.model
-        a1 = base_args.a1
-        a2 = base_args.a2
-        row_map = base_args.row_map
-        row_weights = base_args.row_weights
-
-        gains = base_args.gains
-        t_map_arr = base_args.t_map_arr[0]  # We only need the gain mappings.
-        f_map_arr = base_args.f_map_arr[0]  # We only need the gain mappings.
-        d_map_arr = base_args.d_map_arr
-
-        residual = solver_imdry.residual
-        residual[:] = data
-
-        n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
-        n_gains = len(gains)
-
-        if sub_dirs is None:
-            dir_loop = np.arange(n_dir)
-        else:
-            dir_loop = np.array(sub_dirs)
-
-        for row_ind in prange(n_rows):
-
-            row = get_row(row_ind, row_map)
-            a1_m, a2_m = a1[row], a2[row]
-            v = valloc(np.complex128)  # Hold GMGH.
-
-            for f in range(n_chan):
-
-                r = residual[row, f]
-                m = model[row, f]
-
-                for d in dir_loop:
-
-                    iunpack(v, m[d])
-
-                    for g in range(n_gains - 1, -1, -1):
-
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-
-                        gain = gains[g][t_m, f_m]
-                        gain_p = gain[a1_m, d_m]
-                        gain_q = gain[a2_m, d_m]
-
-                        v1_imul_v2(gain_p, v, v)
-                        v1_imul_v2ct(v, gain_q, v)
-
-                    imul_rweight(v, v, row_weights, row_ind)
-                    isub(r, v)
-
-    return impl
-
-
-@qcgjit
-def compute_residual_phase(base_args, solver_imdry, corr_mode, sub_dirs=None):
-
-    coerce_literal(compute_residual_phase, ["corr_mode"])
-
-    # We want to dispatch based on this field so we need its type.
-    row_weights = base_args[base_args.fields.index('row_weights')]
-
-    imul = factories.imul_factory(corr_mode)
-    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
-    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
-    isub = factories.isub_factory(corr_mode)
-    iunpack = factories.iunpack_factory(corr_mode)
-    valloc = factories.valloc_factory(corr_mode)
-    iabsdiv = factories.iabsdiv_factory(corr_mode)
-
-    def impl(base_args, solver_imdry, corr_mode, sub_dirs=None):
-
-        data = base_args.data
-        model = base_args.model
-        model = base_args.model
-        a1 = base_args.a1
-        a2 = base_args.a2
-        row_map = base_args.row_map
-        row_weights = base_args.row_weights
-
-        gains = base_args.gains
-        t_map_arr = base_args.t_map_arr[0]  # We only need the gain mappings.
-        f_map_arr = base_args.f_map_arr[0]  # We only need the gain mappings.
-        d_map_arr = base_args.d_map_arr
-
-        residual = solver_imdry.residual
-        residual[:] = data
-
-        n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
-        n_gains = len(gains)
-
-        if sub_dirs is None:
-            dir_loop = np.arange(n_dir)
-        else:
-            dir_loop = np.array(sub_dirs)
-
-        for row_ind in prange(n_rows):
-
-            row = get_row(row_ind, row_map)
-            a1_m, a2_m = a1[row], a2[row]
-            v = valloc(np.complex128)  # Hold GMGH.
-
-            r_normf = valloc(np.complex128)
-            v_normf = valloc(np.complex128)
-
-            for f in range(n_chan):
-
-                r = residual[row, f]
-                m = model[row, f]
-
-                for d in dir_loop:
-
-                    iunpack(v, m[d])
-
-                    for g in range(n_gains - 1, -1, -1):
-
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-
-                        gain = gains[g][t_m, f_m]
-                        gain_p = gain[a1_m, d_m]
-                        gain_q = gain[a2_m, d_m]
-
-                        v1_imul_v2(gain_p, v, v)
-                        v1_imul_v2ct(v, gain_q, v)
-
-                    imul_rweight(v, v, row_weights, row_ind)
-
-                    iunpack(r_normf, r)
-                    iunpack(v_normf, v)
-                    iabsdiv(r_normf)
-                    iabsdiv(v_normf)
-                    imul(r, r_normf)
-                    imul(v, v_normf)
-                    isub(r, v)
-
-    return impl
-
-
-@qcgjit
-def compute_phaselocked_residual(
-    base_args,
-    solver_imdry,
-    corr_mode,
-    sub_dirs=None):
-    """A special residual implementation for amplitude only terms.
-
-    The phaselocked residual is equivalent to the residual when the phases
-    on the data are set to the phases on the model. This is appropriate for
-    amplitude only solutions.
-    """
-
-    coerce_literal(compute_residual_phase, ["corr_mode"])
-
-    # We want to dispatch based on this field so we need its type.
-    row_weights = base_args[base_args.fields.index('row_weights')]
-
-    imul = factories.imul_factory(corr_mode)
-    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
-    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
-    isub = factories.isub_factory(corr_mode)
-    iunpack = factories.iunpack_factory(corr_mode)
-    valloc = factories.valloc_factory(corr_mode)
-    iabs = factories.iabs_factory(corr_mode)
-    v1_iabsdiv_v2 = factories.v1_iabsdiv_v2_factory(corr_mode)
-
-    def impl(base_args, solver_imdry, corr_mode, sub_dirs=None):
-
-        data = base_args.data
-        model = base_args.model
-        model = base_args.model
-        a1 = base_args.a1
-        a2 = base_args.a2
-        row_map = base_args.row_map
-        row_weights = base_args.row_weights
-
-        gains = base_args.gains
-        t_map_arr = base_args.t_map_arr[0]  # We only need the gain mappings.
-        f_map_arr = base_args.f_map_arr[0]  # We only need the gain mappings.
-        d_map_arr = base_args.d_map_arr
-
-        residual = solver_imdry.residual
-        residual[:] = data
-
-        n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
-        n_gains = len(gains)
-
-        if sub_dirs is None:
-            dir_loop = np.arange(n_dir)
-        else:
-            dir_loop = np.array(sub_dirs)
-
-        for row_ind in prange(n_rows):
-
-            row = get_row(row_ind, row_map)
-            a1_m, a2_m = a1[row], a2[row]
-            v = valloc(np.complex128)  # Hold GMGH.
-            v_phase = valloc(np.complex128)
-
-            for f in range(n_chan):
-
-                r = residual[row, f]
-                m = model[row, f]
-
-                iabs(r)
-
-                for d in dir_loop:
-
-                    iunpack(v, m[d])
-
-                    for g in range(n_gains - 1, -1, -1):
-
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
-
-                        gain = gains[g][t_m, f_m]
-                        gain_p = gain[a1_m, d_m]
-                        gain_q = gain[a2_m, d_m]
-
-                        v1_imul_v2(gain_p, v, v)
-                        v1_imul_v2ct(v, gain_q, v)
-
-                    imul_rweight(v, v, row_weights, row_ind)
-
-                    v1_iabsdiv_v2(v, v, v_phase)
-                    imul(r, v_phase)
-                    isub(r, v)
 
     return impl
 
@@ -602,14 +378,15 @@ def compute_convergence(gain, last_gain, criteria):
 
 
 @qcgjit
-def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
-                  *gains):
+def combine_gains(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
+                  corr_mode, *gains):
 
     coerce_literal(combine_gains, ["corr_mode"])
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
 
-    def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode, *gains):
+    def impl(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape, corr_mode,
+             *gains):
         t_bin_arr = t_bin_arr[0]
         f_map_arr = f_map_arr[0]
 
@@ -623,13 +400,11 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
         net_gains[..., 0] = 1
         net_gains[..., -1] = 1
 
-        n_term = len(gains)
-
         for t in range(n_time):
             for f in range(n_freq):
                 for a in range(n_ant):
                     for d in range(n_dir):
-                        for gi in range(n_term):
+                        for gi in term_ids:
                             tm = t_bin_arr[t, gi]
                             fm = f_map_arr[f, gi]
                             dm = d_map_arr[gi, d]
@@ -643,9 +418,10 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, net_shape, corr_mode,
 
 
 @qcgjit
-def combine_flags(t_bin_arr, f_map_arr, d_map_arr, net_shape, *flags):
+def combine_flags(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
+                  *flags):
 
-    def impl(t_bin_arr, f_map_arr, d_map_arr, net_shape, *flags):
+    def impl(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape, *flags):
         t_bin_arr = t_bin_arr[0]
         f_map_arr = f_map_arr[0]
 
@@ -656,13 +432,11 @@ def combine_flags(t_bin_arr, f_map_arr, d_map_arr, net_shape, *flags):
 
         net_flags = np.zeros((n_time, n_freq, n_ant, n_dir), dtype=np.int8)
 
-        n_term = len(flags)
-
         for t in range(n_time):
             for f in range(n_freq):
                 for a in range(n_ant):
                     for d in range(n_dir):
-                        for gi in range(n_term):
+                        for gi in term_ids:
                             tm = t_bin_arr[t, gi]
                             fm = f_map_arr[f, gi]
                             dm = d_map_arr[gi, d]
@@ -695,5 +469,93 @@ def per_array_jhj_jhr(solver_imdry):
                 for a in range(1, n_ant):
                     jhj[t, f, a] = jhj[t, f, 0]
                     jhr[t, f, a] = jhr[t, f, 0]
+
+    return impl
+
+
+@qcgjit
+def resample_solints(native_map, native_shape, n_thread):
+
+    def impl(native_map, native_shape, n_thread):
+
+        n_tint, n_fint = native_shape[:2]
+        n_int = n_tint * n_fint
+
+        if n_int < n_thread:  # TODO: Maybe put some integer factor here?
+
+            active = True
+
+            remap_factor = np.ceil(n_thread/n_int)
+
+            target_n_tint = int(n_tint * remap_factor)
+
+            upsample_map = np.empty_like(native_map)
+            downsample_map = np.empty(target_n_tint, dtype=np.int32)
+            remap_id = 0
+            offset = 0
+
+            for i in range(n_tint):
+
+                sel = np.where(native_map == i)
+
+                sel_n_row = sel[0].size
+
+                upsample_n_row = int(np.ceil(sel_n_row/remap_factor))
+
+                for start in range(offset, offset + sel_n_row, upsample_n_row):
+
+                    stop = min(start + upsample_n_row, offset + sel_n_row)
+
+                    upsample_map[start:stop] = remap_id
+                    downsample_map[remap_id] = i
+
+                    remap_id += 1
+
+                offset += sel_n_row
+
+            upsample_shape = (target_n_tint,) + native_shape[1:]
+
+        else:
+
+            active = False
+            upsample_map = native_map
+            downsample_map = np.empty(0, dtype=np.int32)
+            upsample_shape = native_shape
+
+        return resample_outputs(
+            active, upsample_shape, upsample_map, downsample_map
+        )
+
+    return impl
+
+
+@qcgjit
+def downsample_jhj_jhr(upsampled_imdry, downsample_t_map):
+
+    def impl(upsampled_imdry, downsample_t_map):
+
+        jhj = upsampled_imdry.jhj
+        jhr = upsampled_imdry.jhr
+
+        n_tint, n_fint, n_ant, n_dir = jhj.shape[:4]
+
+        prev_out_ti = -1
+
+        for ti in range(n_tint):
+
+            out_ti = downsample_t_map[ti]
+
+            for fi in range(n_fint):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+
+                        if prev_out_ti != out_ti:
+                            jhj[out_ti, fi, a, d] = jhj[ti, fi, a, d]
+                            jhr[out_ti, fi, a, d] = jhr[ti, fi, a, d]
+                        else:
+                            jhj[out_ti, fi, a, d] += jhj[ti, fi, a, d]
+                            jhr[out_ti, fi, a, d] += jhr[ti, fi, a, d]
+
+            prev_out_ti = out_ti
 
     return impl

@@ -6,9 +6,6 @@ from collections import namedtuple
 import os.path
 from dataclasses import dataclass
 from typing import List, Dict, Set, Any
-from pathlib import Path
-import glob
-import shutil
 
 
 sky_model_nt = namedtuple("sky_model_nt", ("name", "tags"))
@@ -26,6 +23,11 @@ class Recipe:
     instructions: Dict[int, List[Any]]
 
 
+@dataclass
+class IdentityRecipe(Recipe):
+    pass
+
+
 def transcribe_recipe(user_recipe):
     """Interpret the model recipe string.
 
@@ -38,6 +40,12 @@ def transcribe_recipe(user_recipe):
     Returns:
         model_Recipe: A Recipe object.
     """
+
+    if user_recipe is None:
+        logger.warning(
+            "input_model.recipe was not supplied. Assuming identity model."
+        )
+        return IdentityRecipe(Ingredients(set(), set()), dict())
 
     model_columns = set()
     sky_models = set()
@@ -107,17 +115,3 @@ def transcribe_recipe(user_recipe):
         logger.info("Recipe contains sky models - enabling prediction step.")
 
     return model_recipe
-
-
-def prepare_output_directory(directory):
-    """Remove known QuartiCal outputs (*.qc) from a directory."""
-
-    output_path = Path(directory).absolute()
-
-    if output_path.exists():
-
-        for f in glob.glob(str(output_path / Path("*.qc"))):
-            try:  # Try to remove as a directory.
-                shutil.rmtree(f)
-            except NotADirectoryError:  # Otherwise remove as a file.
-                Path(f).unlink()

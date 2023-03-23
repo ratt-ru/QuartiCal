@@ -25,12 +25,13 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def construct_solver_output(predicted_xds_list, gain_xds_lod, t_bin_list,
-                            t_map_list, f_map_list, d_map_list, solver_opts,
-                            chain_opts):
+def construct_solver_output(predicted_xds_list, stats_xds_list, gain_xds_lod,
+                            t_bin_list, t_map_list, f_map_list, d_map_list,
+                            solver_opts, chain_opts):
 
     # Call the construct solver function with the relevant inputs.
     output = construct_solver(predicted_xds_list,
+                              stats_xds_list,
                               gain_xds_lod,
                               t_bin_list,
                               t_map_list,

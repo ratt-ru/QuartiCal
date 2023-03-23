@@ -1,5 +1,6 @@
 from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
 from quartical.gains.delay.kernel import delay_solver, delay_args
+from quartical.gains.delay.pure_kernel import pure_delay_solver
 import numpy as np
 
 
@@ -96,9 +97,8 @@ class Delay(Gain):
         a2 = kwargs["a2"]
         chan_freq = kwargs["chan_freqs"]
         t_map = kwargs["t_map_arr"][0, :, term_ind]  # time -> solint
+        f_map = kwargs["f_map_arr"][1, :, term_ind]  # freq -> solint
         _, n_chan, n_ant, n_dir, n_corr = gain.shape
-        # TODO: Make controllable/automate. Check with Landman.
-        pad_factor = int(np.ceil(2 ** 15 / n_chan))
 
         # We only need the baselines which include the ref_ant.
         sel = np.where((a1 == ref_ant) | (a2 == ref_ant))
@@ -108,9 +108,10 @@ class Delay(Gain):
         data = data[sel]
         flags = flags[sel]
 
-        data[flags != 0] = 0
+        data[flags == 1] = 0  # Ignore UV-cut, otherwise there may be no est.
 
         utint = np.unique(t_map)
+        ufint = np.unique(f_map)
 
         for ut in utint:
             sel = np.where((t_map == ut) & (a1 != a2))
@@ -136,35 +137,66 @@ class Delay(Gain):
                 out=ref_data
             )
 
-            fft_data = np.abs(
-                np.fft.fft(ref_data, n=n_chan*pad_factor, axis=1)
-            )
-            fft_data = np.fft.fftshift(fft_data, axes=1)
+            for uf in ufint:
 
-            delta_freq = chan_freq[1] - chan_freq[0]
-            fft_freq = np.fft.fftfreq(n_chan*pad_factor, delta_freq)
-            fft_freq = np.fft.fftshift(fft_freq)
+                fsel = np.where(f_map == uf)[0]
+                sel_n_chan = fsel.size
+                n = int(np.ceil(2 ** 15 / sel_n_chan)) * sel_n_chan
 
-            delay_est_ind_00 = np.argmax(fft_data[..., 0], axis=1)
-            delay_est_00 = fft_freq[delay_est_ind_00]
+                fsel_data = ref_data[:, fsel]
+                valid_ant = fsel_data.any(axis=(1, 2))
 
-            if n_corr > 1:
-                delay_est_ind_11 = np.argmax(fft_data[..., -1], axis=1)
-                delay_est_11 = fft_freq[delay_est_ind_11]
+                fft_data = np.abs(
+                    np.fft.fft(fsel_data, n=n, axis=1)
+                )
+                fft_data = np.fft.fftshift(fft_data, axes=1)
 
-            for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
-                if p == ref_ant:
-                    param[t, 0, q, 0, 1] = -delay_est_00[q]
-                    if n_corr > 1:
-                        param[t, 0, q, 0, 3] = -delay_est_11[q]
-                else:
-                    param[t, 0, p, 0, 1] = delay_est_00[p]
-                    if n_corr > 1:
-                        param[t, 0, p, 0, 3] = delay_est_11[p]
+                delta_freq = chan_freq[1] - chan_freq[0]
+                fft_freq = np.fft.fftfreq(n, delta_freq)
+                fft_freq = np.fft.fftshift(fft_freq)
 
-        coeffs00 = param[..., 1]*kwargs["chan_freqs"][None, :,  None, None]
-        gain[..., 0] = np.exp(2j*np.pi*coeffs00)
+                delay_est_ind_00 = np.argmax(fft_data[..., 0], axis=1)
+                delay_est_00 = fft_freq[delay_est_ind_00]
+                delay_est_00[~valid_ant] = 0
 
-        if n_corr > 1:
-            coeffs11 = param[..., 3]*kwargs["chan_freqs"][None, :, None, None]
-            gain[..., -1] = np.exp(2j*np.pi*coeffs11)
+                if n_corr > 1:
+                    delay_est_ind_11 = np.argmax(fft_data[..., -1], axis=1)
+                    delay_est_11 = fft_freq[delay_est_ind_11]
+                    delay_est_11[~valid_ant] = 0
+
+                for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
+                    if p == ref_ant:
+                        param[t, uf, q, 0, 1] = -delay_est_00[q]
+                        if n_corr > 1:
+                            param[t, uf, q, 0, 3] = -delay_est_11[q]
+                    else:
+                        param[t, uf, p, 0, 1] = delay_est_00[p]
+                        if n_corr > 1:
+                            param[t, uf, p, 0, 3] = delay_est_11[p]
+
+        for ut in utint:
+            for f in range(n_chan):
+                fm = f_map[f]
+                cf = 2j * np.pi * chan_freq[f]
+
+                gain[ut, f, :, :, 0] = np.exp(cf * param[ut, fm, :, :, 1])
+
+                if n_corr > 1:
+                    gain[ut, f, :, :, -1] = np.exp(cf * param[ut, fm, :, :, 3])
+
+
+class PureDelay(Delay):
+
+    solver = pure_delay_solver
+
+    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
+
+        Delay.__init__(
+            self,
+            term_name,
+            term_opts,
+            data_xds,
+            coords,
+            tipc,
+            fipc
+        )

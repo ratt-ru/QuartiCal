@@ -1,16 +1,20 @@
 from quartical.gains.gain import Gain, gain_spec_tup
-from quartical.gains.complex.kernel import complex_solver, complex_args
-from quartical.gains.complex.diag_kernel import diag_complex_solver
+from quartical.gains.leakage.kernel import leakage_solver, leakage_args
 
 
-class Complex(Gain):
+class Leakage(Gain):
 
-    solver = complex_solver
-    term_args = complex_args
+    solver = leakage_solver
+    term_args = leakage_args
 
     def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
 
         Gain.__init__(self, term_name, term_opts, data_xds, coords, tipc, fipc)
+
+        if self.n_corr != 4:
+            raise ValueError(
+                "Leakage terms are only supported for 4 correlation data."
+            )
 
         self.n_ppa = 0
         self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
@@ -28,13 +32,3 @@ class Complex(Gain):
                                 "GAIN_AXES": self.gain_axes})
 
         return xds
-
-
-class DiagComplex(Complex):
-
-    solver = diag_complex_solver
-
-    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
-
-        Complex.__init__(self, term_name, term_opts, data_xds, coords, tipc,
-                         fipc)

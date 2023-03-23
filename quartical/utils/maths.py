@@ -16,21 +16,11 @@ def cabs(x):
     return np.sqrt(x.real**2 + x.imag**2)
 
 
-def gcd(a, b):
-    """Find the greatest common divisor of two floating point numbers.
-
-    Adapted from code originally authored by Nikita Tiwari.
-    https://www.geeksforgeeks.org/program-find-gcd-floating-point-numbers/
-
-    """
-    if (a < b):
-        return gcd(b, a)
-
-    # base case
-    if (abs(b) < 0.00001):
-        return a
-    else:
-        return (gcd(b, a - math.floor(a / b) * b))
+def float_gcd(a, b, rtol=1e-05, atol=1e-08):
+    t = min(abs(a), abs(b))
+    while abs(b) > rtol * t + atol:
+        a, b = b, a % b
+    return a
 
 
 def arr_gcd(arr):
@@ -42,12 +32,13 @@ def arr_gcd(arr):
     if arr.size < 2:
         return arr[0]  # GCD of a single number is itself.
 
-    net_gcd = gcd(arr[0], arr[1])
+    # NOTE: May need to tune precision here.
+    net_gcd = float_gcd(arr[0], arr[1], rtol=1e-3, atol=1e-3)
 
     for i in range(2, arr.size):
-        net_gcd = gcd(net_gcd, arr[i])
+        net_gcd = float_gcd(net_gcd, arr[i], rtol=1e-3, atol=1e-3)
 
-    if not np.all((arr/net_gcd - np.round(arr/net_gcd)) < 1e-8):
+    if not np.all((arr/net_gcd - np.round(arr/net_gcd)) < 1e-3):
         raise ValueError(f"No GCD was found for {arr}.")
 
     return net_gcd

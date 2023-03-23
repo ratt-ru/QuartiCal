@@ -10,9 +10,9 @@ requirements = [
     "columnar",
     "ruamel.yaml",
     "numpy",
-    "dask-ms[xarray, zarr]",
+    "dask-ms[xarray, zarr, s3]>=0.2.9",
     "codex-africanus[dask, scipy, astropy, python-casacore]",
-    "dask[array]",
+    "dask[array,diagnostics]",
     "astro-tigger-lsm",
     "loguru",
     "numba>=0.55.0",
@@ -21,13 +21,12 @@ requirements = [
     "pytest",
     "omegaconf",
     "colorama",
-    "bokeh",
     "xarray>=0.20.0"
 ]
 
 setup(
     name='quartical',
-    version='0.1.1',
+    version='0.1.9',
     description="Fast calibration implementation exploiting complex "
                 "optimisation.",
     url='https://github.com/JSKenyon/QuartiCal',
@@ -37,9 +36,9 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: POSIX :: Linux",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
         "Topic :: Scientific/Engineering :: Astronomy"
     ],
     author='Jonathan Kenyon',
@@ -48,7 +47,7 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     packages=find_packages(),
-    python_requires=">=3.7",
+    python_requires=">=3.8",
     install_requires=requirements,
     include_package_data=True,
     zip_safe=False,

@@ -7,6 +7,8 @@ from itertools import cycle
 from quartical.gains import TERM_TYPES
 from quartical.weights.robust import robust_reweighting
 from quartical.gains.general.flagging import init_gain_flags, init_param_flags
+from quartical.statistics.stat_kernels import compute_mean_postsolve_chisq
+from quartical.statistics.logging import log_chisq
 
 
 meta_args_nt = namedtuple(
@@ -15,6 +17,7 @@ meta_args_nt = namedtuple(
         "active_term",
         "stop_frac",
         "stop_crit",
+        "threads",
         "dd_term",
         "solve_per",
         "robust"
@@ -22,7 +25,14 @@ meta_args_nt = namedtuple(
     )
 
 
-def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
+def solver_wrapper(
+    term_spec_list,
+    solver_opts,
+    chain_opts,
+    block_id_arr,
+    aux_block_info,
+    **kwargs
+):
     """A Python wrapper for the solvers written in Numba.
 
     This wrapper facilitates getting values in and out of the Numba code and
@@ -36,6 +46,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
     Returns:
         results_dict: A dictionary containing the results of the solvers.
     """
+
+    block_id = tuple(block_id_arr.squeeze())
 
     set_num_threads(solver_opts.threads)
     ref_ant = solver_opts.reference_antenna
@@ -100,6 +112,8 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         icovariance = np.zeros(kwargs["corr_mode"], np.float64)
         dof = 5
 
+    presolve_chisq = compute_mean_postsolve_chisq(**kwargs)
+
     for ind, (term, iters) in enumerate(zip(cycle(terms), iter_recipe)):
 
         active_term = terms.index(term)
@@ -122,6 +136,7 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
                                  active_term,
                                  solver_opts.convergence_fraction,
                                  solver_opts.convergence_criteria,
+                                 solver_opts.threads,
                                  term_opts.direction_dependent,
                                  term_opts.solve_per,
                                  robust)
@@ -159,6 +174,12 @@ def solver_wrapper(term_spec_list, solver_opts, chain_opts, **kwargs):
         results_dict[f"{term_name}-conviter"] += np.atleast_2d(info_tup[0])
         results_dict[f"{term_name}-convperc"] = np.atleast_2d(info_tup[1])
         results_dict[f"{term_name}-jhj"] = jhj
+
+    postsolve_chisq = compute_mean_postsolve_chisq(**kwargs)
+    log_chisq(presolve_chisq, postsolve_chisq, aux_block_info, block_id)
+
+    results_dict["presolve_chisq"] = presolve_chisq
+    results_dict["postsolve_chisq"] = postsolve_chisq
 
     gc.collect()
 

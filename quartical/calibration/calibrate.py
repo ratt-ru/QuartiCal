@@ -11,6 +11,8 @@ from quartical.gains.datasets import (make_gain_xds_lod,
                                       make_net_xds_list,
                                       populate_net_xds_list)
 from quartical.interpolation.interpolate import load_and_interpolate_gains
+from quartical.gains.baseline import (compute_baseline_corrections,
+                                      apply_baseline_corrections)
 from loguru import logger  # noqa
 from collections import namedtuple
 
@@ -59,7 +61,13 @@ def dask_corrected_weights(weights, a1, a2, t_map_arr, f_map_arr,
                                      row_weights, corr_mode)
 
 
-def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
+def add_calibration_graph(
+    data_xds_list,
+    stats_xds_list,
+    solver_opts,
+    chain_opts,
+    output_opts
+):
     """Given data graph and options, adds the steps necessary for calibration.
 
     Extends the data graph with the steps necessary to perform gain
@@ -76,6 +84,18 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
         data_xds_list: A list of xarra.Datasets containing the MS data with
             added visibility outputs.
     """
+
+    if (
+        {xds.dims['dir'] for xds in data_xds_list}.pop() > 1
+        and
+        not any(term.direction_dependent for term in chain_opts)
+    ):
+        logger.warning(
+            "User has specified a direction-dependent model but no gain term "
+            "has term.direction_dependent enabled. This is supported but may "
+            "indicate user error."
+        )
+
     # Figure out all mappings between data and solution intervals.
     t_bin_list, t_map_list = make_t_maps(data_xds_list, chain_opts)
     f_map_list = make_f_maps(data_xds_list, chain_opts)
@@ -113,8 +133,9 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
     gain_xds_lod = load_and_interpolate_gains(gain_xds_lod, chain_opts)
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
-    gain_xds_lod, data_xds_list = construct_solver(
+    gain_xds_lod, data_xds_list, stats_xds_list = construct_solver(
         data_xds_list,
+        stats_xds_list,
         gain_xds_lod,
         t_bin_list,
         t_map_list,
@@ -124,20 +145,36 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
         chain_opts
     )
 
-    # Construct an effective gain per data_xds. This is always at the full
-    # time and frequency resolution of the data.
-    net_xds_list = make_net_xds_list(
-        data_xds_list,
-        coords_per_xds
-    )
+    if output_opts.net_gains:
+        # Construct an effective gain per data_xds. This is always at the full
+        # time and frequency resolution of the data.
+        net_xds_lod = make_net_xds_list(
+            data_xds_list,
+            coords_per_xds,
+            output_opts
+        )
 
-    net_xds_list = populate_net_xds_list(
-        net_xds_list,
-        gain_xds_lod,
-        t_bin_list,
-        f_map_list,
-        d_map_list
-    )
+        net_xds_lod = populate_net_xds_list(
+            net_xds_lod,
+            gain_xds_lod,
+            t_bin_list,
+            f_map_list,
+            d_map_list,
+            output_opts
+        )
+    else:
+        net_xds_lod = []
+
+    if output_opts.compute_baseline_corrections:
+        bl_corr_xds_list = compute_baseline_corrections(
+            data_xds_list,
+            gain_xds_lod,
+            t_map_list,
+            f_map_list,
+            d_map_list
+        )
+    else:
+        bl_corr_xds_list = None
 
     # Update the data xarray.Datasets with visibility outputs.
     data_xds_list = make_visibility_output(
@@ -149,8 +186,20 @@ def add_calibration_graph(data_xds_list, solver_opts, chain_opts, output_opts):
         output_opts
     )
 
+    if output_opts.apply_baseline_corrections:
+        data_xds_list = apply_baseline_corrections(
+            data_xds_list,
+            bl_corr_xds_list
+        )
+
     # Return the resulting graphs for the gains and updated xds.
-    return gain_xds_lod, net_xds_list, data_xds_list
+    return (
+        gain_xds_lod,
+        net_xds_lod,
+        data_xds_list,
+        stats_xds_list,
+        bl_corr_xds_list
+    )
 
 
 def make_visibility_output(data_xds_list, solved_gain_xds_lod, t_map_list,

@@ -20,9 +20,11 @@ def opts(base_opts, solver_type, select_corr, solve_per):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [30]
+    _opts.solver.iter_recipe = [100]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_criteria = 1e-8
+    _opts.solver.convergence_criteria = 1e-7
+    _opts.solver.convergence_fraction = 1
+    _opts.solver.threads = 2
     _opts.G.type = solver_type
     _opts.G.solve_per = solve_per
 
@@ -123,10 +125,10 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
 
 @pytest.fixture(scope="module")
-def add_calibration_graph_outputs(corrupted_data_xds_list,
+def add_calibration_graph_outputs(corrupted_data_xds_list, stats_xds_list,
                                   solver_opts, chain_opts, output_opts):
     # Overload this fixture as we need to use the corrupted xdss.
-    return add_calibration_graph(corrupted_data_xds_list,
+    return add_calibration_graph(corrupted_data_xds_list, stats_xds_list,
                                  solver_opts, chain_opts, output_opts)
 
 
@@ -144,9 +146,9 @@ def test_solver_flags(cmp_post_solve_data_xds_list):
         np.testing.assert_array_equal(xds._FLAG.data, xds.FLAG.data)
 
 
-def test_gains(gain_xds_lod, true_gain_list):
+def test_gains(cmp_gain_xds_lod, true_gain_list):
 
-    for solved_gain_dict, true_gain in zip(gain_xds_lod, true_gain_list):
+    for solved_gain_dict, true_gain in zip(cmp_gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
         solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
                                                solved_gain_xds.gain_flags.data)
@@ -166,9 +168,9 @@ def test_gains(gain_xds_lod, true_gain_list):
         np.testing.assert_array_almost_equal(true_gain, solved_gain)
 
 
-def test_gain_flags(gain_xds_lod):
+def test_gain_flags(cmp_gain_xds_lod):
 
-    for solved_gain_dict in gain_xds_lod:
+    for solved_gain_dict in cmp_gain_xds_lod:
         solved_gain_xds = solved_gain_dict["G"]
         solved_flags = solved_gain_xds.gain_flags.values
 

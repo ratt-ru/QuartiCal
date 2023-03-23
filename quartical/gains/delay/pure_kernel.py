@@ -2,20 +2,28 @@
 import numpy as np
 from numba import generated_jit
 from quartical.utils.numba import coerce_literal
-from quartical.gains.general.generics import (native_intermediaries,
-                                              upsampled_itermediaries,
-                                              per_array_jhj_jhr,
-                                              resample_solints,
-                                              downsample_jhj_jhr)
-from quartical.gains.general.flagging import (flag_intermediaries,
-                                              update_gain_flags,
-                                              finalize_gain_flags,
-                                              apply_gain_flags,
-                                              update_param_flags)
-from quartical.gains.general.convenience import get_extents
-from quartical.gains.delay.kernel import (compute_jhj_jhr,
-                                          compute_update,
-                                          finalize_update)
+from quartical.gains.general.generics import (
+    native_intermediaries,
+    upsampled_itermediaries,
+    per_array_jhj_jhr,
+    resample_solints,
+    downsample_jhj_jhr
+)
+from quartical.gains.general.flagging import (
+    flag_intermediaries,
+    update_gain_flags,
+    finalize_gain_flags,
+    apply_gain_flags,
+    update_param_flags
+)
+from quartical.gains.general.convenience import (
+    get_extents
+)
+from quartical.gains.delay.kernel import (
+    compute_jhj_jhr,
+    compute_update,
+    finalize_update
+)
 from collections import namedtuple
 
 
@@ -26,8 +34,8 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
-tec_args = namedtuple(
-    "tec_args",
+delay_args = namedtuple(
+    "delay_args",
     (
         "params",
         "param_flags",
@@ -52,11 +60,9 @@ def get_identity_params(corr_mode):
                parallel=False,
                cache=True,
                nogil=True)
-def tec_solver(base_args, term_args, meta_args, corr_mode):
+def pure_delay_solver(base_args, term_args, meta_args, corr_mode):
 
-    # NOTE: This just reuses delay solver functionality.
-
-    coerce_literal(tec_solver, ["corr_mode"])
+    coerce_literal(pure_delay_solver, ["corr_mode"])
 
     identity_params = get_identity_params(corr_mode)
 
@@ -75,7 +81,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         active_gain_flags = gain_flags[active_term]
         active_params = term_args.params[active_term]
 
-        # Set up some intemediaries used for flagging. TODO: Move?
+        # Set up some intemediaries used for flagging.
         km1_gain = active_gain.copy()
         km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
         abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
@@ -107,10 +113,11 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
         native_imdry = native_intermediaries(jhj, jhr, update)
 
-        scaled_icf = term_args.chan_freqs.copy()  # Don't mutate.
-        min_freq = np.min(scaled_icf)
-        scaled_icf = min_freq/scaled_icf  # Scale freqs to avoid precision.
-        active_params[..., 1::2] /= min_freq  # Scale consistently with freq.
+        scaled_cf = term_args.chan_freqs.copy()  # Don't mutate.
+        min_freq = np.min(scaled_cf)
+        scaled_cf /= min_freq  # Scale freqs to avoid precision.
+        active_params[..., 1::2] *= min_freq  # Scale delay consistently.
+        scaled_cf *= 2*np.pi  # Introduce 2pi here - neglect everywhere else.
 
         for loop_idx in range(max_iter):
 
@@ -119,7 +126,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
                             meta_args,
                             upsampled_imdry,
                             extents,
-                            scaled_icf,
+                            scaled_cf,
                             corr_mode)
 
             if resampler.active:
@@ -131,11 +138,16 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
             compute_update(native_imdry,
                            corr_mode)
 
+            # Minor hack which prevents offsets from being updated. TODO:
+            # There has to be a neater way to integrate this into the delay
+            # solver.
+            native_imdry.update[..., ::2] = 0
+
             finalize_update(base_args,
                             term_args,
                             meta_args,
                             native_imdry,
-                            scaled_icf,
+                            scaled_cf,
                             loop_idx,
                             corr_mode)
 
@@ -171,7 +183,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
             apply_gain_flags(base_args,
                              meta_args)
 
-        active_params[..., 1::2] *= min_freq  # Undo scaling for SI units.
+        active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
 
         return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 

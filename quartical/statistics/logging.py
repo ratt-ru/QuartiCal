@@ -1,7 +1,6 @@
 import os
 import re
 import numpy as np
-import dask.array as da
 from loguru import logger
 from columnar import columnar
 
@@ -16,33 +15,7 @@ colours = {
 }
 
 
-def embed_stats_logging(stats_xds_list):
-    """Embeds the chisq logging into the dask graph."""
-
-    stats_log_xds_list = []
-
-    for sxds in stats_xds_list:
-
-        pre = sxds.PRESOLVE_CHISQ.data
-        post = sxds.POSTSOLVE_CHISQ.data
-
-        # This is dirty trick - we need to loop the logging into the graph.
-        # To do so, we resassign the post values (which are unchanged) to
-        # ensure that the logging code is called. TODO: Better way?
-        post = da.map_blocks(
-            log_chisq, pre, post, sxds.attrs, dtype=np.float32
-        )
-
-        stats_log_xds_list.append(
-            sxds.assign(
-                {"POSTSOLVE_CHISQ": (("t_chunk", "f_chunk"), post)}
-            )
-        )
-
-    return stats_log_xds_list
-
-
-def log_chisq(pre, post, attrs, block_info=None):
+def log_chisq(pre, post, attrs, block_id=None):
     """Logs an info message per chunk containing chunk and chisq info.
 
     Args:
@@ -57,7 +30,7 @@ def log_chisq(pre, post, attrs, block_info=None):
     """
 
     # Get the chink info (from the first arg), and pull out the location.
-    t_chunk, f_chunk = block_info[0]['chunk-location']
+    t_chunk, f_chunk, _ = block_id
 
     ddid = attrs.get("DATA_DESC_ID", "?")
     scan = attrs.get("SCAN_NUMBER", "?")
@@ -152,7 +125,10 @@ def log_summary_stats(stats_xds_list):
         match = match_obj.group(0)
         value = float(match)
 
-        deviation = (value - chisq_mean)/chisq_std
+        if chisq_std:
+            deviation = (value - chisq_mean)/chisq_std
+        else:
+            deviation = 0
 
         if deviation <= 3:
             colour = colours["green"]
@@ -165,7 +141,7 @@ def log_summary_stats(stats_xds_list):
 
         return f"<fg #{colour}>{match}</fg #{colour}>"
 
-    bins = ["<= 3", "<= 5", "<= 10", ">= 10"]
+    bins = ["<= 3", "<= 5", "<= 10", "> 10"]
     clrs = ["green", "yellow", "orange", "red"]
 
     msg = "\nFinal post-solve chi-squared summary, colourised by deviation " \

@@ -1,7 +1,7 @@
 import dask.delayed as dd
 import numpy as np
 import dask.array as da
-from daskms import xds_from_ms, xds_from_table
+from daskms import xds_from_storage_ms, xds_from_storage_table
 
 
 def compute_chunking(ms_opts, compute=True):
@@ -10,7 +10,7 @@ def compute_chunking(ms_opts, compute=True):
     # necessary to determine initial chunking over row and chan. TODO: Test
     # multi-SPW/field cases. Implement a memory budget.
 
-    indexing_xds_list = xds_from_ms(
+    indexing_xds_list = xds_from_storage_ms(
         ms_opts.path,
         columns=("TIME", "INTERVAL"),
         index_cols=("TIME",),
@@ -24,7 +24,7 @@ def compute_chunking(ms_opts, compute=True):
         compute=False
     )
 
-    spw_xds_list = xds_from_table(
+    spw_xds_list = xds_from_storage_table(
         ms_opts.path + "::SPECTRAL_WINDOW",
         group_cols=["__row__"],
         columns=["CHAN_FREQ", "CHAN_WIDTH"],
