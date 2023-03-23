@@ -395,7 +395,6 @@ def compute_jhj_jhr(
                                                w,
                                                norm_factors,
                                                nu,
-                                               norm_factors,
                                                gains_p[active_term],
                                                wr_pq,
                                                jhr_tifi[a1_m, d],
@@ -409,7 +408,6 @@ def compute_jhj_jhr(
                                                w,
                                                norm_factors,
                                                nu,
-                                               norm_factors,
                                                gains_q[active_term],
                                                wr_qp,
                                                jhr_tifi[a2_m, d],
@@ -554,7 +552,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             imul(res, normf)  # Apply normalization factor to r.
 
             # Accumulate an element of jhwr.
-            imul(res, normf)  # Apply normalization factor to r.
             v1_imul_v2(res, rop, res)
             v1_imul_v2(lop, res, res)
 
@@ -637,7 +634,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             imul(res, normf)  # Apply normalization factor to r.
 
             # Accumulate an element of jhwr.
-            imul(res, normf)
             v1_imul_v2(res, rop, res)
 
             r_0, r_1 = unpack(res)
@@ -683,7 +679,6 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             imul(res, normf)  # Apply normalization factor to r.
 
             # Accumulate an element of jhwr.
-            imul(res, normf)
             v1_imul_v2(res, rop, res)
 
             r_0 = unpack(res)
