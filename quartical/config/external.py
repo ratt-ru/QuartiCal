@@ -208,6 +208,7 @@ class Gain(Input):
                                "pure_delay",
                                "phase",
                                "tec",
+                               "rotation",
                                "rotation_measure",
                                "crosshand_phase",
                                "leakage"])
