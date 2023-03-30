@@ -96,7 +96,8 @@ def read_xds_list(model_columns, ms_opts):
             index_cols=("TIME",),
             group_cols=ms_opts.group_by,
             chunks=chunking_per_data_xds,
-            table_schema=["MS", {**schema}])
+            table_schema=["MS", {**schema}]
+        )
     except RuntimeError as e:
         raise RuntimeError(
             f"Invalid/missing column specified. Underlying error: {e}."
@@ -140,20 +141,28 @@ def read_xds_list(model_columns, ms_opts):
         chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
         chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
 
-        _xds = _xds.assign({"CHAN_FREQ": (("chan",), chan_freqs[0]),
-                            "CHAN_WIDTH": (("chan",), chan_widths[0])})
+        _xds = _xds.assign(
+            {
+                "CHAN_FREQ": (("chan",), chan_freqs[0]),
+                "CHAN_WIDTH": (("chan",), chan_widths[0])
+            }
+        )
 
         # Add an attribute to the xds on which we will store the names of
         # fields which must be written to the MS. Also add the attribute which
         # stores the unique time chunking per xds. We have to convert the
         # chunking to python integers to avoid problems with serialization.
 
-        utime_chunks = tuple(map(int, utime_chunking_per_data_xds[xds_ind]))
+        utime_chunks = utime_chunking_per_data_xds[xds_ind]
         field_id = getattr(xds, "FIELD_ID", None)
         field_name = "UNKNOWN" if field_id is None else field_names[field_id]
 
-        _xds = _xds.assign_attrs({"UTIME_CHUNKS": utime_chunks,
-                                  "FIELD_NAME": field_name})
+        _xds = _xds.assign_attrs(
+            {
+                "UTIME_CHUNKS": utime_chunks,
+                "FIELD_NAME": field_name
+            }
+        )
 
         _data_xds_list.append(_xds)
 
