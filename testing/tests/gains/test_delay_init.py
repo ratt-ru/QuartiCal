@@ -174,7 +174,7 @@ def test_delays(cmp_gain_xds_lod, true_delay_list):
 
         n_corr = true_delay.shape[-1]
 
-        # Pull out the delay values - this is a little confusion as the output
+        # Pull out the delay values - this is a little confusing as the output
         # parameters are not ordered in the same way as a true values.
         if n_corr == 4:
             solved_delay = solved_delay[..., (1, 3)]
