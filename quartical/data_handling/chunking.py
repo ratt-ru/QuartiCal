@@ -47,16 +47,20 @@ def compute_chunking(ms_opts, compute=True):
         [{"__row__": 1, "chan": c} for c in chan_chunking_per_spw.values()]
 
     if compute:
-        return da.compute(utime_chunking_per_xds,
-                          chunking_per_data_xds,
-                          chunking_per_spw_xds)
+        return da.compute(
+            utime_chunking_per_xds,
+            chunking_per_data_xds,
+            chunking_per_spw_xds
+        )
     else:
         utime_chunking_per_xds, chunking_per_data_xds, chunking_per_spw_xds
 
 
-def chan_chunking(spw_xds_list,
-                  freq_chunk,
-                  compute=True):
+def chan_chunking(
+    spw_xds_list,
+    freq_chunk,
+    compute=True
+):
     """Compute frequency chunks for the input data.
 
     Given a list of indexing xds's, and a list of spw xds's, determines how to
@@ -111,11 +115,17 @@ def chan_chunking(spw_xds_list,
 
                 n_chan = chan_widths.size
                 freq_chunk = freq_chunk or n_chan  # Catch zero case.
-                chunks = (freq_chunk,) * (n_chan // freq_chunk)
-                remainder = n_chan - sum(chunks)
-                chunks += (remainder,) if remainder else ()
 
-                return np.array(chunks, dtype=np.int32)
+                chunk_starts = np.arange(0, n_chan, freq_chunk)
+
+                chunks = np.array(
+                    [
+                        freq_chunk if i + freq_chunk < n_chan else n_chan - i
+                        for i in chunk_starts
+                    ]
+                )
+
+                return chunks.astype(np.int32)
 
             chunking = da.map_blocks(integer_chunking,
                                      xds.CHAN_WIDTH.data[0],
@@ -152,7 +162,6 @@ def row_chunking(
         A tuple of utime_chunking_per_xds and row_chunking_per_xds which
         describe the chunking of the data.
     """
-    # row_chunks is a list of dictionaries containing row chunks per data set.
 
     row_chunking_per_xds = []
     utime_chunking_per_xds = []
