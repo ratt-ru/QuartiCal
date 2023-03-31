@@ -171,9 +171,11 @@ def read_xds_list(model_columns, ms_opts):
     # Filter out fields/ddids which we are not interested in. Also select out
     # correlations. TODO: Does this type of selection/filtering belong here?
 
-    data_xds_list = filter_xds_list(data_xds_list,
-                                    ms_opts.select_fields,
-                                    ms_opts.select_ddids)
+    data_xds_list = filter_xds_list(
+        data_xds_list,
+        ms_opts.select_fields,
+        ms_opts.select_ddids
+    )
 
     # TODO: Do we want to select on index or corr_type?
     if ms_opts.select_corr:
