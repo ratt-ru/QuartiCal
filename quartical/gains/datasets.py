@@ -474,10 +474,10 @@ class GainDataset(object):
             respect_scan_boundaries
         )
 
-        time_map = GainDataset.make_time_map(
-            time_col,
-            time_bins
-        )
+        # time_map = GainDataset.make_time_map(
+        #     time_col,
+        #     time_bins
+        # )
 
         time_chunks = GainDataset.make_time_chunks(time_bins)
 
@@ -495,19 +495,10 @@ class GainDataset(object):
 
         n_dir = data_xds.dims["dir"]
 
-        # TODO: Move to separate function for consistency.
-        if gain_opts.direction_dependent:
-            dir_map = da.arange(
-                n_dir,
-                name="dirmap-" + uuid4().hex,
-                dtype=np.int64
-            )
-        else:
-            dir_map = da.zeros(
-                n_dir,
-                name="dirmap-" + uuid4().hex,
-                dtype=np.int64
-            )
+        dir_map = GainDataset.make_dir_map(
+            n_dir,
+            gain_opts.direction_dependent
+        )
 
         gain_times = da.map_blocks(
             GainDataset._make_mean_coord,
@@ -527,6 +518,9 @@ class GainDataset(object):
 
         partition_schema = data_xds.__daskms_partition_schema__
         id_attrs = {f: data_xds.attrs[f] for f, _ in partition_schema}
+
+        # TODO: Add the term name and chunking spec.
+        # TODO: Chunk dimension should be chunk ID not elements in chunk.
 
         lazy_dataset = {
             "coords": {
@@ -655,6 +649,42 @@ class GainDataset(object):
         )
 
         return freq_map
+
+    @staticmethod
+    def make_dir_map(n_dir, direction_dependent):
+
+        # NOTE: Does not call the numpy implementation.
+        # TODO: arange doesn't accept a name parameter - should we clone?
+        if direction_dependent:
+            dir_map = da.arange(
+                n_dir,
+                dtype=np.int64
+            )
+        else:
+            dir_map = da.zeros(
+                n_dir,
+                name="dirmap-" + uuid4().hex,
+                dtype=np.int64
+            )
+
+        return dir_map
+
+    @staticmethod
+    def _make_dir_map(n_dir, direction_dependent):
+
+        if direction_dependent:
+            dir_map = np.arange(
+                n_dir,
+                dtype=np.int64
+            )
+        else:
+            dir_map = np.zeros(
+                n_dir,
+                dtype=np.int64
+            )
+
+        return dir_map
+
 
     @staticmethod
     def make_time_chunks(time_bins):
