@@ -6,6 +6,7 @@ import numpy as np
 import dask.array as da
 from uuid import uuid4
 from daskms.experimental.zarr import xds_to_zarr
+from quartical.gains.gain import gain_spec_tup, param_spec_tup
 from quartical.gains import TERM_TYPES
 from quartical.utils.dask import blockwise_unique
 from quartical.utils.maths import mean_for_index
@@ -506,15 +507,19 @@ class GainDataset(object):
         partition_schema = data_xds.__daskms_partition_schema__
         id_attrs = {f: data_xds.attrs[f] for f, _ in partition_schema}
 
-        # TODO: Add the term name and chunking spec.
-        # TODO: Chunk dimension should be chunk ID not elements in chunk.
+        # TODO: Move this the the gain object?
+        n_corr = data_xds.dims["corr"]
+        n_ant = data_xds.dims["ant"]
+        chunk_spec = gain_spec_tup(
+            time_chunks, freq_chunks, (n_ant,), (n_dir,), (n_corr,)
+        )
 
         lazy_dataset = {
             "coords": {
                 "gain_time": (("gain_time",), gain_times),
                 "gain_freq": (("gain_freq",), gain_freqs),
-                "time_chunk": (("time_chunk",), time_chunks),
-                "freq_chunk": (("freq_chunk",), freq_chunks),
+                "time_chunk": (("time_chunk",), da.arange(time_chunks.size)),
+                "freq_chunk": (("freq_chunk",), da.arange(freq_chunks.size)),
                 "direction": (("direction",), direction),
                 "antenna": (("antenna",), data_xds.ant.data),
                 "correlation": (("correlation",), data_xds.corr.data)
@@ -524,6 +529,7 @@ class GainDataset(object):
                 "FIELD_NAME": data_xds.FIELD_NAME,
                 "NAME": gain_obj.name,
                 "TYPE": gain_obj.type,
+                "GAIN_SPEC": chunk_spec,
                 "GAIN_AXES": gain_obj.gain_axes
             }
         }
