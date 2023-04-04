@@ -144,7 +144,7 @@ class TEC(Gain):
                 invfreq = 1./chan_freq 
                 
                 ##factor for rescaling frequency
-                ffactor = 1e11
+                ffactor = 1
                 invfreq *= ffactor
 
                 #delta_freq is the smallest difference between the frequency values
@@ -177,15 +177,15 @@ class TEC(Gain):
                         param[t, uf, q, 0, 1] = -tec_est[q, 0]
                         if n_corr > 1:
                             param[t, uf, q, 0, 3] = -tec_est[q, 1]
-                        else:
-                            param[t, uf, p, 0, 1] = tec_est[p, 0]
+                    elif q == ref_ant:
+                        param[t, uf, p, 0, 1] = tec_est[p, 0]
                         if n_corr > 1:
                             param[t, uf, p, 0, 3] = tec_est[p, 1]
 
                 np.save("/home/russeeawon/testing/testing_tecest_quartical/tecest.npy", tec_est)
                 np.save("/home/russeeawon/testing/testing_tecest_quartical/fftarr.npy", fft_arr)
         
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         for ut in utint:
             for f in range(n_chan):
                 fm = f_map[f]
