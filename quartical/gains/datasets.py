@@ -4,20 +4,15 @@ from quartical.config.internal import yield_from
 from loguru import logger  # noqa
 import numpy as np
 import dask.array as da
+import xarray
 from uuid import uuid4
 from daskms.experimental.zarr import xds_to_zarr
 from quartical.gains.gain import gain_spec_tup, param_spec_tup
 from quartical.gains import TERM_TYPES
-from quartical.utils.dask import blockwise_unique
-from quartical.utils.maths import mean_for_index
 from quartical.gains.general.generics import combine_gains, combine_flags
 
 
-def make_gain_xds_lod(data_xds_list,
-                      tipc_list,
-                      fipc_list,
-                      coords_per_xds,
-                      chain_opts):
+def make_gain_xds_lod(data_xds_list, chain_opts):
     """Returns a list of dicts of xarray.Dataset objects describing the gains.
 
     For a given input xds containing data, creates an xarray.Dataset object
@@ -25,11 +20,6 @@ def make_gain_xds_lod(data_xds_list,
 
     Args:
         data_xds_list: A list of xarray.Dataset objects containing MS data.
-        tipc_list: List of numpy.ndarray objects containing number of time
-            intervals in a chunk.
-        fipc_list: List of numpy.ndarray objects containing number of freq
-            intervals in a chunk.
-        coords_per_xds: A List of Dicts containing coordinates.
         chain_opts: A Chain config object.
 
     Returns:
@@ -37,160 +27,33 @@ def make_gain_xds_lod(data_xds_list,
             gain terms assosciated with each data xarray.Dataset.
     """
 
-    gain_xds_lod = []
+    gain_obj_list = [
+        TERM_TYPES[tt](tn, getattr(chain_opts, tn))
+        for tn, tt in yield_from(chain_opts, "type")
+    ]
 
-    for xds_ind, data_xds in enumerate(data_xds_list):
+    scaffolds_per_xds = []
 
-        term_xds_dict = {}
+    for data_xds in data_xds_list:
 
-        term_coords = coords_per_xds[xds_ind]
+        gain_scaffolds = {}
 
-        for loop_vars in enumerate(yield_from(chain_opts, "type")):
-            term_ind, (term_name, term_type) = loop_vars
+        for gain_obj in gain_obj_list:
 
-            term_t_chunks = tipc_list[xds_ind][:, :, term_ind]
-            term_f_chunks = fipc_list[xds_ind][:, :, term_ind]
-            term_opts = getattr(chain_opts, term_name)
+            gain_scaffolds[gain_obj.name] = \
+                scaffold_from_data_xds(data_xds, gain_obj)
 
-            term_obj = TERM_TYPES[term_type](term_name,
-                                             term_opts,
-                                             data_xds,
-                                             term_coords,
-                                             term_t_chunks,
-                                             term_f_chunks)
+        scaffolds_per_xds.append(gain_scaffolds)
 
-            term_xds_dict[term_name] = term_obj.make_xds()
-
-        gain_xds_lod.append(term_xds_dict)
+    # NOTE: This triggers an early compute to determine all the chunking info.
+    gain_xds_lod = [
+        {
+            tn: xarray.Dataset(**ts) for tn, ts in gain_scaffolds.items()
+        }
+        for gain_scaffolds in da.compute(scaffolds_per_xds)[0]
+    ]
 
     return gain_xds_lod
-
-
-def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
-    '''Compute the per-term chunking of the gains.
-
-    Given a list of data xarray.Datasets as well as information about the
-    time and frequency mappings, computes the chunk sizes of the gain terms.
-
-    Args:
-        data_xds_list: A list of data-containing xarray.Dataset objects.
-        t_map_list: A list of arrays describing how times map to solint.
-        f_map_list: A list of arrays describing how freqs map to solint.
-
-    Returns:
-        A tuple of lists containing arrays which descibe the chunking.
-    '''
-
-    tipc_list = []
-    fipc_list = []
-
-    for xds_ind, _ in enumerate(data_xds_list):
-
-        t_map_arr = t_map_list[xds_ind]
-        f_map_arr = f_map_list[xds_ind]
-
-        tipc_per_term = da.map_blocks(lambda arr: arr[:, -1:, :] + 1,
-                                      t_map_arr,
-                                      chunks=((2,),
-                                              (1,)*t_map_arr.numblocks[1],
-                                              t_map_arr.chunks[2]))
-
-        fipc_per_term = da.map_blocks(lambda arr: arr[:, -1:, :] + 1,
-                                      f_map_arr,
-                                      chunks=((2,),
-                                              (1,)*f_map_arr.numblocks[1],
-                                              f_map_arr.chunks[2]))
-
-        tipc_list.append(tipc_per_term)
-        fipc_list.append(fipc_per_term)
-
-    # This is an early compute which is necessary to figure out the gain dims.
-    return da.compute(tipc_list, fipc_list)
-
-
-def compute_dataset_coords(data_xds_list,
-                           t_bin_list,
-                           f_map_list,
-                           tipc_list,
-                           fipc_list,
-                           terms):
-    '''Compute the cooridnates for the gain datasets.
-
-    Given a list of data xarray.Datasets as well as information about the
-    binning along the time and frequency axes, computes the true coordinate
-    values for the gain xarray.Datasets.
-
-    Args:
-        data_xds_list: A list of data-containing xarray.Dataset objects.
-        t_bin_list: A list of arrays describing how times map to solint.
-        f_map_list: A list of arrays describing how freqs map to solint.
-        tipc_list: A list of arrays contatining the number of time intervals
-            per chunk.
-        fipc_list: A list of arrays contatining the number of freq intervals
-            per chunk.
-
-    Returns:
-        A list of dictionaries containing the computed coordinate values.
-    '''
-
-    coords_per_xds = []
-
-    for xds_ind, data_xds in enumerate(data_xds_list):
-
-        utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
-
-        # NOTE: Use the BDA version of the column if it is present.
-        time_col = data_xds.get("UPSAMPLED_TIME", data_xds.TIME).data
-
-        unique_times = blockwise_unique(time_col,
-                                        chunks=(utime_chunks,))
-        unique_freqs = data_xds.CHAN_FREQ.data
-
-        coord_dict = {"time": unique_times,  # Doesn't vary with term.
-                      "freq": unique_freqs}  # Doesn't vary with term.
-
-        for term_ind, term_name in enumerate(terms):
-
-            # This indexing corresponds to grabbing the info per xds, per term.
-            tipc = tipc_list[xds_ind][:, :, term_ind]
-            fipc = fipc_list[xds_ind][:, :, term_ind]
-            term_t_bins = t_bin_list[xds_ind][:, :, term_ind]
-            term_f_map = f_map_list[xds_ind][:, :, term_ind]
-
-            mean_gtimes = da.map_blocks(mean_for_index,
-                                        unique_times,
-                                        term_t_bins[0],
-                                        dtype=unique_times.dtype,
-                                        chunks=(tuple(map(int, tipc[0])),))
-
-            mean_ptimes = da.map_blocks(mean_for_index,
-                                        unique_times,
-                                        term_t_bins[1],
-                                        dtype=unique_times.dtype,
-                                        chunks=(tuple(map(int, tipc[1])),))
-
-            mean_gfreqs = da.map_blocks(mean_for_index,
-                                        unique_freqs,
-                                        term_f_map[0],
-                                        dtype=unique_freqs.dtype,
-                                        chunks=(tuple(map(int, fipc[0])),))
-
-            mean_pfreqs = da.map_blocks(mean_for_index,
-                                        unique_freqs,
-                                        term_f_map[1],
-                                        dtype=unique_freqs.dtype,
-                                        chunks=(tuple(map(int, fipc[1])),))
-
-            coord_dict[f"{term_name}_mean_gtime"] = mean_gtimes
-            coord_dict[f"{term_name}_mean_ptime"] = mean_ptimes
-            coord_dict[f"{term_name}_mean_gfreq"] = mean_gfreqs
-            coord_dict[f"{term_name}_mean_pfreq"] = mean_pfreqs
-
-        coords_per_xds.append(coord_dict)
-
-    # We take the hit on a second early compute in order to make loading and
-    # interpolating gains a less complicated operation.
-    return da.compute(coords_per_xds)[0]
 
 
 def make_net_xds_list(data_xds_list, coords_per_xds, output_opts):
@@ -275,7 +138,7 @@ def populate_net_xds_list(
             to solution interval.
         d_map_list: A List of numpy.ndarrays containing mappings between
             direction dependent terms and direction independent terms.
-        output_opts: An output configuration object,
+        output_opts: An output configuration object.
 
     Returns:
         net_gain_xds_list: A List of xarray.Dataset objects to house the
@@ -431,115 +294,110 @@ def write_gain_datasets(gain_xds_lod, net_xds_lod, output_opts):
     return write_xds_lod
 
 
-class GainDataset(object):
+def scaffold_from_data_xds(data_xds, gain_obj):
+    """Produces a scaffold (xarray.Dataset coords and attrs).
 
-    def __init__(self):
-        pass
+    Given an xarray.Dataset containing measurement set data and a gain object,
+    produces a scaffold for an xarray.Dataset to hold the gains. A scaffold is
+    the necessary coords and attributes represented as dask arrays in a
+    dictionary. Once computed, these can be passed to the xarray.Dataset
+    constructor.
 
-    @staticmethod
-    def from_data_xds(data_xds, gain_obj):
+    Args:
+        data_xds: An xarray.Dataset containing measurement set data.
+        gain_obj: An Gain object providing configuration information.
 
-        # Check whether we are dealing with BDA data.
-        if hasattr(data_xds, "UPSAMPLED_TIME"):
-            time_col = data_xds.UPSAMPLED_TIME.data
-            interval_col = data_xds.UPSAMPLED_INTERVAL.data
-        else:
-            time_col = data_xds.TIME.data
-            interval_col = data_xds.INTERVAL.data
+    Returns:
+        scaffold: A dictionary of dask.arrays which can be used to construct
+            an xarray.Dataset.
+    """
 
-        # If SCAN_NUMBER was a partitioning column it will not be present on
-        # the dataset - we reintroduce it for cases where we need to ensure
-        # solution intervals don't span scan boundaries.
-        if "SCAN_NUMBER" in data_xds.data_vars.keys():
-            scan_col = data_xds.SCAN_NUMBER.data
-        else:
-            scan_col = da.zeros_like(
-                time_col,
-                dtype=np.int32,
-                name="scan_number-" + uuid4().hex
-            )
+    # Check whether we are dealing with BDA data.
+    if hasattr(data_xds, "UPSAMPLED_TIME"):
+        time_col = data_xds.UPSAMPLED_TIME.data
+        interval_col = data_xds.UPSAMPLED_INTERVAL.data
+    else:
+        time_col = data_xds.TIME.data
+        interval_col = data_xds.INTERVAL.data
 
-        time_interval = gain_obj.time_interval
-        respect_scan_boundaries = gain_obj.respect_scan_boundaries
-
-        # These technically depend on the type of the term in question.
-        # TODO: How to combine these scaffolds with the Gain objects?
-        # TODO: Add in parameterized case.
-        time_bins = gain_obj.make_time_bins(
+    # If SCAN_NUMBER was a partitioning column it will not be present on
+    # the dataset - we reintroduce it for cases where we need to ensure
+    # solution intervals don't span scan boundaries.
+    if "SCAN_NUMBER" in data_xds.data_vars.keys():
+        scan_col = data_xds.SCAN_NUMBER.data
+    else:
+        scan_col = da.zeros_like(
             time_col,
-            interval_col,
-            scan_col,
-            time_interval,
-            respect_scan_boundaries
+            dtype=np.int32,
+            name="scan_number-" + uuid4().hex
         )
 
-        # time_map = GainDataset.make_time_map(
-        #     time_col,
-        #     time_bins
-        # )
+    time_interval = gain_obj.time_interval
+    respect_scan_boundaries = gain_obj.respect_scan_boundaries
 
-        time_chunks = gain_obj.make_time_chunks(time_bins)
+    # TODO: Add in parameterized case.
+    time_bins = gain_obj.make_time_bins(
+        time_col,
+        interval_col,
+        scan_col,
+        time_interval,
+        respect_scan_boundaries
+    )
 
-        chan_freqs = data_xds.CHAN_FREQ.data
-        chan_widths = data_xds.CHAN_WIDTH.data
-        freq_interval = gain_obj.freq_interval
+    time_chunks = gain_obj.make_time_chunks(time_bins)
 
-        freq_map = gain_obj.make_freq_map(
-            chan_freqs,
-            chan_widths,
-            freq_interval
-        )
+    chan_freqs = data_xds.CHAN_FREQ.data
+    chan_widths = data_xds.CHAN_WIDTH.data
+    freq_interval = gain_obj.freq_interval
 
-        freq_chunks = gain_obj.make_freq_chunks(freq_map)
+    freq_map = gain_obj.make_freq_map(
+        chan_freqs,
+        chan_widths,
+        freq_interval
+    )
 
-        n_dir = data_xds.dims["dir"]
+    freq_chunks = gain_obj.make_freq_chunks(freq_map)
 
-        dir_map = gain_obj.make_dir_map(
-            n_dir,
-            gain_obj.direction_dependent
-        )
+    n_dir = data_xds.dims["dir"]
 
-        gain_times = gain_obj.make_time_coords(time_col, time_bins)
-        gain_freqs = gain_obj.make_freq_coords(chan_freqs, freq_map)
+    dir_map = gain_obj.make_dir_map(
+        n_dir,
+        gain_obj.direction_dependent
+    )
 
-        direction = dir_map if gain_obj.direction_dependent else dir_map[:1]
+    gain_times = gain_obj.make_time_coords(time_col, time_bins)
+    gain_freqs = gain_obj.make_freq_coords(chan_freqs, freq_map)
 
-        partition_schema = data_xds.__daskms_partition_schema__
-        id_attrs = {f: data_xds.attrs[f] for f, _ in partition_schema}
+    direction = dir_map if gain_obj.direction_dependent else dir_map[:1]
 
-        # TODO: Move this the the gain object?
-        n_corr = data_xds.dims["corr"]
-        n_ant = data_xds.dims["ant"]
-        chunk_spec = gain_spec_tup(
-            time_chunks, freq_chunks, (n_ant,), (n_dir,), (n_corr,)
-        )
+    partition_schema = data_xds.__daskms_partition_schema__
+    id_attrs = {f: data_xds.attrs[f] for f, _ in partition_schema}
 
-        lazy_dataset = {
-            "coords": {
-                "gain_time": (("gain_time",), gain_times),
-                "gain_freq": (("gain_freq",), gain_freqs),
-                "time_chunk": (("time_chunk",), da.arange(time_chunks.size)),
-                "freq_chunk": (("freq_chunk",), da.arange(freq_chunks.size)),
-                "direction": (("direction",), direction),
-                "antenna": (("antenna",), data_xds.ant.data),
-                "correlation": (("correlation",), data_xds.corr.data)
-            },
-            "attrs": {
-                **id_attrs,
-                "FIELD_NAME": data_xds.FIELD_NAME,
-                "NAME": gain_obj.name,
-                "TYPE": gain_obj.type,
-                "GAIN_SPEC": chunk_spec,
-                "GAIN_AXES": gain_obj.gain_axes
-            }
+    # TODO: Move this the the gain object?
+    n_corr = data_xds.dims["corr"]
+    n_ant = data_xds.dims["ant"]
+    chunk_spec = gain_spec_tup(
+        time_chunks, freq_chunks, (n_ant,), (n_dir,), (n_corr,)
+    )
+
+    scaffold = {
+        "coords": {
+            "gain_time": (("gain_time",), gain_times),
+            "gain_freq": (("gain_freq",), gain_freqs),
+            "time_chunk": (("time_chunk",), da.arange(time_chunks.size)),
+            "freq_chunk": (("freq_chunk",), da.arange(freq_chunks.size)),
+            "direction": (("direction",), direction),
+            "antenna": (("antenna",), data_xds.ant.data),
+            "correlation": (("correlation",), data_xds.corr.data)
+        },
+        "attrs": {
+            **id_attrs,
+            "FIELD_NAME": data_xds.FIELD_NAME,
+            "NAME": gain_obj.name,
+            "TYPE": gain_obj.type,
+            "GAIN_SPEC": chunk_spec,
+            "GAIN_AXES": gain_obj.gain_axes
         }
+    }
 
-        # import dask
-        # dask.visualize(
-        #     lazy_dataset,
-        #     filename='graph.pdf',
-        #     optimize_graph=True
-        # )
-        # import ipdb; ipdb.set_trace()
-
-        return lazy_dataset
+    return scaffold
