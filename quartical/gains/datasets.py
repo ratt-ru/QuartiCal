@@ -4,6 +4,7 @@ from quartical.config.internal import yield_from
 from loguru import logger  # noqa
 import numpy as np
 import dask.array as da
+from uuid import uuid4
 from daskms.experimental.zarr import xds_to_zarr
 from quartical.gains import TERM_TYPES
 from quartical.utils.dask import blockwise_unique
@@ -429,16 +430,13 @@ def write_gain_datasets(gain_xds_lod, net_xds_lod, output_opts):
     return write_xds_lod
 
 
-from uuid import uuid4
-
-
 class GainDataset(object):
 
     def __init__(self):
         pass
 
     @staticmethod
-    def from_data_xds(data_xds, gain_opts):
+    def from_data_xds(data_xds, gain_obj):
 
         # Check whether we are dealing with BDA data.
         if hasattr(data_xds, "UPSAMPLED_TIME"):
@@ -460,13 +458,13 @@ class GainDataset(object):
                 name="scan_number-" + uuid4().hex
             )
 
-        time_interval = gain_opts.time_interval
-        respect_scan_boundaries = gain_opts.respect_scan_boundaries
+        time_interval = gain_obj.time_interval
+        respect_scan_boundaries = gain_obj.respect_scan_boundaries
 
         # These technically depend on the type of the term in question.
         # TODO: How to combine these scaffolds with the Gain objects?
         # TODO: Add in parameterized case.
-        time_bins = GainDataset.make_time_bins(
+        time_bins = gain_obj.make_time_bins(
             time_col,
             interval_col,
             scan_col,
@@ -479,42 +477,31 @@ class GainDataset(object):
         #     time_bins
         # )
 
-        time_chunks = GainDataset.make_time_chunks(time_bins)
+        time_chunks = gain_obj.make_time_chunks(time_bins)
 
         chan_freqs = data_xds.CHAN_FREQ.data
         chan_widths = data_xds.CHAN_WIDTH.data
-        freq_interval = gain_opts.freq_interval
+        freq_interval = gain_obj.freq_interval
 
-        freq_map = GainDataset.make_freq_map(
+        freq_map = gain_obj.make_freq_map(
             chan_freqs,
             chan_widths,
             freq_interval
         )
 
-        freq_chunks = GainDataset.make_time_chunks(freq_map)
+        freq_chunks = gain_obj.make_freq_chunks(freq_map)
 
         n_dir = data_xds.dims["dir"]
 
-        dir_map = GainDataset.make_dir_map(
+        dir_map = gain_obj.make_dir_map(
             n_dir,
-            gain_opts.direction_dependent
+            gain_obj.direction_dependent
         )
 
-        gain_times = da.map_blocks(
-            GainDataset._make_mean_coord,
-            time_col,
-            time_bins,
-            dtype=time_col.dtype
-        )
+        gain_times = gain_obj.make_time_coords(time_col, time_bins)
+        gain_freqs = gain_obj.make_freq_coords(chan_freqs, freq_map)
 
-        gain_freqs = da.map_blocks(
-            GainDataset._make_mean_coord,
-            chan_freqs,
-            freq_map,
-            dtype=time_col.dtype
-        )
-
-        direction = dir_map if gain_opts.direction_dependent else dir_map[:1]
+        direction = dir_map if gain_obj.direction_dependent else dir_map[:1]
 
         partition_schema = data_xds.__daskms_partition_schema__
         id_attrs = {f: data_xds.attrs[f] for f, _ in partition_schema}
@@ -535,7 +522,9 @@ class GainDataset(object):
             "attrs": {
                 **id_attrs,
                 "FIELD_NAME": data_xds.FIELD_NAME,
-                "TYPE": gain_opts.type
+                "NAME": gain_obj.name,
+                "TYPE": gain_obj.type,
+                "GAIN_AXES": gain_obj.gain_axes
             }
         }
 
@@ -548,164 +537,3 @@ class GainDataset(object):
         # import ipdb; ipdb.set_trace()
 
         return lazy_dataset
-
-    @staticmethod
-    def _make_mean_coord(values, bins):
-
-        unique_values = np.unique(values)
-
-        sums = np.zeros(bins.max() + 1, dtype=np.float64)
-        counts = np.zeros_like(sums, dtype=np.int64)
-
-        np.add.at(sums, bins, unique_values)
-        np.add.at(counts, bins, 1)
-
-        return sums / counts
-
-    @staticmethod
-    def make_time_bins(
-        time_col,
-        interval_col,
-        scan_col,
-        time_interval,
-        respect_scan_boundaries
-    ):
-
-        time_bins = da.map_blocks(
-            GainDataset._make_time_bins,
-            time_col,
-            interval_col,
-            scan_col,
-            time_interval,
-            respect_scan_boundaries,
-            dtype=np.int64
-        )
-
-        return time_bins
-
-    @staticmethod
-    def _make_time_bins(
-        time_col,
-        interval_col,
-        scan_col,
-        time_interval,
-        respect_scan_boundaries
-    ):
-
-        utime, utime_ind = np.unique(time_col, return_index=True)
-
-        utime_intervals = interval_col[utime_ind]
-        utime_scans = scan_col[utime_ind]
-
-        time_bins = TERM_TYPES["complex"].make_t_bins(
-            utime.size,
-            utime_intervals,
-            utime_scans,
-            time_interval,
-            respect_scan_boundaries
-        )
-
-        return time_bins
-
-    @staticmethod
-    def make_time_map(time_col, time_bins):
-
-        time_map = da.map_blocks(
-            GainDataset._make_time_map,
-            time_col,
-            time_bins,
-            dtype=np.int64
-        )
-
-        return time_map
-
-    @staticmethod
-    def _make_time_map(time_col, time_bins):
-
-        _, utime_inv = np.unique(time_col, return_inverse=True)
-
-        return time_bins[utime_inv]
-
-    @staticmethod
-    def make_freq_map(chan_freqs, chan_widths, freq_interval):
-
-        freq_map = da.map_blocks(
-            GainDataset._make_freq_map,
-            chan_freqs,
-            chan_widths,
-            freq_interval,
-            dtype=np.int64
-        )
-
-        return freq_map
-
-    @staticmethod
-    def _make_freq_map(chan_freqs, chan_widths, freq_interval):
-
-        freq_map = TERM_TYPES["complex"].make_f_maps(
-            chan_freqs,
-            chan_widths,
-            freq_interval,
-        )
-
-        return freq_map
-
-    @staticmethod
-    def make_dir_map(n_dir, direction_dependent):
-
-        # NOTE: Does not call the numpy implementation.
-        # TODO: arange doesn't accept a name parameter - should we clone?
-        if direction_dependent:
-            dir_map = da.arange(
-                n_dir,
-                dtype=np.int64
-            )
-        else:
-            dir_map = da.zeros(
-                n_dir,
-                name="dirmap-" + uuid4().hex,
-                dtype=np.int64
-            )
-
-        return dir_map
-
-    @staticmethod
-    def _make_dir_map(n_dir, direction_dependent):
-
-        if direction_dependent:
-            dir_map = np.arange(
-                n_dir,
-                dtype=np.int64
-            )
-        else:
-            dir_map = np.zeros(
-                n_dir,
-                dtype=np.int64
-            )
-
-        return dir_map
-
-
-    @staticmethod
-    def make_time_chunks(time_bins):
-
-        time_chunks = da.map_blocks(
-            lambda arr: np.array(arr.max() + 1),
-            time_bins,
-            chunks=(1,),
-            dtype=np.int64
-        )
-
-        return time_chunks
-
-    @staticmethod
-    def make_freq_chunks(freq_map):
-
-        freq_chunks = da.map_blocks(
-            lambda arr: np.array(arr.max() + 1),
-            freq_map,
-            chunks=(1,),
-            dtype=np.int64
-        )
-
-        return freq_chunks
