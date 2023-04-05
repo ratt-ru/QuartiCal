@@ -31,6 +31,7 @@ def solver_wrapper(
     chain_opts,
     block_id_arr,
     aux_block_info,
+    corr_mode,
     **kwargs
 ):
     """A Python wrapper for the solvers written in Numba.
@@ -65,16 +66,53 @@ def solver_wrapper(
         term_type_cls = TERM_TYPES[term_type]
         term_opts = getattr(chain_opts, term_name)
 
+        gain_obj = TERM_TYPES[term_type](term_name, term_opts)
+
         gain = np.zeros(term_shape, dtype=np.complex128)
         param = np.zeros(term_pshape, dtype=gain.real.dtype)
 
-        # Perform terms specific setup e.g. init gains and params.
-        term_type_cls.init_term(
+        # Perform term specific setup e.g. init gains and params.
+        gain_obj.init_term(
             gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
         )
 
+        time_col = kwargs.get("TIME")
+        interval_col = kwargs.get("INTERVAL")
+        scan_col = kwargs.get("SCAN_NUMBER", np.zeros_like(time_col))
+
+        time_bins = gain_obj._make_time_bins(
+            time_col,
+            interval_col,
+            scan_col,
+            term_opts.time_interval,
+            term_opts.respect_scan_boundaries
+        )
+
+        time_map = gain_obj._make_time_map(
+            time_col,
+            time_bins
+        )
+
+        chan_freqs = kwargs.get("CHAN_FREQ")
+        chan_widths = kwargs.get("CHAN_WIDTH")
+        freq_interval = gain_obj.freq_interval
+
+        freq_map = gain_obj._make_freq_map(
+            chan_freqs,
+            chan_widths,
+            freq_interval
+        )
+
         # Init gain flags by looking for intervals with no data.
-        gain_flags = init_gain_flags(term_shape, term_ind, **kwargs)
+        gain_flags = init_gain_flags(
+            term_shape,
+            time_map,
+            freq_map,
+            **kwargs
+        )
+
+        print(gain_flags)
+
         param_flags = init_param_flags(term_pshape, term_ind, **kwargs)
 
         gain_tup += (gain,)

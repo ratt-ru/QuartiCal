@@ -35,9 +35,6 @@ base_args = namedtuple(
         "a2",
         "weights",
         "flags",
-        "t_map_arr",
-        "f_map_arr",
-        "d_map_arr",
         "inverse_gains",
         "gains",
         "gain_flags",
@@ -46,52 +43,6 @@ base_args = namedtuple(
     )
 )
 
-
-# class Gain:
-
-#     base_args = base_args
-
-#     def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
-
-#         self.name = term_name
-#         self.dd_term = term_opts.direction_dependent
-#         self.type = term_opts.type
-#         self.n_chan = data_xds.dims["chan"]
-#         self.n_ant = data_xds.dims["ant"]
-#         self.n_dir = data_xds.dims["dir"] if self.dd_term else 1
-#         self.n_corr = data_xds.dims["corr"]
-#         partition_schema = data_xds.__daskms_partition_schema__
-#         self.id_fields = {f: data_xds.attrs[f] for f, _ in partition_schema}
-#         self.field_name = data_xds.FIELD_NAME
-#         self.utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
-#         self.freq_chunks = list(map(int, data_xds.chunks["chan"]))
-#         self.n_t_chunk = len(self.utime_chunks)
-#         self.n_f_chunk = len(self.freq_chunks)
-
-#         self.ant_names = data_xds.ant.values
-#         self.corr_types = data_xds.corr.values
-
-#         self.n_tipc_g = tuple(map(int, tipc[0]))
-#         self.n_tint_g = np.sum(self.n_tipc_g)
-#         self.n_tipc_p = tuple(map(int, tipc[1]))
-#         self.n_tint_p = np.sum(self.n_tipc_p)
-
-#         self.n_fipc_g = tuple(map(int, fipc[0]))
-#         self.n_fint_g = np.sum(self.n_fipc_g)
-#         self.n_fipc_p = tuple(map(int, fipc[1]))
-#         self.n_fint_p = np.sum(self.n_fipc_p)
-
-#         self.unique_times = coords["time"]
-#         self.unique_freqs = coords["freq"]
-
-#         self.gain_times = coords.get(f"{self.name}_mean_gtime",
-#                                      coords["time"])
-#         self.param_times = coords.get(f"{self.name}_mean_ptime",
-#                                       coords["time"])
-#         self.gain_freqs = coords.get(f"{self.name}_mean_gfreq",
-#                                      coords["freq"])
-#         self.param_freqs = coords.get(f"{self.name}_mean_pfreq",
-#                                       coords["freq"])
 
 class Gain:
 

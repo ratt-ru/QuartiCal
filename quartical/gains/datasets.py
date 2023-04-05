@@ -53,6 +53,14 @@ def make_gain_xds_lod(data_xds_list, chain_opts):
         for gain_scaffolds in da.compute(scaffolds_per_xds)[0]
     ]
 
+    # This is a nasty workaround for the one problem with the scaffolds -
+    # the chunk specs coming out containing arrays.
+    # TODO: Think about a neater approach.
+    for gain_xdss in gain_xds_lod:
+        for _, gain_xds in gain_xdss.items():
+            gain_xds.attrs["GAIN_SPEC"] = \
+                gain_spec_tup(*list(map(tuple, gain_xds.GAIN_SPEC)))
+
     return gain_xds_lod
 
 

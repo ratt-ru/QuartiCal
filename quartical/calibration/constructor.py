@@ -8,15 +8,13 @@ term_spec_tup = namedtuple("term_spec_tup", "name type shape pshape")
 aux_info_fields = ("SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID")
 
 
-def construct_solver(data_xds_list,
-                     stats_xds_list,
-                     gain_xds_lod,
-                     t_bin_list,
-                     t_map_list,
-                     f_map_list,
-                     d_map_list,
-                     solver_opts,
-                     chain_opts):
+def construct_solver(
+    data_xds_list,
+    stats_xds_list,
+    gain_xds_lod,
+    solver_opts,
+    chain_opts
+):
     """Constructs the dask graph for the solver layer.
 
     This constructs a custom dask graph for the solver layer given the slew
@@ -53,10 +51,7 @@ def construct_solver(data_xds_list,
         weight_col = data_xds.WEIGHT.data
         flag_col = data_xds.FLAG.data
         chan_freqs = data_xds.CHAN_FREQ.data
-        t_bin_arr = t_bin_list[xds_ind]
-        t_map_arr = t_map_list[xds_ind]
-        f_map_arr = f_map_list[xds_ind]
-        d_map_arr = d_map_list[xds_ind]
+        chan_widths = data_xds.CHAN_WIDTH.data
         gain_terms = gain_xds_lod[xds_ind]
         corr_mode = data_xds.dims["corr"]
 
@@ -73,27 +68,33 @@ def construct_solver(data_xds_list,
         spec_list = expand_specs(gain_terms)
 
         # Create a blocker object.
-        blocker = Blocker(solver_wrapper, "rf")
+        blocker = Blocker(solver_wrapper, ("row", "chan"))
 
-        # Add relevant inputs to the blocker object. TODO: Only pass in values
-        # required by the specific terms in use.
-        blocker.add_input("model", model_col, "rfdc")
-        blocker.add_input("data", data_col, "rfc")
-        blocker.add_input("a1", ant1_col, "r")
-        blocker.add_input("a2", ant2_col, "r")
-        blocker.add_input("weights", weight_col, "rfc")
-        blocker.add_input("flags", flag_col, "rf")
-        blocker.add_input("t_bin_arr", t_bin_arr, "prj")  # Not always needed.
-        blocker.add_input("t_map_arr", t_map_arr, "prj")
-        blocker.add_input("f_map_arr", f_map_arr, "pfj")
-        blocker.add_input("d_map_arr", d_map_arr)
+        for v in data_xds.data_vars.values():
+            blocker.add_input(v.name, v.data, v.dims)
+
+        blocker.add_input("block_id_arr", block_id_arr, ("row", "chan", "corr"))
+        blocker.add_input("term_spec_list", spec_list, ("row", "chan"))
         blocker.add_input("corr_mode", corr_mode)
-        blocker.add_input("term_spec_list", spec_list, "rf")
-        blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
-        blocker.add_input("block_id_arr", block_id_arr, "rfc")
         blocker.add_input("aux_block_info", aux_block_info)
         blocker.add_input("solver_opts", solver_opts)
         blocker.add_input("chain_opts", chain_opts)
+
+        # Add relevant inputs to the blocker object. TODO: Only pass in values
+        # required by the specific terms in use.
+        # blocker.add_input("model", model_col, "rfdc")
+        # blocker.add_input("data", data_col, "rfc")
+        # blocker.add_input("a1", ant1_col, "r")
+        # blocker.add_input("a2", ant2_col, "r")
+        # blocker.add_input("weights", weight_col, "rfc")
+        # blocker.add_input("flags", flag_col, "rf")
+        # blocker.add_input("corr_mode", corr_mode)
+        # blocker.add_input("term_spec_list", spec_list, "rf")
+        # blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
+        # blocker.add_input("block_id_arr", block_id_arr, "rfc")
+        # blocker.add_input("aux_block_info", aux_block_info)
+        # blocker.add_input("solver_opts", solver_opts)
+        # blocker.add_input("chain_opts", chain_opts)
 
         # If the gain dataset already has a gain variable, we want to pass
         # it in to initialize the solver.
@@ -102,13 +103,6 @@ def construct_solver(data_xds_list,
                 blocker.add_input(f"{term_name}_initial_gain",
                                   term_xds.gains.data,
                                   "rfadc")
-
-        if hasattr(data_xds, "ROW_MAP"):  # We are dealing with BDA.
-            blocker.add_input("row_map", data_xds.ROW_MAP.data, "r")
-            blocker.add_input("row_weights", data_xds.ROW_WEIGHTS.data, "r")
-        else:
-            blocker.add_input("row_map", None)
-            blocker.add_input("row_weights", None)
 
         # Add relevant outputs to blocker object.
         blocker.add_output("weights",
@@ -243,8 +237,8 @@ def expand_specs(gain_terms):
     # represents frequency chunks and the inner-most list contains the
     # specs per term. Might be possible to do this with arrays instead.
 
-    n_t_chunks = set(xds.dims["t_chunk"] for xds in gain_terms.values())
-    n_f_chunks = set(xds.dims["f_chunk"] for xds in gain_terms.values())
+    n_t_chunks = set(xds.dims["time_chunk"] for xds in gain_terms.values())
+    n_f_chunks = set(xds.dims["freq_chunk"] for xds in gain_terms.values())
 
     assert len(n_t_chunks) == 1, "Chunking in time is inconsistent."
     assert len(n_f_chunks) == 1, "Chunking in freq is inconsistent."

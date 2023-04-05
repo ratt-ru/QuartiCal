@@ -95,10 +95,7 @@ def add_calibration_graph(
 
     # Create a list of dicts of xarray.Dataset objects which will describe the
     # gains per data xarray.Dataset.
-    gain_xds_lod = make_gain_xds_lod(
-        data_xds_list,
-        chain_opts
-    )
+    gain_xds_lod = make_gain_xds_lod(data_xds_list, chain_opts)
 
     # If there are gains to be loaded from disk, this will load an interpolate
     # them to be consistent with this calibration run.
@@ -109,13 +106,13 @@ def add_calibration_graph(
         data_xds_list,
         stats_xds_list,
         gain_xds_lod,
-        t_bin_list,
-        t_map_list,
-        f_map_list,
-        d_map_list,
         solver_opts,
         chain_opts
     )
+
+    da.compute(gain_xds_lod[0])
+
+    import ipdb; ipdb.set_trace()
 
     if output_opts.net_gains:
         # Construct an effective gain per data_xds. This is always at the full

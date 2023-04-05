@@ -18,18 +18,23 @@ flag_intermediaries = namedtuple(
 )
 
 
-def init_gain_flags(term_shape, term_ind, **kwargs):
+def init_gain_flags(term_shape, time_map, freq_map, **kwargs):
     """Initialise the gain flags for a term using the various mappings."""
 
-    flag_col = kwargs["flags"]
-    ant1_col = kwargs["a1"]
-    ant2_col = kwargs["a2"]
-    t_map_arr = kwargs["t_map_arr"][0]
-    f_map_arr = kwargs["f_map_arr"][0]
-    row_map = kwargs.get("row_map", None)
+    flag_col = kwargs["FLAG"]
+    ant1_col = kwargs["ANTENNA1"]
+    ant2_col = kwargs["ANTENNA2"]
+    row_map = kwargs.get("ROW_MAP", None)
 
-    return _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                       t_map_arr, f_map_arr, row_map)
+    return _init_flags(
+        term_shape,
+        flag_col,
+        ant1_col,
+        ant2_col,
+        time_map,
+        freq_map,
+        row_map
+    )
 
 
 def init_param_flags(term_shape, term_ind, **kwargs):
@@ -47,18 +52,25 @@ def init_param_flags(term_shape, term_ind, **kwargs):
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                t_map_arr, f_map_arr, row_map):
+def _init_flags(
+    term_shape,
+    flag_col,
+    ant1_col,
+    ant2_col,
+    time_map,
+    freq_map,
+    row_map
+):
     """Initialise the flags for a term using the various mappings."""
 
     flags = np.ones(term_shape[:-1], dtype=np.int8)
     _, _, _, n_dir, _ = term_shape
 
-    n_row = t_map_arr.shape[0]
-    n_chan = f_map_arr.shape[0]
+    n_row = time_map.shape[0]
+    n_chan = freq_map.shape[0]
 
     for row_ind in range(n_row):
-        ti = t_map_arr[row_ind, term_ind]
+        ti = time_map[row_ind]
 
         # NOTE: The following handles the BDA case where an element in the
         # time map may be backed by a different row in the data.
@@ -66,7 +78,7 @@ def _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
         a1, a2 = ant1_col[row], ant2_col[row]
 
         for f in range(n_chan):
-            fi = f_map_arr[f, term_ind]
+            fi = freq_map[f]
             flag = flag_col[row, f]
             for d in range(n_dir):
                 flags[ti, fi, a1, d] &= flag
