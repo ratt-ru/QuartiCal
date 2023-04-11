@@ -450,6 +450,9 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
             extras["beam_lm_extents"] = lm_ext
             extras["beam_freq_map"] = freq_map
 
+        # TODO: This needs to be detected/configurable.
+        # extras["spi_base"] = "log10"
+
         model_vis = defaultdict(list)
 
         # Generate visibility expressions per model, per direction for each
