@@ -60,6 +60,8 @@ def make_gain_xds_lod(data_xds_list, chain_opts):
         for _, gain_xds in gain_xdss.items():
             gain_xds.attrs["GAIN_SPEC"] = \
                 gain_spec_tup(*list(map(tuple, gain_xds.GAIN_SPEC)))
+            gain_xds.attrs["PARAM_SPEC"] = \
+                param_spec_tup(*list(map(tuple, gain_xds.PARAM_SPEC)))
 
     return gain_xds_lod
 
@@ -407,5 +409,48 @@ def scaffold_from_data_xds(data_xds, gain_obj):
             "GAIN_AXES": gain_obj.gain_axes
         }
     }
+
+    if hasattr(gain_obj, "param_axes"):
+        param_time_bins = gain_obj.make_param_time_bins(
+            time_col,
+            interval_col,
+            scan_col,
+            time_interval,
+            respect_scan_boundaries
+        )
+
+        param_time_chunks = gain_obj.make_param_time_chunks(param_time_bins)
+
+        param_freq_map = gain_obj.make_param_freq_map(
+            chan_freqs,
+            chan_widths,
+            freq_interval
+        )
+
+        param_freq_chunks = gain_obj.make_param_freq_chunks(param_freq_map)
+
+        param_times = gain_obj.make_time_coords(time_col, param_time_bins)
+        param_freqs = gain_obj.make_freq_coords(chan_freqs, param_freq_map)
+
+        param_names = gain_obj.make_param_names(data_xds.corr.data)
+        n_param = len(param_names)
+
+        param_chunk_spec = param_spec_tup(
+           param_time_chunks, param_freq_chunks, (n_ant,), (n_dir,), (n_param,)
+        )
+
+        scaffold["coords"].update(
+            {
+                "param_time": (("param_time",), param_times),
+                "param_freq": (("param_freq",), param_freqs),
+                "param_name": (("param_name",), param_names)
+            }
+        )
+        scaffold["attrs"].update(
+            {
+                "PARAM_SPEC": param_chunk_spec,
+                "PARAM_AXES": gain_obj.param_axes
+            }
+        )
 
     return scaffold

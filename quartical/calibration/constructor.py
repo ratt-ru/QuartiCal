@@ -44,14 +44,9 @@ def construct_solver(
 
     for xds_ind, (data_xds, stats_xds) in itr:
 
-        model_col = data_xds.MODEL_DATA.data
         data_col = data_xds.DATA.data
-        ant1_col = data_xds.ANTENNA1.data
-        ant2_col = data_xds.ANTENNA2.data
         weight_col = data_xds.WEIGHT.data
         flag_col = data_xds.FLAG.data
-        chan_freqs = data_xds.CHAN_FREQ.data
-        chan_widths = data_xds.CHAN_WIDTH.data
         gain_terms = gain_xds_lod[xds_ind]
         corr_mode = data_xds.dims["corr"]
 
@@ -79,22 +74,6 @@ def construct_solver(
         blocker.add_input("aux_block_info", aux_block_info)
         blocker.add_input("solver_opts", solver_opts)
         blocker.add_input("chain_opts", chain_opts)
-
-        # Add relevant inputs to the blocker object. TODO: Only pass in values
-        # required by the specific terms in use.
-        # blocker.add_input("model", model_col, "rfdc")
-        # blocker.add_input("data", data_col, "rfc")
-        # blocker.add_input("a1", ant1_col, "r")
-        # blocker.add_input("a2", ant2_col, "r")
-        # blocker.add_input("weights", weight_col, "rfc")
-        # blocker.add_input("flags", flag_col, "rf")
-        # blocker.add_input("corr_mode", corr_mode)
-        # blocker.add_input("term_spec_list", spec_list, "rf")
-        # blocker.add_input("chan_freqs", chan_freqs, "f")  # Not always needed.
-        # blocker.add_input("block_id_arr", block_id_arr, "rfc")
-        # blocker.add_input("aux_block_info", aux_block_info)
-        # blocker.add_input("solver_opts", solver_opts)
-        # blocker.add_input("chain_opts", chain_opts)
 
         # If the gain dataset already has a gain variable, we want to pass
         # it in to initialize the solver.

@@ -1,4 +1,4 @@
-from quartical.gains.gain import Gain, gain_spec_tup
+from quartical.gains.gain import Gain
 from quartical.gains.complex.kernel import complex_solver, complex_args
 from quartical.gains.complex.diag_kernel import diag_complex_solver
 
@@ -12,7 +12,6 @@ class Complex(Gain):
 
         Gain.__init__(self, term_name, term_opts)
 
-        self.n_ppa = 0
         self.gain_axes = (
             "gain_time",
             "gain_freq",

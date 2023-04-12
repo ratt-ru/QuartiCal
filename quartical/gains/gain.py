@@ -154,6 +154,47 @@ class Gain:
         return time_bins[utime_inv]
 
     @classmethod
+    def make_time_chunks(cls, time_bins):
+
+        time_chunks = da.map_blocks(
+            cls._make_time_chunks,
+            time_bins,
+            chunks=(1,),
+            dtype=np.int64
+        )
+
+        return time_chunks
+
+    @classmethod
+    def _make_time_chunks(cls, time_bins):
+        return time_bins.max() + 1
+
+    @classmethod
+    def make_time_coords(cls, time_col, time_bins):
+
+        time_coords = da.map_blocks(
+            cls._make_time_coords,
+            time_col,
+            time_bins,
+            dtype=time_col.dtype
+        )
+
+        return time_coords
+
+    @classmethod
+    def _make_time_coords(cls, time_col, time_bins):
+
+        unique_values = np.unique(time_col)
+
+        sums = np.zeros(time_bins.max() + 1, dtype=np.float64)
+        counts = np.zeros_like(sums, dtype=np.int64)
+
+        np.add.at(sums, time_bins, unique_values)
+        np.add.at(counts, time_bins, 1)
+
+        return sums / counts
+
+    @classmethod
     def make_freq_map(cls, chan_freqs, chan_widths, freq_interval):
 
         freq_map = da.map_blocks(
@@ -187,6 +228,47 @@ class Gain:
             freq_map[:] = np.arange(n_chan)//freq_interval
 
         return freq_map
+
+    @classmethod
+    def make_freq_chunks(cls, freq_map):
+
+        freq_chunks = da.map_blocks(
+            cls._make_freq_chunks,
+            freq_map,
+            chunks=(1,),
+            dtype=np.int64
+        )
+
+        return freq_chunks
+
+    @classmethod
+    def _make_freq_chunks(cls, freq_map):
+        return freq_map.max() + 1
+
+    @classmethod
+    def make_freq_coords(cls, chan_freq, freq_map):
+
+        freq_coords = da.map_blocks(
+            cls._make_freq_coords,
+            chan_freq,
+            freq_map,
+            dtype=chan_freq.dtype
+        )
+
+        return freq_coords
+
+    @classmethod
+    def _make_freq_coords(cls, chan_freq, freq_map):
+
+        unique_values = np.unique(chan_freq)
+
+        sums = np.zeros(freq_map.max() + 1, dtype=np.float64)
+        counts = np.zeros_like(sums, dtype=np.int64)
+
+        np.add.at(sums, freq_map, unique_values)
+        np.add.at(counts, freq_map, 1)
+
+        return sums / counts
 
     @staticmethod
     def make_dir_map(n_dir, direction_dependent):
@@ -222,88 +304,6 @@ class Gain:
             )
 
         return dir_map
-
-    @classmethod
-    def make_time_chunks(cls, time_bins):
-
-        time_chunks = da.map_blocks(
-            cls._make_time_chunks,
-            time_bins,
-            chunks=(1,),
-            dtype=np.int64
-        )
-
-        return time_chunks
-
-    @classmethod
-    def _make_time_chunks(cls, time_bins):
-        return time_bins.max() + 1
-
-    @classmethod
-    def make_freq_chunks(cls, freq_map):
-
-        freq_chunks = da.map_blocks(
-            cls._make_freq_chunks,
-            freq_map,
-            chunks=(1,),
-            dtype=np.int64
-        )
-
-        return freq_chunks
-
-    @classmethod
-    def _make_freq_chunks(cls, freq_map):
-        return freq_map.max() + 1
-
-    @classmethod
-    def make_time_coords(cls, time_col, time_bins):
-
-        time_coords = da.map_blocks(
-            cls._make_time_coords,
-            time_col,
-            time_bins,
-            dtype=time_col.dtype
-        )
-
-        return time_coords
-
-    @classmethod
-    def _make_time_coords(cls, time_col, time_bins):
-
-        unique_values = np.unique(time_col)
-
-        sums = np.zeros(time_bins.max() + 1, dtype=np.float64)
-        counts = np.zeros_like(sums, dtype=np.int64)
-
-        np.add.at(sums, time_bins, unique_values)
-        np.add.at(counts, time_bins, 1)
-
-        return sums / counts
-
-    @classmethod
-    def make_freq_coords(cls, chan_freq, freq_map):
-
-        freq_coords = da.map_blocks(
-            cls._make_freq_coords,
-            chan_freq,
-            freq_map,
-            dtype=chan_freq.dtype
-        )
-
-        return freq_coords
-
-    @classmethod
-    def _make_freq_coords(cls, chan_freq, freq_map):
-
-        unique_values = np.unique(chan_freq)
-
-        sums = np.zeros(freq_map.max() + 1, dtype=np.float64)
-        counts = np.zeros_like(sums, dtype=np.int64)
-
-        np.add.at(sums, freq_map, unique_values)
-        np.add.at(counts, freq_map, 1)
-
-        return sums / counts
 
     @staticmethod
     def init_term(
