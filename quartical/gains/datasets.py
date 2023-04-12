@@ -380,6 +380,7 @@ def scaffold_from_data_xds(data_xds, gain_obj):
     gain_freqs = gain_obj.make_freq_coords(chan_freqs, freq_map)
 
     direction = dir_map if gain_obj.direction_dependent else dir_map[:1]
+    n_gdir = direction.size
 
     partition_schema = data_xds.__daskms_partition_schema__
     id_attrs = {f: data_xds.attrs[f] for f, _ in partition_schema}
@@ -388,7 +389,11 @@ def scaffold_from_data_xds(data_xds, gain_obj):
     n_corr = data_xds.dims["corr"]
     n_ant = data_xds.dims["ant"]
     chunk_spec = gain_spec_tup(
-        time_chunks, freq_chunks, (n_ant,), (n_dir,), (n_corr,)
+        time_chunks,
+        freq_chunks,
+        (n_ant,),
+        (n_gdir,),
+        (n_corr,)
     )
 
     scaffold = {
@@ -437,7 +442,11 @@ def scaffold_from_data_xds(data_xds, gain_obj):
         n_param = len(param_names)
 
         param_chunk_spec = param_spec_tup(
-           param_time_chunks, param_freq_chunks, (n_ant,), (n_dir,), (n_param,)
+           param_time_chunks,
+           param_freq_chunks,
+           (n_ant,),
+           (n_gdir,),
+           (n_param,)
         )
 
         scaffold["coords"].update(

@@ -5,7 +5,7 @@ from quartical.gains.complex.diag_kernel import diag_complex_solver
 
 class Complex(Gain):
 
-    solver = complex_solver
+    solver = staticmethod(complex_solver)
     term_args = complex_args
 
     def __init__(self, term_name, term_opts):

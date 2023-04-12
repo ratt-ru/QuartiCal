@@ -6,7 +6,7 @@ import dask.array as da
 
 class Phase(Gain):
 
-    solver = phase_solver
+    solver = staticmethod(phase_solver)
     term_args = phase_args
 
     def __init__(self, term_name, term_opts):

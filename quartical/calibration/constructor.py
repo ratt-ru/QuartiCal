@@ -79,70 +79,94 @@ def construct_solver(
         # it in to initialize the solver.
         for term_name, term_xds in gain_terms.items():
             if "gains" in term_xds.data_vars:
-                blocker.add_input(f"{term_name}_initial_gain",
-                                  term_xds.gains.data,
-                                  "rfadc")
+                blocker.add_input(
+                    f"{term_name}_initial_gain",
+                    term_xds.gains.data,
+                    ("row", "chan", "ant", "dir", "corr")
+                )
 
         # Add relevant outputs to blocker object.
-        blocker.add_output("weights",
-                           "rfc",
-                           weight_col.chunks,
-                           weight_col.dtype)
+        blocker.add_output(
+            "weights",
+            ("row", "chan", "corr"),
+            weight_col.chunks,
+            weight_col.dtype
+        )
 
-        blocker.add_output("flags",
-                           "rf",
-                           flag_col.chunks,
-                           flag_col.dtype)
+        blocker.add_output(
+            "flags",
+            ("row", "chan"),
+            flag_col.chunks,
+            flag_col.dtype
+        )
 
-        blocker.add_output("presolve_chisq",
-                           "rf",
-                           ((1,)*n_t_chunks, (1,)*n_f_chunks),
-                           np.float64)
+        blocker.add_output(
+            "presolve_chisq",
+            ("row", "chan"),
+            ((1,)*n_t_chunks, (1,)*n_f_chunks),
+            np.float64
+        )
 
-        blocker.add_output("postsolve_chisq",
-                           "rf",
-                           ((1,)*n_t_chunks, (1,)*n_f_chunks),
-                           np.float64)
+        blocker.add_output(
+            "postsolve_chisq",
+            ("row", "chan"),
+            ((1,)*n_t_chunks, (1,)*n_f_chunks),
+            np.float64
+        )
 
         for term_name, term_xds in gain_terms.items():
 
-            blocker.add_output(f"{term_name}-gain",
-                               "rfadc",
-                               term_xds.GAIN_SPEC,
-                               np.complex128)
+            blocker.add_output(
+                f"{term_name}-gain",
+                ("row", "chan", "ant", "dir", "corr"),
+                term_xds.GAIN_SPEC,
+                np.complex128
+            )
 
-            blocker.add_output(f"{term_name}-gain_flags",
-                               "rfad",
-                               term_xds.GAIN_SPEC[:-1],
-                               np.int8)
+            blocker.add_output(
+                f"{term_name}-gain_flags",
+                ("row", "chan", "ant", "dir"),
+                term_xds.GAIN_SPEC[:-1],
+                np.int8
+            )
 
             # If there is a PARAM_SPEC on the gain xds, it is also an output.
             if hasattr(term_xds, "PARAM_SPEC"):
-                blocker.add_output(f"{term_name}-param",
-                                   "rfadp",
-                                   term_xds.PARAM_SPEC,
-                                   np.float64)
+                blocker.add_output(
+                    f"{term_name}-param",
+                    ("row", "chan", "ant", "dir", "param"),
+                    term_xds.PARAM_SPEC,
+                    np.float64
+                )
 
-                blocker.add_output(f"{term_name}-param_flags",
-                                   "rfad",
-                                   term_xds.PARAM_SPEC[:-1],
-                                   np.int8)
+                blocker.add_output(
+                    f"{term_name}-param_flags",
+                    ("row", "chan", "ant", "dir"),
+                    term_xds.PARAM_SPEC[:-1],
+                    np.int8
+                )
 
             else:  # Only non-parameterised gains return a jhj (for now).
-                blocker.add_output(f"{term_name}-jhj",
-                                   "rfadc",
-                                   term_xds.GAIN_SPEC,
-                                   np.complex128)
+                blocker.add_output(
+                    f"{term_name}-jhj",
+                    ("row", "chan", "ant", "dir", "corr"),
+                    term_xds.GAIN_SPEC,
+                    np.complex128
+                )
 
             chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
-            blocker.add_output(f"{term_name}-conviter",
-                               "rf",
-                               chunks,
-                               np.int64)
-            blocker.add_output(f"{term_name}-convperc",
-                               "rf",
-                               chunks,
-                               np.float64)
+            blocker.add_output(
+                f"{term_name}-conviter",
+                ("row", "chan"),
+                chunks,
+                np.int64
+            )
+            blocker.add_output(
+                f"{term_name}-convperc",
+                ("row", "chan"),
+                chunks,
+                np.float64
+            )
 
         # Apply function to inputs to produce dask array outputs (as dict).
         output_dict = blocker.get_dask_outputs()
