@@ -60,8 +60,9 @@ def make_gain_xds_lod(data_xds_list, chain_opts):
         for _, gain_xds in gain_xdss.items():
             gain_xds.attrs["GAIN_SPEC"] = \
                 gain_spec_tup(*list(map(tuple, gain_xds.GAIN_SPEC)))
-            gain_xds.attrs["PARAM_SPEC"] = \
-                param_spec_tup(*list(map(tuple, gain_xds.PARAM_SPEC)))
+            if "PARAM_SPEC" in gain_xds.attrs:
+                gain_xds.attrs["PARAM_SPEC"] = \
+                    param_spec_tup(*list(map(tuple, gain_xds.PARAM_SPEC)))
 
     return gain_xds_lod
 

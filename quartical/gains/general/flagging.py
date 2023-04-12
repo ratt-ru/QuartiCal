@@ -37,18 +37,23 @@ def init_gain_flags(term_shape, time_map, freq_map, **kwargs):
     )
 
 
-def init_param_flags(term_shape, term_ind, **kwargs):
+def init_param_flags(term_shape, param_time_map, param_freq_map, **kwargs):
     """Initialise the param flags for a term using the various mappings."""
 
-    flag_col = kwargs["flags"]
-    ant1_col = kwargs["a1"]
-    ant2_col = kwargs["a2"]
-    t_map_arr = kwargs["t_map_arr"][1]
-    f_map_arr = kwargs["f_map_arr"][1]
-    row_map = kwargs.get("row_map", None)
+    flag_col = kwargs["FLAG"]
+    ant1_col = kwargs["ANTENNA1"]
+    ant2_col = kwargs["ANTENNA2"]
+    row_map = kwargs.get("ROW_MAP", None)
 
-    return _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                       t_map_arr, f_map_arr, row_map)
+    return _init_flags(
+        term_shape,
+        flag_col,
+        ant1_col,
+        ant2_col,
+        param_time_map,
+        param_freq_map,
+        row_map
+    )
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
