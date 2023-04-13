@@ -68,7 +68,11 @@ def construct_solver(
         for v in data_xds.data_vars.values():
             blocker.add_input(v.name, v.data, v.dims)
 
-        blocker.add_input("block_id_arr", block_id_arr, ("row", "chan", "corr"))
+        blocker.add_input(
+            "block_id_arr",
+            block_id_arr,
+            ("row", "chan", "corr")
+        )
         blocker.add_input("term_spec_list", spec_list, ("row", "chan"))
         blocker.add_input("corr_mode", corr_mode)
         blocker.add_input("aux_block_info", aux_block_info)
