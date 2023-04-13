@@ -172,7 +172,7 @@ class Gain:
 
     @classmethod
     def _make_time_chunks(cls, time_bins):
-        return time_bins.max() + 1
+        return np.array([time_bins.max() + 1])
 
     @classmethod
     def make_time_coords(cls, time_col, time_bins):
@@ -248,7 +248,7 @@ class Gain:
 
     @classmethod
     def _make_freq_chunks(cls, freq_map):
-        return freq_map.max() + 1
+        return np.array([freq_map.max() + 1])
 
     @classmethod
     def make_freq_coords(cls, chan_freq, freq_map):
