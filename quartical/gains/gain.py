@@ -29,15 +29,17 @@ param_spec_tup = namedtuple(
 base_args = namedtuple(
     "base_args",
     (
-        "model",
-        "data",
-        "a1",
-        "a2",
-        "weights",
-        "flags",
-        "inverse_gains",
+        "MODEL_DATA",
+        "DATA",
+        "ANTENNA1",
+        "ANTENNA2",
+        "WEIGHT",
+        "FLAG",
         "gains",
         "gain_flags",
+        "time_maps",
+        "freq_maps",
+        "dir_maps",
         "row_map",
         "row_weights"
     )
@@ -51,11 +53,13 @@ class Gain:
     def __init__(self, term_name, term_opts):
 
         self.name = term_name
-        self.direction_dependent = term_opts.direction_dependent
         self.type = term_opts.type
+        self.solve_per = term_opts.solve_per
+        self.direction_dependent = term_opts.direction_dependent
         self.time_interval = term_opts.time_interval
         self.freq_interval = term_opts.freq_interval
         self.respect_scan_boundaries = term_opts.respect_scan_boundaries
+        self.initial_estimate = term_opts.initial_estimate
 
     @classmethod
     def make_time_bins(

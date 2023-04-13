@@ -338,13 +338,13 @@ def apply_gain_flags(base_args, meta_args):
     active_term = meta_args.active_term
 
     gain_flags = base_args.gain_flags[active_term]
-    flag_col = base_args.flags
-    ant1_col = base_args.a1
-    ant2_col = base_args.a2
+    flag_col = base_args.FLAG
+    ant1_col = base_args.ANTENNA1
+    ant2_col = base_args.ANTENNA2
 
     # Select out just the mappings we need.
-    t_map_arr = base_args.t_map_arr[0, :, active_term]
-    f_map_arr = base_args.f_map_arr[0, :, active_term]
+    t_map_arr = base_args.time_maps[active_term]
+    f_map_arr = base_args.freq_maps[active_term]
 
     n_row, n_chan = flag_col.shape
 
