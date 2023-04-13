@@ -300,8 +300,10 @@ def update_param_flags(base_args, term_args, meta_args, identity_params):
 
         # NOTE: We don't yet let params and gains have different direction
         # maps but this will eventually be neccessary.
-        t_bin_arr = term_args.t_bin_arr[:, :, active_term]
-        f_map_arr = base_args.f_map_arr[:, :, active_term]
+        time_bins = base_args.time_bins[active_term]
+        param_time_bins = term_args.param_time_bins[active_term]
+        freq_maps = base_args.freq_maps[active_term]
+        param_freq_maps = term_args.param_freq_maps[active_term]
 
         gain_flags = base_args.gain_flags[active_term]
         param_flags = term_args.param_flags[active_term]
@@ -311,8 +313,8 @@ def update_param_flags(base_args, term_args, meta_args, identity_params):
 
         param_flags[:] = 1
 
-        for gt, pt in zip(t_bin_arr[0], t_bin_arr[1]):
-            for gf, pf in zip(f_map_arr[0], f_map_arr[1]):
+        for gt, pt in zip(time_bins, param_time_bins):
+            for gf, pf in zip(freq_maps, param_freq_maps):
                 for a in range(n_ant):
                     for d in range(n_dir):
 

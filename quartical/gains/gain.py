@@ -37,6 +37,7 @@ base_args = namedtuple(
         "FLAG",
         "gains",
         "gain_flags",
+        "time_bins",
         "time_maps",
         "freq_maps",
         "dir_maps",
