@@ -266,11 +266,13 @@ def make_interp_xds_list(term_xds_list, concat_xds_list, interp_mode,
 
         # If we are loading a term with a differing number of correlations,
         # this should handle selecting them out/padding them in.
-        if interp_xds.dims["corr"] < term_xds.dims["corr"]:
-            interp_xds = \
-                interp_xds.reindex({"corr": term_xds.corr}, fill_value=0)
-        elif interp_xds.dims["corr"] > term_xds.dims["corr"]:
-            interp_xds = interp_xds.sel({"corr": term_xds.corr})
+        if interp_xds.dims["correlation"] < term_xds.dims["correlation"]:
+            interp_xds = interp_xds.reindex(
+                {"correlation": term_xds.corr},
+                fill_value=0
+            )
+        elif interp_xds.dims["correlation"] > term_xds.dims["correlation"]:
+            interp_xds = interp_xds.sel({"correlation": term_xds.corr})
 
         # Convert the interpolated quantities back to gains.
         if interp_mode in ("ampphase", "amp", "phase"):
