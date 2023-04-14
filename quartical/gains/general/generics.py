@@ -439,25 +439,32 @@ def compute_convergence(gain, last_gain, criteria):
 
 
 @qcgjit
-def combine_gains(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
-                  corr_mode, *gains):
+def combine_gains(
+    gains,
+    time_bins,
+    freq_maps,
+    dir_maps,
+    net_shape,
+    corr_mode
+):
 
     coerce_literal(combine_gains, ["corr_mode"])
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
 
-    def impl(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape, corr_mode,
-             *gains):
-        t_bin_arr = t_bin_arr[0]
-        f_map_arr = f_map_arr[0]
+    def impl(
+        gains,
+        time_bins,
+        freq_maps,
+        dir_maps,
+        net_shape,
+        corr_mode
+    ):
 
-        n_time = t_bin_arr.shape[0]
-        n_freq = f_map_arr.shape[0]
+        n_term = len(gains)
+        n_time, n_freq, n_ant, n_dir, _ = net_shape
 
-        _, _, n_ant, n_dir, n_corr = net_shape
-
-        net_gains = np.zeros((n_time, n_freq, n_ant, n_dir, n_corr),
-                             dtype=np.complex128)
+        net_gains = np.zeros(net_shape, dtype=np.complex128)
         net_gains[..., 0] = 1
         net_gains[..., -1] = 1
 
@@ -465,13 +472,17 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
             for f in range(n_freq):
                 for a in range(n_ant):
                     for d in range(n_dir):
-                        for gi in term_ids:
-                            tm = t_bin_arr[t, gi]
-                            fm = f_map_arr[f, gi]
-                            dm = d_map_arr[gi, d]
-                            v1_imul_v2(net_gains[t, f, a, d],
-                                       gains[gi][tm, fm, a, dm],
-                                       net_gains[t, f, a, d])
+                        for gi in range(n_term):
+
+                            tm = time_bins[gi][t]
+                            fm = freq_maps[gi][f]
+                            dm = dir_maps[gi][d]
+
+                            v1_imul_v2(
+                                net_gains[t, f, a, d],
+                                gains[gi][tm, fm, a, dm],
+                                net_gains[t, f, a, d]
+                            )
 
         return net_gains
 
@@ -479,17 +490,26 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
 
 
 @qcgjit
-def combine_flags(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
-                  *flags):
+def combine_flags(
+    flags,
+    time_bins,
+    freq_maps,
+    dir_maps,
+    net_shape,
+    corr_mode
+):
 
-    def impl(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape, *flags):
-        t_bin_arr = t_bin_arr[0]
-        f_map_arr = f_map_arr[0]
+    def impl(
+        flags,
+        time_bins,
+        freq_maps,
+        dir_maps,
+        net_shape,
+        corr_mode
+    ):
 
-        n_time = t_bin_arr.shape[0]
-        n_freq = f_map_arr.shape[0]
-
-        _, _, n_ant, n_dir = net_shape
+        n_term = len(flags)
+        n_time, n_freq, n_ant, n_dir, _ = net_shape
 
         net_flags = np.zeros((n_time, n_freq, n_ant, n_dir), dtype=np.int8)
 
@@ -497,10 +517,11 @@ def combine_flags(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
             for f in range(n_freq):
                 for a in range(n_ant):
                     for d in range(n_dir):
-                        for gi in term_ids:
-                            tm = t_bin_arr[t, gi]
-                            fm = f_map_arr[f, gi]
-                            dm = d_map_arr[gi, d]
+                        for gi in range(n_term):
+
+                            tm = time_bins[gi][t]
+                            fm = freq_maps[gi][f]
+                            dm = dir_maps[gi][d]
 
                             net_flags[t, f, a, d] |= flags[gi][tm, fm, a, dm]
 

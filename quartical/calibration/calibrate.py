@@ -6,7 +6,7 @@ from quartical.gains.general.generics import (compute_residual,
                                               compute_corrected_weights)
 from quartical.calibration.constructor import construct_solver
 from quartical.gains.datasets import (make_gain_xds_lod,
-                                      make_net_xds_list,
+                                      make_net_xds_lod,
                                       populate_net_xds_list)
 from quartical.interpolation.interpolate import load_and_interpolate_gains
 from quartical.gains.baseline import (compute_baseline_corrections,
@@ -187,18 +187,16 @@ def add_calibration_graph(
     if output_opts.net_gains:
         # Construct an effective gain per data_xds. This is always at the full
         # time and frequency resolution of the data.
-        net_xds_lod = make_net_xds_list(
+        net_xds_lod = make_net_xds_lod(
             data_xds_list,
-            coords_per_xds,
+            chain,
             output_opts
         )
 
         net_xds_lod = populate_net_xds_list(
             net_xds_lod,
             gain_xds_lod,
-            t_bin_list,
-            f_map_list,
-            d_map_list,
+            mapping_xds_list,
             output_opts
         )
     else:
