@@ -11,7 +11,7 @@ from quartical.interpolation.interpolants import (interpolate_missing,
 
 
 def load_and_interpolate_gains(gain_xds_lod, chain):
-    """Load and interpolate gains in accordance with chain_opts.
+    """Load and interpolate gains in accordance with the chain.
 
     Given the gain datasets which are to be applied/solved for, determine
     whether any are to be loaded from disk. Interpolates on-disk datasets
@@ -19,7 +19,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
 
     Args:
         gain_xds_lod: List of dicts of xarray.Datasets containing gains.
-        chain_opts: A Chain config object.
+        chain: A list of Gain objects.
 
     Returns:
         A list like gain_xds_list with the relevant gains loaded from disk.
