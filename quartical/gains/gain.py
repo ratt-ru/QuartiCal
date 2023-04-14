@@ -61,6 +61,9 @@ class Gain:
         self.freq_interval = term_opts.freq_interval
         self.respect_scan_boundaries = term_opts.respect_scan_boundaries
         self.initial_estimate = term_opts.initial_estimate
+        self.load_from = term_opts.load_from
+        self.interp_mode = term_opts.interp_mode
+        self.interp_method = term_opts.interp_method
 
     @classmethod
     def make_time_bins(
@@ -69,7 +72,8 @@ class Gain:
         interval_col,
         scan_col,
         time_interval,
-        respect_scan_boundaries
+        respect_scan_boundaries,
+        chunks=None
     ):
 
         time_bins = da.map_blocks(
@@ -79,7 +83,8 @@ class Gain:
             scan_col,
             time_interval,
             respect_scan_boundaries,
-            dtype=np.int64
+            dtype=np.int64,
+            chunks=chunks
         )
 
         return time_bins

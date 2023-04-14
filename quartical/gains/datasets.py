@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from quartical.config.external import Gain
-from quartical.config.internal import yield_from
 from loguru import logger  # noqa
 import numpy as np
 import dask.array as da
@@ -12,7 +11,7 @@ from quartical.gains import TERM_TYPES
 from quartical.gains.general.generics import combine_gains, combine_flags
 
 
-def make_gain_xds_lod(data_xds_list, chain_opts):
+def make_gain_xds_lod(data_xds_list, chain):
     """Returns a list of dicts of xarray.Dataset objects describing the gains.
 
     For a given input xds containing data, creates an xarray.Dataset object
@@ -20,17 +19,12 @@ def make_gain_xds_lod(data_xds_list, chain_opts):
 
     Args:
         data_xds_list: A list of xarray.Dataset objects containing MS data.
-        chain_opts: A Chain config object.
+        chains: A list of Gain objects.
 
     Returns:
         gain_xds_lod: A List of Dicts of xarray.Dataset objects describing the
             gain terms assosciated with each data xarray.Dataset.
     """
-
-    gain_obj_list = [
-        TERM_TYPES[tt](tn, getattr(chain_opts, tn))
-        for tn, tt in yield_from(chain_opts, "type")
-    ]
 
     scaffolds_per_xds = []
 
@@ -38,7 +32,7 @@ def make_gain_xds_lod(data_xds_list, chain_opts):
 
         gain_scaffolds = {}
 
-        for gain_obj in gain_obj_list:
+        for gain_obj in chain:
 
             gain_scaffolds[gain_obj.name] = \
                 scaffold_from_data_xds(data_xds, gain_obj)

@@ -35,7 +35,8 @@ class Phase(Gain):
         interval_col,
         scan_col,
         time_interval,
-        respect_scan_boundaries
+        respect_scan_boundaries,
+        chunks=None
     ):
 
         time_bins = da.map_blocks(
@@ -45,7 +46,8 @@ class Phase(Gain):
             scan_col,
             time_interval,
             respect_scan_boundaries,
-            dtype=np.int64
+            dtype=np.int64,
+            chunks=chunks
         )
 
         return time_bins

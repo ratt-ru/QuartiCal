@@ -10,10 +10,11 @@ aux_info_fields = ("SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID")
 
 def construct_solver(
     data_xds_list,
+    mapping_xds_list,
     stats_xds_list,
     gain_xds_lod,
     solver_opts,
-    chain_opts
+    chain
 ):
     """Constructs the dask graph for the solver layer.
 
@@ -29,7 +30,7 @@ def construct_solver(
         f_map_list: List of dask.Array objects containing frequency mappings.
         d_map_list: List of dask.Array objects containing direction mappings.
         solver_opts: A Solver config object.
-        chain_opts: A Chain config object.
+        chain: A list of Gain objects.
 
     Returns:
         solved_gain_xds_lod: A list of dicts containing xarray.Datasets
@@ -40,9 +41,9 @@ def construct_solver(
     output_data_xds_list = []
     output_stats_xds_list = []
 
-    itr = enumerate(zip(data_xds_list, stats_xds_list))
+    itr = enumerate(zip(data_xds_list, mapping_xds_list, stats_xds_list))
 
-    for xds_ind, (data_xds, stats_xds) in itr:
+    for xds_ind, (data_xds, mapping_xds, stats_xds) in itr:
 
         data_col = data_xds.DATA.data
         weight_col = data_xds.WEIGHT.data
@@ -68,6 +69,14 @@ def construct_solver(
         for v in data_xds.data_vars.values():
             blocker.add_input(v.name, v.data, v.dims)
 
+        # NOTE: We need to treat time as a rowlike dimension here.
+        for v in mapping_xds.data_vars.values():
+            blocker.add_input(
+                v.name,
+                v.data,
+                ("row",) if v.dims == ("time",) else v.dims
+            )
+
         blocker.add_input(
             "block_id_arr",
             block_id_arr,
@@ -77,7 +86,7 @@ def construct_solver(
         blocker.add_input("corr_mode", corr_mode)
         blocker.add_input("aux_block_info", aux_block_info)
         blocker.add_input("solver_opts", solver_opts)
-        blocker.add_input("chain_opts", chain_opts)
+        blocker.add_input("chain", chain)
 
         # If the gain dataset already has a gain variable, we want to pass
         # it in to initialize the solver.

@@ -4,7 +4,6 @@ import numpy as np
 from numba import set_num_threads
 from collections import namedtuple
 from itertools import cycle
-from quartical.gains import TERM_TYPES
 from quartical.weights.robust import robust_reweighting
 from quartical.gains.general.flagging import init_gain_flags, init_param_flags
 from quartical.statistics.stat_kernels import compute_mean_postsolve_chisq
@@ -28,7 +27,7 @@ meta_args_nt = namedtuple(
 def solver_wrapper(
     term_spec_list,
     solver_opts,
-    chain_opts,
+    chain,
     block_id_arr,
     aux_block_info,
     corr_mode,
@@ -56,7 +55,6 @@ def solver_wrapper(
     set_num_threads(solver_opts.threads)
     ref_ant = solver_opts.reference_antenna
 
-    terms = ()
     gain_array_tup = ()
     gain_flag_array_tup = ()
     time_bin_tup = ()
@@ -70,59 +68,30 @@ def solver_wrapper(
     param_freq_map_tup = ()
     results_dict = {}
 
-    for term_ind, term_spec in enumerate(term_spec_list):
+    for term_ind, gain_obj in enumerate(chain):
 
-        (term_name, term_type, term_shape, term_pshape) = term_spec
-
-        term_opts = getattr(chain_opts, term_name)
-        gain_obj = TERM_TYPES[term_type](term_name, term_opts)
+        term_spec = term_spec_list[term_ind]
+        (term_name, _, term_shape, term_pshape) = term_spec
 
         gain_array = np.zeros(term_shape, dtype=np.complex128)
         param_array = np.zeros(term_pshape, dtype=gain_array.real.dtype)
 
         # Perform term specific setup e.g. init gains and params.
+        # TODO: Can we streamline these calls?
         gain_obj.init_term(
             gain_array,
             param_array,
             term_ind,
             term_spec,
-            term_opts,
+            gain_obj,
             ref_ant,
             **kwargs
         )
 
-        time_col = kwargs.get("TIME")
-        interval_col = kwargs.get("INTERVAL")
-        scan_col = kwargs.get("SCAN_NUMBER", np.zeros_like(time_col))
-
-        time_bins = gain_obj._make_time_bins(
-            time_col,
-            interval_col,
-            scan_col,
-            term_opts.time_interval,
-            term_opts.respect_scan_boundaries
-        )
-
-        time_map = gain_obj._make_time_map(
-            time_col,
-            time_bins
-        )
-
-        chan_freqs = kwargs.get("CHAN_FREQ")
-        chan_widths = kwargs.get("CHAN_WIDTH")
-        freq_interval = gain_obj.freq_interval
-
-        freq_map = gain_obj._make_freq_map(
-            chan_freqs,
-            chan_widths,
-            freq_interval
-        )
-
-        # TODO: Should this accept model data as a parameter?
-        dir_map = gain_obj._make_dir_map(
-            kwargs["MODEL_DATA"].shape[2],
-            gain_obj.direction_dependent
-        )
+        time_bins = kwargs.get(f"{term_name}-time-bins")
+        time_map = kwargs.get(f"{term_name}-time-map")
+        freq_map = kwargs.get(f"{term_name}-freq-map")
+        dir_map = kwargs.get(f"{term_name}-dir-map")
 
         # Init gain flags by looking for intervals with no data.
         gain_flag_array = init_gain_flags(
@@ -132,39 +101,27 @@ def solver_wrapper(
             **kwargs
         )
 
-        if hasattr(gain_obj, "param_axes"):
-            param_time_bins = gain_obj._make_param_time_bins(
-                time_col,
-                interval_col,
-                scan_col,
-                term_opts.time_interval,
-                term_opts.respect_scan_boundaries
-            )
+        param_time_bins = kwargs.get(
+            f"{term_name}-param-time-bins",
+            np.empty(0, dtype=np.int64)
+        )
+        param_time_map = kwargs.get(
+            f"{term_name}-param-time-map",
+            np.empty(0, dtype=np.int64)
+        )
+        param_freq_map = kwargs.get(
+            f"{term_name}-param-freq-map",
+            np.empty(0, dtype=np.int64)
+        )
 
-            param_time_map = gain_obj._make_param_time_map(
-                time_col,
-                param_time_bins
-            )
+        # Init parameter flags by looking for intervals with no data.
+        param_flag_array = init_param_flags(
+            term_pshape,
+            param_time_map,
+            param_freq_map,
+            **kwargs
+        )
 
-            param_freq_map = gain_obj._make_param_freq_map(
-                chan_freqs,
-                chan_widths,
-                freq_interval
-            )
-
-            param_flag_array = init_param_flags(
-                term_pshape,
-                param_time_map,
-                param_freq_map,
-                **kwargs
-            )
-        else:
-            param_time_bins = np.empty(0, dtype=np.int64)
-            param_time_map = np.empty(0, dtype=np.int64)
-            param_freq_map = np.empty(0, dtype=np.int64)
-            param_flag_array = np.empty(term_pshape[:-1], dtype=np.int64)
-
-        terms += (gain_obj,)
         gain_array_tup += (gain_array,)
         gain_flag_array_tup += (gain_flag_array,)
         time_bin_tup += (time_bins,)
@@ -201,12 +158,12 @@ def solver_wrapper(
     # NOTE: This is a necessary evil. We do not want to modify the inputs
     # and copying is the best way to ensure that that cannot happen.
     kwargs["WEIGHT"] = kwargs["WEIGHT"].copy()
-    results_dict["WEIGHT"] = kwargs["WEIGHT"]
+    results_dict["weights"] = kwargs["WEIGHT"]
     kwargs["FLAG"] = kwargs["FLAG"].copy()
-    results_dict["FLAG"] = kwargs["FLAG"]
+    results_dict["flags"] = kwargs["FLAG"]
 
     if solver_opts.robust:
-        final_epoch = len(iter_recipe) // len(terms)
+        final_epoch = len(iter_recipe) // len(chain)
         etas = np.zeros_like(kwargs["WEIGHT"][..., 0])
         icovariance = np.zeros(corr_mode, np.float64)
         dof = 5
@@ -227,9 +184,9 @@ def solver_wrapper(
         corr_mode
     )
 
-    for ind, (term, iters) in enumerate(zip(cycle(terms), iter_recipe)):
+    for ind, (term, iters) in enumerate(zip(cycle(chain), iter_recipe)):
 
-        active_term = terms.index(term)
+        active_term = chain.index(term)
 
         base_args = term.base_args(
                 **{k: kwargs.get(k, None) for k in term.base_args._fields}
@@ -258,14 +215,14 @@ def solver_wrapper(
             )
         else:
             # TODO: Actually compute it in this special case?
-            jhj = np.zeros_like(results_dict[f"{term_name}-gain"])
+            jhj = np.zeros_like(results_dict[f"{term.name}-gain"])
             info_tup = (0, 0)
 
         # If reweighting is enabled, do it when the epoch changes, except
         # for the final epoch - we don't reweight if we won't solve again.
         if solver_opts.robust:
-            current_epoch = ind // len(terms)
-            next_epoch = (ind + 1) // len(terms)
+            current_epoch = ind // len(chain)
+            next_epoch = (ind + 1) // len(chain)
 
             if current_epoch != next_epoch and next_epoch != final_epoch:
 
@@ -281,9 +238,9 @@ def solver_wrapper(
         if jhj.ndim == 6:
             jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
 
-        results_dict[f"{term_name}-conviter"] += np.atleast_2d(info_tup[0])
-        results_dict[f"{term_name}-convperc"] = np.atleast_2d(info_tup[1])
-        results_dict[f"{term_name}-jhj"] = jhj
+        results_dict[f"{term.name}-conviter"] += np.atleast_2d(info_tup[0])
+        results_dict[f"{term.name}-convperc"] = np.atleast_2d(info_tup[1])
+        results_dict[f"{term.name}-jhj"] = jhj
 
     postsolve_chisq = compute_mean_postsolve_chisq(
         kwargs["DATA"],

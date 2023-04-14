@@ -4,14 +4,13 @@ import dask.array as da
 import numpy as np
 import xarray
 from daskms.experimental.zarr import xds_from_zarr
-from quartical.config.internal import yield_from
 from quartical.utils.array import flat_ident_like
 from quartical.interpolation.interpolants import (interpolate_missing,
                                                   linear2d_interpolate_gains,
                                                   spline2d_interpolate_gains)
 
 
-def load_and_interpolate_gains(gain_xds_lod, chain_opts):
+def load_and_interpolate_gains(gain_xds_lod, chain):
     """Load and interpolate gains in accordance with chain_opts.
 
     Given the gain datasets which are to be applied/solved for, determine
@@ -28,11 +27,12 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
 
     interp_xds_lol = []
 
-    req_fields = ("load_from", "interp_mode", "interp_method")
+    for term in chain:
 
-    for loop_vars in yield_from(chain_opts, req_fields):
-
-        term_name, term_path, interp_mode, interp_method = loop_vars
+        term_name = term.name
+        term_path = term.load_from
+        interp_mode = term.interp_mode
+        interp_method = term.interp_method
 
         # Pull out all the datasets for the current term into a flat list.
         term_xds_list = [term_dict[term_name] for term_dict in gain_xds_lod]
@@ -69,7 +69,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain_opts):
         interp_xds_lol.append(interp_xds_list)
 
     # This converts the interpolated list of lists into a list of dicts.
-    term_names = [tn for tn in yield_from(chain_opts)]
+    term_names = [t.name for t in chain]
 
     interp_xds_lod = [{tn: term for tn, term in zip(term_names, terms)}
                       for terms in zip(*interp_xds_lol)]
