@@ -183,10 +183,9 @@ def add_calibration_graph(
         chain
     )
 
-    # TODO: Requires a complete rework with new changes.
     if output_opts.net_gains:
         # Construct an effective gain per data_xds. This is always at the full
-        # time and frequency resolution of the data.
+        # time and frequency resolution of the data. Triggers an early compute.
         net_xds_lod = make_net_xds_lod(
             data_xds_list,
             chain,
@@ -202,14 +201,12 @@ def add_calibration_graph(
     else:
         net_xds_lod = []
 
-    # TODO: Requires a complete rework with new changes.
+    # TODO: This is a very hacky implementation that needs work.
     if output_opts.compute_baseline_corrections:
         bl_corr_xds_list = compute_baseline_corrections(
             data_xds_list,
             gain_xds_lod,
-            t_map_list,
-            f_map_list,
-            d_map_list
+            mapping_xds_list
         )
     else:
         bl_corr_xds_list = None
