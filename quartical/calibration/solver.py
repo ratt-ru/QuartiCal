@@ -103,15 +103,15 @@ def solver_wrapper(
 
         param_time_bins = kwargs.get(
             f"{term.name}-param-time-bins",
-            np.empty(0, dtype=np.int64)
+            np.empty(0, dtype=np.int32)
         )
         param_time_map = kwargs.get(
             f"{term.name}-param-time-map",
-            np.empty(0, dtype=np.int64)
+            np.empty(0, dtype=np.int32)
         )
         param_freq_map = kwargs.get(
             f"{term.name}-param-freq-map",
-            np.empty(0, dtype=np.int64)
+            np.empty(0, dtype=np.int32)
         )
 
         # Init parameter flags by looking for intervals with no data.
