@@ -68,30 +68,30 @@ def solver_wrapper(
     param_freq_map_tup = ()
     results_dict = {}
 
-    for term_ind, gain_obj in enumerate(chain):
+    for term_ind, term in enumerate(chain):
 
         term_spec = term_spec_list[term_ind]
-        (term_name, _, term_shape, term_pshape) = term_spec
+        (_, _, term_shape, term_pshape) = term_spec
 
         gain_array = np.zeros(term_shape, dtype=np.complex128)
         param_array = np.zeros(term_pshape, dtype=gain_array.real.dtype)
 
         # Perform term specific setup e.g. init gains and params.
         # TODO: Can we streamline these calls?
-        gain_obj.init_term(
+        term.init_term(
             gain_array,
             param_array,
             term_ind,
             term_spec,
-            gain_obj,
+            term,
             ref_ant,
             **kwargs
         )
 
-        time_bins = kwargs.get(f"{term_name}-time-bins")
-        time_map = kwargs.get(f"{term_name}-time-map")
-        freq_map = kwargs.get(f"{term_name}-freq-map")
-        dir_map = kwargs.get(f"{term_name}-dir-map")
+        time_bins = kwargs.get(f"{term.name}-time-bins")
+        time_map = kwargs.get(f"{term.name}-time-map")
+        freq_map = kwargs.get(f"{term.name}-freq-map")
+        dir_map = kwargs.get(f"{term.name}-dir-map")
 
         # Init gain flags by looking for intervals with no data.
         gain_flag_array = init_gain_flags(
@@ -102,15 +102,15 @@ def solver_wrapper(
         )
 
         param_time_bins = kwargs.get(
-            f"{term_name}-param-time-bins",
+            f"{term.name}-param-time-bins",
             np.empty(0, dtype=np.int64)
         )
         param_time_map = kwargs.get(
-            f"{term_name}-param-time-map",
+            f"{term.name}-param-time-map",
             np.empty(0, dtype=np.int64)
         )
         param_freq_map = kwargs.get(
-            f"{term_name}-param-freq-map",
+            f"{term.name}-param-freq-map",
             np.empty(0, dtype=np.int64)
         )
 
@@ -134,12 +134,12 @@ def solver_wrapper(
         param_time_map_tup += (param_time_map,)
         param_freq_map_tup += (param_freq_map,)
 
-        results_dict[f"{term_name}-gain"] = gain_array
-        results_dict[f"{term_name}-gain_flags"] = gain_flag_array
-        results_dict[f"{term_name}-param"] = param_array
-        results_dict[f"{term_name}-param_flags"] = param_flag_array
-        results_dict[f"{term_name}-conviter"] = np.atleast_2d(0)   # int
-        results_dict[f"{term_name}-convperc"] = np.atleast_2d(0.)  # float
+        results_dict[f"{term.name}-gain"] = gain_array
+        results_dict[f"{term.name}-gain_flags"] = gain_flag_array
+        results_dict[f"{term.name}-param"] = param_array
+        results_dict[f"{term.name}-param_flags"] = param_flag_array
+        results_dict[f"{term.name}-conviter"] = np.atleast_2d(0)   # int
+        results_dict[f"{term.name}-convperc"] = np.atleast_2d(0.)  # float
 
     kwargs["gains"] = gain_array_tup
     kwargs["gain_flags"] = gain_flag_array_tup
