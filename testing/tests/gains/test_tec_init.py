@@ -7,7 +7,7 @@ from testing.utils.gains import apply_gains, reference_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr, solve_per):
+def opts(base_opts, select_corr):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -22,7 +22,7 @@ def opts(base_opts, select_corr, solve_per):
     _opts.solver.threads = 2
     _opts.G.type = "tec"
     _opts.G.freq_interval = 0
-    _opts.G.solve_per = solve_per
+    _opts.G.solve_per = "antenna"
 
     return _opts
 
@@ -50,9 +50,9 @@ def true_values(predicted_xds_list):
         n_corr = xds.dims["corr"]
 
         chan_freq = xds.CHAN_FREQ.data
+        
+        #bw bandwidth
         bw = chan_freq[-1] - chan_freq[0]
-        # inv_freq = 1./chan_freq
-        # bw = inv_freq[-2] - inv_freq[-1]
 
         single_wrap_delay = 1/bw
 
@@ -62,7 +62,9 @@ def true_values(predicted_xds_list):
         tecs = da.random.normal(size=(n_time, 1, n_ant, n_dir, n_corr),
                                   loc=0,
                                   scale=single_wrap_delay/5)
-        tecs[:, :, 0] = 0  # Make reference antenna zero for simplicity.
+        # Make reference antenna zero for simplicity.
+        tecs[:, :, 0] = 0  
+        
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
                       chunks=chunking)
 
@@ -194,7 +196,7 @@ def test_tecs(cmp_gain_xds_lod, true_tec_list):
 
         # To ensure the missing antenna handling doesn't render this test
         # useless, check that we have non-zero entries first.
-        assert np.any(solved_tec), "All delays are zero!"
+        assert np.any(solved_tec), "All tecs are zero!"
         np.testing.assert_array_almost_equal(true_tec, solved_tec)
 
 
