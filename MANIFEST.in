@@ -1,1 +1,3 @@
-include quartical/config/helpstrings.yaml
+include quartical/config/argument_schema.yaml
+include quartical/config/gain_schema.yaml
+include quartical/stimela_cabs.yaml

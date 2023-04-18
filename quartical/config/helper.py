@@ -3,14 +3,9 @@ import os
 import textwrap
 import re
 from colorama import Fore, Style
-from pathlib import Path
 from omegaconf import OmegaConf as oc
 from dataclasses import fields, _MISSING_TYPE, is_dataclass
-from quartical.config.external import finalize_structure
-
-
-path_to_helpstrings = Path(__file__).parent.joinpath("helpstrings.yaml")
-HELPSTRINGS = oc.load(path_to_helpstrings)
+from quartical.config.external import finalize_structure, get_config_sections
 
 GAIN_MSG = "Gains make use of a special configuration " \
            "mechanism. Use 'solver.terms' to specify the name of " \
@@ -21,11 +16,11 @@ GAIN_MSG = "Gains make use of a special configuration " \
 HELP_MSG = f"For full help, use 'goquartical help'. For help with a " \
            f"specific section, use e.g. 'goquartical help='[section1," \
            f"section2]''. Help is available for " \
-           f"[{', '.join(HELPSTRINGS.keys())}]. Other command line " \
-           f"utilities: [goquartical-backup, goquartical-restore]."
+           f"[{', '.join(get_config_sections())}]. Other command line " \
+           f"utilitites: [goquartical-backup, goquartical-restore]."
 
 
-def populate(typ, help_str, help_dict=None):
+def populate(typ, help_dict=None):
 
     if help_dict is None:
         help_dict = {}
@@ -38,16 +33,18 @@ def populate(typ, help_str, help_dict=None):
     for fld in flds:
         fld_name, fld_type = fld.name, fld.type
         help_dict[fld_name] = {}
-        nested = populate(fld_type, help_str[fld_name], help_dict[fld_name])
+        nested = populate(fld_type, help_dict[fld_name])
         if not nested:
-            msg = f"{help_str[fld_name]} "
+            msg = f"{fld.metadata.get('help', '')} "
             if fld.metadata.get("choices", None):
                 msg += f"Choices: {fld.metadata['choices']}. "
+            if fld.metadata.get("element_choices", None):
+                msg += f"Choices: {fld.metadata['element_choices']}. "
             if isinstance(fld.default, _MISSING_TYPE):
                 default = fld.default_factory()
             else:
                 default = fld.default
-            if default == "???":
+            if fld.metadata.get('required', False):
                 msg += f"{Fore.RED}MANDATORY. "
             else:
                 msg += f"Default: {default}. "
@@ -63,7 +60,7 @@ def make_help_dict():
 
     FinalConfig = finalize_structure(additional_config)
 
-    help_dict = populate(FinalConfig, HELPSTRINGS)
+    help_dict = populate(FinalConfig)
 
     return help_dict
 
