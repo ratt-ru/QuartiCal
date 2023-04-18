@@ -1,21 +1,17 @@
 # -*- coding: utf-8 -*-
 from quartical.config.external import Gain
-from quartical.config.internal import yield_from
 from loguru import logger  # noqa
 import numpy as np
 import dask.array as da
+import xarray
+from uuid import uuid4
 from daskms.experimental.zarr import xds_to_zarr
+from quartical.gains.gain import gain_spec_tup, param_spec_tup
 from quartical.gains import TERM_TYPES
-from quartical.utils.dask import blockwise_unique
-from quartical.utils.maths import mean_for_index
 from quartical.gains.general.generics import combine_gains, combine_flags
 
 
-def make_gain_xds_lod(data_xds_list,
-                      tipc_list,
-                      fipc_list,
-                      coords_per_xds,
-                      chain_opts):
+def make_gain_xds_lod(data_xds_list, chain):
     """Returns a list of dicts of xarray.Dataset objects describing the gains.
 
     For a given input xds containing data, creates an xarray.Dataset object
@@ -23,180 +19,53 @@ def make_gain_xds_lod(data_xds_list,
 
     Args:
         data_xds_list: A list of xarray.Dataset objects containing MS data.
-        tipc_list: List of numpy.ndarray objects containing number of time
-            intervals in a chunk.
-        fipc_list: List of numpy.ndarray objects containing number of freq
-            intervals in a chunk.
-        coords_per_xds: A List of Dicts containing coordinates.
-        chain_opts: A Chain config object.
+        chains: A list of Gain objects.
 
     Returns:
         gain_xds_lod: A List of Dicts of xarray.Dataset objects describing the
             gain terms assosciated with each data xarray.Dataset.
     """
 
-    gain_xds_lod = []
+    scaffolds_per_xds = []
 
-    for xds_ind, data_xds in enumerate(data_xds_list):
+    for data_xds in data_xds_list:
 
-        term_xds_dict = {}
+        gain_scaffolds = {}
 
-        term_coords = coords_per_xds[xds_ind]
+        for gain_obj in chain:
 
-        for loop_vars in enumerate(yield_from(chain_opts, "type")):
-            term_ind, (term_name, term_type) = loop_vars
+            gain_scaffolds[gain_obj.name] = \
+                scaffold_from_data_xds(data_xds, gain_obj)
 
-            term_t_chunks = tipc_list[xds_ind][:, :, term_ind]
-            term_f_chunks = fipc_list[xds_ind][:, :, term_ind]
-            term_opts = getattr(chain_opts, term_name)
+        scaffolds_per_xds.append(gain_scaffolds)
 
-            term_obj = TERM_TYPES[term_type](term_name,
-                                             term_opts,
-                                             data_xds,
-                                             term_coords,
-                                             term_t_chunks,
-                                             term_f_chunks)
+    # NOTE: This triggers an early compute to determine all the chunking info.
+    gain_xds_lod = [
+        {
+            tn: xarray.Dataset(**ts) for tn, ts in gain_scaffolds.items()
+        }
+        for gain_scaffolds in da.compute(scaffolds_per_xds)[0]
+    ]
 
-            term_xds_dict[term_name] = term_obj.make_xds()
-
-        gain_xds_lod.append(term_xds_dict)
+    # This is a nasty workaround for the one problem with the scaffolds -
+    # the chunk specs coming out containing arrays.
+    # TODO: Think about a neater approach.
+    for gain_xdss in gain_xds_lod:
+        for _, gain_xds in gain_xdss.items():
+            gain_xds.attrs["GAIN_SPEC"] = \
+                gain_spec_tup(*list(map(tuple, gain_xds.GAIN_SPEC)))
+            if "PARAM_SPEC" in gain_xds.attrs:
+                gain_xds.attrs["PARAM_SPEC"] = \
+                    param_spec_tup(*list(map(tuple, gain_xds.PARAM_SPEC)))
 
     return gain_xds_lod
 
 
-def compute_interval_chunking(data_xds_list, t_map_list, f_map_list):
-    '''Compute the per-term chunking of the gains.
-
-    Given a list of data xarray.Datasets as well as information about the
-    time and frequency mappings, computes the chunk sizes of the gain terms.
-
-    Args:
-        data_xds_list: A list of data-containing xarray.Dataset objects.
-        t_map_list: A list of arrays describing how times map to solint.
-        f_map_list: A list of arrays describing how freqs map to solint.
-
-    Returns:
-        A tuple of lists containing arrays which descibe the chunking.
-    '''
-
-    tipc_list = []
-    fipc_list = []
-
-    for xds_ind, _ in enumerate(data_xds_list):
-
-        t_map_arr = t_map_list[xds_ind]
-        f_map_arr = f_map_list[xds_ind]
-
-        tipc_per_term = da.map_blocks(lambda arr: arr[:, -1:, :] + 1,
-                                      t_map_arr,
-                                      chunks=((2,),
-                                              (1,)*t_map_arr.numblocks[1],
-                                              t_map_arr.chunks[2]))
-
-        fipc_per_term = da.map_blocks(lambda arr: arr[:, -1:, :] + 1,
-                                      f_map_arr,
-                                      chunks=((2,),
-                                              (1,)*f_map_arr.numblocks[1],
-                                              f_map_arr.chunks[2]))
-
-        tipc_list.append(tipc_per_term)
-        fipc_list.append(fipc_per_term)
-
-    # This is an early compute which is necessary to figure out the gain dims.
-    return da.compute(tipc_list, fipc_list)
-
-
-def compute_dataset_coords(data_xds_list,
-                           t_bin_list,
-                           f_map_list,
-                           tipc_list,
-                           fipc_list,
-                           terms):
-    '''Compute the cooridnates for the gain datasets.
-
-    Given a list of data xarray.Datasets as well as information about the
-    binning along the time and frequency axes, computes the true coordinate
-    values for the gain xarray.Datasets.
-
-    Args:
-        data_xds_list: A list of data-containing xarray.Dataset objects.
-        t_bin_list: A list of arrays describing how times map to solint.
-        f_map_list: A list of arrays describing how freqs map to solint.
-        tipc_list: A list of arrays contatining the number of time intervals
-            per chunk.
-        fipc_list: A list of arrays contatining the number of freq intervals
-            per chunk.
-
-    Returns:
-        A list of dictionaries containing the computed coordinate values.
-    '''
-
-    coords_per_xds = []
-
-    for xds_ind, data_xds in enumerate(data_xds_list):
-
-        utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
-
-        # NOTE: Use the BDA version of the column if it is present.
-        time_col = data_xds.get("UPSAMPLED_TIME", data_xds.TIME).data
-
-        unique_times = blockwise_unique(time_col,
-                                        chunks=(utime_chunks,))
-        unique_freqs = data_xds.CHAN_FREQ.data
-
-        coord_dict = {"time": unique_times,  # Doesn't vary with term.
-                      "freq": unique_freqs}  # Doesn't vary with term.
-
-        for term_ind, term_name in enumerate(terms):
-
-            # This indexing corresponds to grabbing the info per xds, per term.
-            tipc = tipc_list[xds_ind][:, :, term_ind]
-            fipc = fipc_list[xds_ind][:, :, term_ind]
-            term_t_bins = t_bin_list[xds_ind][:, :, term_ind]
-            term_f_map = f_map_list[xds_ind][:, :, term_ind]
-
-            mean_gtimes = da.map_blocks(mean_for_index,
-                                        unique_times,
-                                        term_t_bins[0],
-                                        dtype=unique_times.dtype,
-                                        chunks=(tuple(map(int, tipc[0])),))
-
-            mean_ptimes = da.map_blocks(mean_for_index,
-                                        unique_times,
-                                        term_t_bins[1],
-                                        dtype=unique_times.dtype,
-                                        chunks=(tuple(map(int, tipc[1])),))
-
-            mean_gfreqs = da.map_blocks(mean_for_index,
-                                        unique_freqs,
-                                        term_f_map[0],
-                                        dtype=unique_freqs.dtype,
-                                        chunks=(tuple(map(int, fipc[0])),))
-
-            mean_pfreqs = da.map_blocks(mean_for_index,
-                                        unique_freqs,
-                                        term_f_map[1],
-                                        dtype=unique_freqs.dtype,
-                                        chunks=(tuple(map(int, fipc[1])),))
-
-            coord_dict[f"{term_name}_mean_gtime"] = mean_gtimes
-            coord_dict[f"{term_name}_mean_ptime"] = mean_ptimes
-            coord_dict[f"{term_name}_mean_gfreq"] = mean_gfreqs
-            coord_dict[f"{term_name}_mean_pfreq"] = mean_pfreqs
-
-        coords_per_xds.append(coord_dict)
-
-    # We take the hit on a second early compute in order to make loading and
-    # interpolating gains a less complicated operation.
-    return da.compute(coords_per_xds)[0]
-
-
-def make_net_xds_list(data_xds_list, coords_per_xds, output_opts):
+def make_net_xds_lod(data_xds_list, chain, output_opts):
     """Construct a list of dicts of xarray.Datasets to house the net gains.
 
     Args:
         data_xds_list: A List of xarray.Dataset objects containing MS data.
-        coords_per_xds: A List of Dicts containing dataset coords.
         output_opts: An output config object.
 
     Returns:
@@ -206,61 +75,70 @@ def make_net_xds_list(data_xds_list, coords_per_xds, output_opts):
 
     net_names = [f"{''.join(lt)}-net" for lt in output_opts.net_gains]
 
-    net_gain_xds_lod = []
+    direction_dependent = any(t.direction_dependent for t in chain)
 
-    for data_xds, xds_coords in zip(data_xds_list, coords_per_xds):
+    net_configs = [
+        Gain(direction_dependent=direction_dependent) for _ in net_names
+    ]
 
-        net_t_chunks = np.tile(data_xds.UTIME_CHUNKS, 2).reshape(2, -1)
-        net_f_chunks = np.tile(data_xds.chunks["chan"], 2).reshape(2, -1)
+    net_chain = [
+        TERM_TYPES["complex"](n, c) for n, c in zip(net_names, net_configs)
+    ]
 
-        net_dict = {}
-
-        for net_name in net_names:
-
-            # Create a default config object, consistent with the net gain.
-            # NOTE: If we have a direction-dependent model, assume the net gain
-            # is also direction dependent.
-            config = Gain(direction_dependent=bool(data_xds.dims["dir"]))
-
-            net_obj = TERM_TYPES["complex"](net_name,
-                                            config,
-                                            data_xds,
-                                            xds_coords,
-                                            net_t_chunks,
-                                            net_f_chunks)
-
-            net_dict[net_name] = net_obj.make_xds()
-
-        net_gain_xds_lod.append(net_dict)
-
-    return net_gain_xds_lod
+    return make_gain_xds_lod(data_xds_list, net_chain)
 
 
-def combine_gains_wrapper(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
-                          corr_mode, *gains):
+def combine_gains_wrapper(
+    net_shape,
+    corr_mode,
+    *args
+):
     """Wrapper to stop dask from getting confused. See issue #99."""
 
-    return combine_gains(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
-                         corr_mode, *gains)
+    gains = tuple(args[::4])
+    time_maps = tuple(args[1::4])
+    freq_maps = tuple(args[2::4])
+    dir_maps = tuple(args[3::4])
+
+    return combine_gains(
+        gains,
+        time_maps,
+        freq_maps,
+        dir_maps,
+        net_shape,
+        corr_mode,
+    )
 
 
-def combine_flags_wrapper(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
-                          corr_mode, *flags):
+def combine_flags_wrapper(
+    net_shape,
+    corr_mode,
+    *args
+):
     """Wrapper to stop dask from getting confused. See issue #99."""
 
-    return combine_flags(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
-                         corr_mode, *flags)
+    flags = tuple(args[::4])
+    time_bins = tuple(args[1::4])
+    freq_maps = tuple(args[2::4])
+    dir_maps = tuple(args[3::4])
+
+    return combine_flags(
+        flags,
+        time_bins,
+        freq_maps,
+        dir_maps,
+        net_shape,
+        corr_mode,
+    )
 
 
 def populate_net_xds_list(
     net_gain_xds_lod,
     solved_gain_xds_lod,
-    t_bin_list,
-    f_map_list,
-    d_map_list,
+    mapping_xds_list,
     output_opts
 ):
-    """Poplulate the list net gain datasets with net gain values.
+    """Populate the list net gain datasets with net gain values.
 
     Args:
         net_gain_xds_list: A List of xarray.Dataset objects to house the
@@ -273,7 +151,7 @@ def populate_net_xds_list(
             to solution interval.
         d_map_list: A List of numpy.ndarrays containing mappings between
             direction dependent terms and direction independent terms.
-        output_opts: An output configuration object,
+        output_opts: An output configuration object.
 
     Returns:
         net_gain_xds_list: A List of xarray.Dataset objects to house the
@@ -282,85 +160,113 @@ def populate_net_xds_list(
 
     net_terms = output_opts.net_gains
 
+    # TODO: Can tenchically get this from the datasets.
     net_names = [f"{''.join(lt)}-net" for lt in net_terms]
 
     net_map = dict(zip(net_names, net_terms))
 
-    gain_dims = ("gain_t", "gain_f", "ant", "dir", "corr")
-    gain_schema = ("time", "chan", "ant", "dir", "corr")
-    flag_schema = ("time", "chan", "ant", "dir")
     populated_net_gain_xds_lod = []
 
-    for ind, (solved_gains, net_gains) in enumerate(zip(solved_gain_xds_lod,
-                                                        net_gain_xds_lod)):
+    # TODO: Move into flag combining function?
+    identity_elements = {
+        1: np.ones(1, dtype=np.complex128),
+        2: np.ones(2, dtype=np.complex128),
+        4: np.array((1, 0, 0, 1), dtype=np.complex128)
+    }
 
-        gains = [itm for xds in solved_gains.values()
-                 for itm in (xds.gains.data, gain_schema)]
-        gain_dtype = np.find_common_type(
-            [xds.gains.data.dtype for xds in solved_gains.values()], []
-        )
-        identity_elements = {
-            1: np.ones(1, dtype=gain_dtype),
-            2: np.ones(2, dtype=gain_dtype),
-            4: np.array((1, 0, 0, 1), dtype=gain_dtype)
-        }
+    itr = zip(solved_gain_xds_lod, net_gain_xds_lod, mapping_xds_list)
 
-        flags = [itm for xds in solved_gains.values()
-                 for itm in (xds.gain_flags.data, flag_schema)]
-        flag_dtype = np.find_common_type(
-            [xds.gain_flags.dtype for xds in solved_gains.values()], []
-        )
+    for solved_gains, net_gains, mapping_xds in itr:
 
         net_xds_dict = {}
 
         for net_name, req_terms in net_map.items():
 
+            req_time_bins = tuple(
+                [mapping_xds.get(f"{k}-time-bins").data for k in req_terms]
+            )
+            req_freq_maps = tuple(
+                [mapping_xds.get(f"{k}-freq-map").data for k in req_terms]
+            )
+            req_dir_maps = tuple(
+                [mapping_xds.get(f"{k}-dir-map").data for k in req_terms]
+            )
+
             net_xds = net_gains[net_name]
 
-            net_shape = tuple(net_xds.dims[d] for d in gain_dims)
+            net_shape = tuple(net_xds.dims[d] for d in net_xds.GAIN_AXES)
 
             corr_mode = net_shape[-1]
 
-            req_term_ids = \
-                [list(solved_gains.keys()).index(tn) for tn in req_terms]
+            req_term_gains = [solved_gains[t].gains for t in req_terms]
+            req_term_flags = [solved_gains[t].gain_flags for t in req_terms]
+
+            itr = zip(
+                req_term_gains,
+                req_time_bins,
+                req_freq_maps,
+                req_dir_maps
+            )
+
+            req_args = []
+
+            for g, tb, fm, dm in itr:
+                req_args.extend([g.data, g.dims])
+                req_args.extend([tb, ("gain_time",)])
+                req_args.extend([fm, ("gain_freq",)])
+                req_args.extend([dm, ("direction",)])
 
             net_gain = da.blockwise(
-                combine_gains_wrapper, ("time", "chan", "ant", "dir", "corr"),
-                t_bin_list[ind], ("param", "time", "term"),
-                f_map_list[ind], ("param", "chan", "term"),
-                d_map_list[ind], None,
-                req_term_ids, None,
+                combine_gains_wrapper, net_xds.GAIN_AXES,
                 net_shape, None,
                 corr_mode, None,
-                *gains,
-                dtype=gain_dtype,
+                *req_args,
+                dtype=np.complex128,
                 align_arrays=False,
                 concatenate=True,
-                adjust_chunks={"time": net_xds.GAIN_SPEC.tchunk,
-                               "chan": net_xds.GAIN_SPEC.fchunk,
-                               "dir": net_xds.GAIN_SPEC.dchunk}
+                adjust_chunks={
+                    "gain_time": net_xds.GAIN_SPEC.tchunk,
+                    "gain_freq": net_xds.GAIN_SPEC.fchunk,
+                    "direction": net_xds.GAIN_SPEC.dchunk
+                }
             )
+
+            itr = zip(
+                req_term_flags,
+                req_time_bins,
+                req_freq_maps,
+                req_dir_maps
+            )
+
+            req_args = []
+
+            for f, tb, fm, dm in itr:
+                req_args.extend([f.data, f.dims])
+                req_args.extend([tb, ("gain_time",)])
+                req_args.extend([fm, ("gain_freq",)])
+                req_args.extend([dm, ("direction",)])
 
             net_flags = da.blockwise(
-                combine_flags_wrapper, ("time", "chan", "ant", "dir"),
-                t_bin_list[ind], ("param", "time", "term"),
-                f_map_list[ind], ("param", "chan", "term"),
-                d_map_list[ind], None,
-                req_term_ids, None,
-                net_shape[:-1], None,
-                *flags,
-                dtype=flag_dtype,
+                combine_flags_wrapper, net_xds.GAIN_AXES[:-1],
+                net_shape, None,
+                corr_mode, None,
+                *req_args,
+                dtype=np.int8,
                 align_arrays=False,
                 concatenate=True,
-                adjust_chunks={"time": net_xds.GAIN_SPEC.tchunk,
-                               "chan": net_xds.GAIN_SPEC.fchunk,
-                               "dir": net_xds.GAIN_SPEC.dchunk}
+                adjust_chunks={
+                    "gain_time": net_xds.GAIN_SPEC.tchunk,
+                    "gain_freq": net_xds.GAIN_SPEC.fchunk,
+                    "direction": net_xds.GAIN_SPEC.dchunk
+                }
             )
 
-            net_gain = da.blockwise(np.where, "tfadc",
-                                    net_flags[..., None], "tfadc",
-                                    identity_elements[corr_mode], None,
-                                    net_gain, "tfadc")
+            net_gain = da.blockwise(
+                np.where, net_xds.GAIN_AXES,
+                net_flags[..., None], net_xds.GAIN_AXES,
+                identity_elements[corr_mode], None,
+                net_gain, net_xds.GAIN_AXES
+            )
 
             net_xds = net_xds.assign(
                 {
@@ -427,3 +333,164 @@ def write_gain_datasets(gain_xds_lod, net_xds_lod, output_opts):
                      for terms in zip(*gain_writes_lol)]
 
     return write_xds_lod
+
+
+def scaffold_from_data_xds(data_xds, gain_obj):
+    """Produces a scaffold (xarray.Dataset coords and attrs).
+
+    Given an xarray.Dataset containing measurement set data and a gain object,
+    produces a scaffold for an xarray.Dataset to hold the gains. A scaffold is
+    the necessary coords and attributes represented as dask arrays in a
+    dictionary. Once computed, these can be passed to the xarray.Dataset
+    constructor.
+
+    Args:
+        data_xds: An xarray.Dataset containing measurement set data.
+        gain_obj: An Gain object providing configuration information.
+
+    Returns:
+        scaffold: A dictionary of dask.arrays which can be used to construct
+            an xarray.Dataset.
+    """
+
+    # Check whether we are dealing with BDA data.
+    if hasattr(data_xds, "UPSAMPLED_TIME"):
+        time_col = data_xds.UPSAMPLED_TIME.data
+        interval_col = data_xds.UPSAMPLED_INTERVAL.data
+    else:
+        time_col = data_xds.TIME.data
+        interval_col = data_xds.INTERVAL.data
+
+    # If SCAN_NUMBER was a partitioning column it will not be present on
+    # the dataset - we reintroduce it for cases where we need to ensure
+    # solution intervals don't span scan boundaries.
+    if "SCAN_NUMBER" in data_xds.data_vars.keys():
+        scan_col = data_xds.SCAN_NUMBER.data
+    else:
+        scan_col = da.zeros_like(
+            time_col,
+            dtype=np.int32,
+            name="scan_number-" + uuid4().hex
+        )
+
+    time_interval = gain_obj.time_interval
+    respect_scan_boundaries = gain_obj.respect_scan_boundaries
+
+    # TODO: Add in parameterized case.
+    time_bins = gain_obj.make_time_bins(
+        time_col,
+        interval_col,
+        scan_col,
+        time_interval,
+        respect_scan_boundaries
+    )
+
+    time_chunks = gain_obj.make_time_chunks(time_bins)
+
+    chan_freqs = data_xds.CHAN_FREQ.data
+    chan_widths = data_xds.CHAN_WIDTH.data
+    freq_interval = gain_obj.freq_interval
+
+    freq_map = gain_obj.make_freq_map(
+        chan_freqs,
+        chan_widths,
+        freq_interval
+    )
+
+    freq_chunks = gain_obj.make_freq_chunks(freq_map)
+
+    n_dir = data_xds.dims["dir"]
+
+    dir_map = gain_obj.make_dir_map(
+        n_dir,
+        gain_obj.direction_dependent
+    )
+
+    gain_times = gain_obj.make_time_coords(time_col, time_bins)
+    gain_freqs = gain_obj.make_freq_coords(chan_freqs, freq_map)
+
+    direction = dir_map if gain_obj.direction_dependent else dir_map[:1]
+    n_gdir = direction.size
+
+    partition_schema = data_xds.__daskms_partition_schema__
+    id_attrs = {f: data_xds.attrs[f] for f, _ in partition_schema}
+
+    # TODO: Move this the the gain object?
+    n_corr = data_xds.dims["corr"]
+    n_ant = data_xds.dims["ant"]
+    chunk_spec = gain_spec_tup(
+        time_chunks,
+        freq_chunks,
+        (n_ant,),
+        (n_gdir,),
+        (n_corr,)
+    )
+
+    scaffold = {
+        "coords": {
+            "gain_time": (("gain_time",), gain_times),
+            "gain_freq": (("gain_freq",), gain_freqs),
+            "time_chunk": (("time_chunk",), da.arange(time_chunks.size)),
+            "freq_chunk": (("freq_chunk",), da.arange(freq_chunks.size)),
+            "direction": (("direction",), direction),
+            "antenna": (("antenna",), data_xds.ant.data),
+            "correlation": (("correlation",), data_xds.corr.data)
+        },
+        "attrs": {
+            **id_attrs,
+            "FIELD_NAME": data_xds.FIELD_NAME,
+            "NAME": gain_obj.name,
+            "TYPE": gain_obj.type,
+            "GAIN_SPEC": chunk_spec,
+            "GAIN_AXES": gain_obj.gain_axes
+        }
+    }
+
+    if hasattr(gain_obj, "param_axes"):
+        param_time_bins = gain_obj.make_param_time_bins(
+            time_col,
+            interval_col,
+            scan_col,
+            time_interval,
+            respect_scan_boundaries
+        )
+
+        param_time_chunks = gain_obj.make_param_time_chunks(param_time_bins)
+
+        param_freq_map = gain_obj.make_param_freq_map(
+            chan_freqs,
+            chan_widths,
+            freq_interval
+        )
+
+        param_freq_chunks = gain_obj.make_param_freq_chunks(param_freq_map)
+
+        param_times = gain_obj.make_time_coords(time_col, param_time_bins)
+        param_freqs = gain_obj.make_freq_coords(chan_freqs, param_freq_map)
+
+        param_names = gain_obj.make_param_names(data_xds.corr.data)
+        n_param = len(param_names)
+
+        param_chunk_spec = param_spec_tup(
+           param_time_chunks,
+           param_freq_chunks,
+           (n_ant,),
+           (n_gdir,),
+           (n_param,)
+        )
+
+        scaffold["coords"].update(
+            {
+                "param_time": (("param_time",), param_times),
+                "param_freq": (("param_freq",), param_freqs),
+                "param_name": (("param_name",), param_names)
+            }
+        )
+        scaffold["attrs"].update(
+            {
+                "PARAM_SPEC": param_chunk_spec,
+                "PARAM_AXES": gain_obj.param_axes
+            }
+        )
+
+    return scaffold

@@ -18,47 +18,64 @@ flag_intermediaries = namedtuple(
 )
 
 
-def init_gain_flags(term_shape, term_ind, **kwargs):
+def init_gain_flags(term_shape, time_map, freq_map, **kwargs):
     """Initialise the gain flags for a term using the various mappings."""
 
-    flag_col = kwargs["flags"]
-    ant1_col = kwargs["a1"]
-    ant2_col = kwargs["a2"]
-    t_map_arr = kwargs["t_map_arr"][0]
-    f_map_arr = kwargs["f_map_arr"][0]
-    row_map = kwargs.get("row_map", None)
+    flag_col = kwargs["FLAG"]
+    ant1_col = kwargs["ANTENNA1"]
+    ant2_col = kwargs["ANTENNA2"]
+    row_map = kwargs.get("ROW_MAP", None)
 
-    return _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                       t_map_arr, f_map_arr, row_map)
+    return _init_flags(
+        term_shape,
+        flag_col,
+        ant1_col,
+        ant2_col,
+        time_map,
+        freq_map,
+        row_map
+    )
 
 
-def init_param_flags(term_shape, term_ind, **kwargs):
+def init_param_flags(term_shape, param_time_map, param_freq_map, **kwargs):
     """Initialise the param flags for a term using the various mappings."""
 
-    flag_col = kwargs["flags"]
-    ant1_col = kwargs["a1"]
-    ant2_col = kwargs["a2"]
-    t_map_arr = kwargs["t_map_arr"][1]
-    f_map_arr = kwargs["f_map_arr"][1]
-    row_map = kwargs.get("row_map", None)
+    flag_col = kwargs["FLAG"]
+    ant1_col = kwargs["ANTENNA1"]
+    ant2_col = kwargs["ANTENNA2"]
+    row_map = kwargs.get("ROW_MAP", None)
 
-    return _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                       t_map_arr, f_map_arr, row_map)
+    return _init_flags(
+        term_shape,
+        flag_col,
+        ant1_col,
+        ant2_col,
+        param_time_map,
+        param_freq_map,
+        row_map
+    )
 
 
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                t_map_arr, f_map_arr, row_map):
+def _init_flags(
+    term_shape,
+    flag_col,
+    ant1_col,
+    ant2_col,
+    time_map,
+    freq_map,
+    row_map
+):
     """Initialise the flags for a term using the various mappings."""
 
     flags = np.ones(term_shape[:-1], dtype=np.int8)
     _, _, _, n_dir, _ = term_shape
 
-    n_row = t_map_arr.shape[0]
-    n_chan = f_map_arr.shape[0]
+    n_row = time_map.shape[0]
+    n_chan = freq_map.shape[0]
 
     for row_ind in range(n_row):
-        ti = t_map_arr[row_ind, term_ind]
+        ti = time_map[row_ind]
 
         # NOTE: The following handles the BDA case where an element in the
         # time map may be backed by a different row in the data.
@@ -66,7 +83,7 @@ def _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
         a1, a2 = ant1_col[row], ant2_col[row]
 
         for f in range(n_chan):
-            fi = f_map_arr[f, term_ind]
+            fi = freq_map[f]
             flag = flag_col[row, f]
             for d in range(n_dir):
                 flags[ti, fi, a1, d] &= flag
@@ -283,8 +300,10 @@ def update_param_flags(base_args, term_args, meta_args, identity_params):
 
         # NOTE: We don't yet let params and gains have different direction
         # maps but this will eventually be neccessary.
-        t_bin_arr = term_args.t_bin_arr[:, :, active_term]
-        f_map_arr = base_args.f_map_arr[:, :, active_term]
+        time_bins = base_args.time_bins[active_term]
+        param_time_bins = term_args.param_time_bins[active_term]
+        freq_maps = base_args.freq_maps[active_term]
+        param_freq_maps = term_args.param_freq_maps[active_term]
 
         gain_flags = base_args.gain_flags[active_term]
         param_flags = term_args.param_flags[active_term]
@@ -294,8 +313,8 @@ def update_param_flags(base_args, term_args, meta_args, identity_params):
 
         param_flags[:] = 1
 
-        for gt, pt in zip(t_bin_arr[0], t_bin_arr[1]):
-            for gf, pf in zip(f_map_arr[0], f_map_arr[1]):
+        for gt, pt in zip(time_bins, param_time_bins):
+            for gf, pf in zip(freq_maps, param_freq_maps):
                 for a in range(n_ant):
                     for d in range(n_dir):
 
@@ -321,13 +340,13 @@ def apply_gain_flags(base_args, meta_args):
     active_term = meta_args.active_term
 
     gain_flags = base_args.gain_flags[active_term]
-    flag_col = base_args.flags
-    ant1_col = base_args.a1
-    ant2_col = base_args.a2
+    flag_col = base_args.FLAG
+    ant1_col = base_args.ANTENNA1
+    ant2_col = base_args.ANTENNA2
 
     # Select out just the mappings we need.
-    t_map_arr = base_args.t_map_arr[0, :, active_term]
-    f_map_arr = base_args.f_map_arr[0, :, active_term]
+    t_map_arr = base_args.time_maps[active_term]
+    f_map_arr = base_args.freq_maps[active_term]
 
     n_row, n_chan = flag_col.shape
 

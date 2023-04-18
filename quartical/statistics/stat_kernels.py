@@ -1,18 +1,18 @@
 import numpy as np
-from numba import jit, prange
+from numba import prange
 from quartical.utils.numba import coerce_literal
-from quartical.utils.callables import filter_kwargs
 from quartical.gains.general.generics import qcgjit_parallel
 from quartical.gains.general.convenience import get_dims, get_row
 import quartical.gains.general.factories as factories
 
 
-def compute_mean_presolve_chisq(*args, **kwargs):
-    return filter_kwargs(_compute_mean_presolve_chisq)(*args, **kwargs)
-
-
-@jit(nopython=True, fastmath=True, parallel=True, cache=True, nogil=True)
-def _compute_mean_presolve_chisq(data, model, weights, flags):
+@qcgjit_parallel
+def compute_mean_presolve_chisq(
+    data,
+    model,
+    weights,
+    flags
+):
 
     n_rows, n_chan, n_dir, n_corr = model.shape
 
@@ -41,12 +41,8 @@ def _compute_mean_presolve_chisq(data, model, weights, flags):
     return np.array([[chisq]], dtype=np.float64)
 
 
-def compute_mean_postsolve_chisq(*args, **kwargs):
-    return filter_kwargs(_compute_mean_postsolve_chisq)(*args, **kwargs)
-
-
 @qcgjit_parallel
-def _compute_mean_postsolve_chisq(
+def compute_mean_postsolve_chisq(
     data,
     model,
     weights,
@@ -54,15 +50,15 @@ def _compute_mean_postsolve_chisq(
     gains,
     a1,
     a2,
-    t_map_arr,
-    f_map_arr,
-    d_map_arr,
+    time_maps,
+    freq_maps,
+    dir_maps,
     row_map,
     row_weights,
     corr_mode
 ):
 
-    coerce_literal(_compute_mean_postsolve_chisq, ["corr_mode"])
+    coerce_literal(compute_mean_postsolve_chisq, ["corr_mode"])
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -79,9 +75,9 @@ def _compute_mean_postsolve_chisq(
         gains,
         a1,
         a2,
-        t_map_arr,
-        f_map_arr,
-        d_map_arr,
+        time_maps,
+        freq_maps,
+        dir_maps,
         row_map,
         row_weights,
         corr_mode
@@ -89,9 +85,6 @@ def _compute_mean_postsolve_chisq(
 
         n_rows, n_chan, n_dir, n_corr = get_dims(model, row_map)
         n_gains = len(gains)
-
-        t_map_arr_g = t_map_arr[0]
-        f_map_arr_g = f_map_arr[0]
 
         chisq = 0
         counts = 0
@@ -118,9 +111,9 @@ def _compute_mean_postsolve_chisq(
 
                     for g in range(n_gains - 1, -1, -1):
 
-                        t_m = t_map_arr_g[row_ind, g]
-                        f_m = f_map_arr_g[f, g]
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
+                        t_m = time_maps[g][row_ind]
+                        f_m = freq_maps[g][f]
+                        d_m = dir_maps[g][d]  # Broadcast dir.
 
                         gain = gains[g][t_m, f_m]
                         gain_p = gain[a1_m, d_m]

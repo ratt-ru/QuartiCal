@@ -1,82 +1,49 @@
-from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
+from quartical.gains.gain import ParameterizedGain
 from quartical.gains.delay.kernel import delay_solver, delay_args
 from quartical.gains.delay.pure_kernel import pure_delay_solver
 import numpy as np
 
 
-class Delay(Gain):
+class Delay(ParameterizedGain):
 
-    solver = delay_solver
+    solver = staticmethod(delay_solver)
     term_args = delay_args
 
-    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
+    def __init__(self, term_name, term_opts):
 
-        Gain.__init__(self, term_name, term_opts, data_xds, coords, tipc, fipc)
+        super().__init__(term_name, term_opts)
 
+        self.gain_axes = (
+            "gain_time",
+            "gain_freq",
+            "antenna",
+            "direction",
+            "correlation"
+        )
+        self.param_axes = (
+            "param_time",
+            "param_freq",
+            "antenna",
+            "direction",
+            "param_name"
+        )
+
+    @classmethod
+    def _make_freq_map(cls, chan_freqs, chan_widths, freq_interval):
+        # Overload gain mapping construction - we evaluate it in every channel.
+        return np.arange(chan_freqs.size, dtype=np.int32)
+
+    @classmethod
+    def make_param_names(cls, correlations):
+
+        # TODO: This is not dasky, unlike the other functions. Delayed?
         parameterisable = ["XX", "YY", "RR", "LL"]
 
-        self.parameterised_corr = \
-            [ct for ct in self.corr_types if ct in parameterisable]
-        self.n_param = 2 * len(self.parameterised_corr)
+        param_corr = [c for c in correlations if c in parameterisable]
 
-        self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
-                                             self.n_fipc_g,
-                                             (self.n_ant,),
-                                             (self.n_dir,),
-                                             (self.n_corr,))
-        self.param_chunk_spec = param_spec_tup(self.n_tipc_g,
-                                               self.n_fipc_p,
-                                               (self.n_ant,),
-                                               (self.n_dir,),
-                                               (self.n_param,))
+        template = ("phase_offset_{}", "delay_{}")
 
-        self.gain_axes = ("gain_t", "gain_f", "ant", "dir", "corr")
-        self.param_axes = ("param_t", "param_f", "ant", "dir", "param")
-
-    def make_xds(self):
-
-        xds = Gain.make_xds(self)
-
-        param_template = ["phase_offset_{}", "delay_{}"]
-
-        param_labels = [pt.format(ct) for ct in self.parameterised_corr
-                        for pt in param_template]
-
-        xds = xds.assign_coords({"param": np.array(param_labels),
-                                 "param_t": self.gain_times,
-                                 "param_f": self.param_freqs})
-        xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
-                                "PARAM_SPEC": self.param_chunk_spec,
-                                "GAIN_AXES": self.gain_axes,
-                                "PARAM_AXES": self.param_axes})
-
-        return xds
-
-    @staticmethod
-    def make_f_maps(chan_freqs, chan_widths, f_int):
-        """Internals of the frequency interval mapper."""
-
-        n_chan = chan_freqs.size
-
-        # The leading dimension corresponds (gain, param). For unparameterised
-        # gains, the parameter mapping is irrelevant.
-        f_map_arr = np.zeros((2, n_chan,), dtype=np.int32)
-
-        if isinstance(f_int, float):
-            net_ivl = 0
-            bin_num = 0
-            for i, ivl in enumerate(chan_widths):
-                f_map_arr[1, i] = bin_num
-                net_ivl += ivl
-                if net_ivl >= f_int:
-                    net_ivl = 0
-                    bin_num += 1
-        else:
-            f_map_arr[1, :] = np.arange(n_chan)//f_int
-
-        f_map_arr[0, :] = np.arange(n_chan)
-
-        return f_map_arr
+        return [n.format(c) for c in param_corr for n in template]
 
     @staticmethod
     def init_term(
@@ -84,20 +51,21 @@ class Delay(Gain):
     ):
         """Initialise the gains (and parameters)."""
 
-        loaded = Gain.init_term(
+        loaded = super(Delay, Delay).init_term(
             gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
         )
 
         if loaded or not term_opts.initial_estimate:
             return
 
-        data = kwargs["data"]  # (row, chan, corr)
-        flags = kwargs["flags"]  # (row, chan)
-        a1 = kwargs["a1"]
-        a2 = kwargs["a2"]
-        chan_freq = kwargs["chan_freqs"]
-        t_map = kwargs["t_map_arr"][0, :, term_ind]  # time -> solint
-        f_map = kwargs["f_map_arr"][1, :, term_ind]  # freq -> solint
+        data = kwargs["DATA"]  # (row, chan, corr)
+        flags = kwargs["FLAG"]  # (row, chan)
+        a1 = kwargs["ANTENNA1"]
+        a2 = kwargs["ANTENNA2"]
+        chan_freq = kwargs["CHAN_FREQ"]
+        # TODO: This whole process is a bit dodgy - improve with new changes.
+        t_map = kwargs[f"{term_spec.name}-time-map"]
+        f_map = kwargs[f"{term_spec.name}-param-freq-map"]
         _, n_chan, n_ant, n_dir, n_corr = gain.shape
 
         # We only need the baselines which include the ref_ant.
@@ -188,16 +156,8 @@ class Delay(Gain):
 
 class PureDelay(Delay):
 
-    solver = pure_delay_solver
+    solver = staticmethod(pure_delay_solver)
 
-    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
+    def __init__(self, term_name, term_opts):
 
-        Delay.__init__(
-            self,
-            term_name,
-            term_opts,
-            data_xds,
-            coords,
-            tipc,
-            fipc
-        )
+        super().__init__(term_name, term_opts)

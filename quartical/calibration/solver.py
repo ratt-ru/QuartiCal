@@ -4,7 +4,6 @@ import numpy as np
 from numba import set_num_threads
 from collections import namedtuple
 from itertools import cycle
-from quartical.gains import TERM_TYPES
 from quartical.weights.robust import robust_reweighting
 from quartical.gains.general.flagging import init_gain_flags, init_param_flags
 from quartical.statistics.stat_kernels import compute_mean_postsolve_chisq
@@ -28,9 +27,10 @@ meta_args_nt = namedtuple(
 def solver_wrapper(
     term_spec_list,
     solver_opts,
-    chain_opts,
+    chain,
     block_id_arr,
     aux_block_info,
+    corr_mode,
     **kwargs
 ):
     """A Python wrapper for the solvers written in Numba.
@@ -46,116 +46,183 @@ def solver_wrapper(
     Returns:
         results_dict: A dictionary containing the results of the solvers.
     """
+    # NOTE: Currently kwargs, while convenient, may unecessarily maintain
+    # references to unused inputs. It may be better unpack them in some way
+    # to allow early garbage collection.
 
     block_id = tuple(block_id_arr.squeeze())
 
     set_num_threads(solver_opts.threads)
     ref_ant = solver_opts.reference_antenna
 
-    gain_tup = ()
-    param_tup = ()
-    gain_flags_tup = ()
-    param_flags_tup = ()
+    gain_array_tup = ()
+    gain_flag_array_tup = ()
+    time_bin_tup = ()
+    time_map_tup = ()
+    freq_map_tup = ()
+    dir_map_tup = ()
+    param_array_tup = ()
+    param_flag_array_tup = ()
+    param_time_bin_tup = ()
+    param_time_map_tup = ()
+    param_freq_map_tup = ()
     results_dict = {}
 
-    for term_ind, term_spec in enumerate(term_spec_list):
+    for term_ind, term in enumerate(chain):
 
-        (term_name, term_type, term_shape, term_pshape) = term_spec
+        term_spec = term_spec_list[term_ind]
+        (_, _, term_shape, term_pshape) = term_spec
 
-        term_type_cls = TERM_TYPES[term_type]
-        term_opts = getattr(chain_opts, term_name)
+        gain_array = np.zeros(term_shape, dtype=np.complex128)
+        param_array = np.zeros(term_pshape, dtype=gain_array.real.dtype)
 
-        gain = np.zeros(term_shape, dtype=np.complex128)
-        param = np.zeros(term_pshape, dtype=gain.real.dtype)
-
-        # Perform terms specific setup e.g. init gains and params.
-        term_type_cls.init_term(
-            gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
+        # Perform term specific setup e.g. init gains and params.
+        # TODO: Can we streamline these calls?
+        term.init_term(
+            gain_array,
+            param_array,
+            term_ind,
+            term_spec,
+            term,
+            ref_ant,
+            **kwargs
         )
 
+        time_bins = kwargs.get(f"{term.name}-time-bins")
+        time_map = kwargs.get(f"{term.name}-time-map")
+        freq_map = kwargs.get(f"{term.name}-freq-map")
+        dir_map = kwargs.get(f"{term.name}-dir-map")
+
         # Init gain flags by looking for intervals with no data.
-        gain_flags = init_gain_flags(term_shape, term_ind, **kwargs)
-        param_flags = init_param_flags(term_pshape, term_ind, **kwargs)
+        gain_flag_array = init_gain_flags(
+            term_shape,
+            time_map,
+            freq_map,
+            **kwargs
+        )
 
-        gain_tup += (gain,)
-        gain_flags_tup += (gain_flags,)
-        param_tup += (param,)
-        param_flags_tup += (param_flags,)
+        param_time_bins = kwargs.get(
+            f"{term.name}-param-time-bins",
+            np.empty(0, dtype=np.int32)
+        )
+        param_time_map = kwargs.get(
+            f"{term.name}-param-time-map",
+            np.empty(0, dtype=np.int32)
+        )
+        param_freq_map = kwargs.get(
+            f"{term.name}-param-freq-map",
+            np.empty(0, dtype=np.int32)
+        )
 
-        results_dict[f"{term_name}-gain"] = gain
-        results_dict[f"{term_name}-gain_flags"] = gain_flags
-        results_dict[f"{term_name}-param"] = param
-        results_dict[f"{term_name}-param_flags"] = param_flags
-        results_dict[f"{term_name}-conviter"] = np.atleast_2d(0)   # int
-        results_dict[f"{term_name}-convperc"] = np.atleast_2d(0.)  # float
+        # Init parameter flags by looking for intervals with no data.
+        param_flag_array = init_param_flags(
+            term_pshape,
+            param_time_map,
+            param_freq_map,
+            **kwargs
+        )
 
-    kwargs["gains"] = gain_tup
-    kwargs["gain_flags"] = gain_flags_tup
-    kwargs["inverse_gains"] = tuple([np.empty_like(g) for g in gain_tup])
-    kwargs["params"] = param_tup
-    kwargs["param_flags"] = param_flags_tup
+        gain_array_tup += (gain_array,)
+        gain_flag_array_tup += (gain_flag_array,)
+        time_bin_tup += (time_bins,)
+        time_map_tup += (time_map,)
+        freq_map_tup += (freq_map,)
+        dir_map_tup += (dir_map,)
+        param_array_tup += (param_array,)
+        param_flag_array_tup += (param_flag_array,)
+        param_time_bin_tup += (param_time_bins,)
+        param_time_map_tup += (param_time_map,)
+        param_freq_map_tup += (param_freq_map,)
 
-    terms = solver_opts.terms
+        results_dict[f"{term.name}-gain"] = gain_array
+        results_dict[f"{term.name}-gain_flags"] = gain_flag_array
+        results_dict[f"{term.name}-param"] = param_array
+        results_dict[f"{term.name}-param_flags"] = param_flag_array
+        results_dict[f"{term.name}-conviter"] = np.atleast_2d(0)   # int
+        results_dict[f"{term.name}-convperc"] = np.atleast_2d(0.)  # float
+
+    kwargs["gains"] = gain_array_tup
+    kwargs["gain_flags"] = gain_flag_array_tup
+    kwargs["time_bins"] = time_bin_tup
+    kwargs["time_maps"] = time_map_tup
+    kwargs["freq_maps"] = freq_map_tup
+    kwargs["dir_maps"] = dir_map_tup
+    kwargs["params"] = param_array_tup
+    kwargs["param_flags"] = param_flag_array_tup
+    kwargs["param_time_bins"] = param_time_bin_tup
+    kwargs["param_time_maps"] = param_time_map_tup
+    kwargs["param_freq_maps"] = param_freq_map_tup
+
     iter_recipe = solver_opts.iter_recipe
-    robust = solver_opts.robust
 
     # NOTE: This is a necessary evil. We do not want to modify the inputs
     # and copying is the best way to ensure that that cannot happen.
-    kwargs["weights"] = kwargs["weights"].copy()
-    results_dict["weights"] = kwargs["weights"]
-    kwargs["flags"] = kwargs["flags"].copy()
-    results_dict["flags"] = kwargs["flags"]
+    kwargs["WEIGHT"] = kwargs["WEIGHT"].copy()
+    results_dict["weights"] = kwargs["WEIGHT"]
+    kwargs["FLAG"] = kwargs["FLAG"].copy()
+    results_dict["flags"] = kwargs["FLAG"]
 
     if solver_opts.robust:
-        final_epoch = len(iter_recipe) // len(terms)
-        etas = np.zeros_like(kwargs["weights"][..., 0])
-        icovariance = np.zeros(kwargs["corr_mode"], np.float64)
+        final_epoch = len(iter_recipe) // len(chain)
+        etas = np.zeros_like(kwargs["WEIGHT"][..., 0])
+        icovariance = np.zeros(corr_mode, np.float64)
         dof = 5
 
-    presolve_chisq = compute_mean_postsolve_chisq(**kwargs)
+    presolve_chisq = compute_mean_postsolve_chisq(
+        kwargs["DATA"],
+        kwargs["MODEL_DATA"],
+        kwargs["WEIGHT"],
+        kwargs["FLAG"],
+        kwargs["gains"],
+        kwargs["ANTENNA1"],
+        kwargs["ANTENNA2"],
+        kwargs["time_maps"],
+        kwargs["freq_maps"],
+        kwargs["dir_maps"],
+        kwargs.get("row_map", None),
+        kwargs.get("row_weights", None),
+        corr_mode
+    )
 
-    for ind, (term, iters) in enumerate(zip(cycle(terms), iter_recipe)):
+    for ind, (term, iters) in enumerate(zip(cycle(chain), iter_recipe)):
 
-        active_term = terms.index(term)
-        term_name, term_type, _, _ = term_spec_list[active_term]
+        active_term = chain.index(term)
 
-        term_type_cls = TERM_TYPES[term_type]
+        base_args = term.base_args(
+                **{k: kwargs.get(k, None) for k in term.base_args._fields}
+            )
+        term_args = term.term_args(
+            **{k: kwargs.get(k, None) for k in term.term_args._fields}
+        )
 
-        solver = term_type_cls.solver
-        base_args_nt = term_type_cls.base_args
-        term_args_nt = term_type_cls.term_args
-
-        base_args = \
-            base_args_nt(**{k: kwargs[k] for k in base_args_nt._fields})
-        term_args = \
-            term_args_nt(**{k: kwargs[k] for k in term_args_nt._fields})
-
-        term_opts = getattr(chain_opts, term)
-
-        meta_args = meta_args_nt(iters,
-                                 active_term,
-                                 solver_opts.convergence_fraction,
-                                 solver_opts.convergence_criteria,
-                                 solver_opts.threads,
-                                 term_opts.direction_dependent,
-                                 term_opts.solve_per,
-                                 robust)
+        meta_args = meta_args_nt(
+            iters,
+            active_term,
+            solver_opts.convergence_fraction,
+            solver_opts.convergence_criteria,
+            solver_opts.threads,
+            term.direction_dependent,
+            term.solve_per,
+            solver_opts.robust
+        )
 
         if iters != 0:
-            jhj, info_tup = solver(base_args,
-                                   term_args,
-                                   meta_args,
-                                   kwargs["corr_mode"])
+            jhj, info_tup = term.solver(
+                base_args,
+                term_args,
+                meta_args,
+                corr_mode
+            )
         else:
             # TODO: Actually compute it in this special case?
-            jhj = np.zeros_like(results_dict[f"{term_name}-gain"])
+            jhj = np.zeros_like(results_dict[f"{term.name}-gain"])
             info_tup = (0, 0)
 
         # If reweighting is enabled, do it when the epoch changes, except
         # for the final epoch - we don't reweight if we won't solve again.
         if solver_opts.robust:
-            current_epoch = ind // len(terms)
-            next_epoch = (ind + 1) // len(terms)
+            current_epoch = ind // len(chain)
+            next_epoch = (ind + 1) // len(chain)
 
             if current_epoch != next_epoch and next_epoch != final_epoch:
 
@@ -171,11 +238,25 @@ def solver_wrapper(
         if jhj.ndim == 6:
             jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
 
-        results_dict[f"{term_name}-conviter"] += np.atleast_2d(info_tup[0])
-        results_dict[f"{term_name}-convperc"] = np.atleast_2d(info_tup[1])
-        results_dict[f"{term_name}-jhj"] = jhj
+        results_dict[f"{term.name}-conviter"] += np.atleast_2d(info_tup[0])
+        results_dict[f"{term.name}-convperc"] = np.atleast_2d(info_tup[1])
+        results_dict[f"{term.name}-jhj"] = jhj
 
-    postsolve_chisq = compute_mean_postsolve_chisq(**kwargs)
+    postsolve_chisq = compute_mean_postsolve_chisq(
+        kwargs["DATA"],
+        kwargs["MODEL_DATA"],
+        kwargs["WEIGHT"],
+        kwargs["FLAG"],
+        kwargs["gains"],
+        kwargs["ANTENNA1"],
+        kwargs["ANTENNA2"],
+        kwargs["time_maps"],
+        kwargs["freq_maps"],
+        kwargs["dir_maps"],
+        kwargs.get("row_map", None),
+        kwargs.get("row_weights", None),
+        corr_mode
+    )
     log_chisq(presolve_chisq, postsolve_chisq, aux_block_info, block_id)
 
     results_dict["presolve_chisq"] = presolve_chisq
