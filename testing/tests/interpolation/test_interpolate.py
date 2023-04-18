@@ -53,11 +53,11 @@ def mock_gain_xds_list(start_time,
         freq_range = np.arange(freq_lb, freq_lb + n_freq)
 
         coords = {
-            "gain_t": time_range,
-            "gain_f": freq_range,
-            "ant": np.arange(n_ant),
-            "dir": np.arange(n_dir),
-            "corr": np.arange(n_corr)
+            "gain_time": time_range,
+            "gain_freq": freq_range,
+            "antenna": np.arange(n_ant),
+            "direction": np.arange(n_dir),
+            "correlation": np.arange(n_corr)
         }
 
         gains = da.zeros((n_time, n_freq, n_ant, n_dir, n_corr),
@@ -67,15 +67,23 @@ def mock_gain_xds_list(start_time,
         flags = da.zeros((n_time, n_freq, n_ant, n_dir),
                          dtype=np.int8)
 
+        gain_axes = (
+            "gain_time",
+            "gain_freq",
+            "antenna",
+            "direction",
+            "correlation"
+        )
+
         # Include a dummy data_var to check that it doesn't break anything.
         data_vars = {
-            "gains": (("gain_t", "gain_f", "ant", "dir", "corr"), gains),
-            "gain_flags": (("gain_t", "gain_f", "ant", "dir"), flags),
-            "dummy": (("ant",), np.arange(n_ant))
+            "gains": (gain_axes, gains),
+            "gain_flags": (gain_axes[:-1], flags),
+            "dummy": (("antenna",), np.arange(n_ant))
         }
 
         attrs = {
-            "GAIN_AXES": ("gain_t", "gain_f", "ant", "dir", "corr"),
+            "GAIN_AXES": gain_axes,
             "GAIN_SPEC": gain_spec_tup((n_time,), (n_freq,), (n_ant,),
                                        (n_dir,), (n_corr,))
         }
@@ -172,18 +180,18 @@ def sorted_xds_lol(converted_xds_list):
 
 
 def test_time_grouping(sorted_xds_lol):
-    assert all([len(set(xds.gain_t.values[0] for xds in xds_list)) == 1
+    assert all([len(set(xds.gain_time.values[0] for xds in xds_list)) == 1
                 for xds_list in sorted_xds_lol])
 
 
 def test_time_ordering(sorted_xds_lol):
-    times = [xds_list[0].gain_t.values[0] for xds_list in sorted_xds_lol]
+    times = [xds_list[0].gain_time.values[0] for xds_list in sorted_xds_lol]
     assert sorted(times) == times
 
 
 def test_freq_ordering(sorted_xds_lol):
     for xds_list in sorted_xds_lol:
-        freqs = [xds.gain_f.values[0] for xds in xds_list]
+        freqs = [xds.gain_freq.values[0] for xds in xds_list]
         assert sorted(freqs) == freqs
 
 
@@ -247,8 +255,8 @@ def test_nxds(concat_xds_list, term_xds_list):
 
 def test_time_lower_bounds(concat_xds_list, term_xds_list, bounds):
 
-    concat_lb = [xds.gain_t.values[0] for xds in concat_xds_list]
-    term_lb = [xds.gain_t.values[0] for xds in term_xds_list]
+    concat_lb = [xds.gain_time.values[0] for xds in concat_xds_list]
+    term_lb = [xds.gain_time.values[0] for xds in term_xds_list]
     req_extrapolation = [tlb < bounds.min_t for tlb in term_lb]
 
     zipper = zip(concat_lb, term_lb, req_extrapolation)
@@ -258,8 +266,8 @@ def test_time_lower_bounds(concat_xds_list, term_xds_list, bounds):
 
 def test_time_upper_bounds(concat_xds_list, term_xds_list, bounds):
 
-    concat_ub = [xds.gain_t.values[-1] for xds in concat_xds_list]
-    term_ub = [xds.gain_t.values[-1] for xds in term_xds_list]
+    concat_ub = [xds.gain_time.values[-1] for xds in concat_xds_list]
+    term_ub = [xds.gain_time.values[-1] for xds in term_xds_list]
     req_extrapolation = [tub > bounds.max_f for tub in term_ub]
 
     zipper = zip(concat_ub, term_ub, req_extrapolation)
@@ -269,8 +277,8 @@ def test_time_upper_bounds(concat_xds_list, term_xds_list, bounds):
 
 def test_freq_lower_bounds(concat_xds_list, term_xds_list, bounds):
 
-    concat_lb = [xds.gain_f.values[0] for xds in concat_xds_list]
-    term_lb = [xds.gain_f.values[0] for xds in term_xds_list]
+    concat_lb = [xds.gain_freq.values[0] for xds in concat_xds_list]
+    term_lb = [xds.gain_freq.values[0] for xds in term_xds_list]
     req_extrapolation = [tlb < bounds.min_f for tlb in term_lb]
 
     zipper = zip(concat_lb, term_lb, req_extrapolation)
@@ -280,8 +288,8 @@ def test_freq_lower_bounds(concat_xds_list, term_xds_list, bounds):
 
 def test_freq_upper_bounds(concat_xds_list, term_xds_list, bounds):
 
-    concat_ub = [xds.gain_f.values[-1] for xds in concat_xds_list]
-    term_ub = [xds.gain_f.values[-1] for xds in term_xds_list]
+    concat_ub = [xds.gain_freq.values[-1] for xds in concat_xds_list]
+    term_ub = [xds.gain_freq.values[-1] for xds in term_xds_list]
     req_extrapolation = [tub > bounds.max_f for tub in term_ub]
 
     zipper = zip(concat_ub, term_ub, req_extrapolation)
@@ -316,14 +324,14 @@ def test_chunking(interp_xds_list, term_xds_list):
 
 
 @pytest.fixture(scope="function")
-def interp_xds_lol(gain_xds_lod, chain_opts, load_xds_list, monkeypatch):
+def interp_xds_lol(gain_xds_lod, chain, load_xds_list, monkeypatch):
 
     monkeypatch.setattr(
         "quartical.interpolation.interpolate.xds_from_zarr",
         lambda store: load_xds_list
     )
 
-    return load_and_interpolate_gains(gain_xds_lod, chain_opts)
+    return load_and_interpolate_gains(gain_xds_lod, chain)
 
 
 @pytest.fixture(scope="function")

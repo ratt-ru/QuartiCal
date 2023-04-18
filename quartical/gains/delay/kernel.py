@@ -32,8 +32,10 @@ delay_args = namedtuple(
     (
         "params",
         "param_flags",
-        "chan_freqs",
-        "t_bin_arr"
+        "CHAN_FREQ",
+        "param_time_bins",
+        "param_time_maps",
+        "param_freq_maps"
     )
 )
 
@@ -85,8 +87,8 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
         real_dtype = active_gain.real.dtype
         param_shape = active_params.shape
 
-        active_t_map_g = base_args.t_map_arr[0, :, active_term]
-        active_f_map_p = base_args.f_map_arr[1, :, active_term]
+        active_t_map_g = base_args.time_maps[active_term]
+        active_f_map_p = term_args.param_freq_maps[active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, param_shape, n_thread)
@@ -106,7 +108,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
         upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
         native_imdry = native_intermediaries(jhj, jhr, update)
 
-        scaled_cf = term_args.chan_freqs.copy()  # Don't mutate.
+        scaled_cf = term_args.CHAN_FREQ.copy()  # Don't mutate.
         min_freq = np.min(scaled_cf)
         scaled_cf /= min_freq  # Scale freqs to avoid precision.
         active_params[..., 1::2] *= min_freq  # Scale delay consistently.
@@ -223,19 +225,19 @@ def compute_jhj_jhr(
 
         active_term = meta_args.active_term
 
-        data = base_args.data
-        model = base_args.model
-        weights = base_args.weights
-        flags = base_args.flags
-        antenna1 = base_args.a1
-        antenna2 = base_args.a2
+        data = base_args.DATA
+        model = base_args.MODEL_DATA
+        weights = base_args.WEIGHT
+        flags = base_args.FLAG
+        antenna1 = base_args.ANTENNA1
+        antenna2 = base_args.ANTENNA2
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
         gains = base_args.gains
-        t_map_arr = base_args.t_map_arr[0]  # We only need the gain mappings.
-        f_map_arr_g = base_args.f_map_arr[0]
-        d_map_arr = base_args.d_map_arr
+        time_maps = base_args.time_maps
+        freq_maps = base_args.freq_maps  # NOTE: These are the gain maps.
+        dir_maps = base_args.dir_maps
 
         jhj = upsampled_imdry.jhj
         jhr = upsampled_imdry.jhr
@@ -326,9 +328,9 @@ def compute_jhj_jhr(
                         # Construct a small contiguous gain array. This makes
                         # the single term case fractionally slower.
                         for gi in range(n_gains):
-                            d_m = d_map_arr[gi, d]  # Broadcast dir.
-                            t_m = t_map_arr[row_ind, gi]
-                            f_m = f_map_arr_g[f, gi]
+                            d_m = dir_maps[gi][d]  # Broadcast dir.
+                            t_m = time_maps[gi][row_ind]
+                            f_m = freq_maps[gi][f]
 
                             gain = gains[gi][t_m, f_m]
 
@@ -363,7 +365,7 @@ def compute_jhj_jhr(
                             g_q = gains_q[g]
                             v1ct_imul_v2(g_q, lop_qp, lop_qp)
 
-                        out_d = d_map_arr[active_term, d]
+                        out_d = dir_maps[active_term][d]
 
                         iunpack(lop_pq_arr[out_d], lop_pq)
                         iadd(rop_pq_arr[out_d], rop_pq)
@@ -476,8 +478,8 @@ def finalize_update(base_args, term_args, meta_args, native_imdry, scaled_cf,
 
             gain = base_args.gains[active_term]
             gain_flags = base_args.gain_flags[active_term]
-            f_map_arr_p = base_args.f_map_arr[1, :, active_term]
-            d_map_arr = base_args.d_map_arr[active_term, :]
+            param_freq_map = term_args.param_freq_maps[active_term]
+            dir_map = base_args.dir_maps[active_term]
 
             params = term_args.params[active_term]
 
@@ -491,11 +493,11 @@ def finalize_update(base_args, term_args, meta_args, native_imdry, scaled_cf,
             for t in range(n_time):
                 for f in range(n_freq):
                     cf = scaled_cf[f]
-                    f_m = f_map_arr_p[f]
+                    f_m = param_freq_map[f]
                     for a in range(n_ant):
                         for d in range(n_dir):
 
-                            d_m = d_map_arr[d]
+                            d_m = dir_map[d]
                             g = gain[t, f, a, d]
                             fl = gain_flags[t, f, a, d]
                             p = params[t, f_m, a, d_m]

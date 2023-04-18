@@ -10,7 +10,7 @@ class Complex(Gain):
 
     def __init__(self, term_name, term_opts):
 
-        Gain.__init__(self, term_name, term_opts)
+        super().__init__(term_name, term_opts)
 
         self.gain_axes = (
             "gain_time",
@@ -23,8 +23,8 @@ class Complex(Gain):
 
 class DiagComplex(Complex):
 
-    solver = diag_complex_solver
+    solver = staticmethod(diag_complex_solver)
 
     def __init__(self, term_name, term_opts):
 
-        Complex.__init__(self, term_name, term_opts)
+        super().__init__(term_name, term_opts)

@@ -114,6 +114,8 @@ class Gain:
 
         utime, utime_ind = np.unique(time_col, return_index=True)
 
+        time_interval = time_interval or utime.size  # Handle 0.
+
         utime_intervals = interval_col[utime_ind]
         utime_scans = scan_col[utime_ind]
 
@@ -221,6 +223,8 @@ class Gain:
     def _make_freq_map(cls, chan_freqs, chan_widths, freq_interval):
         """Internals of the frequency interval mapper."""
 
+        freq_interval = freq_interval or chan_freqs.size  # Handle 0.
+
         n_chan = chan_freqs.size
 
         freq_map = np.empty((n_chan,), dtype=np.int32)
@@ -288,13 +292,13 @@ class Gain:
         if direction_dependent:
             dir_map = da.arange(
                 n_dir,
-                dtype=np.int64
+                dtype=np.int32
             )
         else:
             dir_map = da.zeros(
                 n_dir,
                 name="dirmap-" + uuid4().hex,
-                dtype=np.int64
+                dtype=np.int32
             )
 
         return dir_map
@@ -305,12 +309,12 @@ class Gain:
         if direction_dependent:
             dir_map = np.arange(
                 n_dir,
-                dtype=np.int64
+                dtype=np.int32
             )
         else:
             dir_map = np.zeros(
                 n_dir,
-                dtype=np.int64
+                dtype=np.int32
             )
 
         return dir_map
@@ -332,3 +336,120 @@ class Gain:
             loaded = False
 
         return loaded
+
+
+class ParameterizedGain(Gain):
+
+    def __init__(self, term_name, term_opts):
+
+        super().__init__(term_name, term_opts)
+
+    @classmethod
+    def make_param_time_bins(
+        cls,
+        time_col,
+        interval_col,
+        scan_col,
+        time_interval,
+        respect_scan_boundaries,
+        chunks=None
+    ):
+
+        time_bins = da.map_blocks(
+            cls._make_param_time_bins,
+            time_col,
+            interval_col,
+            scan_col,
+            time_interval,
+            respect_scan_boundaries,
+            dtype=np.int64,
+            chunks=chunks
+        )
+
+        return time_bins
+
+    @classmethod
+    def _make_param_time_bins(
+        cls,
+        time_col,
+        interval_col,
+        scan_col,
+        time_interval,
+        respect_scan_boundaries
+    ):
+        return super()._make_time_bins(
+            time_col,
+            interval_col,
+            scan_col,
+            time_interval,
+            respect_scan_boundaries
+        )
+
+    @classmethod
+    def make_param_time_map(cls, time_col, param_time_bins):
+
+        param_time_map = da.map_blocks(
+            cls._make_param_time_map,
+            time_col,
+            param_time_bins,
+            dtype=np.int64
+        )
+
+        return param_time_map
+
+    @classmethod
+    def _make_param_time_map(cls, time_col, param_time_bins):
+        return super()._make_time_map(time_col, param_time_bins)
+
+    @classmethod
+    def make_param_time_chunks(cls, param_time_bins):
+
+        param_time_chunks = da.map_blocks(
+            cls._make_param_time_chunks,
+            param_time_bins,
+            chunks=(1,),
+            dtype=np.int64
+        )
+
+        return param_time_chunks
+
+    @classmethod
+    def _make_param_time_chunks(cls, param_time_bins):
+        return super()._make_time_chunks(param_time_bins)
+
+    @classmethod
+    def make_param_freq_map(cls, chan_freqs, chan_widths, freq_interval):
+
+        param_freq_map = da.map_blocks(
+            cls._make_param_freq_map,
+            chan_freqs,
+            chan_widths,
+            freq_interval,
+            dtype=np.int64
+        )
+
+        return param_freq_map
+
+    @classmethod
+    def _make_param_freq_map(cls, chan_freqs, chan_widths, freq_interval):
+        return super()._make_freq_map(chan_freqs, chan_widths, freq_interval)
+
+    @classmethod
+    def make_param_freq_chunks(cls, param_freq_map):
+
+        param_freq_chunks = da.map_blocks(
+            cls._make_param_freq_chunks,
+            param_freq_map,
+            chunks=(1,),
+            dtype=np.int64
+        )
+
+        return param_freq_chunks
+
+    @classmethod
+    def _make_param_freq_chunks(cls, param_freq_map):
+        return super()._make_freq_chunks(param_freq_map)
+
+    @classmethod
+    def make_param_names(cls, correlations):
+        raise NotImplementedError

@@ -34,7 +34,7 @@ def dask_opts(opts):
 
 
 @pytest.fixture(scope="module")
-def chain_opts(opts):
+def chain(opts):
     return gains_to_chain(opts)
 
 

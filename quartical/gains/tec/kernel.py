@@ -31,8 +31,10 @@ tec_args = namedtuple(
     (
         "params",
         "param_flags",
-        "chan_freqs",
-        "t_bin_arr"
+        "CHAN_FREQ",
+        "param_time_bins",
+        "param_time_maps",
+        "param_freq_maps"
     )
 )
 
@@ -86,8 +88,8 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         real_dtype = active_gain.real.dtype
         param_shape = active_params.shape
 
-        active_t_map_g = base_args.t_map_arr[0, :, active_term]
-        active_f_map_p = base_args.f_map_arr[1, :, active_term]
+        active_t_map_g = base_args.time_maps[active_term]
+        active_f_map_p = term_args.param_freq_maps[active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, param_shape, n_thread)
@@ -107,7 +109,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
         native_imdry = native_intermediaries(jhj, jhr, update)
 
-        scaled_icf = term_args.chan_freqs.copy()  # Don't mutate.
+        scaled_icf = term_args.CHAN_FREQ.copy()  # Don't mutate.
         min_freq = np.min(scaled_icf)
         scaled_icf = min_freq/scaled_icf  # Scale freqs to avoid precision.
         active_params[..., 1::2] /= min_freq  # Scale consistently with freq.
