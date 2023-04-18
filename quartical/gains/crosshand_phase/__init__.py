@@ -1,52 +1,38 @@
-from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
+from quartical.gains.gain import ParameterizedGain
 from quartical.gains.crosshand_phase.kernel import (crosshand_phase_solver,
                                                     crosshand_phase_args)
-import numpy as np
 
 
-class CrosshandPhase(Gain):
+class CrosshandPhase(ParameterizedGain):
 
-    solver = crosshand_phase_solver
+    solver = staticmethod(crosshand_phase_solver)
     term_args = crosshand_phase_args
 
-    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
+    def __init__(self, term_name, term_opts):
 
-        Gain.__init__(self, term_name, term_opts, data_xds, coords, tipc, fipc)
+        super().__init__(term_name, term_opts)
 
+        self.gain_axes = (
+            "gain_time",
+            "gain_freq",
+            "antenna",
+            "direction",
+            "correlation"
+        )
+        self.param_axes = (
+            "param_time",
+            "param_freq",
+            "antenna",
+            "direction",
+            "param_name"
+        )
+
+    @classmethod
+    def make_param_names(cls, correlations):
+
+        # TODO: This is not dasky, unlike the other functions. Delayed?
         parameterisable = ["XX", "RR"]
 
-        self.parameterised_corr = \
-            [ct for ct in self.corr_types if ct in parameterisable]
-        self.n_param = len(self.parameterised_corr)
+        param_corr = [c for c in correlations if c in parameterisable]
 
-        self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
-                                             self.n_fipc_g,
-                                             (self.n_ant,),
-                                             (self.n_dir,),
-                                             (self.n_corr,))
-        self.param_chunk_spec = param_spec_tup(self.n_tipc_g,
-                                               self.n_fipc_g,
-                                               (self.n_ant,),
-                                               (self.n_dir,),
-                                               (self.n_param,))
-        self.gain_axes = ("gain_t", "gain_f", "ant", "dir", "corr")
-        self.param_axes = ("param_t", "param_f", "ant", "dir", "param")
-
-    def make_xds(self):
-
-        xds = Gain.make_xds(self)
-
-        param_template = ["crosshand_phase_{}"]
-
-        param_labels = [pt.format(ct) for ct in self.parameterised_corr
-                        for pt in param_template]
-
-        xds = xds.assign_coords({"param": np.array(param_labels),
-                                 "param_t": self.param_times,
-                                 "param_f": self.param_freqs})
-        xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
-                                "PARAM_SPEC": self.param_chunk_spec,
-                                "GAIN_AXES": self.gain_axes,
-                                "PARAM_AXES": self.param_axes})
-
-        return xds
+        return [f"crosshand_phase_{c}" for c in param_corr]

@@ -92,9 +92,20 @@ def invert_gains(gain_list, inverse_gains, corr_mode):
 
 
 @qcgjit
-def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
-                     d_map_arr, row_map, row_weights, corr_mode,
-                     sub_dirs=None):
+def compute_residual(
+    data,
+    model,
+    gain_tuple,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode,
+    sub_dirs=None
+):
 
     coerce_literal(compute_residual, ["corr_mode"])
 
@@ -105,13 +116,25 @@ def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
     iunpack = factories.iunpack_factory(corr_mode)
     valloc = factories.valloc_factory(corr_mode)
 
-    def impl(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
-             d_map_arr, row_map, row_weights, corr_mode, sub_dirs=None):
+    def impl(
+        data,
+        model,
+        gain_tuple,
+        a1,
+        a2,
+        time_maps,
+        freq_maps,
+        dir_maps,
+        row_map,
+        row_weights,
+        corr_mode,
+        sub_dirs=None
+    ):
 
         residual = data.copy()
 
         n_rows, n_chan, n_dir, _ = get_dims(model, row_map)
-        n_gains = len(gain_list)
+        n_gains = len(gain_tuple)
 
         if sub_dirs is None:
             dir_loop = np.arange(n_dir)
@@ -135,11 +158,11 @@ def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
 
                     for g in range(n_gains - 1, -1, -1):
 
-                        t_m = t_map_arr[row_ind, g]
-                        f_m = f_map_arr[f, g]
-                        d_m = d_map_arr[g, d]  # Broadcast dir.
+                        t_m = time_maps[g][row_ind]
+                        f_m = freq_maps[g][f]
+                        d_m = dir_maps[g][d]  # Broadcast dir.
 
-                        gain = gain_list[g][t_m, f_m]
+                        gain = gain_tuple[g][t_m, f_m]
                         gain_p = gain[a1_m, d_m]
                         gain_q = gain[a2_m, d_m]
 
@@ -155,9 +178,18 @@ def compute_residual(data, model, gain_list, a1, a2, t_map_arr, f_map_arr,
 
 
 @qcgjit
-def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
-                               f_map_arr, d_map_arr, row_map, row_weights,
-                               corr_mode):
+def compute_corrected_residual(
+    residual,
+    gain_tuple,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode
+):
 
     coerce_literal(compute_corrected_residual, ["corr_mode"])
 
@@ -168,20 +200,30 @@ def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
     iunpack = factories.iunpack_factory(corr_mode)
     valloc = factories.valloc_factory(corr_mode)
 
-    def impl(residual, gain_list, a1, a2, t_map_arr, f_map_arr,
-             d_map_arr, row_map, row_weights, corr_mode):
+    def impl(
+        residual,
+        gain_tuple,
+        a1,
+        a2,
+        time_maps,
+        freq_maps,
+        dir_maps,
+        row_map,
+        row_weights,
+        corr_mode
+    ):
 
         corrected_residual = np.zeros_like(residual)
 
         inverse_gain_list = List()
 
-        for gain_term in gain_list:
+        for gain_term in gain_tuple:
             inverse_gain_list.append(np.empty_like(gain_term))
 
-        invert_gains(gain_list, inverse_gain_list, corr_mode)
+        invert_gains(gain_tuple, inverse_gain_list, corr_mode)
 
         n_rows, n_chan, _ = get_dims(residual, row_map)
-        n_gains = len(gain_list)
+        n_gains = len(gain_tuple)
 
         r = valloc(np.complex128)
 
@@ -197,8 +239,8 @@ def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
 
                 for g in range(n_gains):
 
-                    t_m = t_map_arr[row_ind, g]
-                    f_m = f_map_arr[f, g]
+                    t_m = time_maps[g][row_ind]
+                    f_m = freq_maps[g][f]
 
                     igain = inverse_gain_list[g][t_m, f_m]
                     igain_p = igain[a1_m, 0]  # Only correct in direction 0.
@@ -216,9 +258,18 @@ def compute_corrected_residual(residual, gain_list, a1, a2, t_map_arr,
 
 
 @qcgjit
-def compute_corrected_weights(weights, gain_list, a1, a2, t_map_arr,
-                              f_map_arr, d_map_arr, row_map, row_weights,
-                              corr_mode):
+def compute_corrected_weights(
+    weights,
+    gain_tuple,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode
+):
 
     coerce_literal(compute_corrected_weights, ["corr_mode"])
 
@@ -232,13 +283,23 @@ def compute_corrected_weights(weights, gain_list, a1, a2, t_map_arr,
     corrected_weights_buffer = corrected_weights_buffer_factory(corr_mode)
     corrected_weights_inner = corrected_weights_inner_factory(corr_mode)
 
-    def impl(weights, gain_list, a1, a2, t_map_arr, f_map_arr,
-             d_map_arr, row_map, row_weights, corr_mode):
+    def impl(
+        weights,
+        gain_tuple,
+        a1,
+        a2,
+        time_maps,
+        freq_maps,
+        dir_maps,
+        row_map,
+        row_weights,
+        corr_mode
+    ):
 
         corrected_weights = np.zeros_like(weights)
 
         n_rows, n_chan, _ = get_dims(weights, row_map)
-        n_gains = len(gain_list)
+        n_gains = len(gain_tuple)
 
         w = valloc(np.float64)
 
@@ -259,9 +320,9 @@ def compute_corrected_weights(weights, gain_list, a1, a2, t_map_arr,
 
                 for g in range(n_gains):
 
-                    t_m = t_map_arr[row_ind, g]
-                    f_m = f_map_arr[f, g]
-                    gain = gain_list[g][t_m, f_m]
+                    t_m = time_maps[g][row_ind]
+                    f_m = freq_maps[g][f]
+                    gain = gain_tuple[g][t_m, f_m]
 
                     if g == 0:
                         iunpack(gp, gain[a1_m, 0])
@@ -378,25 +439,32 @@ def compute_convergence(gain, last_gain, criteria):
 
 
 @qcgjit
-def combine_gains(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
-                  corr_mode, *gains):
+def combine_gains(
+    gains,
+    time_bins,
+    freq_maps,
+    dir_maps,
+    net_shape,
+    corr_mode
+):
 
     coerce_literal(combine_gains, ["corr_mode"])
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
 
-    def impl(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape, corr_mode,
-             *gains):
-        t_bin_arr = t_bin_arr[0]
-        f_map_arr = f_map_arr[0]
+    def impl(
+        gains,
+        time_bins,
+        freq_maps,
+        dir_maps,
+        net_shape,
+        corr_mode
+    ):
 
-        n_time = t_bin_arr.shape[0]
-        n_freq = f_map_arr.shape[0]
+        n_term = len(gains)
+        n_time, n_freq, n_ant, n_dir, _ = net_shape
 
-        _, _, n_ant, n_dir, n_corr = net_shape
-
-        net_gains = np.zeros((n_time, n_freq, n_ant, n_dir, n_corr),
-                             dtype=np.complex128)
+        net_gains = np.zeros(net_shape, dtype=np.complex128)
         net_gains[..., 0] = 1
         net_gains[..., -1] = 1
 
@@ -404,13 +472,17 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
             for f in range(n_freq):
                 for a in range(n_ant):
                     for d in range(n_dir):
-                        for gi in term_ids:
-                            tm = t_bin_arr[t, gi]
-                            fm = f_map_arr[f, gi]
-                            dm = d_map_arr[gi, d]
-                            v1_imul_v2(net_gains[t, f, a, d],
-                                       gains[gi][tm, fm, a, dm],
-                                       net_gains[t, f, a, d])
+                        for gi in range(n_term):
+
+                            tm = time_bins[gi][t]
+                            fm = freq_maps[gi][f]
+                            dm = dir_maps[gi][d]
+
+                            v1_imul_v2(
+                                net_gains[t, f, a, d],
+                                gains[gi][tm, fm, a, dm],
+                                net_gains[t, f, a, d]
+                            )
 
         return net_gains
 
@@ -418,17 +490,26 @@ def combine_gains(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
 
 
 @qcgjit
-def combine_flags(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
-                  *flags):
+def combine_flags(
+    flags,
+    time_bins,
+    freq_maps,
+    dir_maps,
+    net_shape,
+    corr_mode
+):
 
-    def impl(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape, *flags):
-        t_bin_arr = t_bin_arr[0]
-        f_map_arr = f_map_arr[0]
+    def impl(
+        flags,
+        time_bins,
+        freq_maps,
+        dir_maps,
+        net_shape,
+        corr_mode
+    ):
 
-        n_time = t_bin_arr.shape[0]
-        n_freq = f_map_arr.shape[0]
-
-        _, _, n_ant, n_dir = net_shape
+        n_term = len(flags)
+        n_time, n_freq, n_ant, n_dir, _ = net_shape
 
         net_flags = np.zeros((n_time, n_freq, n_ant, n_dir), dtype=np.int8)
 
@@ -436,10 +517,11 @@ def combine_flags(t_bin_arr, f_map_arr, d_map_arr, term_ids, net_shape,
             for f in range(n_freq):
                 for a in range(n_ant):
                     for d in range(n_dir):
-                        for gi in term_ids:
-                            tm = t_bin_arr[t, gi]
-                            fm = f_map_arr[f, gi]
-                            dm = d_map_arr[gi, d]
+                        for gi in range(n_term):
+
+                            tm = time_bins[gi][t]
+                            fm = freq_maps[gi][f]
+                            dm = dir_maps[gi][d]
 
                             net_flags[t, f, a, d] |= flags[gi][tm, fm, a, dm]
 

@@ -31,7 +31,9 @@ phase_args = namedtuple(
     (
         "params",
         "param_flags",
-        "t_bin_arr"
+        "param_time_bins",
+        "param_time_maps",
+        "param_freq_maps"
     )
 )
 
@@ -83,8 +85,8 @@ def phase_solver(base_args, term_args, meta_args, corr_mode):
         real_dtype = active_gain.real.dtype
         param_shape = active_params.shape
 
-        active_t_map_g = base_args.t_map_arr[0, :, active_term]
-        active_f_map_g = base_args.f_map_arr[0, :, active_term]
+        active_t_map_g = base_args.time_maps[active_term]
+        active_f_map_g = base_args.freq_maps[active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, param_shape, n_thread)
@@ -209,19 +211,19 @@ def compute_jhj_jhr(
 
         active_term = meta_args.active_term
 
-        data = base_args.data
-        model = base_args.model
-        weights = base_args.weights
-        flags = base_args.flags
-        antenna1 = base_args.a1
-        antenna2 = base_args.a2
+        data = base_args.DATA
+        model = base_args.MODEL_DATA
+        weights = base_args.WEIGHT
+        flags = base_args.FLAG
+        antenna1 = base_args.ANTENNA1
+        antenna2 = base_args.ANTENNA2
         row_map = base_args.row_map
         row_weights = base_args.row_weights
 
         gains = base_args.gains
-        t_map_arr = base_args.t_map_arr[0]  # We only need the gain mappings.
-        f_map_arr = base_args.f_map_arr[0]  # We only need the gain mappings.
-        d_map_arr = base_args.d_map_arr
+        time_maps = base_args.time_maps
+        freq_maps = base_args.freq_maps
+        dir_maps = base_args.dir_maps
 
         jhj = upsampled_imdry.jhj
         jhr = upsampled_imdry.jhr
@@ -312,9 +314,9 @@ def compute_jhj_jhr(
                         # Construct a small contiguous gain array. This makes
                         # the single term case fractionally slower.
                         for gi in range(n_gains):
-                            d_m = d_map_arr[gi, d]  # Broadcast dir.
-                            t_m = t_map_arr[row_ind, gi]
-                            f_m = f_map_arr[f, gi]
+                            d_m = dir_maps[gi][d]  # Broadcast dir.
+                            t_m = time_maps[gi][row_ind]
+                            f_m = freq_maps[gi][f]
 
                             gain = gains[gi][t_m, f_m]
 
@@ -349,7 +351,7 @@ def compute_jhj_jhr(
                             g_q = gains_q[g]
                             v1ct_imul_v2(g_q, lop_qp, lop_qp)
 
-                        out_d = d_map_arr[active_term, d]
+                        out_d = dir_maps[active_term][d]
 
                         iunpack(lop_pq_arr[out_d], lop_pq)
                         iadd(rop_pq_arr[out_d], rop_pq)

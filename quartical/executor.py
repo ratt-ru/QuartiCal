@@ -44,7 +44,7 @@ def _execute(exitstack):
     output_opts = opts.output
     mad_flag_opts = opts.mad_flags
     dask_opts = opts.dask
-    chain_opts = internal.gains_to_chain(opts)  # Special handling.
+    chain = internal.gains_to_chain(opts)  # Special handling.
 
     # Init the logging proxy - an object which helps us ensure that logging
     # works for both threads an processes. It is easily picklable.
@@ -125,7 +125,7 @@ def _execute(exitstack):
         data_xds_list,
         stats_xds_list,
         solver_opts,
-        chain_opts,
+        chain,
         output_opts
     )
 

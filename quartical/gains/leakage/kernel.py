@@ -66,8 +66,8 @@ def leakage_solver(base_args, term_args, meta_args, corr_mode):
         complex_dtype = active_gain.dtype
         gain_shape = active_gain.shape
 
-        active_t_map_g = base_args.t_map_arr[0, :, active_term]
-        active_f_map_g = base_args.f_map_arr[0, :, active_term]
+        active_t_map_g = base_args.time_maps[active_term]
+        active_f_map_g = base_args.freq_maps[active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, gain_shape, n_thread)
