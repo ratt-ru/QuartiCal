@@ -2,7 +2,7 @@ from dataclasses import make_dataclass
 from omegaconf import OmegaConf as oc
 from typing import Dict, Any
 from scabha.cargo import Parameter
-from quartical.config import Gain, BaseConfig, _gain_schema
+from quartical.config import Gain, BaseConfig, gain_schema
 
 
 def finalize_structure(additional_config):
@@ -43,8 +43,9 @@ def make_stimela_schema(
     if terms is None:
         terms = BaseConfig.solver.terms  # Fall back to default.
 
+    # For each term, add the relevant entries to the inputs.
     for jones in terms:
-        for key, value in _gain_schema.items():
+        for key, value in gain_schema.items():
             inputs[f"{jones}.{key}"] = value
 
     return inputs, outputs
