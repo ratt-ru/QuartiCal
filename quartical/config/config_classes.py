@@ -1,4 +1,88 @@
+from dataclasses import fields, _MISSING_TYPE
+from typing import List, Dict
 from quartical.config.converters import as_time, as_freq
+
+
+class BaseConfigSection:
+    """Base class for dynamically generated config dataclasses."""
+
+    def __validate_choices__(self):
+
+        for fld in fields(self):
+            name = fld.name
+            value = getattr(self, name)
+            meta = fld.metadata
+
+            if value is None or "choices" not in meta:
+                continue
+            else:
+                choices = meta.get("choices")
+                assert value in choices, (
+                    f"Invalid input in {name}. User specified '{value}'. "
+                    f"Valid choices are {choices}."
+                )
+
+    def __validate_element_choices__(self):
+
+        for fld in fields(self):
+            name = fld.name
+            value = getattr(self, name)
+            meta = fld.metadata
+
+            if value is None or "element_choices" not in meta:
+                continue
+            else:
+                element_choices = meta.get("element_choices")
+                if isinstance(value, List):
+                    elements = value
+                elif isinstance(value, Dict):
+                    elements = value.values()
+                else:
+                    raise ValueError(
+                        f"Paramter {name} of type {type(value)} has element "
+                        f"choices. This is not supported."
+                    )
+                invalid_elements = set(elements) - set(element_choices)
+                assert not invalid_elements, (
+                    f"Invalid input in {name}. User specified "
+                    f"{elements}. Valid choices: {element_choices}."
+                )
+
+    def __helpstr__(self):
+
+        helpstrings = {}
+
+        for fld in fields(self):
+
+            meta = fld.metadata
+
+            help_str = meta.get('help')
+
+            if meta.get("choices", None):
+                choice_str = f"Choices: {meta.get('choices')} "
+            else:
+                choice_str = ""
+
+            if meta.get("element_choices", None):
+                element_choice_str = f"Choices: {meta.get('element_choices')} "
+            else:
+                element_choice_str = ""
+
+            if isinstance(fld.default, _MISSING_TYPE):
+                default = fld.default_factory()
+            else:
+                default = fld.default
+
+            if fld.metadata.get('required', False):
+                default_str = "REQUIRED"
+            else:
+                default_str = f"Default: {default}"
+
+            helpstrings[fld.name] = (
+                f"{help_str} {choice_str}{element_choice_str}{default_str}"
+            )
+
+        return helpstrings
 
 
 def __input_ms_post_init__(self):
