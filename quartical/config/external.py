@@ -219,11 +219,6 @@ if _schema is None:
     )
 
 
-def get_config_sections():
-    """Returns list of known config sections."""
-    return list(_config_dataclasses.keys()) + ["gain"]
-
-
 def finalize_structure(additional_config):
 
     terms = None

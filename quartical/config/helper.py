@@ -5,7 +5,7 @@ import re
 from colorama import Fore, Style
 from omegaconf import OmegaConf as oc
 from dataclasses import fields
-from quartical.config.external import finalize_structure, get_config_sections
+from quartical.config.external import finalize_structure
 
 GAIN_MSG = (
     "Gains make use of a special configuration mechanism. Use 'solver.terms' "
@@ -15,29 +15,14 @@ GAIN_MSG = (
 )
 
 HELP_MSG = (
-    f"For full help, use 'goquartical help'. For help with a specific "
-    f"section, use e.g. 'goquartical help='[section1, section2]''. Help is "
-    f"available for [{', '.join(get_config_sections())}]. Other command line "
-    f"utilitites: [goquartical-backup, goquartical-restore]."
+    "For full help, use 'goquartical help'. For help with a specific "
+    "section, use e.g. 'goquartical help='[section1, section2]''. Help is "
+    "available for {}. Other command line utilitites: [goquartical-backup, "
+    "goquartical-restore]."
 )
 
 
-def make_help_dict():
-
-    # We add this so that the help object incudes a generic gain field.
-    additional_config = [oc.from_dotlist(["solver.terms=['gain']"])]
-
-    FinalConfig = finalize_structure(additional_config)
-
-    help_dict = {}
-
-    for fld in fields(FinalConfig):
-        help_dict[fld.name] = getattr(FinalConfig, fld.name).__helpstr__()
-
-    return help_dict
-
-
-def print_help(help_dict, selection):
+def print_help(HelpConfig, section_names=None):
 
     # This guards against attempting to get the terminal size when the output
     # is being piped/redirected.
@@ -48,35 +33,32 @@ def print_help(help_dict, selection):
 
     help_message = f"{Style.BRIGHT}"
 
-    current_section = None
+    all_section_names = [fld.name for fld in fields(HelpConfig)]
+    section_names = section_names or all_section_names
 
-    for section, options in help_dict.items():
+    for section_name in section_names:
 
-        if section not in selection:
-            continue
+        section = getattr(HelpConfig, section_name)
+        help_message += f"\n{Fore.CYAN}{section_name:-^{columns}}\n"
 
-        if current_section != section:
-            help_message += "" if current_section is None \
-                else f"{Fore.CYAN}{'':-^{columns}}\n"
-            help_message += f"\n{Fore.CYAN}{section:-^{columns}}\n"
-            current_section = section
-
-        if section == "gain":
+        if section_name == "gain":
             txt = textwrap.fill(GAIN_MSG, width=columns)
             help_message += f"{Fore.GREEN}{txt:-^{columns}}\n"
 
-        for key, value in options.items():
-            option = f"{section}.{key}"
+        for key, value in section.__helpstr__().items():
+            option = f"{section_name}.{key}"
             help_message += f"{Fore.MAGENTA}{option:<}\n"
-            txt = textwrap.fill(value,
-                                width=columns,
-                                initial_indent=" "*4,
-                                subsequent_indent=" "*4)
+            txt = textwrap.fill(
+                value,
+                width=columns,
+                initial_indent=" "*4,
+                subsequent_indent=" "*4
+            )
             help_message += f"{Fore.WHITE}{txt:<{columns}}\n"
 
-    help_message += f"{Fore.CYAN}{'':-^{columns}}"
+        help_message += f"{Fore.CYAN}{'':-^{columns}}\n"
 
-    txt = textwrap.fill(HELP_MSG, width=columns)
+    txt = textwrap.fill(HELP_MSG.format(all_section_names), width=columns)
 
     help_message += f"{Fore.GREEN}{txt:-^{columns}}\n"
 
@@ -93,17 +75,20 @@ def help():
     # Always take the last specified help request.
     help_arg = help_args.pop() if help_args else help_args
 
+    # Early return when help is not required.
+    if len(sys.argv) != 1 and not help_arg:
+        return
+
+    # Include a generic gain term in the help config.
+    additional_config = [oc.from_dotlist(["solver.terms=['gain']"])]
+    HelpConfig = finalize_structure(additional_config)
+
     if len(sys.argv) == 1 or help_arg == "help":
-        help_dict = make_help_dict()
-        selection = help_dict.keys()
-    elif help_arg:
-        help_dict = make_help_dict()
+        print_help(HelpConfig)
+    else:
         selection = help_arg.split("=")[-1]
         selection = re.sub('[\[\] ]', "", selection)  # noqa
         selection = selection.split(",")
-    else:
-        return
-
-    print_help(help_dict, selection)
+        print_help(HelpConfig, section_names=selection)
 
     sys.exit()
