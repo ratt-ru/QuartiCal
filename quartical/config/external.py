@@ -13,36 +13,47 @@ class BaseConfigSection:
     Also implements specific post-init methods for them.
     """
 
-    def validate_choice_fields(self):
+    def __validate_choices__(self):
+
         for fld in fields(self):
             name = fld.name
             value = getattr(self, name)
             meta = fld.metadata
 
-            # Optional field values can be None, validated at construction.
-            if value is None:
+            if value is None or "choices" not in meta:
                 continue
-            elif "choices" in meta:  # Check for choices.
+            else:
                 choices = meta.get("choices")
                 assert value in choices, (
-                    f"Invalid input in {fld.name}. "
-                    f"User specified '{value}'. "
+                    f"Invalid input in {name}. User specified '{value}'. "
                     f"Valid choices are {choices}."
                 )
-            elif "element_choices" in meta:  # Check for element choices.
+
+    def __validate_element_choices__(self):
+
+        for fld in fields(self):
+            name = fld.name
+            value = getattr(self, name)
+            meta = fld.metadata
+
+            if value is None or "element_choices" not in meta:
+                continue
+            else:
                 element_choices = meta.get("element_choices")
                 if isinstance(value, List):
-                    args = value
+                    elements = value
                 elif isinstance(value, Dict):
-                    args = value.values()
+                    elements = value.values()
                 else:
-                    raise ValueError(f"Paramter {name} of type {type(value)}"
-                                     f"has element choices. Not understood.")
-                invalid = set(args) - set(element_choices)
-                assert not invalid, \
-                    f"Invalid input in {fld.name}. " \
-                    f"User specified '{','.join(map(str, invalid))}'. " \
-                    f"Valid choices are {','.join(map(str,element_choices))}."
+                    raise ValueError(
+                        f"Paramter {name} of type {type(value)} has element "
+                        f"choices. This is not supported."
+                    )
+                invalid_elements = set(elements) - set(element_choices)
+                assert not invalid_elements, (
+                    f"Invalid input in {name}. User specified "
+                    f"{elements}. Valid choices: {element_choices}."
+                )
 
     def __helpstr__(self):
 
@@ -82,7 +93,8 @@ class BaseConfigSection:
 
     def __input_ms_post_init__(self):
 
-        self.validate_choice_fields()
+        self.__validate_choices__()
+        self.__validate_element_choices__()
         self.time_chunk = as_time(self.time_chunk)
         self.freq_chunk = as_freq(self.freq_chunk)
 
@@ -101,11 +113,13 @@ class BaseConfigSection:
                  "set input_ms.freq_chunk to 0.")
 
     def __input_model_post_init__(self):
-        pass
+        self.__validate_choices__()
+        self.__validate_element_choices__()
 
     def __output_post_init__(self):
 
-        self.validate_choice_fields()
+        self.__validate_choices__()
+        self.__validate_element_choices__()
         assert not (bool(self.products) ^ bool(self.columns)), \
             "Neither or both of products and columns must be specified."
         if self.products:
@@ -126,11 +140,12 @@ class BaseConfigSection:
                 self.net_gains = [self.net_gains]
 
     def __mad_flags_post_init__(self):
-        pass
+        self.__validate_choices__()
+        self.__validate_element_choices__()
 
     def __solver_post_init__(self):
-
-        self.validate_choice_fields()
+        self.__validate_choices__()
+        self.__validate_element_choices__()
         assert len(self.iter_recipe) >= len(self.terms), \
             "User has specified solver.iter_recipe with too few elements."
 
@@ -138,7 +153,8 @@ class BaseConfigSection:
             "User has specified solver.convergence_criteria below 1e-8."
 
     def __dask_post_init__(self):
-        self.validate_choice_fields()
+        self.__validate_choices__()
+        self.__validate_element_choices__()
         if self.address:
             msg = (
                 "Scheduler address supplied but dask.scheduler has not "
@@ -147,7 +163,8 @@ class BaseConfigSection:
             assert self.scheduler == "distributed", msg
 
     def __gain_post_init__(self):
-        self.validate_choice_fields()
+        self.__validate_choices__()
+        self.__validate_element_choices__()
         self.time_interval = as_time(self.time_interval)
         self.freq_interval = as_freq(self.freq_interval)
         if self.type == "crosshand_phase" and self.solve_per != "array":
