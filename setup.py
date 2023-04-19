@@ -18,6 +18,7 @@ requirements = [
     "pytest",
     "omegaconf",
     "colorama",
+    "stimela==2.0rc4"
 ]
 
 setup(

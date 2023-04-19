@@ -1,57 +1,50 @@
-from dataclasses import dataclass, field, make_dataclass, fields
+import os.path
+from dataclasses import dataclass, make_dataclass, fields
 from omegaconf import OmegaConf as oc
-from typing import List, Optional, Any
+from typing import List, Dict, Any
 from quartical.config.converters import as_time, as_freq
+from scabha import schema_utils
+from scabha.cargo import Parameter
 
 
-class Input:
+class BaseConfigSection:
+    """Base class for dynamically generated config dataclasses.
+
+    Also implements specific post-init methods for them.
+    """
 
     def validate_choice_fields(self):
-        choice_fields = {f.name: f.metadata["choices"]
-                         for f in fields(self) if "choices" in f.metadata}
-        for field_name, field_choices in choice_fields.items():
-            args = getattr(self, field_name)
-            if args is None:  # An optional choices field might be None.
+        for fld in fields(self):
+            name = fld.name
+            value = getattr(self, name)
+            meta = fld.metadata
+
+            # Optional field values can be None, validated at construction.
+            if value is None:
                 continue
-            elif isinstance(args, List):
-                assert all(arg in field_choices for arg in args), \
-                       f"Invalid input in {field_name}. " \
-                       f"User specified '{args}'. " \
-                       f"Valid choices are {field_choices}."
-            else:
-                assert args in field_choices, \
-                       f"Invalid input in {field_name}. " \
-                       f"User specified '{args}'. " \
-                       f"Valid choices are {field_choices}."
+            elif "choices" in meta:  # Check for choices.
+                choices = meta.get("choices")
+                assert value in choices, \
+                    f"Invalid input in {fld.name}. " \
+                    f"User specified '{value}'. " \
+                    f"Valid choices are {choices}."
+            elif "element_choices" in meta:  # Check for element choices.
+                element_choices = meta.get("element_choices")
+                if isinstance(value, List):
+                    args = value
+                elif isinstance(value, Dict):
+                    args = value.values()
+                else:
+                    raise ValueError(f"Paramter {name} of type {type(value)}"
+                                     f"has element choices. Not understood.")
+                invalid = set(args) - set(element_choices)
+                assert not invalid, \
+                    f"Invalid input in {fld.name}. " \
+                    f"User specified '{','.join(map(str, invalid))}'. " \
+                    f"Valid choices are {','.join(map(str,element_choices))}."
 
+    def __input_ms_post_init__(self):
 
-@dataclass
-class MSInputs(Input):
-    path: str = "???"
-    data_column: str = "DATA"
-    sigma_column: Optional[str] = None
-    weight_column: Optional[str] = None
-    time_chunk: str = "0"
-    freq_chunk: str = "0"
-    is_bda: bool = False
-    group_by: Optional[List[str]] = field(
-        default_factory=lambda: ["SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID"]
-    )
-    select_corr: Optional[List[int]] = field(
-        default=None,
-        metadata=dict(choices=[0, 1, 2, 3])
-    )
-    select_fields: List[int] = field(
-        default_factory=lambda: []
-    )
-    select_ddids: List[int] = field(
-        default_factory=lambda: []
-    )
-    select_uv_range: List[float] = field(
-        default_factory=lambda: [0, 0]
-    )
-
-    def __post_init__(self):
         self.validate_choice_fields()
         self.time_chunk = as_time(self.time_chunk)
         self.freq_chunk = as_freq(self.freq_chunk)
@@ -70,57 +63,18 @@ class MSInputs(Input):
                 ("input_ms.is_bda does not support chunking in freq. Please "
                  "set input_ms.freq_chunk to 0.")
 
+    def __input_model_post_init__(self):
+        pass
 
-@dataclass
-class ModelInputs(Input):
-    recipe: Optional[str] = None
-    beam: Optional[str] = None
-    beam_l_axis: str = field(
-        default="X",
-        metadata=dict(choices=["X", "~X", "Y", "~Y", "L", "~L", "M", "~M"])
-    )
-    beam_m_axis: str = field(
-        default="Y",
-        metadata=dict(choices=["X", "~X", "Y", "~Y", "L", "~L", "M", "~M"])
-    )
-    invert_uvw: bool = True
-    source_chunks: int = 500
-    apply_p_jones: bool = False
+    def __output_post_init__(self):
 
-    def __post_init__(self):
-        self.validate_choice_fields()
-
-
-@dataclass
-class Outputs(Input):
-    gain_directory: str = "gains.qc"
-    log_directory: str = "logs.qc"
-    log_to_terminal: bool = True
-    overwrite: bool = False
-    products: Optional[List[str]] = field(
-        default=None,
-        metadata=dict(choices=["corrected_data",
-                               "corrected_residual",
-                               "residual",
-                               "weight",
-                               "corrected_weight",
-                               "model_data"])
-    )
-    columns: Optional[List[str]] = None
-    flags: bool = True
-    apply_p_jones_inv: bool = False
-    subtract_directions: Optional[List[int]] = None
-    net_gains: Optional[List[Any]] = None
-    compute_baseline_corrections: bool = False
-    apply_baseline_corrections: bool = False
-
-    def __post_init__(self):
         self.validate_choice_fields()
         assert not (bool(self.products) ^ bool(self.columns)), \
             "Neither or both of products and columns must be specified."
         if self.products:
             assert len(self.products) == len(self.columns), \
-                   "Number of products not equal to number of columns."
+                    "Number of products not equal to number of columns."
+
         if self.net_gains:
             nested = any(isinstance(i, list) for i in self.net_gains)
             if nested:
@@ -133,62 +87,21 @@ class Outputs(Input):
                      "Must be strictly a list or list of lists.")
                 # In the non-nested case, introduce outer list (consistent).
                 self.net_gains = [self.net_gains]
-        if self.apply_baseline_corrections:
-            assert self.compute_baseline_corrections, \
-                ("output.compute_baseline_corrections must be enabled if "
-                 "output.apply_baseline corrections is enabled.")
 
+    def __mad_flags_post_init__(self):
+        pass
 
-@dataclass
-class MadFlags(Input):
-    enable: bool = False
-    whitening: str = field(
-        default="disabled",
-        metadata=dict(choices=["disabled", "native", "robust"])
-    )
-    threshold_bl: float = 5
-    threshold_global: float = 10
-    max_deviation: float = 10
+    def __solver_post_init__(self):
 
-    def __post_init__(self):
-        self.validate_choice_fields()
-
-
-@dataclass
-class Solver(Input):
-    terms: List[str] = field(default_factory=lambda: ["G"])
-    iter_recipe: List[int] = field(default_factory=lambda: [25])
-    propagate_flags: bool = True
-    robust: bool = False
-    threads: int = 1
-    convergence_fraction: float = 0.99
-    convergence_criteria: float = 1e-6
-    reference_antenna: int = 0
-
-    def __post_init__(self):
         self.validate_choice_fields()
         assert len(self.iter_recipe) >= len(self.terms), \
-               "User has specified solver.iter_recipe with too few elements."
+            "User has specified solver.iter_recipe with too few elements."
 
         assert self.convergence_criteria >= 1e-8, \
-               "User has specified solver.convergence_criteria below 1e-8."
+            "User has specified solver.convergence_criteria below 1e-8."
 
-
-@dataclass
-class Dask(Input):
-    threads: Optional[int] = None
-    workers: int = 1
-    address: Optional[str] = None
-    scheduler: str = field(
-        default="threads",
-        metadata=dict(choices=["threads",
-                               "single-threaded",
-                               "distributed"])
-    )
-
-    def __post_init__(self):
+    def __dask_post_init__(self):
         self.validate_choice_fields()
-
         if self.address:
             msg = (
                 "Scheduler address supplied but dask.scheduler has not "
@@ -196,52 +109,10 @@ class Dask(Input):
             )
             assert self.scheduler == "distributed", msg
 
-
-@dataclass
-class Gain(Input):
-    type: str = field(
-        default="complex",
-        metadata=dict(choices=["complex",
-                               "diag_complex",
-                               "amplitude",
-                               "delay",
-                               "pure_delay",
-                               "phase",
-                               "tec",
-                               "rotation",
-                               "rotation_measure",
-                               "crosshand_phase",
-                               "leakage"])
-    )
-    solve_per: str = field(
-        default="antenna",
-        metadata=dict(choices=["antenna",
-                               "array"])
-    )
-    direction_dependent: bool = False
-    time_interval: str = "1"
-    freq_interval: str = "1"
-    respect_scan_boundaries: bool = True
-    initial_estimate: bool = True
-    load_from: Optional[str] = None
-    interp_mode: str = field(
-        default="reim",
-        metadata=dict(choices=["reim",
-                               "ampphase",
-                               "amp",
-                               "phase"])
-    )
-    interp_method: str = field(
-        default="2dlinear",
-        metadata=dict(choices=["2dlinear",
-                               "2dspline"])
-    )
-
-    def __post_init__(self):
+    def __gain_post_init__(self):
         self.validate_choice_fields()
         self.time_interval = as_time(self.time_interval)
         self.freq_interval = as_freq(self.freq_interval)
-
         if self.type == "crosshand_phase" and self.solve_per != "array":
             raise ValueError("Crosshand phase can only be solved as a per "
                              "array term. Please set the appropriate "
@@ -249,13 +120,54 @@ class Gain(Input):
 
 
 @dataclass
-class BaseConfig:
-    input_ms: MSInputs = MSInputs()
-    input_model: ModelInputs = ModelInputs()
-    solver: Solver = Solver()
-    output: Outputs = Outputs()
-    mad_flags: MadFlags = MadFlags()
-    dask: Dask = Dask()
+class _GainSchema(object):
+    gain: Dict[str, Parameter]
+
+
+# load schema files
+_schema = _gain_schema = None
+
+if _schema is None:
+    dirname = os.path.dirname(__file__)
+
+    # Make dataclass based on the argument schema.
+    _schema = oc.load(f"{dirname}/argument_schema.yaml")
+
+    # Map __post_init__ methods to sections.
+    post_init_map = {s: getattr(BaseConfigSection, f"__{s}_post_init__")
+                     for s in _schema.keys()}
+
+    # Create the base config class.
+    BaseConfig = schema_utils.nested_schema_to_dataclass(
+        _schema,
+        "BaseConfig",
+        section_bases=(BaseConfigSection,),
+        post_init_map=post_init_map
+    )
+
+    # Create a mapping from section name to section dataclass.
+    _config_dataclasses = {f.name: f.type for f in fields(BaseConfig)}
+
+    # The gain section is loaded explicitly, since we need to form up multiple
+    # instances.
+    _gain_schema = oc.merge(
+        oc.structured(_GainSchema),
+        oc.load(f"{dirname}/gain_schema.yaml")
+    )
+    _gain_schema = _gain_schema.gain
+
+    # Create gain dataclass.
+    Gain = schema_utils.schema_to_dataclass(
+        _gain_schema,
+        "Gain",
+        bases=(BaseConfigSection,),
+        post_init=BaseConfigSection.__gain_post_init__
+    )
+
+
+def get_config_sections():
+    """Returns list of known config sections."""
+    return list(_config_dataclasses.keys()) + ["gain"]
 
 
 def finalize_structure(additional_config):
@@ -268,7 +180,7 @@ def finalize_structure(additional_config):
             break
 
     # Use the default terms if no alternative is specified.
-    terms = terms or Solver().terms
+    terms = terms or _config_dataclasses["solver"]().terms
 
     FinalConfig = make_dataclass(
         "FinalConfig",
@@ -277,3 +189,24 @@ def finalize_structure(additional_config):
     )
 
     return FinalConfig
+
+
+def make_stimela_schema(params: Dict[str, Any],
+                        inputs: Dict[str, Parameter],
+                        outputs: Dict[str, Parameter]):
+    """Augments a schema for stimela based on solver.terms."""
+
+    inputs = inputs.copy()
+
+    if 'solver' in params:
+        terms = params['solver'].get('terms', None)
+    else:
+        terms = params.get('solver.terms', None)
+    if terms is None:
+        terms = _config_dataclasses["solver"]().terms
+
+    for jones in terms:
+        for key, value in _gain_schema.items():
+            inputs[f"{jones}.{key}"] = value
+
+    return inputs, outputs
