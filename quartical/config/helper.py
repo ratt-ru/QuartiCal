@@ -4,53 +4,22 @@ import textwrap
 import re
 from colorama import Fore, Style
 from omegaconf import OmegaConf as oc
-from dataclasses import fields, _MISSING_TYPE, is_dataclass
+from dataclasses import fields
 from quartical.config.external import finalize_structure, get_config_sections
 
-GAIN_MSG = "Gains make use of a special configuration " \
-           "mechanism. Use 'solver.terms' to specify the name of " \
-           "each gain term, e.g. 'solver.terms=[G,B]'. Each gain " \
-           "can then be configured using its name and any gain option, " \
-           "e.g. 'G.type=complex' or 'B.direction_dependent=True'."
+GAIN_MSG = (
+    "Gains make use of a special configuration mechanism. Use 'solver.terms' "
+    "to specify the name of each gain term, e.g. 'solver.terms=[G,B]'. Each "
+    "gain can then be configured using its name and any gain option, e.g. "
+    "'G.type=complex' or 'B.direction_dependent=True'."
+)
 
-HELP_MSG = f"For full help, use 'goquartical help'. For help with a " \
-           f"specific section, use e.g. 'goquartical help='[section1," \
-           f"section2]''. Help is available for " \
-           f"[{', '.join(get_config_sections())}]. Other command line " \
-           f"utilitites: [goquartical-backup, goquartical-restore]."
-
-
-def populate(typ, help_dict=None):
-
-    if help_dict is None:
-        help_dict = {}
-
-    if not is_dataclass(typ):
-        return False
-
-    flds = fields(typ)
-
-    for fld in flds:
-        fld_name, fld_type = fld.name, fld.type
-        help_dict[fld_name] = {}
-        nested = populate(fld_type, help_dict[fld_name])
-        if not nested:
-            msg = f"{fld.metadata.get('help', '')} "
-            if fld.metadata.get("choices", None):
-                msg += f"Choices: {fld.metadata['choices']}. "
-            if fld.metadata.get("element_choices", None):
-                msg += f"Choices: {fld.metadata['element_choices']}. "
-            if isinstance(fld.default, _MISSING_TYPE):
-                default = fld.default_factory()
-            else:
-                default = fld.default
-            if fld.metadata.get('required', False):
-                msg += f"{Fore.RED}MANDATORY. "
-            else:
-                msg += f"Default: {default}. "
-            help_dict[fld_name] = msg
-
-    return help_dict
+HELP_MSG = (
+    f"For full help, use 'goquartical help'. For help with a specific "
+    f"section, use e.g. 'goquartical help='[section1, section2]''. Help is "
+    f"available for [{', '.join(get_config_sections())}]. Other command line "
+    f"utilitites: [goquartical-backup, goquartical-restore]."
+)
 
 
 def make_help_dict():
@@ -60,7 +29,10 @@ def make_help_dict():
 
     FinalConfig = finalize_structure(additional_config)
 
-    help_dict = populate(FinalConfig)
+    help_dict = {}
+
+    for fld in fields(FinalConfig):
+        help_dict[fld.name] = getattr(FinalConfig, fld.name).__helpstr__()
 
     return help_dict
 

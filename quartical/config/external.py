@@ -1,5 +1,5 @@
 import os.path
-from dataclasses import dataclass, make_dataclass, fields
+from dataclasses import dataclass, make_dataclass, fields, _MISSING_TYPE
 from omegaconf import OmegaConf as oc
 from typing import List, Dict, Any
 from quartical.config.converters import as_time, as_freq
@@ -24,10 +24,11 @@ class BaseConfigSection:
                 continue
             elif "choices" in meta:  # Check for choices.
                 choices = meta.get("choices")
-                assert value in choices, \
-                    f"Invalid input in {fld.name}. " \
-                    f"User specified '{value}'. " \
+                assert value in choices, (
+                    f"Invalid input in {fld.name}. "
+                    f"User specified '{value}'. "
                     f"Valid choices are {choices}."
+                )
             elif "element_choices" in meta:  # Check for element choices.
                 element_choices = meta.get("element_choices")
                 if isinstance(value, List):
@@ -42,6 +43,42 @@ class BaseConfigSection:
                     f"Invalid input in {fld.name}. " \
                     f"User specified '{','.join(map(str, invalid))}'. " \
                     f"Valid choices are {','.join(map(str,element_choices))}."
+
+    def __helpstr__(self):
+
+        helpstrings = {}
+
+        for fld in fields(self):
+
+            meta = fld.metadata
+
+            help_str = meta.get('help')
+
+            if meta.get("choices", None):
+                choice_str = f"Choices: {meta.get('choices')} "
+            else:
+                choice_str = ""
+
+            if meta.get("element_choices", None):
+                element_choice_str = f"Choices: {meta.get('element_choices')} "
+            else:
+                element_choice_str = ""
+
+            if isinstance(fld.default, _MISSING_TYPE):
+                default = fld.default_factory()
+            else:
+                default = fld.default
+
+            if fld.metadata.get('required', False):
+                default_str = "REQUIRED"
+            else:
+                default_str = f"Default: {default}"
+
+            helpstrings[fld.name] = (
+                f"{help_str} {choice_str}{element_choice_str}{default_str}"
+            )
+
+        return helpstrings
 
     def __input_ms_post_init__(self):
 
