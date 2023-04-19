@@ -8,26 +8,3 @@ cabs:
     inputs:
       _include: (quartical.config)argument_schema.yaml
     dynamic_schema: quartical.config.external.make_stimela_schema
-
-  qcalbackup:
-    command: goquartical-backup
-    policies:
-      positional: true
-      # prefix: '--'
-      # replace:
-      #   '_': '-'
-    inputs:
-      ms_path:
-        dtype: Directory
-        must_exist: true
-        info: 'Path to input measurement set, e.g. path/to/dir/foo.MS.'
-      zarr_dir:
-        dtype: Directory
-        mkdir: true
-        must_exist: false
-        info: Path to desired backup location. Note that this only allows
-              the user to specify a directory and not the name of the backup
-              zarr that will be created, e.g. path/to/dir.
-      column:
-        dtype: str
-        info: Name of column to be backed up.
