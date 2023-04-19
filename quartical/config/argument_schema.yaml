@@ -349,14 +349,6 @@ solver:
       the solver.iter_recipe loops through the chain multiple times. The
       reweighting step only happens once per traversal of the chain.
 
-  reweighting_flag_threshold:
-    dtype: float
-    default: 0.0
-    info:
-      Flag a data point if it's weight changes by this fraction during
-      robust reweighting i.e. if updated_weight/original_weight is less
-      than the reweighting_flag_threshold a data point get's flagged.
-
   threads:
     dtype: int
     default: 1
