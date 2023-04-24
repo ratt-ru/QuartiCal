@@ -126,9 +126,9 @@ def _interpolate_missing(x1, x2, y):
                     if len(good_data[0]) == 0:
                         continue
 
-                    yy[:, f, a, d, c] = linterp(x1,
-                                                x1[good_data],
-                                                y_sel[good_data])
+                    yy[:, f, a, d, c] = linterp(
+                        x1, x1[good_data], y_sel[good_data]
+                    )
 
     for t in range(n_t):
         for a in range(n_a):
@@ -143,9 +143,9 @@ def _interpolate_missing(x1, x2, y):
                         yy[t, :, a, d, c] = 0
                         continue
 
-                    yy[t, :, a, d, c] = linterp(x2,
-                                                x2[good_data],
-                                                y_sel[good_data])
+                    yy[t, :, a, d, c] = linterp(
+                        x2, x2[good_data], y_sel[good_data]
+                    )
 
     return yy
 

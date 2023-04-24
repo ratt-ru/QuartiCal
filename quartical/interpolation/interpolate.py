@@ -61,7 +61,8 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
             f"this behaviour is not supported. Please check {term.name}.type."
         )
 
-        # Choose interpolation targets based on term description.
+        # Choose interpolation targets based on term description. TODO: This
+        # may be a little simplistic in the general case. Add to datasets?
         targets = (
             ["params", "param_flags"] if hasattr(term, "param_axes")
             else ["gains", "gain_flags"]
@@ -103,51 +104,51 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
 
 def make_interpolated_xds_list(
     term_xds_list,
-    concat_xds,
+    merged_xds,
     interp_mode,
     interp_method
 ):
-    """Given the concatenated datasets, interp to the desired datasets."""
+    """Given the merged dataset, interpolate to the desired datasets."""
 
     interpolated_xds_list = []
 
     if interp_mode in ("ampphase", "amp", "phase"):
         amp_sel = da.where(
-            concat_xds.gain_flags.data[..., None],
+            merged_xds.gain_flags.data[..., None],
             np.nan,
-            da.abs(concat_xds.gains.data)
+            da.abs(merged_xds.gains.data)
         )
 
         phase_sel = da.where(
-            concat_xds.gain_flags.data[..., None],
+            merged_xds.gain_flags.data[..., None],
             np.nan,
-            da.angle(concat_xds.gains.data)
+            da.angle(merged_xds.gains.data)
         )
 
-        interpolating_xds = concat_xds.assign(
+        interpolating_xds = merged_xds.assign(
             {
-                "amp": (concat_xds.gains.dims, amp_sel),
-                "phase": (concat_xds.gains.dims, phase_sel)
+                "amp": (merged_xds.gains.dims, amp_sel),
+                "phase": (merged_xds.gains.dims, phase_sel)
             }
         )
 
     elif interp_mode == "reim":
         re_sel = da.where(
-            concat_xds.gain_flags.data[..., None],
+            merged_xds.gain_flags.data[..., None],
             np.nan,
-            concat_xds.gains.data.real
+            merged_xds.gains.data.real
         )
 
         im_sel = da.where(
-            concat_xds.gain_flags.data[..., None],
+            merged_xds.gain_flags.data[..., None],
             np.nan,
-            concat_xds.gains.data.imag
+            merged_xds.gains.data.imag
         )
 
-        interpolating_xds = concat_xds.assign(
+        interpolating_xds = merged_xds.assign(
             {
-                "re": (concat_xds.gains.dims, re_sel),
-                "im": (concat_xds.gains.dims, im_sel)
+                "re": (merged_xds.gains.dims, re_sel),
+                "im": (merged_xds.gains.dims, im_sel)
             }
         )
 
