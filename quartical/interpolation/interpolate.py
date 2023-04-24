@@ -126,8 +126,8 @@ def make_interpolated_xds_list(
 
         interpolating_xds = concat_xds.assign(
             {
-                "amp": (concat_xds.amp.dims, amp_sel),
-                "phase": (concat_xds.phase.dims, phase_sel)
+                "amp": (concat_xds.gains.dims, amp_sel),
+                "phase": (concat_xds.gains.dims, phase_sel)
             }
         )
 
