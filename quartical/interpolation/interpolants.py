@@ -192,19 +192,20 @@ def interpolate_missing(interp_xds):
         output_xds: xarray.Dataset containing the data after interpolation.
     """
 
-    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
-
     output_xds = interp_xds
 
-    for data_field in interp_xds.data_vars:
+    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
 
-        interp = da.blockwise(_interpolate_missing, "tfadc",
-                              interp_xds[i_t_axis].values, None,
-                              interp_xds[i_f_axis].values, None,
-                              interp_xds[data_field].data, "tfadc",
-                              dtype=np.float64)
+    for dv_name, dv in interp_xds.data_vars.items():
 
-        output_xds = output_xds.assign(
-            {data_field: (interp_xds[data_field].dims, interp)})
+        interp = da.blockwise(
+            _interpolate_missing, "tfadc",
+            dv[i_t_axis].values, None,
+            dv[i_f_axis].values, None,
+            dv.data, "tfadc",
+            dtype=np.float64
+        )
+
+        output_xds = output_xds.assign({dv_name: (dv.dims, interp)})
 
     return output_xds
