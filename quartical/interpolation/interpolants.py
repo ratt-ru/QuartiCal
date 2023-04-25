@@ -151,35 +151,100 @@ def _interpolate_missing(x1, x2, y):
 
 
 @jit(nopython=True, nogil=True, cache=True)
-def linterp(xx, x, y):
-    """Basic linear interpolation. Extrapolates with closest good value."""
+def linterp(x_itp, x_data, y_data):
+    """Basic linear interpolation. Extrapolates with closest good value.
 
-    xi = 0
-    xxi = 0
+    Given a 1D array of x-values and a 1D array of y-values, perform linear
+    interpolation to produce y-values for a 1D array of (different) x-values.
 
-    yy = np.zeros(xx.shape, dtype=y.dtype)
-    xxn = len(xx)
+    Args:
+        x_itp: A 1D array of x-values at which it interpolate.
+        x_data: A 1D array of x-values for which there are y-values.
+        y_data: A 1D array of y-values at the x_data locations.
 
-    while xxi < xxn:
-        xxel = xx[xxi]
-        xel = x[xi]
-        if xxel == xel:
-            yy[xxi] = y[xi]
-            xxi += 1
-        elif xxel < x[0]:
-            yy[xxi] = y[0]
-            xxi += 1
-        elif xxel > x[-1]:
-            yy[xxi] = y[-1]
-            xxi += 1
-        elif (xxel > xel) & (xxel < x[xi + 1]):
-            slope = (y[xi + 1] - y[xi]) / (x[xi + 1] - xel)
-            yy[xxi] = slope * (xxel - xel) + y[xi]
-            xxi += 1
+    Returns:
+        y_itp: A 1D array of y-values at the x_itp locations.
+    """
+
+    i_data = int(0)
+    i_itp = int(0)
+
+    y_itp = np.zeros(x_itp.shape, dtype=y_data.dtype)
+    n_itp = x_itp.size
+
+    while i_itp < n_itp:
+        x_itp_el = x_itp[i_itp]
+        x_el = x_data[i_data]
+        if x_itp_el == x_el:  # Use existing y value.
+            y_itp[i_itp] = y_data[i_data]
+            x_itp_el += 1
+        elif x_itp_el < x_data[0]:  # Constant extrapolation on left edge.
+            y_itp[i_itp] = y_data[0]
+            i_itp += 1
+        elif x_itp_el > x_data[-1]:  # Constant extrapolation on right edge.
+            y_itp[i_itp] = y_data[-1]
+            i_itp += 1
+        elif (x_itp_el > x_el) & (x_itp_el < x_data[i_data + 1]):
+            y_diff = (y_data[i_data + 1] - y_data[i_data])
+            x_diff = (x_data[i_data + 1] - x_el)
+            slope = y_diff / x_diff
+            y_itp[i_itp] = slope * (x_itp_el - x_el) + y_data[i_data]
+            i_itp += 1
         else:
-            xi += 1
+            i_data += 1
 
-    return yy
+    return y_itp
+
+
+@jit(nopython=True, nogil=True, cache=True)
+def phase_interp(x_itp, x_data, y_data):
+    """Basic phase interpolation. Extrapolates with closest good value.
+
+    Given a 1D array of x-values and a 1D array of y-values, perform phase
+    interpolation to produce y-values for a 1D array of (different) x-values.
+    This differs from basic linear interpolation in that it understands phase
+    wraps and interpolates under the assumption that the minimum angle should
+    always be preferred.
+
+    Args:
+        x_itp: A 1D array of x-values at which it interpolate.
+        x_data: A 1D array of x-values for which there are y-values.
+        y_data: A 1D array of y-values at the x_data locations.
+
+    Returns:
+        y_itp: A 1D array of y-values at the x_itp locations.
+    """
+
+    i_data = int(0)
+    i_itp = int(0)
+
+    y_itp = np.zeros(x_itp.shape, dtype=y_data.dtype)
+    n_itp = x_itp.size
+
+    while i_itp < n_itp:
+        x_itp_el = x_itp[i_itp]
+        x_el = x_data[i_data]
+        if x_itp_el == x_el:  # Use existing y value.
+            y_itp[i_itp] = y_data[i_data]
+            x_itp_el += 1
+        elif x_itp_el < x_data[0]:  # Constant extrapolation on left edge.
+            y_itp[i_itp] = y_data[0]
+            i_itp += 1
+        elif x_itp_el > x_data[-1]:  # Constant extrapolation on right edge.
+            y_itp[i_itp] = y_data[-1]
+            i_itp += 1
+        elif (x_itp_el > x_el) & (x_itp_el < x_data[i_data + 1]):
+            w = (x_itp_el - x_el)/(x_data[i_data + 1] - x_el)
+            cos_0 = (1 - w) * np.cos(y_data[i_data])
+            cos_1 = w * np.cos(y_data[i_data + 1])
+            sin_0 = (1 - w) * np.sin(y_data[i_data])
+            sin_1 = w * np.sin(y_data[i_data + 1])
+            y_itp[i_itp] = np.arctan2(sin_0 + sin_1, cos_0 + cos_1)
+            i_itp += 1
+        else:
+            i_data += 1
+
+    return y_itp
 
 
 def interpolate_missing(interp_xds):
