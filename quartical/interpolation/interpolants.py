@@ -177,7 +177,7 @@ def linterp(x_itp, x_data, y_data):
         x_el = x_data[i_data]
         if x_itp_el == x_el:  # Use existing y value.
             y_itp[i_itp] = y_data[i_data]
-            x_itp_el += 1
+            i_itp += 1
         elif x_itp_el < x_data[0]:  # Constant extrapolation on left edge.
             y_itp[i_itp] = y_data[0]
             i_itp += 1
@@ -226,7 +226,7 @@ def phase_interp(x_itp, x_data, y_data):
         x_el = x_data[i_data]
         if x_itp_el == x_el:  # Use existing y value.
             y_itp[i_itp] = y_data[i_data]
-            x_itp_el += 1
+            i_itp += 1
         elif x_itp_el < x_data[0]:  # Constant extrapolation on left edge.
             y_itp[i_itp] = y_data[0]
             i_itp += 1
