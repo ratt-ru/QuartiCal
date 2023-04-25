@@ -12,21 +12,6 @@ class RotationMeasure(ParameterizedGain):
 
         super().__init__(term_name, term_opts)
 
-        self.gain_axes = (
-            "gain_time",
-            "gain_freq",
-            "antenna",
-            "direction",
-            "correlation"
-        )
-        self.param_axes = (
-            "param_time",
-            "param_freq",
-            "antenna",
-            "direction",
-            "param_name"
-        )
-
     @classmethod
     def _make_freq_map(cls, chan_freqs, chan_widths, freq_interval):
         # Overload gain mapping construction - we evaluate it in every channel.

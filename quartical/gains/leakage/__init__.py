@@ -10,11 +10,3 @@ class Leakage(Gain):
     def __init__(self, term_name, term_opts):
 
         super().__init__(term_name, term_opts)
-
-        self.gain_axes = (
-            "gain_time",
-            "gain_freq",
-            "antenna",
-            "direction",
-            "correlation"
-        )

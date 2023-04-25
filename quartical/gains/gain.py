@@ -50,6 +50,13 @@ base_args = namedtuple(
 class Gain:
 
     base_args = base_args
+    gain_axes = (
+        "gain_time",
+        "gain_freq",
+        "antenna",
+        "direction",
+        "correlation"
+    )
 
     def __init__(self, term_name, term_opts):
 
@@ -339,6 +346,14 @@ class Gain:
 
 
 class ParameterizedGain(Gain):
+
+    param_axes = (
+        "param_time",
+        "param_freq",
+        "antenna",
+        "direction",
+        "param_name"
+    )
 
     def __init__(self, term_name, term_opts):
 
