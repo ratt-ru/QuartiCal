@@ -110,6 +110,69 @@ def spline2d_interpolate_gains(interp_xds, term_xds):
 
 
 @jit(nopython=True, nogil=True, cache=True)
+def map_ax_itp_to_ax(ax, ax_itp):
+    """Given ax_itp, compute indices of closest left-hand points in ax."""
+
+    out = np.empty_like(ax_itp, dtype=np.int64)
+
+    i = 0
+    itp_i = 0
+
+    while itp_i < ax_itp.size:
+        ax_itp_el = ax_itp[itp_i]
+        if ax_itp_el <= ax[0]:  # On or below lower bound.
+            out[itp_i] = 0
+        elif ax_itp_el >= ax[-1]:  # On or above upper bound.
+            out[itp_i] = ax.size - 1
+        else:
+            while ax_itp_el - ax[i + 1] >= 0:  # NOTE: Assumes ordering.
+                i += 1
+            out[itp_i] = i
+        itp_i += 1
+
+    return out
+
+
+@jit(nopython=True, nogil=True, cache=True)
+def bilinear_interp(x, y, f, x_itp, y_itp):
+
+    f_itp = np.zeros((x_itp.size, y_itp.size), dtype=f.dtype)
+
+    x_itp_map = map_ax_itp_to_ax(x, x_itp)
+    y_itp_map = map_ax_itp_to_ax(y, y_itp)
+
+    nx, ny = x.size, y.size
+
+    for i, (_x, x1m) in enumerate(zip(x_itp, x_itp_map)):
+        x1m, x2m = (x1m, x1m + 1) if x1m + 1 < nx - 1 else (x1m - 1, x1m)
+        x1, x2 = x[x1m], x[x2m]
+        x_diff = x2 - x1
+        x1_dist = _x - x1
+        x2_dist = x2 - _x
+
+        for j, (_y, y1m) in enumerate(zip(y_itp, y_itp_map)):
+            y1m, y2m = (y1m, y1m + 1) if y1m + 1 < ny - 1 else (y1m - 1, y1m)
+            y1, y2 = y[y1m], y[y2m]
+            y_diff = y2 - y1
+            y1_dist = _y - y1
+            y2_dist = y2 - _y
+
+            fx1y1 = f[x1m, y1m]
+            fx1y2 = f[x1m, y2m]
+            fx2y1 = f[x2m, y1m]
+            fx2y2 = f[x2m, y2m]
+
+            coeff = 1 / (x_diff * y_diff)
+
+            f_itp[i, j] = coeff * (
+                (fx1y1 * x2_dist + fx2y1 * x1_dist) * y2_dist +
+                (fx1y2 * x2_dist + fx2y2 * x1_dist) * y1_dist
+            )
+
+    return f_itp
+
+
+@jit(nopython=True, nogil=True, cache=True)
 def _interpolate_missing(x1, x2, y):
     """Interpolate/extend data y along x1 and x2 to fill in missing values."""
 
@@ -197,6 +260,47 @@ def linterp(x_itp, x_data, y_data):
 
 
 @jit(nopython=True, nogil=True, cache=True)
+def _interpolate_missing_phase(x1, x2, y):
+    """Interpolate/extend data y along x1 and x2 to fill in missing values."""
+
+    n_t, n_f, n_a, n_d, n_c = y.shape
+
+    yy = y.copy()
+
+    for f in range(n_f):
+        for a in range(n_a):
+            for d in range(n_d):
+                for c in range(n_c):
+                    y_sel = y[:, f, a, d, c]
+                    good_data = np.where(np.isfinite(y_sel))
+                    if len(good_data[0]) == 0:
+                        continue
+
+                    yy[:, f, a, d, c] = phase_interp(
+                        x1, x1[good_data], y_sel[good_data]
+                    )
+
+    for t in range(n_t):
+        for a in range(n_a):
+            for d in range(n_d):
+                for c in range(n_c):
+                    y_sel = yy[t, :, a, d, c]
+                    good_data = np.where(np.isfinite(y_sel))
+                    if len(good_data[0]) == 0:
+                        # If there is no good data along frequency after
+                        # interpolating in time, we have no information
+                        # from which to interpolate - we zero these locations.
+                        yy[t, :, a, d, c] = 0
+                        continue
+
+                    yy[t, :, a, d, c] = phase_interp(
+                        x2, x2[good_data], y_sel[good_data]
+                    )
+
+    return yy
+
+
+@jit(nopython=True, nogil=True, cache=True)
 def phase_interp(x_itp, x_data, y_data):
     """Basic phase interpolation. Extrapolates with closest good value.
 
@@ -247,7 +351,7 @@ def phase_interp(x_itp, x_data, y_data):
     return y_itp
 
 
-def interpolate_missing(interp_xds):
+def interpolate_missing(input_xda, mode="normal"):
     """Linear interpolate missing values in the given xarray dataset.
 
     Args:
@@ -257,20 +361,21 @@ def interpolate_missing(interp_xds):
         output_xds: xarray.Dataset containing the data after interpolation.
     """
 
-    output_xds = interp_xds
+    if mode == "normal":
+        interp_func = _interpolate_missing
+    elif mode == "phase":
+        interp_func = _interpolate_missing_phase
+    else:
+        raise ValueError(f"Unsupported mode '{mode}' in interpolate_missing.")
 
-    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
+    i_t_axis, i_f_axis = input_xda.dims[:2]
 
-    for dv_name, dv in interp_xds.data_vars.items():
+    interp = da.blockwise(
+        interp_func, "tfadc",
+        input_xda[i_t_axis].values, None,
+        input_xda[i_f_axis].values, None,
+        input_xda.data, "tfadc",
+        dtype=np.float64
+    )
 
-        interp = da.blockwise(
-            _interpolate_missing, "tfadc",
-            dv[i_t_axis].values, None,
-            dv[i_f_axis].values, None,
-            dv.data, "tfadc",
-            dtype=np.float64
-        )
-
-        output_xds = output_xds.assign({dv_name: (dv.dims, interp)})
-
-    return output_xds
+    return input_xda.copy(data=interp)
