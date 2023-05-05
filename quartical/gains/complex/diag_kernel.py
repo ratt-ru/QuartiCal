@@ -420,6 +420,7 @@ def finalize_update(base_args, term_args, meta_args, native_imdry, loop_idx,
 
         dd_term = meta_args.dd_term
         active_term = meta_args.active_term
+        pinned_directions = meta_args.pinned_directions
 
         gain = base_args.gains[active_term]
         gain_flags = base_args.gain_flags[active_term]
@@ -428,10 +429,15 @@ def finalize_update(base_args, term_args, meta_args, native_imdry, loop_idx,
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
+        if dd_term:
+            dir_loop = [d for d in range(n_dir) if d not in pinned_directions]
+        else:
+            dir_loop = [d for d in range(n_dir)]
+
         for ti in range(n_tint):
             for fi in range(n_fint):
                 for a in range(n_ant):
-                    for d in range(n_dir):
+                    for d in dir_loop:
 
                         g = gain[ti, fi, a, d]
                         fl = gain_flags[ti, fi, a, d]

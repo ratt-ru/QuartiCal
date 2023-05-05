@@ -31,6 +31,15 @@ gain:
     info:
       Determines whether this term is treated as direction dependent.
 
+  pinned_directions:
+    dtype: List[int]
+    default: [0]
+    info:
+      If this term is direction dependent, this can be used to exclude
+      integer indexed directions during gain updates i.e. effectively disable
+      updates in the given directions. Accepts a list of integer values e.g.
+      '[0,3]'.
+
   time_interval:
     dtype: str
     default: "1"
@@ -77,7 +86,7 @@ gain:
 
   initial_estimate:
     dtype: bool
-    default: true
+    default: false
     info: Controls whether or not a term will be populated with an initial
           estimiate where applicable. Currently only supported for delay
           terms.
