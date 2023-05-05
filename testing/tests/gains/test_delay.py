@@ -23,6 +23,7 @@ def opts(base_opts, select_corr, solve_per):
     _opts.G.type = "delay"
     _opts.G.freq_interval = 0
     _opts.G.solve_per = solve_per
+    _opts.G.initial_estimate = True
 
     return _opts
 
