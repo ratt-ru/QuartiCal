@@ -1,7 +1,7 @@
 from collections import namedtuple
 import numpy as np
 import dask.array as da
-from uuid import uuid4
+from dask.graph_manipulation import clone
 
 
 gain_spec_tup = namedtuple(
@@ -57,6 +57,7 @@ class Gain:
         self.type = term_opts.type
         self.solve_per = term_opts.solve_per
         self.direction_dependent = term_opts.direction_dependent
+        self.pinned_directions = tuple(term_opts.pinned_directions)
         self.time_interval = term_opts.time_interval
         self.freq_interval = term_opts.freq_interval
         self.respect_scan_boundaries = term_opts.respect_scan_boundaries
@@ -284,27 +285,22 @@ class Gain:
 
         return sums / counts
 
-    @staticmethod
-    def make_dir_map(n_dir, direction_dependent):
+    @classmethod
+    def make_dir_map(cls, n_dir, direction_dependent):
 
-        # NOTE: Does not call the numpy implementation.
-        # TODO: arange doesn't accept a name parameter - should we clone?
-        if direction_dependent:
-            dir_map = da.arange(
-                n_dir,
-                dtype=np.int32
-            )
-        else:
-            dir_map = da.zeros(
-                n_dir,
-                name="dirmap-" + uuid4().hex,
-                dtype=np.int32
-            )
+        # TODO: Does this produce unique nodes? Should we clone?
+        dir_map = da.map_blocks(
+            cls._make_dir_map,
+            n_dir,
+            direction_dependent,
+            new_axis=0,
+            chunks=(n_dir,)
+        )
 
-        return dir_map
+        return clone(dir_map)
 
-    @staticmethod
-    def _make_dir_map(n_dir, direction_dependent):
+    @classmethod
+    def _make_dir_map(cls, n_dir, direction_dependent):
 
         if direction_dependent:
             dir_map = np.arange(

@@ -472,7 +472,9 @@ def finalize_update(base_args, term_args, meta_args, native_imdry, lambda_sq,
         def impl(base_args, term_args, meta_args, native_imdry, lambda_sq,
                  loop_idx, corr_mode):
 
+            dd_term = meta_args.dd_term
             active_term = meta_args.active_term
+            pinned_directions = meta_args.pinned_directions
 
             gain = base_args.gains[active_term]
             gain_flags = base_args.gain_flags[active_term]
@@ -487,6 +489,10 @@ def finalize_update(base_args, term_args, meta_args, native_imdry, lambda_sq,
             params += update
 
             n_time, n_freq, n_ant, n_dir, _ = gain.shape
+
+            if dd_term:
+                for pd in pinned_directions:
+                    params[..., pd, :] = 0
 
             for t in range(n_time):
                 for f in range(n_freq):
