@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from loguru import logger  # noqa
 import dask.array as da
-import numpy as np
 import xarray
 from daskms.experimental.zarr import xds_from_zarr
 from quartical.interpolation.interpolants import (
@@ -32,8 +31,6 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
 
         term_name = term.name
         term_path = term.load_from
-        interp_mode = term.interp_mode
-        interp_method = term.interp_method
 
         # Pull out all the datasets for the current term into a flat list.
         term_xds_list = [term_dict[term_name] for term_dict in gain_xds_lod]
@@ -84,10 +81,22 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
         # Remove time/chan chunking and rechunk by antenna.
         merged_xds = merged_xds.chunk({**merged_xds.dims, "antenna": 1})
 
-        # Form up list of datasets with interpolated values.
-        interpolated_xds_list = make_interpolated_xds_list(
-            term_xds_list, merged_xds, interp_mode, interp_method
-        )
+        # Convert from on-disk representation to a representation which can
+        # be interpolated.
+        merged_xds = term.to_interpable(merged_xds)
+
+        # Interpolate onto the given grids.
+        interpolated_xds_list = [
+            term.interpolate(merged_xds, xds, term) for xds in term_xds_list
+        ]
+
+        # Convert from representation which can be interpolated back into
+        # native representation.
+        interpolated_xds_list = [
+            term.from_interpable(xds) for xds in interpolated_xds_list
+        ]
+
+        import ipdb; ipdb.set_trace()
 
         interpolated_xds_lol.append(interpolated_xds_list)
 
@@ -105,52 +114,9 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
 def make_interpolated_xds_list(
     term_xds_list,
     merged_xds,
-    interp_mode,
-    interp_method
+    term
 ):
     """Given the merged dataset, interpolate to the desired datasets."""
-
-    interpolated_xds_list = []
-
-    if interp_mode in ("ampphase", "amp", "phase"):
-        amp_sel = da.where(
-            merged_xds.gain_flags.data[..., None],
-            np.nan,
-            da.abs(merged_xds.gains.data)
-        )
-
-        phase_sel = da.where(
-            merged_xds.gain_flags.data[..., None],
-            np.nan,
-            da.angle(merged_xds.gains.data)
-        )
-
-        interpolating_xds = merged_xds.assign(
-            {
-                "amp": (merged_xds.gains.dims, amp_sel),
-                "phase": (merged_xds.gains.dims, phase_sel)
-            }
-        )
-
-    elif interp_mode == "reim":
-        re_sel = da.where(
-            merged_xds.gain_flags.data[..., None],
-            np.nan,
-            merged_xds.gains.data.real
-        )
-
-        im_sel = da.where(
-            merged_xds.gain_flags.data[..., None],
-            np.nan,
-            merged_xds.gains.data.imag
-        )
-
-        interpolating_xds = merged_xds.assign(
-            {
-                "re": (merged_xds.gains.dims, re_sel),
-                "im": (merged_xds.gains.dims, im_sel)
-            }
-        )
 
     interpolating_xds = interpolating_xds.drop_vars(("gains", "gain_flags"))
 

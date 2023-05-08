@@ -6,46 +6,53 @@ from scipy.interpolate import interp2d
 from numba import jit
 
 
-def linear2d_interpolate_gains(interp_xds, term_xds):
-    """Interpolate from interp_xds to term_xds linearly.
+def linear2d_interpolate_gains(source_xds, target_xds):
+    """Interpolate from source_xds to target_xds linearly.
 
     Args:
-        interp_xds: xarray.Dataset containing the data to interpolate from.
-        term_xds: xarray.Dataset onto which to interpolate.
+        source_xds: xarray.Dataset containing the data to interpolate from.
+        target_xds: xarray.Dataset onto which to interpolate.
 
     Returns:
         output_xds: xarray.Dataset containing interpolated values
     """
-    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
-    t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
 
-    i_t_dim = interp_xds.dims[i_t_axis]
-    i_f_dim = interp_xds.dims[i_f_axis]
+    if hasattr(source_xds, "PARAM_SPEC"):
+        i_t_axis, i_f_axis = source_xds.PARAM_AXES[:2]
+        t_t_axis, t_f_axis = target_xds.PARAM_AXES[:2]
+    else:
+        i_t_axis, i_f_axis = source_xds.GAIN_AXES[:2]
+        t_t_axis, t_f_axis = target_xds.GAIN_AXES[:2]
+
+    i_t_dim = source_xds.dims[i_t_axis]
+    i_f_dim = source_xds.dims[i_f_axis]
 
     interp_axes = {}
 
     if i_t_dim > 1:
-        interp_axes[i_t_axis] = term_xds[t_t_axis].data
+        interp_axes[i_t_axis] = target_xds[t_t_axis].data
     if i_f_dim > 1:
-        interp_axes[i_f_axis] = term_xds[t_f_axis].data
+        interp_axes[i_f_axis] = target_xds[t_f_axis].data
 
-    output_xds = interp_xds.interp(
+    target_xda = source_xds.params.interp(
         interp_axes,
         kwargs={"fill_value": "extrapolate"}
     )
 
     if i_t_dim == 1:
-        output_xds = output_xds.reindex(
-            {i_t_axis: term_xds[t_t_axis].data},
+        target_xda = target_xda.reindex(
+            {i_t_axis: target_xds[t_t_axis].data},
             method="nearest"
         )
     if i_f_dim == 1:
-        output_xds = output_xds.reindex(
-            {i_f_axis: term_xds[t_f_axis].data},
+        target_xda = target_xda.reindex(
+            {i_f_axis: target_xds[t_f_axis].data},
             method="nearest"
         )
 
-    return output_xds
+    target_xds['params'] = target_xda
+
+    return target_xds
 
 
 def spline2d(x, y, z, xx, yy):
