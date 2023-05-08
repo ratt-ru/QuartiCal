@@ -93,7 +93,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
 
         # Interpolate onto the given grids. TODO: Add back spline support.
         interpolated_xds_list = [
-            interpolate(merged_xds, xds) for xds in term_xds_list
+            interpolate(merged_xds, xds, term) for xds in term_xds_list
         ]
 
         # Convert from representation which can be interpolated back into
@@ -103,11 +103,12 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
             for xds in interpolated_xds_list
         ]
 
-        # TODO: Need to add rechunking/reindexing step here - doing it earlier
-        # becomes complicated. Also consider adding option to only interpolate
-        # certain fields.
+        interpolated_xds_list = [
+            reindex_and_rechunk(ixds, txds)
+            for ixds, txds in zip(interpolated_xds_list, term_xds_list)
+        ]
 
-        import ipdb; ipdb.set_trace()
+        # TODO: Add option to discard some fields during interpolation.
 
         interpolated_xds_lol.append(interpolated_xds_list)
 
@@ -165,7 +166,7 @@ def convert_interp_to_native(xds, converter):
     return native_xds
 
 
-def interpolate(source_xds, target_xds):
+def interpolate(source_xds, target_xds, term):
 
     filled_params = interpolate_missing(source_xds.params)
 
@@ -173,16 +174,47 @@ def interpolate(source_xds, target_xds):
         {"params": (source_xds.params.dims, filled_params.data)}
     )
 
-    interpolated_xds = linear2d_interpolate_gains(source_xds, target_xds)
+    if term.interp_method == "2dlinear":
+        interpolated_xds = linear2d_interpolate_gains(source_xds, target_xds)
+    elif term.interp_method == "2dspline":
+        interpolated_xds = spline2d_interpolate_gains(source_xds, target_xds)
+    else:
+        raise ValueError(
+            f"Unknown interpolation mode {term.interp_method} on {term.name}."
+        )
 
-    spec = getattr(target_xds, "PARAM_SPEC", target_xds.GAIN_SPEC)
-    axes = getattr(target_xds, "PARAM_AXES", target_xds.GAIN_AXES)
+    axes = getattr(source_xds, "PARAM_AXES", source_xds.GAIN_AXES)
 
-    t_chunks = spec.tchunk
-    f_chunks = spec.fchunk
+    interpolated_xds = interpolated_xds.assign_coords(
+        {axes[-1]: source_xds[axes[-1]]}
+    )
+
+    return interpolated_xds
+
+
+def reindex_and_rechunk(interpolated_xds, reference_xds):
+
+    spec = getattr(reference_xds, "PARAM_SPEC", reference_xds.GAIN_SPEC)
+    axes = getattr(reference_xds, "PARAM_AXES", reference_xds.GAIN_AXES)
+
+    axis = axes[-1]
+
+    # If we are loading a term with a differing number of correlations,
+    # this should handle selecting them out/padding them in.
+    if interpolated_xds.dims[axis] < reference_xds.dims[axis]:
+        interpolated_xds = interpolated_xds.reindex(
+            {"correlation": reference_xds[axis]}, fill_value=0
+        )
+    elif interpolated_xds.dims[axis] > reference_xds.dims[axis]:
+        interpolated_xds = interpolated_xds.sel(
+            {"correlation": reference_xds[axis]}
+        )
 
     # We may be interpolating from one set of axes to another.
     t_t_axis, t_f_axis = axes[:2]
+
+    t_chunks = spec.tchunk
+    f_chunks = spec.fchunk
 
     interpolated_xds = interpolated_xds.chunk(
         {
@@ -193,77 +225,3 @@ def interpolate(source_xds, target_xds):
     )
 
     return interpolated_xds
-
-
-def make_interpolated_xds_list(
-    term_xds_list,
-    merged_xds,
-    term
-):
-    """Given the merged dataset, interpolate to the desired datasets."""
-
-    interpolating_xds = interpolating_xds.drop_vars(("gains", "gain_flags"))
-
-    interpolating_xds = interpolate_missing(interpolating_xds)
-
-    for term_xds in term_xds_list:
-
-        # This fills in missing values using linear interpolation, or by
-        # padding with the last good value (edges). Regions with no good data
-        # will be zeroed.
-
-        # Interpolate with various methods.
-        if interp_method == "2dlinear":
-            interpolated_xds = linear2d_interpolate_gains(
-                interpolating_xds, term_xds
-            )
-        elif interp_method == "2dspline":
-            interpolated_xds = spline2d_interpolate_gains(
-                interpolating_xds, term_xds
-            )
-
-        req_ncorr = term_xds.dims["correlation"]
-        # If we are loading a term with a differing number of correlations,
-        # this should handle selecting them out/padding them in.
-        if interpolated_xds.dims["correlation"] < req_ncorr:
-            interpolated_xds = interpolated_xds.reindex(
-                {"correlation": term_xds.corr}, fill_value=0
-            )
-        elif interpolated_xds.dims["correlation"] > req_ncorr:
-            interpolated_xds = interpolated_xds.sel(
-                {"correlation": term_xds.corr}
-            )
-
-        # Convert the interpolated quantities back to gains.
-        if interp_mode in ("ampphase", "amp", "phase"):
-            amp = interpolated_xds.amp.data
-            phase = interpolated_xds.phase.data
-            gains = amp*da.exp(1j*phase)
-            interpolated_xds = term_xds.assign(
-                {"gains": (term_xds.GAIN_AXES, gains)}
-            )
-        elif interp_mode == "reim":
-            re = interpolated_xds.re.data
-            im = interpolated_xds.im.data
-            gains = re + 1j*im
-            interpolated_xds = term_xds.assign(
-                {"gains": (term_xds.GAIN_AXES, gains)}
-            )
-
-        t_chunks = term_xds.GAIN_SPEC.tchunk
-        f_chunks = term_xds.GAIN_SPEC.fchunk
-
-        # We may be interpolating from one set of axes to another.
-        t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
-
-        interpolated_xds = interpolated_xds.chunk(
-            {
-                t_t_axis: t_chunks,
-                t_f_axis: f_chunks,
-                "antenna": interpolated_xds.dims["antenna"]
-            }
-        )
-
-        interpolated_xds_list.append(interpolated_xds)
-
-    return interpolated_xds_list

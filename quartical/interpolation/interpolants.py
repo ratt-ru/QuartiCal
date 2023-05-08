@@ -50,7 +50,9 @@ def linear2d_interpolate_gains(source_xds, target_xds):
             method="nearest"
         )
 
-    target_xds['params'] = target_xda
+    target_xds = target_xds.assign(
+        {'params': (target_xda.dims, target_xda.data)}
+    )
 
     return target_xds
 
