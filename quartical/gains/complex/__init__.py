@@ -8,8 +8,6 @@ from quartical.interpolation.interpolants import (
 from quartical.gains.gain import Gain
 from quartical.gains.converter import (
     Converter,
-    noop,
-    trig_to_phase,
     amp_trig_to_complex
 )
 from quartical.gains.complex.kernel import complex_solver, complex_args
@@ -20,11 +18,17 @@ class Complex(Gain):
 
     solver = staticmethod(complex_solver)
     term_args = complex_args
-    # Interpolation pattern, zipped against parameterised form of the complex
-    # gain. NOTE: Non-parameterised gains will always be reinterpreted and
-    # parameterised in amplitude and phase for the sake of simplicity.
-    conversion_functions = [[[np.abs], [np.angle, np.cos], [np.angle, np.sin]]]
-    reversion_functions = [[3, amp_trig_to_complex]]
+    # Conversion functions required for interpolation NOTE: Non-parameterised
+    # gains will always be reinterpreted and parameterised in amplitude and
+    # phase for the sake of simplicity.
+    conversion_functions = (
+        (0, (np.abs,)),
+        (0, (np.angle, np.cos)),
+        (1, (np.angle, np.sin))
+    )
+    reversion_functions = (
+        (3, amp_trig_to_complex),
+    )
 
     def __init__(self, term_name, term_opts):
 
@@ -53,8 +57,6 @@ class Complex(Gain):
             coords=xds.coords,
             attrs=xds.attrs
         )
-
-        import ipdb; ipdb.set_trace()
 
         return interpable_xds
 

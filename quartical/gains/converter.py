@@ -9,23 +9,12 @@ class Converter(object):
         self.conversion_functions = conversion_functions
         self.reversion_functions = reversion_functions
 
-        def get_growth(cf, total=0):
-
-            if isinstance(cf, list):
-                if isinstance(cf[0], list):  # Nested!
-                    nested = []
-                    for ele in cf:
-                        nested.append(get_growth(ele))
-                    return sum(nested)
-                else:
-                    return True
-
     @property
     def conversion_ratio(self):
 
-        input_fields = len(self.conversion_functions)
+        input_fields = sum(cf[0] for cf in self.conversion_functions)
 
-        output_fields = sum([len(x) for x in self.conversion_functions])
+        output_fields = len(self.conversion_functions)
 
         return (input_fields, output_fields)
 
@@ -48,17 +37,17 @@ class Converter(object):
 
         out_arr = np.empty(out_shape, dtype=dtype)
 
-        itr = zip(range(arr.shape[-1]), cycle(self.conversion_functions))
+        inp_ind = 0
+        out_ind = 0
 
-        offset = 0
-
-        for i, cfsl in itr:
-            for j, cfs in enumerate(cfsl):
-                tmp = arr[..., i]
+        while inp_ind < arr.shape[-1]:
+            for (n_consumed, cfs) in self.conversion_functions:
+                tmp = arr[..., inp_ind]
                 for cf in cfs:
                     tmp = cf(tmp)
-                out_arr[..., offset] = tmp[...]
-                offset += 1
+                out_arr[..., out_ind] = tmp[...]
+                inp_ind += n_consumed
+                out_ind += 1
 
         return out_arr
 

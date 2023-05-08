@@ -85,6 +85,8 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
         # be interpolated.
         merged_xds = term.to_interpable(merged_xds)
 
+        import ipdb; ipdb.set_trace()
+
         # Interpolate onto the given grids.
         interpolated_xds_list = [
             term.interpolate(merged_xds, xds, term) for xds in term_xds_list
