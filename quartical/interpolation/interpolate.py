@@ -85,9 +85,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
         # be interpolated.
         merged_xds = term.to_interpable(merged_xds)
 
-        import ipdb; ipdb.set_trace()
-
-        # Interpolate onto the given grids.
+        # Interpolate onto the given grids. TODO: Add back spline support.
         interpolated_xds_list = [
             term.interpolate(merged_xds, xds, term) for xds in term_xds_list
         ]
@@ -97,6 +95,10 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
         interpolated_xds_list = [
             term.from_interpable(xds) for xds in interpolated_xds_list
         ]
+
+        # TODO: Need to add rechunking/reindexing step here - doing it earlier
+        # becomes complicated. Also consider adding option to only interpolate
+        # certain fields.
 
         import ipdb; ipdb.set_trace()
 

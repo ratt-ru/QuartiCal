@@ -1,6 +1,5 @@
 import dask.array as da
 import numpy as np
-from itertools import cycle
 
 
 class Converter(object):
