@@ -70,13 +70,15 @@ class Converter(object):
 
         out_arr = np.empty(out_shape, dtype=dtype)
 
-        j = 0
-        for i, (n_req, rf) in enumerate(cycle(self.reversion_functions)):
-            inputs = [arr[..., j + k] for k in range(n_req)]
-            out_arr[..., i] = rf(*inputs)
-            j += n_req
-            if j >= arr.shape[-1]:
-                break
+        inp_ind = 0
+        out_ind = 0
+
+        while inp_ind < arr.shape[-1]:
+            for (n_consumed, rf) in self.reversion_functions:
+                inputs = [arr[..., inp_ind + k] for k in range(n_consumed)]
+                out_arr[..., out_ind] = rf(*inputs)
+                inp_ind += n_consumed
+                out_ind += 1
 
         return out_arr
 

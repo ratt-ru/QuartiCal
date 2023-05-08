@@ -24,8 +24,15 @@ class Delay(ParameterizedGain):
     solver = staticmethod(delay_solver)
     term_args = delay_args
 
-    conversion_functions = [[[np.cos], [np.sin]], [[noop]]]
-    reversion_functions = [[2, trig_to_phase], [1, noop]]
+    conversion_functions = (
+        (0, (np.cos,)),
+        (1, (np.sin,)),
+        (1, (noop,))
+    )
+    reversion_functions = (
+        (2, trig_to_phase),
+        (1, noop)
+    )
 
     def __init__(self, term_name, term_opts):
 
