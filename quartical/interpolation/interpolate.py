@@ -103,9 +103,10 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
             for xds in interpolated_xds_list
         ]
 
+        # Make the interpolated xds consistent with the current run.
         interpolated_xds_list = [
-            reindex_and_rechunk(ixds, txds)
-            for ixds, txds in zip(interpolated_xds_list, term_xds_list)
+            reindex_and_rechunk(ixds, rxds)
+            for ixds, rxds in zip(interpolated_xds_list, term_xds_list)
         ]
 
         # TODO: Add option to discard some fields during interpolation.
