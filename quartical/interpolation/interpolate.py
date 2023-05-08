@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 from loguru import logger  # noqa
+import numpy as np
 import dask.array as da
 import xarray
 from daskms.experimental.zarr import xds_from_zarr
+from quartical.gains.converter import Converter
 from quartical.interpolation.interpolants import (
     interpolate_missing,
     linear2d_interpolate_gains,
@@ -81,19 +83,24 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
         # Remove time/chan chunking and rechunk by antenna.
         merged_xds = merged_xds.chunk({**merged_xds.dims, "antenna": 1})
 
-        # Convert from on-disk representation to a representation which can
-        # be interpolated.
-        merged_xds = term.to_interpable(merged_xds)
+        # Create a converter object to handle moving between native and
+        # interpolation representations.
+        converter = Converter(term)
+
+        # Convert standard representation to a representation which can
+        # be interpolated. Replace flags with NaNs.
+        merged_xds = convert_native_to_interp(merged_xds, converter)
 
         # Interpolate onto the given grids. TODO: Add back spline support.
         interpolated_xds_list = [
-            term.interpolate(merged_xds, xds, term) for xds in term_xds_list
+            interpolate(merged_xds, xds) for xds in term_xds_list
         ]
 
         # Convert from representation which can be interpolated back into
         # native representation.
         interpolated_xds_list = [
-            term.from_interpable(xds) for xds in interpolated_xds_list
+            convert_interp_to_native(xds, converter)
+            for xds in interpolated_xds_list
         ]
 
         # TODO: Need to add rechunking/reindexing step here - doing it earlier
@@ -113,6 +120,79 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
     ]
 
     return interpolated_xds_lod
+
+
+def convert_native_to_interp(xds, converter):
+
+    data_field = "params" if hasattr(xds, "PARAM_SPEC") else "gains"
+    flag_field = "param_flags" if hasattr(xds, "PARAM_SPEC") else "gain_flags"
+
+    params = converter.convert(xds[data_field].data)
+    param_flags = xds[flag_field].data
+
+    params = da.where(param_flags[..., None], np.nan, params)
+
+    param_dims = xds[data_field].dims[:-1] + ('parameter',)
+
+    interpable_xds = xarray.Dataset(
+        {
+            "params": (param_dims, params),
+            "param_flags": (param_dims[:-1], param_flags)
+        },
+        coords=xds.coords,
+        attrs=xds.attrs
+    )
+
+    return interpable_xds
+
+
+def convert_interp_to_native(xds, converter):
+
+    data_field = "params" if hasattr(xds, "PARAM_SPEC") else "gains"
+
+    native = converter.revert(xds.params.data)
+
+    dims = getattr(xds, 'PARAM_AXES', xds.GAIN_AXES)
+
+    native_xds = xarray.Dataset(
+        {
+            data_field: (dims, native),
+        },
+        coords=xds.coords,
+        attrs=xds.attrs
+    )
+
+    return native_xds
+
+
+def interpolate(source_xds, target_xds):
+
+    filled_params = interpolate_missing(source_xds.params)
+
+    source_xds = source_xds.assign(
+        {"params": (source_xds.params.dims, filled_params.data)}
+    )
+
+    interpolated_xds = linear2d_interpolate_gains(source_xds, target_xds)
+
+    spec = getattr(target_xds, "PARAM_SPEC", target_xds.GAIN_SPEC)
+    axes = getattr(target_xds, "PARAM_AXES", target_xds.GAIN_AXES)
+
+    t_chunks = spec.tchunk
+    f_chunks = spec.fchunk
+
+    # We may be interpolating from one set of axes to another.
+    t_t_axis, t_f_axis = axes[:2]
+
+    interpolated_xds = interpolated_xds.chunk(
+        {
+            t_t_axis: t_chunks,
+            t_f_axis: f_chunks,
+            "antenna": interpolated_xds.dims["antenna"]
+        }
+    )
+
+    return interpolated_xds
 
 
 def make_interpolated_xds_list(

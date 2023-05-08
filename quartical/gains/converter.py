@@ -4,9 +4,11 @@ import numpy as np
 
 class Converter(object):
 
-    def __init__(self, conversion_functions, reversion_functions):
-        self.conversion_functions = conversion_functions
-        self.reversion_functions = reversion_functions
+    def __init__(self, gain_obj):
+        self.conversion_dtype = gain_obj.conversion_dtype
+        self.reversion_dtype = gain_obj.reversion_dtype
+        self.conversion_functions = gain_obj.conversion_functions
+        self.reversion_functions = gain_obj.reversion_functions
 
     @property
     def conversion_ratio(self):
@@ -17,9 +19,10 @@ class Converter(object):
 
         return (input_fields, output_fields)
 
-    def convert(self, arr, dtype):
+    def convert(self, arr):
 
         cr = self.conversion_ratio
+        dtype = self.conversion_dtype
 
         return da.blockwise(
             self._convert, 'tfadc',
@@ -50,9 +53,10 @@ class Converter(object):
 
         return out_arr
 
-    def revert(self, arr, dtype):
+    def revert(self, arr):
 
         cr = self.conversion_ratio
+        dtype = self.reversion_dtype
 
         return da.blockwise(
             self._revert, 'tfadc',
