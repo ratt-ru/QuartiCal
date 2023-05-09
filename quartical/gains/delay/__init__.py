@@ -1,6 +1,6 @@
 import numpy as np
 from quartical.gains.gain import ParameterizedGain
-from quartical.gains.converter import noop, trig_to_phase
+from quartical.gains.converter import no_op, trig_to_phase
 from quartical.gains.delay.kernel import delay_solver, delay_args
 from quartical.gains.delay.pure_kernel import pure_delay_solver
 
@@ -17,14 +17,14 @@ class Delay(ParameterizedGain):
     conversion_functions = (
         (0, (np.cos,)),
         (1, (np.sin,)),
-        (1, (noop,))
+        (1, (no_op,))
     )
     reversion_functions = (
         (2, trig_to_phase),
-        (1, noop)
+        (1, no_op)
     )
-    conversion_dtype = np.float64
-    reversion_dtype = np.float64
+    converted_dtype = np.float64
+    native_dtype = np.float64
 
     def __init__(self, term_name, term_opts):
 

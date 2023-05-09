@@ -97,6 +97,12 @@ def construct_solver(
                     term_xds.gains.data,
                     ("row", "chan", "ant", "dir", "corr")
                 )
+            if "params" in term_xds.data_vars:
+                blocker.add_input(
+                    f"{term_name}_initial_params",
+                    term_xds.params.data,
+                    ("row", "chan", "ant", "dir", "param")
+                )
 
         # Add relevant outputs to blocker object.
         blocker.add_output(

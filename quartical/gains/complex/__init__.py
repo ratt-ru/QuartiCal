@@ -20,8 +20,8 @@ class Complex(Gain):
     reversion_functions = (
         (3, amp_trig_to_complex),
     )
-    conversion_dtype = np.float64
-    reversion_dtype = np.complex128
+    converted_dtype = np.float64
+    native_dtype = np.complex128
 
     def __init__(self, term_name, term_opts):
 

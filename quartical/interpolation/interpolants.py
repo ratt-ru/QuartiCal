@@ -17,7 +17,7 @@ def linear2d_interpolate_gains(source_xds, target_xds):
         output_xds: xarray.Dataset containing interpolated values
     """
 
-    if hasattr(source_xds, "PARAM_SPEC"):
+    if hasattr(target_xds, "PARAM_SPEC"):
         i_t_axis, i_f_axis = source_xds.PARAM_AXES[:2]
         t_t_axis, t_f_axis = target_xds.PARAM_AXES[:2]
     else:

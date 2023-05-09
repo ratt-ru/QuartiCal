@@ -1,12 +1,14 @@
 import dask.array as da
 import numpy as np
+from quartical.gains.gain import ParameterizedGain
 
 
 class Converter(object):
 
     def __init__(self, gain_obj):
-        self.conversion_dtype = gain_obj.conversion_dtype
-        self.reversion_dtype = gain_obj.reversion_dtype
+        self.parameterized = issubclass(gain_obj.__class__, ParameterizedGain)
+        self.converted_dtype = gain_obj.converted_dtype
+        self.native_dtype = gain_obj.native_dtype
         self.conversion_functions = gain_obj.conversion_functions
         self.reversion_functions = gain_obj.reversion_functions
 
@@ -22,7 +24,7 @@ class Converter(object):
     def convert(self, arr):
 
         cr = self.conversion_ratio
-        dtype = self.conversion_dtype
+        dtype = self.converted_dtype
 
         return da.blockwise(
             self._convert, 'tfadc',
@@ -56,7 +58,7 @@ class Converter(object):
     def revert(self, arr):
 
         cr = self.conversion_ratio
-        dtype = self.reversion_dtype
+        dtype = self.native_dtype
 
         return da.blockwise(
             self._revert, 'tfadc',
@@ -86,12 +88,16 @@ class Converter(object):
         return out_arr
 
 
-def noop(passthrough):
+def no_op(passthrough):
     return passthrough
 
 
 def trig_to_phase(cos_arr, sin_arr):
     return np.arctan2(sin_arr, cos_arr)
+
+
+def amp_to_complex(amp_arr):
+    return amp_arr * np.exp(1j)
 
 
 def amp_trig_to_complex(amp_arr, cos_arr, sin_arr):

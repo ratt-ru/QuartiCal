@@ -126,8 +126,9 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
 
 def convert_native_to_interp(xds, converter):
 
-    data_field = "params" if hasattr(xds, "PARAM_SPEC") else "gains"
-    flag_field = "param_flags" if hasattr(xds, "PARAM_SPEC") else "gain_flags"
+    parameterized = converter.parameterized
+    data_field = "params" if parameterized else "gains"
+    flag_field = "param_flags" if parameterized else "gain_flags"
 
     params = converter.convert(xds[data_field].data)
     param_flags = xds[flag_field].data
@@ -150,7 +151,7 @@ def convert_native_to_interp(xds, converter):
 
 def convert_interp_to_native(xds, converter):
 
-    data_field = "params" if hasattr(xds, "PARAM_SPEC") else "gains"
+    data_field = "params" if converter.parameterized else "gains"
 
     native = converter.revert(xds.params.data)
 
@@ -184,7 +185,7 @@ def interpolate(source_xds, target_xds, term):
             f"Unknown interpolation mode {term.interp_method} on {term.name}."
         )
 
-    axes = getattr(source_xds, "PARAM_AXES", source_xds.GAIN_AXES)
+    axes = getattr(target_xds, "PARAM_AXES", target_xds.GAIN_AXES)
 
     interpolated_xds = interpolated_xds.assign_coords(
         {axes[-1]: source_xds[axes[-1]]}

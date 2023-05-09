@@ -1,3 +1,5 @@
+import numpy as np
+from quartical.gains.converter import no_op
 from quartical.gains.gain import ParameterizedGain
 from quartical.gains.amplitude.kernel import amplitude_solver, amplitude_args
 
@@ -6,6 +8,15 @@ class Amplitude(ParameterizedGain):
 
     solver = staticmethod(amplitude_solver)
     term_args = amplitude_args
+
+    conversion_functions = (
+        (1, (no_op,)),
+    )
+    reversion_functions = (
+        (1, no_op),
+    )
+    converted_dtype = np.float64
+    native_dtype = np.float64
 
     def __init__(self, term_name, term_opts):
 
