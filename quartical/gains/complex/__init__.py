@@ -1,6 +1,6 @@
 import numpy as np
 from quartical.gains.gain import Gain
-from quartical.gains.converter import amp_trig_to_complex
+from quartical.gains.conversion import amp_trig_to_complex
 from quartical.gains.complex.kernel import complex_solver, complex_args
 from quartical.gains.complex.diag_kernel import diag_complex_solver
 

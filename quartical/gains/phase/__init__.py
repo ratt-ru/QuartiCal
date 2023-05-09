@@ -1,5 +1,5 @@
 import numpy as np
-from quartical.gains.converter import trig_to_phase
+from quartical.gains.conversion import trig_to_phase
 from quartical.gains.gain import ParameterizedGain
 from quartical.gains.phase.kernel import phase_solver, phase_args
 

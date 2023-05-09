@@ -1,5 +1,5 @@
 import numpy as np
-from quartical.gains.converter import amp_trig_to_complex
+from quartical.gains.conversion import amp_trig_to_complex
 from quartical.gains.gain import Gain
 from quartical.gains.leakage.kernel import leakage_solver, leakage_args
 

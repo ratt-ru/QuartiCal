@@ -1,5 +1,5 @@
 import numpy as np
-from quartical.gains.converter import no_op
+from quartical.gains.conversion import no_op
 from quartical.gains.gain import ParameterizedGain
 from quartical.gains.rotation_measure.kernel import rm_solver, rm_args
 

@@ -4,7 +4,7 @@ import numpy as np
 import dask.array as da
 import xarray
 from daskms.experimental.zarr import xds_from_zarr
-from quartical.gains.converter import Converter
+from quartical.gains.conversion import Converter
 from quartical.interpolation.interpolants import (
     interpolate_missing,
     linear2d_interpolate_gains,
