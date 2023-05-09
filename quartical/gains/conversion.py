@@ -92,7 +92,7 @@ def no_op(passthrough):
     return passthrough
 
 
-def trig_to_phase(cos_arr, sin_arr):
+def trig_to_angle(cos_arr, sin_arr):
     return np.arctan2(sin_arr, cos_arr)
 
 

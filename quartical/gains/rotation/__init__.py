@@ -1,5 +1,5 @@
 import numpy as np
-from quartical.gains.conversion import trig_to_phase
+from quartical.gains.conversion import trig_to_angle
 from quartical.gains.gain import ParameterizedGain
 from quartical.gains.rotation.kernel import rotation_solver, rotation_args
 
@@ -14,7 +14,7 @@ class Rotation(ParameterizedGain):
         (1, (np.sin,))
     )
     converted_to_native = (
-        (2, trig_to_phase),
+        (2, trig_to_angle),
     )
     converted_dtype = np.float64
     native_dtype = np.float64
