@@ -14,12 +14,12 @@ class Delay(ParameterizedGain):
     solver = staticmethod(delay_solver)
     term_args = delay_args
 
-    conversion_functions = (
+    native_to_converted = (
         (0, (np.cos,)),
         (1, (np.sin,)),
         (1, (no_op,))
     )
-    reversion_functions = (
+    converted_to_native = (
         (2, trig_to_phase),
         (1, no_op)
     )

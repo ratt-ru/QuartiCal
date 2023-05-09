@@ -9,10 +9,10 @@ class Amplitude(ParameterizedGain):
     solver = staticmethod(amplitude_solver)
     term_args = amplitude_args
 
-    conversion_functions = (
+    native_to_converted = (
         (1, (no_op,)),
     )
-    reversion_functions = (
+    converted_to_native = (
         (1, no_op),
     )
     converted_dtype = np.float64

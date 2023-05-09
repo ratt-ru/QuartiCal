@@ -12,12 +12,12 @@ class Complex(Gain):
     # Conversion functions required for interpolation NOTE: Non-parameterised
     # gains will always be reinterpreted and parameterised in amplitude and
     # phase for the sake of simplicity.
-    conversion_functions = (
+    native_to_converted = (
         (0, (np.abs,)),
         (0, (np.angle, np.cos)),
         (1, (np.angle, np.sin))
     )
-    reversion_functions = (
+    converted_to_native = (
         (3, amp_trig_to_complex),
     )
     converted_dtype = np.float64

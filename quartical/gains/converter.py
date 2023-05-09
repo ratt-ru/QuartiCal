@@ -9,15 +9,15 @@ class Converter(object):
         self.parameterized = issubclass(gain_obj.__class__, ParameterizedGain)
         self.converted_dtype = gain_obj.converted_dtype
         self.native_dtype = gain_obj.native_dtype
-        self.conversion_functions = gain_obj.conversion_functions
-        self.reversion_functions = gain_obj.reversion_functions
+        self.native_to_converted = gain_obj.native_to_converted
+        self.converted_to_native = gain_obj.converted_to_native
 
     @property
     def conversion_ratio(self):
 
-        input_fields = sum(cf[0] for cf in self.conversion_functions)
+        input_fields = sum(cf[0] for cf in self.native_to_converted)
 
-        output_fields = len(self.conversion_functions)
+        output_fields = len(self.native_to_converted)
 
         return (input_fields, output_fields)
 
@@ -45,7 +45,7 @@ class Converter(object):
         out_ind = 0
 
         while inp_ind < arr.shape[-1]:
-            for (n_consumed, cfs) in self.conversion_functions:
+            for (n_consumed, cfs) in self.native_to_converted:
                 tmp = arr[..., inp_ind]
                 for cf in cfs:
                     tmp = cf(tmp)
@@ -79,7 +79,7 @@ class Converter(object):
         out_ind = 0
 
         while inp_ind < arr.shape[-1]:
-            for (n_consumed, rf) in self.reversion_functions:
+            for (n_consumed, rf) in self.converted_to_native:
                 inputs = [arr[..., inp_ind + k] for k in range(n_consumed)]
                 out_arr[..., out_ind] = rf(*inputs)
                 inp_ind += n_consumed
