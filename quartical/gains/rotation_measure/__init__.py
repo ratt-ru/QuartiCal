@@ -1,12 +1,22 @@
+import numpy as np
+from quartical.gains.converter import no_op
 from quartical.gains.gain import ParameterizedGain
 from quartical.gains.rotation_measure.kernel import rm_solver, rm_args
-import numpy as np
 
 
 class RotationMeasure(ParameterizedGain):
 
     solver = staticmethod(rm_solver)
     term_args = rm_args
+
+    native_to_converted = (
+        (1, (no_op,)),
+    )
+    converted_to_native = (
+        (1, no_op),
+    )
+    converted_dtype = np.float64
+    native_dtype = np.float64
 
     def __init__(self, term_name, term_opts):
 

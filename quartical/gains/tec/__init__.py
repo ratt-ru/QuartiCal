@@ -1,12 +1,25 @@
+import numpy as np
+from quartical.gains.converter import no_op, trig_to_phase
 from quartical.gains.gain import ParameterizedGain
 from quartical.gains.tec.kernel import tec_solver, tec_args
-import numpy as np
 
 
 class TEC(ParameterizedGain):
 
     solver = staticmethod(tec_solver)
     term_args = tec_args
+
+    native_to_converted = (
+        (0, (np.cos,)),
+        (1, (np.sin,)),
+        (1, (no_op,))
+    )
+    converted_to_native = (
+        (2, trig_to_phase),
+        (1, no_op)
+    )
+    converted_dtype = np.float64
+    native_dtype = np.float64
 
     def __init__(self, term_name, term_opts):
 

@@ -1,6 +1,6 @@
 import numpy as np
-from quartical.gains.gain import ParameterizedGain
 from quartical.gains.converter import no_op, trig_to_phase
+from quartical.gains.gain import ParameterizedGain
 from quartical.gains.delay.kernel import delay_solver, delay_args
 from quartical.gains.delay.pure_kernel import pure_delay_solver
 
