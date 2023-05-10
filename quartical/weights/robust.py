@@ -246,15 +246,15 @@ def update_weights(weights, etas, icovariance):
 def robust_reweighting(base_args, meta_args, etas, icovariance, dof, mode):
 
     def impl(base_args, meta_args, etas, icovariance, dof, mode):
-        model = base_args.model
-        data = base_args.data
-        a1 = base_args.a1
-        a2 = base_args.a2
-        weights = base_args.weights
-        flags = base_args.flags
-        t_map_arr = base_args.t_map_arr[0]  # Ignore parameter mappings.
-        f_map_arr = base_args.f_map_arr[0]  # Ignore parameter mappings.
-        d_map_arr = base_args.d_map_arr
+        model = base_args.MODEL_DATA
+        data = base_args.DATA
+        a1 = base_args.ANTENNA1
+        a2 = base_args.ANTENNA2
+        weights = base_args.WEIGHT
+        flags = base_args.FLAG
+        t_map_arr = base_args.time_maps
+        f_map_arr = base_args.freq_maps
+        d_map_arr = base_args.dir_maps
         gains = base_args.gains
         row_map = base_args.row_map
         row_weights = base_args.row_weights
