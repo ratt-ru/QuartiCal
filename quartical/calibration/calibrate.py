@@ -171,7 +171,11 @@ def add_calibration_graph(
     # them to be consistent with this calibration run. TODO: This needs to
     # be substantially improved to handle term specific behaviour/utilize
     # mappings.
-    gain_xds_lod = load_and_interpolate_gains(gain_xds_lod, chain)
+    gain_xds_lod = load_and_interpolate_gains(
+        gain_xds_lod,
+        chain,
+        output_opts.gain_directory
+    )
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
     gain_xds_lod, data_xds_list, stats_xds_list = construct_solver(

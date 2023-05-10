@@ -3,6 +3,7 @@ from loguru import logger  # noqa
 import numpy as np
 import dask.array as da
 import xarray
+from copy import deepcopy
 from daskms.experimental.zarr import xds_from_zarr
 from quartical.gains.conversion import Converter
 from quartical.interpolation.interpolants import (
@@ -10,9 +11,10 @@ from quartical.interpolation.interpolants import (
     linear2d_interpolate_gains,
     spline2d_interpolate_gains
 )
+from quartical.gains.datasets import write_gain_datasets
 
 
-def load_and_interpolate_gains(gain_xds_lod, chain):
+def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
     """Load and interpolate gains in accordance with the chain.
 
     Given the gain datasets which are to be applied/solved for, determine
@@ -109,8 +111,6 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
             for ixds, rxds in zip(interpolated_xds_list, term_xds_list)
         ]
 
-        # TODO: Add option to discard some fields during interpolation.
-
         interpolated_xds_lol.append(interpolated_xds_list)
 
     # This converts the interpolated list of lists into a list of dicts.
@@ -120,6 +120,12 @@ def load_and_interpolate_gains(gain_xds_lod, chain):
         {tn: term for tn, term in zip(term_names, terms)}
         for terms in zip(*interpolated_xds_lol)
     ]
+
+    # This triggers an early compute and replaces the complicated interpolation
+    # graph with simple reads from disk.
+    interpolated_xds_lod = compute_and_reload(
+        output_directory, interpolated_xds_lod
+    )
 
     return interpolated_xds_lod
 
@@ -227,3 +233,38 @@ def reindex_and_rechunk(interpolated_xds, reference_xds):
     )
 
     return interpolated_xds
+
+
+def compute_and_reload(directory, gain_xds_lod):
+    """Reread gains datasets to be consistent with the reference datasets."""
+
+    writes = write_gain_datasets(gain_xds_lod, directory)
+    # NOTE: Need to set compute calls up using dask config mechansim.
+    da.compute(writes)
+
+    # NOTE: This avoids mutating the inputs i.e. avoids side-effects.
+    # TODO: Is this computationally expensive?
+    gain_xds_lod = deepcopy(gain_xds_lod)
+
+    gain_names = [g for g in gain_xds_lod[0].keys()]
+
+    gain_xds_dol = {g: [d[g] for d in gain_xds_lod] for g in gain_names}
+
+    reference_chunks = {
+        g: [dict(xds.chunks) for xds in xdsl]
+        for g, xdsl in gain_xds_dol.items()
+    }
+
+    loaded_terms = {
+        g: xds_from_zarr(
+            directory + f"::{g}",
+            chunks=reference_chunks[g]
+        ) for g in gain_names
+    }
+
+    for lxdsl, rxdsl in zip(loaded_terms.values(), gain_xds_dol.values()):
+        for lxds, rxds in zip(lxdsl, rxdsl):
+            for k in lxds.data_vars.keys():
+                rxds[k] = lxds[k]
+
+    return gain_xds_lod

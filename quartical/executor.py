@@ -151,8 +151,8 @@ def _execute(exitstack):
                                output_opts)
 
     gain_writes = write_gain_datasets(gain_xds_lod,
-                                      net_xds_lod,
-                                      output_opts)
+                                      output_opts.gain_directory,
+                                      net_xds_lod)
 
     bl_corr_writes = write_baseline_datasets(bl_corr_xds_list,
                                              output_opts)
