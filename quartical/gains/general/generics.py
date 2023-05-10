@@ -462,9 +462,13 @@ def combine_gains(
     ):
 
         n_term = len(gains)
-        n_time, n_freq, n_ant, n_dir, _ = net_shape
+        n_time = time_bins[0].size  # Same for all terms.
+        n_freq = freq_maps[0].size  # Same for all terms.
+        _, _, n_ant, n_dir, n_corr = net_shape
 
-        net_gains = np.zeros(net_shape, dtype=np.complex128)
+        shape = (n_time, n_freq, n_ant, n_dir, n_corr)
+
+        net_gains = np.zeros(shape, dtype=np.complex128)
         net_gains[..., 0] = 1
         net_gains[..., -1] = 1
 
@@ -509,9 +513,13 @@ def combine_flags(
     ):
 
         n_term = len(flags)
-        n_time, n_freq, n_ant, n_dir, _ = net_shape
+        n_time = time_bins[0].size  # Same for all terms.
+        n_freq = freq_maps[0].size  # Same for all terms.
+        _, _, n_ant, n_dir, _ = net_shape
 
-        net_flags = np.zeros((n_time, n_freq, n_ant, n_dir), dtype=np.int8)
+        shape = (n_time, n_freq, n_ant, n_dir)
+
+        net_flags = np.zeros(shape, dtype=np.int8)
 
         for t in range(n_time):
             for f in range(n_freq):
