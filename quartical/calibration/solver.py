@@ -234,7 +234,7 @@ def solver_wrapper(
                     etas,
                     icovariance,
                     dof,
-                    kwargs["corr_mode"])
+                    corr_mode)
 
         # TODO: Ugly hack for larger jhj matrices. Refine.
         if jhj.ndim == 6:
