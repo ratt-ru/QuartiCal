@@ -95,8 +95,6 @@ def spline2d_interpolate_gains(source_xds, target_xds):
         i_t_axis, i_f_axis = source_xds.GAIN_AXES[:2]
         t_t_axis, t_f_axis = target_xds.GAIN_AXES[:2]
 
-    output_xds = target_xds
-
     if source_xds.dims[i_t_axis] < 4 or source_xds.dims[i_f_axis] < 4:
         raise ValueError(
             f"Cubic spline interpolation requires at least four "
