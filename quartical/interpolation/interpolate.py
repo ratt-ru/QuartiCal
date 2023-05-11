@@ -62,24 +62,20 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
             f"this behaviour is not supported. Please check {term.name}.type."
         )
 
-        # Choose interpolation targets based on term description. TODO: This
-        # may be a little simplistic in the general case. Add to datasets?
-        targets = (
-            ["params", "param_flags"] if hasattr(term, "param_axes")
-            else ["gains", "gain_flags"]
-        )
-
         try:
             merged_xds = xarray.combine_by_coords(
-                [xds[targets] for xds in load_xds_list],
+                [xds[term.interpolation_targets] for xds in load_xds_list],
                 combine_attrs='drop_conflicts'
             )
         except ValueError:
             # If we have overlapping SPWs, the above will fail.
             # TODO: How do we want to handle this case?
             raise ValueError(
-                "Overlapping SPWs currently unsupported. Please consider "
-                "splitting your data such that no SPWs overlap."
+                f"Datasets for {term.name} of type {term.type} could not be "
+                f"consolidated. This may indicate that the data contains "
+                f"overlapping spectral windows. This is not currently "
+                f"supported. Please consider splitting your data such that "
+                f"no SPWs overlap."
             )
 
         # Remove time/chan chunking and rechunk by antenna.
@@ -111,6 +107,15 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
             for ixds, rxds in zip(interpolated_xds_list, term_xds_list)
         ]
 
+        # This triggers an early compute and replaces the complicated
+        # interpolation graph with simple reads from disk. NOTE: We do this
+        # interpolated term - we could in fact do this once at the end but
+        # that makes testing painful.
+
+        interpolated_xds_list = compute_and_reload(
+            output_directory, interpolated_xds_list
+        )
+
         interpolated_xds_lol.append(interpolated_xds_list)
 
     # This converts the interpolated list of lists into a list of dicts.
@@ -120,12 +125,6 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
         {tn: term for tn, term in zip(term_names, terms)}
         for terms in zip(*interpolated_xds_lol)
     ]
-
-    # This triggers an early compute and replaces the complicated interpolation
-    # graph with simple reads from disk.
-    interpolated_xds_lod = compute_and_reload(
-        output_directory, interpolated_xds_lod
-    )
 
     return interpolated_xds_lod
 
@@ -235,36 +234,31 @@ def reindex_and_rechunk(interpolated_xds, reference_xds):
     return interpolated_xds
 
 
-def compute_and_reload(directory, gain_xds_lod):
+def compute_and_reload(directory, gain_xds_list):
     """Reread gains datasets to be consistent with the reference datasets."""
 
+    gain_xds_lod = [{xds.NAME: xds} for xds in gain_xds_list]
+
     writes = write_gain_datasets(gain_xds_lod, directory)
-    # NOTE: Need to set compute calls up using dask config mechansim.
+    # NOTE: Need to set compute calls up using dask config mechansim to ensure
+    # correct resource usage is observed.
     da.compute(writes)
 
     # NOTE: This avoids mutating the inputs i.e. avoids side-effects.
     # TODO: Is this computationally expensive?
-    gain_xds_lod = deepcopy(gain_xds_lod)
+    gain_xds_list = deepcopy(gain_xds_list)
 
-    gain_names = [g for g in gain_xds_lod[0].keys()]
+    gain_name = gain_xds_list[0].NAME
 
-    gain_xds_dol = {g: [d[g] for d in gain_xds_lod] for g in gain_names}
+    reference_chunks = [dict(xds.chunks) for xds in gain_xds_list]
 
-    reference_chunks = {
-        g: [dict(xds.chunks) for xds in xdsl]
-        for g, xdsl in gain_xds_dol.items()
-    }
+    loaded_xds_list = xds_from_zarr(
+        f"{directory}::{gain_name}",
+        chunks=reference_chunks
+    )
 
-    loaded_terms = {
-        g: xds_from_zarr(
-            directory + f"::{g}",
-            chunks=reference_chunks[g]
-        ) for g in gain_names
-    }
+    for lxds, rxds in zip(loaded_xds_list, gain_xds_list):
+        for k in lxds.data_vars.keys():
+            rxds[k] = lxds[k]
 
-    for lxdsl, rxdsl in zip(loaded_terms.values(), gain_xds_dol.values()):
-        for lxds, rxds in zip(lxdsl, rxdsl):
-            for k in lxds.data_vars.keys():
-                rxds[k] = lxds[k]
-
-    return gain_xds_lod
+    return gain_xds_list

@@ -3,10 +3,11 @@ import xarray
 import dask.array as da
 from itertools import product
 from collections import namedtuple
+from daskms.experimental.zarr import xds_to_zarr
+from quartical.config.internal import gains_to_chain
 from quartical.gains.gain import gain_spec_tup
 from quartical.interpolation.interpolate import (
-    load_and_interpolate_gains,
-    make_interpolated_xds_list
+    load_and_interpolate_gains
 )
 import numpy as np
 from copy import deepcopy
@@ -81,6 +82,7 @@ def mock_gain_xds_list(start_time,
         }
 
         attrs = {
+            "NAME": "G",
             "TYPE": 'complex',
             "GAIN_AXES": gain_axes,
             "GAIN_SPEC": gain_spec_tup((n_time,), (n_freq,), (n_ant,),
@@ -98,97 +100,102 @@ def mock_gain_xds_list(start_time,
     return _gain_xds_list
 
 
-@pytest.fixture(scope="module")
-def opts(base_opts, interp_mode, interp_method):
+@pytest.fixture(scope="function")
+def opts(base_opts, interp_mode, interp_method, tmp_path_factory):
 
     # Don't overwrite base config - instead duplicate and update.
 
     _opts = deepcopy(base_opts)
 
     _opts.solver.terms = ["G", "B"]
-    _opts.G.load_from = "ignored"  # Must not be None.
+    _opts.output.gain_directory = str(tmp_path_factory.mktemp("writes.qc"))
+    _opts.G.load_from = str(tmp_path_factory.mktemp("loads.qc")) + "/G"
     _opts.G.interp_method = interp_method
     _opts.G.interp_mode = interp_mode
 
     return _opts
 
 
-@pytest.fixture(scope="module", params=GAIN_PROPERTIES.values())
+@pytest.fixture(scope="function")
+def chain(opts):
+    return gains_to_chain(opts)
+
+
+@pytest.fixture(scope="function", params=GAIN_PROPERTIES.values())
 def _params(request):
     return request.param[0], request.param[1]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def load_params(_params):
     return _params[0]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def gain_params(_params):
     return _params[1]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def gain_xds_lod(gain_params):
     return [{"G": xds, "B": xds} for xds in mock_gain_xds_list(*gain_params)]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def term_xds_list(gain_xds_lod):
     return [xds_list["G"] for xds_list in gain_xds_lod]
 
 
-@pytest.fixture(scope="module")
-def load_xds_list(load_params):
-    return mock_gain_xds_list(*load_params)
+@pytest.fixture(scope="function")
+def load_xds_list(load_params, opts):
+
+    mock_loads = mock_gain_xds_list(*load_params)
+
+    path = '::'.join(opts.G.load_from.rsplit('/', maxsplit=1))
+
+    da.compute(xds_to_zarr(mock_loads, path))
+
+    return mock_loads
 
 
-# ------------------------------convert_and_drop-------------------------------
-
-@pytest.fixture(scope="module", params=["reim", "ampphase"])
+@pytest.fixture(scope="function", params=["reim", "ampphase"])
 def interp_mode(request):
     return request.param
 
 
-@pytest.fixture(scope="module", params=["2dlinear",
-                                        "2dspline"])
+@pytest.fixture(scope="function", params=["2dlinear", "2dspline"])
 def interp_method(request):
     return request.param
 
 # -----------------------------make_interp_xds_list----------------------------
 
 
-@pytest.fixture(scope="module")
-def merged_xds(load_xds_list):
-    xds = xarray.combine_by_coords(
-        [xds[['gains', 'gain_flags']] for xds in load_xds_list],
-        combine_attrs='drop_conflicts'
-    )
-    return xds.chunk({**xds.dims, "antenna": 1})
-
-
-@pytest.fixture(scope="module")
-def interpolated_xds_list(
-    term_xds_list,
-    merged_xds,
-    interp_mode,
-    interp_method
+@pytest.fixture(scope="function")
+def interpolated_xds_lod(
+    gain_xds_lod,
+    chain,
+    opts,
+    load_xds_list
 ):
 
-    return make_interpolated_xds_list(
-        term_xds_list,
-        merged_xds,
-        interp_mode,
-        interp_method
+    return load_and_interpolate_gains(
+        gain_xds_lod,
+        chain,
+        opts.output.gain_directory
     )
 
 
-def test_has_gains(interpolated_xds_list):
-    assert all(hasattr(xds, "gains") for xds in interpolated_xds_list)
+def test_has_gains(interpolated_xds_lod):
+    assert all(
+        all(hasattr(xds, "gains") for xds in d.values())
+        for d in interpolated_xds_lod
+    )
 
 
-def test_chunking(interpolated_xds_list, term_xds_list):
+def test_chunking(interpolated_xds_lod, term_xds_list):
     # TODO: Chunking behaviour is tested but not adequately probed yet.
+    interpolated_xds_list = [ixds['G'] for ixds in interpolated_xds_lod]
+
     assert all(ixds.chunks == txds.chunks
                for ixds, txds in zip(interpolated_xds_list, term_xds_list))
 
@@ -196,31 +203,20 @@ def test_chunking(interpolated_xds_list, term_xds_list):
 
 
 @pytest.fixture(scope="function")
-def interp_xds_lol(gain_xds_lod, chain, load_xds_list, monkeypatch):
-
-    monkeypatch.setattr(
-        "quartical.interpolation.interpolate.xds_from_zarr",
-        lambda store: load_xds_list
-    )
-
-    return load_and_interpolate_gains(gain_xds_lod, chain)
+def compute_interpolated_xds_lod(interpolated_xds_lod):
+    return da.compute(interpolated_xds_lod)[0]
 
 
-@pytest.fixture(scope="function")
-def compute_interp_xds_lol(interp_xds_lol):
-    return da.compute(interp_xds_lol)[0]
-
-
-def test_cixl_has_gains(compute_interp_xds_lol):
+def test_cixl_has_gains(compute_interpolated_xds_lod):
     assert all([hasattr(xds, "gains")
-               for xds_dict in compute_interp_xds_lol
+               for xds_dict in compute_interpolated_xds_lod
                for xds in xds_dict.values()])
 
 
-def test_cixl_gains_ident(compute_interp_xds_lol):
+def test_cixl_gains_ident(compute_interpolated_xds_lod):
     # NOTE: Splines will not be exactly identity due to numerical precision.
     assert all(np.allclose(xds.gains.values, np.array([1, 0, 0, 1]))
-               for xds_dict in compute_interp_xds_lol
+               for xds_dict in compute_interpolated_xds_lod
                for xds in xds_dict.values())
 
 # -----------------------------------------------------------------------------
