@@ -78,7 +78,7 @@ def spline2d(x, y, z, xx, yy):
     return zz
 
 
-def spline2d_interpolate_gains(interp_xds, term_xds):
+def spline2d_interpolate_gains(source_xds, target_xds):
     """Interpolate from interp_xds to term_xds using a 2D spline.
 
     Args:
@@ -88,32 +88,40 @@ def spline2d_interpolate_gains(interp_xds, term_xds):
     Returns:
         output_xds: xarray.Dataset containing interpolated values
     """
-    i_t_axis, i_f_axis = interp_xds.GAIN_AXES[:2]
-    t_t_axis, t_f_axis = term_xds.GAIN_AXES[:2]
+    if hasattr(target_xds, "PARAM_SPEC"):
+        i_t_axis, i_f_axis = source_xds.PARAM_AXES[:2]
+        t_t_axis, t_f_axis = target_xds.PARAM_AXES[:2]
+    else:
+        i_t_axis, i_f_axis = source_xds.GAIN_AXES[:2]
+        t_t_axis, t_f_axis = target_xds.GAIN_AXES[:2]
 
-    output_xds = term_xds
+    output_xds = target_xds
 
-    if interp_xds.dims[i_t_axis] < 4 or interp_xds.dims[i_f_axis] < 4:
+    if source_xds.dims[i_t_axis] < 4 or source_xds.dims[i_f_axis] < 4:
         raise ValueError(
             f"Cubic spline interpolation requires at least four "
             f"values along an axis. After concatenation, the "
             f"(time, freq) dimensions of the interpolating dataset were "
-            f"{(interp_xds.dims[i_t_axis], interp_xds.dims[i_f_axis])}"
+            f"{(source_xds.dims[i_t_axis], source_xds.dims[i_f_axis])}."
         )
 
-    for data_field in interp_xds.data_vars.keys():
-        interp = da.blockwise(spline2d, "tfadc",
-                              interp_xds[i_t_axis].values, None,
-                              interp_xds[i_f_axis].values, None,
-                              interp_xds[data_field].data, "tfadc",
-                              term_xds[t_t_axis].values, None,
-                              term_xds[t_f_axis].values, None,
-                              dtype=np.float64,
-                              adjust_chunks={"t": term_xds.dims[t_t_axis],
-                                             "f": term_xds.dims[t_f_axis]})
+    interp_arr = da.blockwise(
+        spline2d, "tfadc",
+        source_xds[i_t_axis].values, None,
+        source_xds[i_f_axis].values, None,
+        source_xds.params.data, "tfadc",
+        target_xds[t_t_axis].values, None,
+        target_xds[t_f_axis].values, None,
+        dtype=np.float64,
+        adjust_chunks={
+            "t": target_xds.dims[t_t_axis],
+            "f": target_xds.dims[t_f_axis]
+        }
+    )
 
-        output_xds = output_xds.assign(
-            {data_field: (term_xds.GAIN_AXES, interp)})
+    output_xds = target_xds.assign(
+        {"params": (source_xds.params.dims, interp_arr)}
+    )
 
     return output_xds
 

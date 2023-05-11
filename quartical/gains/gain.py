@@ -57,6 +57,7 @@ class Gain:
         "direction",
         "correlation"
     )
+    interpolation_targets = ["gains", "gain_flags"]
 
     def __init__(self, term_name, term_opts):
 
@@ -350,6 +351,7 @@ class ParameterizedGain(Gain):
         "direction",
         "param_name"
     )
+    interpolation_targets = ["params", "param_flags"]
 
     def __init__(self, term_name, term_opts):
 
