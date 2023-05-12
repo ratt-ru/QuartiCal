@@ -32,14 +32,14 @@ class Amplitude(ParameterizedGain):
 
         return [f"amplitude_{c}" for c in param_corr]
 
-    @staticmethod
-    def init_term(
-        gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
-    ):
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
         """Initialise the gains (and parameters)."""
 
-        super(Amplitude, Amplitude).init_term(
-            gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
+        gains, params = super().init_term(
+            term_spec, ref_ant, ms_kwargs, term_kwargs
         )
 
-        param[:] = 1  # Amplitudes start at unity. TODO: Estimate?
+        if not self.load_from:
+            params[...] = 1  # Amplitudes start at unity unless loaded.
+
+        return gains, params

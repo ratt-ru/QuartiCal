@@ -47,27 +47,23 @@ class Delay(ParameterizedGain):
 
         return [n.format(c) for c in param_corr for n in template]
 
-    @staticmethod
-    def init_term(
-        gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
-    ):
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
         """Initialise the gains (and parameters)."""
 
-        loaded = super(Delay, Delay).init_term(
-            gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
+        gain, param = super().init_term(
+            term_spec, ref_ant, ms_kwargs, term_kwargs
         )
 
-        if loaded or not term_opts.initial_estimate:
-            return
+        if self.load_from or not self.initial_estimate:
+            return gain, param
 
-        data = kwargs["DATA"]  # (row, chan, corr)
-        flags = kwargs["FLAG"]  # (row, chan)
-        a1 = kwargs["ANTENNA1"]
-        a2 = kwargs["ANTENNA2"]
-        chan_freq = kwargs["CHAN_FREQ"]
-        # TODO: This whole process is a bit dodgy - improve with new changes.
-        t_map = kwargs[f"{term_spec.name}-time-map"]
-        f_map = kwargs[f"{term_spec.name}-param-freq-map"]
+        data = ms_kwargs["DATA"]  # (row, chan, corr)
+        flags = ms_kwargs["FLAG"]  # (row, chan)
+        a1 = ms_kwargs["ANTENNA1"]
+        a2 = ms_kwargs["ANTENNA2"]
+        chan_freq = ms_kwargs["CHAN_FREQ"]
+        t_map = term_kwargs[f"{term_spec.name}-time-map"]
+        f_map = term_kwargs[f"{term_spec.name}-param-freq-map"]
         _, n_chan, n_ant, n_dir, n_corr = gain.shape
 
         # We only need the baselines which include the ref_ant.
@@ -154,6 +150,8 @@ class Delay(ParameterizedGain):
 
                 if n_corr > 1:
                     gain[ut, f, :, :, -1] = np.exp(cf * param[ut, fm, :, :, 3])
+
+        return gain, param
 
 
 class PureDelay(Delay):
