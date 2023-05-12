@@ -1,7 +1,11 @@
 import numpy as np
 from quartical.gains.conversion import no_op, trig_to_angle
 from quartical.gains.gain import ParameterizedGain
-from quartical.gains.delay.kernel import delay_solver, delay_args
+from quartical.gains.delay.kernel import (
+    delay_solver,
+    delay_args,
+    delay_renderer
+)
 from quartical.gains.delay.pure_kernel import pure_delay_solver
 
 
@@ -52,6 +56,14 @@ class Delay(ParameterizedGain):
 
         gain, param = super().init_term(
             term_spec, ref_ant, ms_kwargs, term_kwargs
+        )
+
+        # Convert the parameters into gains.
+        delay_renderer(
+            param,
+            gain,
+            ms_kwargs["CHAN_FREQ"],
+            term_kwargs[f"{self.name}-param-freq-map"],
         )
 
         if self.load_from or not self.initial_estimate:

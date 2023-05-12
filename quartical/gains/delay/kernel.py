@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, generated_jit
+from numba import prange, generated_jit, jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (native_intermediaries,
                                               upsampled_itermediaries,
@@ -716,3 +716,35 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
         raise ValueError("Unsupported number of correlations.")
 
     return factories.qcjit(impl)
+
+
+@jit(
+    nopython=True,
+    fastmath=True,
+    parallel=False,
+    cache=True,
+    nogil=True
+)
+def delay_renderer(
+    params,
+    gains,
+    chan_freq,
+    param_freq_map
+):
+
+    n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
+
+    for t in range(n_time):
+        for f in range(n_freq):
+            cf = chan_freq[f]
+            f_m = param_freq_map[f]
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    g = gains[t, f, a, d]
+                    p = params[t, f_m, a, d]
+
+                    g[0] = np.exp(1j*2*np.pi*(cf*p[1] + p[0]))
+
+                    if n_corr > 1:
+                        g[-1] = np.exp(1j*2*np.pi*(cf*p[3] + p[2]))
