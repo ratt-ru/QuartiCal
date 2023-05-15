@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from loguru import logger  # noqa
+from loguru import logger
 import numpy as np
 import dask.array as da
 import xarray
@@ -45,6 +45,11 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
             continue
         else:
             load_path = "::".join(term_path.rsplit('/', 1))
+
+        logger.info(
+            f"Beginning load/interpolate for {term_name}. Please be patient - "
+            f"this may take some time."
+        )
 
         load_xds_list = xds_from_zarr(load_path)
         load_type = {xds.TYPE for xds in load_xds_list}
@@ -115,6 +120,8 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
         interpolated_xds_list = compute_and_reload(
             output_directory, interpolated_xds_list
         )
+
+        logger.success(f"Successfully loaded/interpolated {term_name}.")
 
         interpolated_xds_lol.append(interpolated_xds_list)
 
