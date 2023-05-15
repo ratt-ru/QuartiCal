@@ -97,6 +97,12 @@ def construct_solver(
                     term_xds.gains.data,
                     ("row", "chan", "ant", "dir", "corr")
                 )
+            if "params" in term_xds.data_vars:
+                blocker.add_input(
+                    f"{term_name}_initial_params",
+                    term_xds.params.data,
+                    ("row", "chan", "ant", "dir", "param")
+                )
 
         # Add relevant outputs to blocker object.
         blocker.add_output(
@@ -219,10 +225,10 @@ def construct_solver(
             result_vars["gain_flags"] = (term_xds.GAIN_AXES[:-1], flags)
 
             convperc = output_dict[f"{term_name}-convperc"]
-            result_vars["conv_perc"] = (("t_chunk", "f_chunk"), convperc)
+            result_vars["conv_perc"] = (("time_chunk", "freq_chunk"), convperc)
 
             conviter = output_dict[f"{term_name}-conviter"]
-            result_vars["conv_iter"] = (("t_chunk", "f_chunk"), conviter)
+            result_vars["conv_iter"] = (("time_chunk", "freq_chunk"), conviter)
 
             if hasattr(term_xds, "PARAM_SPEC"):
                 params = output_dict[f"{term_name}-param"]

@@ -97,7 +97,7 @@ def test_t_chunks(solver_xds_list, predicted_xds_list):
 
     expected_t_chunks = predicted_xds_list[0].DATA.data.numblocks[0]
 
-    assert all([len(gxds.chunks["t_chunk"]) == expected_t_chunks
+    assert all([len(gxds.chunks["time_chunk"]) == expected_t_chunks
                for gxds in term_xds_dict.values()])
 
 
@@ -108,7 +108,7 @@ def test_f_chunks(solver_xds_list, predicted_xds_list):
 
     expected_f_chunks = predicted_xds_list[0].DATA.data.numblocks[1]
 
-    assert all([len(gxds.chunks["f_chunk"]) == expected_f_chunks
+    assert all([len(gxds.chunks["freq_chunk"]) == expected_f_chunks
                for gxds in term_xds_dict.values()])
 
 # -------------------------------expand_specs----------------------------------

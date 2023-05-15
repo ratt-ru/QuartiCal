@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, generated_jit
+from numba import prange, generated_jit, jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (native_intermediaries,
                                               upsampled_itermediaries,
@@ -594,3 +594,40 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
                          "correlation data.")
 
     return factories.qcjit(impl)
+
+
+@jit(
+    nopython=True,
+    fastmath=True,
+    parallel=False,
+    cache=True,
+    nogil=True
+)
+def rm_params_to_gains(
+    params,
+    gains,
+    lambda_sq,
+    param_freq_map
+):
+
+    n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
+
+    for t in range(n_time):
+        for f in range(n_freq):
+            lsq = lambda_sq[f]
+            f_m = param_freq_map[f]
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    g = gains[t, f, a, d]
+                    rm = params[t, f_m, a, d, 0]
+
+                    beta = lsq*rm
+
+                    cos_beta = np.cos(beta)
+                    sin_beta = np.sin(beta)
+
+                    g[0] = cos_beta
+                    g[1] = -sin_beta
+                    g[2] = sin_beta
+                    g[3] = cos_beta

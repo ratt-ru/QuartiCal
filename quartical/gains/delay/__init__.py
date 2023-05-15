@@ -1,7 +1,16 @@
-from quartical.gains.gain import ParameterizedGain
-from quartical.gains.delay.kernel import delay_solver, delay_args
-from quartical.gains.delay.pure_kernel import pure_delay_solver
 import numpy as np
+from quartical.gains.conversion import no_op, trig_to_angle
+from quartical.gains.gain import ParameterizedGain
+from quartical.gains.delay.kernel import (
+    delay_solver,
+    delay_args,
+    delay_params_to_gains
+)
+from quartical.gains.delay.pure_kernel import pure_delay_solver
+
+
+def reversion_function(a, c, s):
+    return a * np.exp(1j * np.arctan2(s, c))
 
 
 class Delay(ParameterizedGain):
@@ -9,24 +18,21 @@ class Delay(ParameterizedGain):
     solver = staticmethod(delay_solver)
     term_args = delay_args
 
+    native_to_converted = (
+        (0, (np.cos,)),
+        (1, (np.sin,)),
+        (1, (no_op,))
+    )
+    converted_to_native = (
+        (2, trig_to_angle),
+        (1, no_op)
+    )
+    converted_dtype = np.float64
+    native_dtype = np.float64
+
     def __init__(self, term_name, term_opts):
 
         super().__init__(term_name, term_opts)
-
-        self.gain_axes = (
-            "gain_time",
-            "gain_freq",
-            "antenna",
-            "direction",
-            "correlation"
-        )
-        self.param_axes = (
-            "param_time",
-            "param_freq",
-            "antenna",
-            "direction",
-            "param_name"
-        )
 
     @classmethod
     def _make_freq_map(cls, chan_freqs, chan_widths, freq_interval):
@@ -45,27 +51,31 @@ class Delay(ParameterizedGain):
 
         return [n.format(c) for c in param_corr for n in template]
 
-    @staticmethod
-    def init_term(
-        gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
-    ):
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
         """Initialise the gains (and parameters)."""
 
-        loaded = super(Delay, Delay).init_term(
-            gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
+        gain, param = super().init_term(
+            term_spec, ref_ant, ms_kwargs, term_kwargs
         )
 
-        if loaded or not term_opts.initial_estimate:
-            return
+        # Convert the parameters into gains.
+        delay_params_to_gains(
+            param,
+            gain,
+            ms_kwargs["CHAN_FREQ"],
+            term_kwargs[f"{self.name}-param-freq-map"],
+        )
 
-        data = kwargs["DATA"]  # (row, chan, corr)
-        flags = kwargs["FLAG"]  # (row, chan)
-        a1 = kwargs["ANTENNA1"]
-        a2 = kwargs["ANTENNA2"]
-        chan_freq = kwargs["CHAN_FREQ"]
-        # TODO: This whole process is a bit dodgy - improve with new changes.
-        t_map = kwargs[f"{term_spec.name}-time-map"]
-        f_map = kwargs[f"{term_spec.name}-param-freq-map"]
+        if self.load_from or not self.initial_estimate:
+            return gain, param
+
+        data = ms_kwargs["DATA"]  # (row, chan, corr)
+        flags = ms_kwargs["FLAG"]  # (row, chan)
+        a1 = ms_kwargs["ANTENNA1"]
+        a2 = ms_kwargs["ANTENNA2"]
+        chan_freq = ms_kwargs["CHAN_FREQ"]
+        t_map = term_kwargs[f"{term_spec.name}-time-map"]
+        f_map = term_kwargs[f"{term_spec.name}-param-freq-map"]
         _, n_chan, n_ant, n_dir, n_corr = gain.shape
 
         # We only need the baselines which include the ref_ant.
@@ -152,6 +162,8 @@ class Delay(ParameterizedGain):
 
                 if n_corr > 1:
                     gain[ut, f, :, :, -1] = np.exp(cf * param[ut, fm, :, :, 3])
+
+        return gain, param
 
 
 class PureDelay(Delay):

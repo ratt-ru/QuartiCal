@@ -148,11 +148,11 @@ def add_calibration_graph(
             added visibility outputs.
     """
 
-    if (
-        {xds.dims['dir'] for xds in data_xds_list}.pop() > 1
-        and
-        not any(term.direction_dependent for term in chain)
-    ):
+    # TODO: Does this check belong here or elsewhere?
+    have_dd_model = any(xds.dims['dir'] > 1 for xds in data_xds_list)
+    have_dd_chain = any(term.direction_dependent for term in chain)
+
+    if have_dd_model and not have_dd_chain:
         logger.warning(
             "User has specified a direction-dependent model but no gain term "
             "has term.direction_dependent enabled. This is supported but may "
@@ -171,7 +171,11 @@ def add_calibration_graph(
     # them to be consistent with this calibration run. TODO: This needs to
     # be substantially improved to handle term specific behaviour/utilize
     # mappings.
-    gain_xds_lod = load_and_interpolate_gains(gain_xds_lod, chain)
+    gain_xds_lod = load_and_interpolate_gains(
+        gain_xds_lod,
+        chain,
+        output_opts.gain_directory
+    )
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
     gain_xds_lod, data_xds_list, stats_xds_list = construct_solver(

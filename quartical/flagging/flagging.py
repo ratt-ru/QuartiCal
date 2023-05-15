@@ -37,7 +37,7 @@ def finalise_flags(xds_list):
                                    chunks=data_col.chunks)
 
         # Convert back to a boolean array.
-        flag_col = flag_col.astype(np.bool)
+        flag_col = flag_col.astype(bool)
 
         # Make the FLAG_ROW column consistent with FLAG.
         flag_row_col = da.all(flag_col, axis=(1, 2))

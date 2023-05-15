@@ -50,6 +50,14 @@ base_args = namedtuple(
 class Gain:
 
     base_args = base_args
+    gain_axes = (
+        "gain_time",
+        "gain_freq",
+        "antenna",
+        "direction",
+        "correlation"
+    )
+    interpolation_targets = ["gains", "gain_flags"]
 
     def __init__(self, term_name, term_opts):
 
@@ -315,26 +323,31 @@ class Gain:
 
         return dir_map
 
-    @staticmethod
-    def init_term(
-        gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
-    ):
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
         """Initialise the gains (and parameters)."""
 
-        (term_name, term_type, term_shape, term_pshape) = term_spec
+        (_, _, gain_shape, param_shape) = term_spec
 
-        # TODO: This needs to be more sophisticated on parameterised terms.
-        if f"{term_name}_initial_gain" in kwargs:
-            gain[:] = kwargs[f"{term_name}_initial_gain"]
-            loaded = True
+        if self.load_from:
+            gains = term_kwargs[f"{self.name}_initial_gain"].copy()
         else:
-            gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
-            loaded = False
+            gains = np.ones(gain_shape, dtype=np.complex128)
+            if gain_shape[-1] == 4:
+                gains[..., (1, 2)] = 0  # 2-by-2 identity.
 
-        return loaded
+        return gains, np.empty(param_shape, dtype=np.float64)
 
 
 class ParameterizedGain(Gain):
+
+    param_axes = (
+        "param_time",
+        "param_freq",
+        "antenna",
+        "direction",
+        "param_name"
+    )
+    interpolation_targets = ["params", "param_flags"]
 
     def __init__(self, term_name, term_opts):
 
@@ -449,3 +462,19 @@ class ParameterizedGain(Gain):
     @classmethod
     def make_param_names(cls, correlations):
         raise NotImplementedError
+
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
+        """Initialise the gains (and parameters)."""
+
+        (_, _, gain_shape, param_shape) = term_spec
+
+        if self.load_from:
+            params = term_kwargs[f"{self.name}_initial_params"].copy()
+        else:
+            params = np.zeros(param_shape, dtype=np.float64)
+
+        gains = np.ones(gain_shape, dtype=np.complex128)
+        if gain_shape[-1] == 4:
+            gains[..., (1, 2)] = 0  # 2-by-2 identity.
+
+        return gains, params

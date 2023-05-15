@@ -49,6 +49,8 @@ def add_model_graph(
     if isinstance(model_vis_recipe, IdentityRecipe):
         data_xds_list, model_vis_recipe = assign_identity_model(data_xds_list)
 
+    model_columns = model_vis_recipe.ingredients.model_columns
+
     # NOTE: At this point we are ready to construct the model array. First,
     # however, we need to apply parallactic angle corrections to model columns
     # which require them. P Jones is applied to predicted components
@@ -67,7 +69,6 @@ def add_model_graph(
                 "input_model.apply_p_jones is not recommended for data with "
                 "less than four correlations. Proceed with caution."
             )
-        model_columns = model_vis_recipe.ingredients.model_columns
         data_xds_list = apply_parangles(data_xds_list,
                                         parangle_xds_list,
                                         model_columns)
@@ -148,7 +149,10 @@ def add_model_graph(
         # rechunking is necessary to ensure the solver gets appropriate blocks.
         model = da.stack(model, axis=2).rechunk({2: n_dir})
 
-        modified_xds = xds.assign(
+        # Get rid of model columns which are not used after this point.
+        modified_xds = xds.drop_vars(model_columns)
+
+        modified_xds = modified_xds.assign(
             {"MODEL_DATA": (("row", "chan", "dir", "corr"), model)}
         )
 

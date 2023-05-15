@@ -66,7 +66,7 @@ gain:
     default: reim
     choices: [reim, ampphase, amp, phase]
     info:
-      Set interpolation mode.
+      Set interpolation mode. THIS OPTION IS CURRENTLY UNAVAILABLE.
 
   interp_method:
     dtype: str

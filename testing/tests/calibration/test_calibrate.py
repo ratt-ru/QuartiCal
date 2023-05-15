@@ -118,7 +118,7 @@ def test_data_coords(single_xds, term_xds_dict):
 def test_t_chunking(single_xds, term_xds_dict):
     """Check that time chunking of the gain xds list is correct."""
 
-    assert all(len(single_xds.UTIME_CHUNKS) == gxds.dims["t_chunk"]
+    assert all(len(single_xds.UTIME_CHUNKS) == gxds.dims["time_chunk"]
                for gxds in term_xds_dict.values())
 
 
@@ -126,7 +126,7 @@ def test_t_chunking(single_xds, term_xds_dict):
 def test_f_chunking(single_xds, term_xds_dict):
     """Check that frequency chunking of the gain xds list is correct."""
 
-    assert all(len(single_xds.chunks["chan"]) == gxds.dims["f_chunk"]
+    assert all(len(single_xds.chunks["chan"]) == gxds.dims["freq_chunk"]
                for gxds in term_xds_dict.values())
 
 

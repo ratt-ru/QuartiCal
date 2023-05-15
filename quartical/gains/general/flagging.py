@@ -18,52 +18,14 @@ flag_intermediaries = namedtuple(
 )
 
 
-def init_gain_flags(term_shape, time_map, freq_map, **kwargs):
-    """Initialise the gain flags for a term using the various mappings."""
-
-    flag_col = kwargs["FLAG"]
-    ant1_col = kwargs["ANTENNA1"]
-    ant2_col = kwargs["ANTENNA2"]
-    row_map = kwargs.get("ROW_MAP", None)
-
-    return _init_flags(
-        term_shape,
-        flag_col,
-        ant1_col,
-        ant2_col,
-        time_map,
-        freq_map,
-        row_map
-    )
-
-
-def init_param_flags(term_shape, param_time_map, param_freq_map, **kwargs):
-    """Initialise the param flags for a term using the various mappings."""
-
-    flag_col = kwargs["FLAG"]
-    ant1_col = kwargs["ANTENNA1"]
-    ant2_col = kwargs["ANTENNA2"]
-    row_map = kwargs.get("ROW_MAP", None)
-
-    return _init_flags(
-        term_shape,
-        flag_col,
-        ant1_col,
-        ant2_col,
-        param_time_map,
-        param_freq_map,
-        row_map
-    )
-
-
 @jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def _init_flags(
+def init_flags(
     term_shape,
+    time_map,
+    freq_map,
     flag_col,
     ant1_col,
     ant2_col,
-    time_map,
-    freq_map,
     row_map
 ):
     """Initialise the flags for a term using the various mappings."""

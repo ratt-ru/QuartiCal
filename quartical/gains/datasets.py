@@ -282,17 +282,15 @@ def populate_net_xds_list(
     return populated_net_gain_xds_lod
 
 
-def write_gain_datasets(gain_xds_lod, net_xds_lod, output_opts):
+def write_gain_datasets(gain_xds_lod, directory, net_xds_lod=None):
     """Write the contents of gain_xds_lol to zarr in accordance with opts."""
-
-    gain_path = output_opts.gain_directory
 
     term_names = [xds.NAME for xds in gain_xds_lod[0].values()]
 
     writable_xds_dol = {tn: [d[tn] for d in gain_xds_lod] for tn in term_names}
 
     # If net gains have been requested, add them to the writes.
-    if output_opts.net_gains:
+    if net_xds_lod:
         net_names = [xds.NAME for xds in net_xds_lod[0].values()]
         net_xds_dol = {tn: [d[tn] for d in net_xds_lod] for tn in net_names}
         term_names.extend(net_names)
@@ -311,22 +309,29 @@ def write_gain_datasets(gain_xds_lod, net_xds_lod, output_opts):
 
             target_chunks = {}
 
-            if hasattr(xds, "PARAM_AXES"):
-                rechunked_params = \
-                    xds.params.chunk({ax: "auto" for ax in xds.PARAM_AXES[:2]})
+            if "params" in xds.data_vars.keys():
+                rechunked_params = xds.params.chunk(
+                    {ax: "auto" for ax in xds.PARAM_AXES[:2]}
+                )
                 target_chunks.update(rechunked_params.chunksizes)
 
-            rechunked_gains = \
-                xds.gains.chunk({ax: "auto" for ax in xds.GAIN_AXES[:2]})
-            target_chunks.update(rechunked_gains.chunksizes)
+            if "gains" in xds.data_vars.keys():
+                rechunked_gains = xds.gains.chunk(
+                    {ax: "auto" for ax in xds.GAIN_AXES[:2]}
+                )
+                target_chunks.update(rechunked_gains.chunksizes)
 
             rechunked_xds = xds.chunk(target_chunks)
 
             term_write_xds_list.append(rechunked_xds)
 
-        output_path = f"{gain_path}{'::' + term_name}"
+        output_path = f"{directory}::{term_name}"
 
-        gain_writes_lol.append(xds_to_zarr(term_write_xds_list, output_path))
+        gain_writes = xds_to_zarr(
+            term_write_xds_list, output_path, rechunk=True
+        )
+
+        gain_writes_lol.append(gain_writes)
 
     # This converts the interpolated list of lists into a list of dicts.
     write_xds_lod = [{tn: term for tn, term in zip(term_names, terms)}
