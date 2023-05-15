@@ -165,6 +165,13 @@ def construct_solver(
                     np.int8
                 )
 
+                blocker.add_output(
+                    f"{term_name}-jhj",
+                    ("row", "chan", "ant", "dir", "param"),
+                    term_xds.PARAM_SPEC,
+                    np.float64
+                )
+
             else:  # Only non-parameterised gains return a jhj (for now).
                 blocker.add_output(
                     f"{term_name}-jhj",
@@ -237,6 +244,9 @@ def construct_solver(
                 param_flags = output_dict[f"{term_name}-param_flags"]
                 result_vars["param_flags"] = \
                     (term_xds.PARAM_AXES[:-1], param_flags)
+
+                jhj = output_dict[f"{term_name}-jhj"]
+                result_vars["jhj"] = (term_xds.PARAM_AXES, jhj)
             else:
                 jhj = output_dict[f"{term_name}-jhj"]
                 result_vars["jhj"] = (term_xds.GAIN_AXES, jhj)

@@ -112,6 +112,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         scaled_icf = term_args.CHAN_FREQ.copy()  # Don't mutate.
         min_freq = np.min(scaled_icf)
         scaled_icf = min_freq/scaled_icf  # Scale freqs to avoid precision.
+        scaled_icf *= 2*np.pi  # Introduce 2pi here - neglect everywhere else.
         active_params[..., 1::2] /= min_freq  # Scale consistently with freq.
 
         for loop_idx in range(max_iter):
@@ -174,6 +175,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
                              meta_args)
 
         active_params[..., 1::2] *= min_freq  # Undo scaling for SI units.
+        native_imdry.jhj[..., 1::2] /= min_freq ** 2
 
         return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 

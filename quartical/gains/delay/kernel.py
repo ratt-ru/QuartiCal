@@ -174,6 +174,7 @@ def delay_solver(base_args, term_args, meta_args, corr_mode):
                              meta_args)
 
         active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
+        native_imdry.jhj[..., 1::2] *= min_freq ** 2
 
         return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
