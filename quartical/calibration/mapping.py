@@ -70,10 +70,10 @@ def make_mapping_datasets(data_xds_list, chain):
                 gain_obj.direction_dependent
             )
 
-            mappings[f"{gain_obj.name}-time-bins"] = (("time",), time_bins)
-            mappings[f"{gain_obj.name}-time-map"] = (("row",), time_map)
-            mappings[f"{gain_obj.name}-freq-map"] = (("chan",), freq_map)
-            mappings[f"{gain_obj.name}-dir-map"] = (("dir",), dir_map)
+            mappings[f"{gain_obj.name}_time_bins"] = (("time",), time_bins)
+            mappings[f"{gain_obj.name}_time_map"] = (("row",), time_map)
+            mappings[f"{gain_obj.name}_freq_map"] = (("chan",), freq_map)
+            mappings[f"{gain_obj.name}_dir_map"] = (("dir",), dir_map)
 
             if hasattr(gain_obj, "param_axes"):
                 param_time_bins = gain_obj.make_param_time_bins(
@@ -96,13 +96,13 @@ def make_mapping_datasets(data_xds_list, chain):
                     freq_interval
                 )
 
-                mappings[f"{gain_obj.name}-param-time-bins"] = (
+                mappings[f"{gain_obj.name}_param_time_bins"] = (
                     (("time",), param_time_bins)
                 )
-                mappings[f"{gain_obj.name}-param-time-map"] = (
+                mappings[f"{gain_obj.name}_param_time_map"] = (
                     (("row",), param_time_map)
                 )
-                mappings[f"{gain_obj.name}-param-freq-map"] = (
+                mappings[f"{gain_obj.name}_param_freq_map"] = (
                     (("chan",), param_freq_map)
                 )
 

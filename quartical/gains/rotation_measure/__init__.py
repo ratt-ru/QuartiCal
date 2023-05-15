@@ -77,7 +77,7 @@ class RotationMeasure(ParameterizedGain):
             params,
             gains,
             lambda_sq,
-            term_kwargs[f"{self.name}-param-freq-map"],
+            term_kwargs[f"{self.name}_param_freq_map"],
         )
 
         return gains, params

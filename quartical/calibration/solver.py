@@ -26,13 +26,13 @@ meta_args_nt = namedtuple(
 
 
 term_kwarg_defaults = {
-    "-time-bins": (0, np.int32),
-    "-time-map": (0, np.int32),
-    "-freq-map": (0, np.int32),
-    "-dir-map": (0, np.int32),
-    "-param-time-bins": (0, np.int32),
-    "-param-time-map": (0, np.int32),
-    "-param-freq-map": (0, np.int32),
+    "_time_bins": (0, np.int32),
+    "_time_map": (0, np.int32),
+    "_freq_map": (0, np.int32),
+    "_dir_map": (0, np.int32),
+    "_param_time_bins": (0, np.int32),
+    "_param_time_map": (0, np.int32),
+    "_param_freq_map": (0, np.int32),
     "_initial_gain": ((0, 0, 0, 0, 0), np.complex128),
     "_initial_params": ((0, 0, 0, 0, 0), np.float64)
 }
@@ -110,8 +110,8 @@ def solver_wrapper(
         # Init gain flags by looking for intervals with no data.
         gain_flag_array = init_flags(
             term_shape,
-            term_kwargs[f"{term.name}-time-map"],
-            term_kwargs[f"{term.name}-freq-map"],
+            term_kwargs[f"{term.name}_time_map"],
+            term_kwargs[f"{term.name}_freq_map"],
             ms_kwargs["FLAG"],
             ms_kwargs["ANTENNA1"],
             ms_kwargs["ANTENNA2"],
@@ -121,8 +121,8 @@ def solver_wrapper(
         # Init parameter flags by looking for intervals with no data.
         param_flag_array = init_flags(
             term_pshape,
-            term_kwargs[f"{term.name}-param-time-map"],
-            term_kwargs[f"{term.name}-param-freq-map"],
+            term_kwargs[f"{term.name}_param_time_map"],
+            term_kwargs[f"{term.name}_param_freq_map"],
             ms_kwargs["FLAG"],
             ms_kwargs["ANTENNA1"],
             ms_kwargs["ANTENNA2"],
@@ -140,25 +140,25 @@ def solver_wrapper(
     # Convert per-term values into appropriately ordered tuples which can be
     # passed into the numba layer.
     time_bin_tup = tuple(
-        [v[f"{k}-time-bins"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_time_bins"] for k, v in chain_kwargs.items()]
     )
     time_map_tup = tuple(
-        [v[f"{k}-time-map"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_time_map"] for k, v in chain_kwargs.items()]
     )
     freq_map_tup = tuple(
-        [v[f"{k}-freq-map"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_freq_map"] for k, v in chain_kwargs.items()]
     )
     dir_map_tup = tuple(
-        [v[f"{k}-dir-map"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_dir_map"] for k, v in chain_kwargs.items()]
     )
     param_time_bin_tup = tuple(
-        [v[f"{k}-param-time-bins"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_param_time_bins"] for k, v in chain_kwargs.items()]
     )
     param_time_map_tup = tuple(
-        [v[f"{k}-param-time-map"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_param_time_map"] for k, v in chain_kwargs.items()]
     )
     param_freq_map_tup = tuple(
-        [v[f"{k}-param-freq-map"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_param_freq_map"] for k, v in chain_kwargs.items()]
     )
     gain_array_tup = tuple(
         [results_dict[f"{term.name}-gain"] for term in chain]

@@ -63,7 +63,7 @@ class Delay(ParameterizedGain):
             param,
             gain,
             ms_kwargs["CHAN_FREQ"],
-            term_kwargs[f"{self.name}-param-freq-map"],
+            term_kwargs[f"{self.name}_param_freq_map"],
         )
 
         if self.load_from or not self.initial_estimate:
@@ -74,8 +74,8 @@ class Delay(ParameterizedGain):
         a1 = ms_kwargs["ANTENNA1"]
         a2 = ms_kwargs["ANTENNA2"]
         chan_freq = ms_kwargs["CHAN_FREQ"]
-        t_map = term_kwargs[f"{term_spec.name}-time-map"]
-        f_map = term_kwargs[f"{term_spec.name}-param-freq-map"]
+        t_map = term_kwargs[f"{term_spec.name}_time_map"]
+        f_map = term_kwargs[f"{term_spec.name}_param_freq_map"]
         _, n_chan, n_ant, n_dir, n_corr = gain.shape
 
         # We only need the baselines which include the ref_ant.

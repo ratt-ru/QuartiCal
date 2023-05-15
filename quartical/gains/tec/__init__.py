@@ -58,7 +58,7 @@ class TEC(ParameterizedGain):
             params,
             gains,
             ms_kwargs["CHAN_FREQ"],
-            term_kwargs[f"{self.name}-param-freq-map"],
+            term_kwargs[f"{self.name}_param_freq_map"],
         )
 
         return gains, params

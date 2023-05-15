@@ -277,13 +277,13 @@ def make_visibility_output(
         gain_terms = solved_gain_xds_lod[xds_ind]
 
         time_maps = tuple(
-            [mapping_xds.get(f"{k}-time-map").data for k in gain_terms.keys()]
+            [mapping_xds.get(f"{k}_time_map").data for k in gain_terms.keys()]
         )
         freq_maps = tuple(
-            [mapping_xds.get(f"{k}-freq-map").data for k in gain_terms.keys()]
+            [mapping_xds.get(f"{k}_freq_map").data for k in gain_terms.keys()]
         )
         dir_maps = tuple(
-            [mapping_xds.get(f"{k}-dir-map").data for k in gain_terms.keys()]
+            [mapping_xds.get(f"{k}_dir_map").data for k in gain_terms.keys()]
         )
 
         corr_mode = data_xds.dims["corr"]

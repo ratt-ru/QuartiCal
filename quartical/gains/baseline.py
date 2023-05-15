@@ -39,13 +39,13 @@ def compute_baseline_corrections(
         corr_mode = data_xds.dims["corr"]
 
         time_maps = tuple(
-            [mapping_xds.get(f"{k}-time-map").data for k in gain_dict.keys()]
+            [mapping_xds.get(f"{k}_time_map").data for k in gain_dict.keys()]
         )
         freq_maps = tuple(
-            [mapping_xds.get(f"{k}-freq-map").data for k in gain_dict.keys()]
+            [mapping_xds.get(f"{k}_freq_map").data for k in gain_dict.keys()]
         )
         dir_maps = tuple(
-            [mapping_xds.get(f"{k}-dir-map").data for k in gain_dict.keys()]
+            [mapping_xds.get(f"{k}_dir_map").data for k in gain_dict.keys()]
         )
 
         is_bda = hasattr(data_xds, "ROW_MAP")  # We are dealing with BDA.
