@@ -42,9 +42,11 @@ def log_chisq(pre, post, attrs, block_id=None):
     msg += f"T_CHUNK: {t_chunk} "
     msg += f"F_CHUNK: {f_chunk} "
 
-    if pre.item() > post.item():
+    if pre.item() == post.item():
+        colour = colours['yellow']
+    elif pre.item() > post.item():
         colour = colours['green']
-    elif pre.item() <= post.item():
+    elif pre.item() < post.item():
         colour = colours['red']
     else:
         colour = colours['grey']
