@@ -1,7 +1,11 @@
 import numpy as np
 from quartical.gains.conversion import no_op, trig_to_angle
 from quartical.gains.gain import ParameterizedGain
-from quartical.gains.tec.kernel import tec_solver, tec_args
+from quartical.gains.tec.kernel import (
+    tec_solver,
+    tec_args,
+    tec_params_to_gains
+)
 
 
 class TEC(ParameterizedGain):
@@ -41,3 +45,20 @@ class TEC(ParameterizedGain):
         template = ("phase_offset_{}", "TEC_{}")
 
         return [n.format(c) for c in param_corr for n in template]
+
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
+        """Initialise the gains (and parameters)."""
+
+        gains, params = super().init_term(
+            term_spec, ref_ant, ms_kwargs, term_kwargs
+        )
+
+        # Convert the parameters into gains.
+        tec_params_to_gains(
+            params,
+            gains,
+            ms_kwargs["CHAN_FREQ"],
+            term_kwargs[f"{self.name}-param-freq-map"],
+        )
+
+        return gains, params

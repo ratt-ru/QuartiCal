@@ -4,7 +4,7 @@ from quartical.gains.gain import ParameterizedGain
 from quartical.gains.delay.kernel import (
     delay_solver,
     delay_args,
-    delay_renderer
+    delay_params_to_gains
 )
 from quartical.gains.delay.pure_kernel import pure_delay_solver
 
@@ -59,7 +59,7 @@ class Delay(ParameterizedGain):
         )
 
         # Convert the parameters into gains.
-        delay_renderer(
+        delay_params_to_gains(
             param,
             gain,
             ms_kwargs["CHAN_FREQ"],

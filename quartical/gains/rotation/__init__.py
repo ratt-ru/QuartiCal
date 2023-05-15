@@ -1,7 +1,11 @@
 import numpy as np
 from quartical.gains.conversion import trig_to_angle
 from quartical.gains.gain import ParameterizedGain
-from quartical.gains.rotation.kernel import rotation_solver, rotation_args
+from quartical.gains.rotation.kernel import (
+    rotation_solver,
+    rotation_args,
+    rotation_params_to_gains
+)
 
 
 class Rotation(ParameterizedGain):
@@ -27,3 +31,15 @@ class Rotation(ParameterizedGain):
     def make_param_names(cls, correlations):
 
         return ["rotation_angle"]
+
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
+        """Initialise the gains (and parameters)."""
+
+        gains, params = super().init_term(
+            term_spec, ref_ant, ms_kwargs, term_kwargs
+        )
+
+        # Convert the parameters into gains.
+        rotation_params_to_gains(params, gains)
+
+        return gains, params

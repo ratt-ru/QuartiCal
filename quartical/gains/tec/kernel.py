@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import generated_jit
+from numba import generated_jit, jit
 from quartical.utils.numba import coerce_literal
 from quartical.gains.general.generics import (native_intermediaries,
                                               upsampled_itermediaries,
@@ -178,3 +178,35 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
     return impl
+
+
+@jit(
+    nopython=True,
+    fastmath=True,
+    parallel=False,
+    cache=True,
+    nogil=True
+)
+def tec_params_to_gains(
+    params,
+    gains,
+    chan_freq,
+    param_freq_map
+):
+
+    n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
+
+    for t in range(n_time):
+        for f in range(n_freq):
+            icf = 1/chan_freq[f]
+            f_m = param_freq_map[f]
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    g = gains[t, f, a, d]
+                    p = params[t, f_m, a, d]
+
+                    g[0] = np.exp(1j*2*np.pi*(icf*p[1] + p[0]))
+
+                    if n_corr > 1:
+                        g[-1] = np.exp(1j*2*np.pi*(icf*p[3] + p[2]))

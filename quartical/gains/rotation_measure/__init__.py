@@ -1,7 +1,11 @@
 import numpy as np
 from quartical.gains.conversion import no_op
 from quartical.gains.gain import ParameterizedGain
-from quartical.gains.rotation_measure.kernel import rm_solver, rm_args
+from quartical.gains.rotation_measure.kernel import (
+    rm_solver,
+    rm_args,
+    rm_params_to_gains
+)
 
 
 class RotationMeasure(ParameterizedGain):
@@ -57,3 +61,23 @@ class RotationMeasure(ParameterizedGain):
         f_map_arr[0, :] = np.arange(n_chan)
 
         return f_map_arr
+
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
+        """Initialise the gains (and parameters)."""
+
+        gains, params = super().init_term(
+            term_spec, ref_ant, ms_kwargs, term_kwargs
+        )
+
+        chan_freq = ms_kwargs["CHAN_FREQ"]
+        lambda_sq = (299792458/chan_freq)**2
+
+        # Convert the parameters into gains.
+        rm_params_to_gains(
+            params,
+            gains,
+            lambda_sq,
+            term_kwargs[f"{self.name}-param-freq-map"],
+        )
+
+        return gains, params

@@ -725,7 +725,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     cache=True,
     nogil=True
 )
-def delay_renderer(
+def delay_params_to_gains(
     params,
     gains,
     chan_freq,

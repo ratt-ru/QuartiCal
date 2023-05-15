@@ -1,8 +1,11 @@
 import numpy as np
 from quartical.gains.conversion import trig_to_angle
 from quartical.gains.gain import ParameterizedGain
-from quartical.gains.crosshand_phase.kernel import (crosshand_phase_solver,
-                                                    crosshand_phase_args)
+from quartical.gains.crosshand_phase.kernel import (
+    crosshand_phase_solver,
+    crosshand_phase_args,
+    crosshand_params_to_gains
+)
 
 
 class CrosshandPhase(ParameterizedGain):
@@ -33,3 +36,15 @@ class CrosshandPhase(ParameterizedGain):
         param_corr = [c for c in correlations if c in parameterisable]
 
         return [f"crosshand_phase_{c}" for c in param_corr]
+
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
+        """Initialise the gains (and parameters)."""
+
+        gains, params = super().init_term(
+            term_spec, ref_ant, ms_kwargs, term_kwargs
+        )
+
+        # Convert the parameters into gains.
+        crosshand_params_to_gains(params, gains)
+
+        return gains, params
