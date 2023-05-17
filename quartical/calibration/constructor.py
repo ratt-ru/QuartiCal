@@ -41,6 +41,8 @@ def construct_solver(
     output_data_xds_list = []
     output_stats_xds_list = []
 
+    required_fields = {fld for term in chain for fld in term.ms_inputs._fields}
+
     itr = enumerate(zip(data_xds_list, mapping_xds_list, stats_xds_list))
 
     for xds_ind, (data_xds, mapping_xds, stats_xds) in itr:
@@ -67,7 +69,8 @@ def construct_solver(
         blocker = Blocker(solver_wrapper, ("row", "chan"))
 
         for v in data_xds.data_vars.values():
-            blocker.add_input(v.name, v.data, v.dims)
+            if v.name in required_fields:
+                blocker.add_input(v.name, v.data, v.dims)
 
         # NOTE: We need to treat time as a rowlike dimension here.
         for v in mapping_xds.data_vars.values():
