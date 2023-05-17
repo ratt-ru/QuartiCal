@@ -216,8 +216,8 @@ def solver_wrapper(
         solver_kwargs["time_maps"],
         solver_kwargs["freq_maps"],
         solver_kwargs["dir_maps"],
-        solver_kwargs.get("row_map", None),
-        solver_kwargs.get("row_weights", None),
+        solver_kwargs.get("ROW_MAP", None),
+        solver_kwargs.get("ROW_WEIGHTS", None),
         corr_mode
     )
 
@@ -302,8 +302,8 @@ def solver_wrapper(
         solver_kwargs["time_maps"],
         solver_kwargs["freq_maps"],
         solver_kwargs["dir_maps"],
-        solver_kwargs.get("row_map", None),
-        solver_kwargs.get("row_weights", None),
+        solver_kwargs.get("ROW_MAP", None),
+        solver_kwargs.get("ROW_WEIGHTS", None),
         corr_mode
     )
     log_chisq(presolve_chisq, postsolve_chisq, aux_block_info, block_id)
