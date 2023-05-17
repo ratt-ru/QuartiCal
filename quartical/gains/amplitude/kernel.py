@@ -27,17 +27,6 @@ stat_fields = {"conv_iters": np.int64,
 
 term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
-amplitude_args = namedtuple(
-    "amplitude_args",
-    (
-        "params",
-        "param_flags",
-        "param_time_bins",
-        "param_time_maps",
-        "param_freq_maps"
-    )
-)
-
 
 def get_identity_params(corr_mode):
 
@@ -49,45 +38,60 @@ def get_identity_params(corr_mode):
         raise ValueError("Unsupported number of correlations.")
 
 
-@generated_jit(nopython=True,
-               fastmath=True,
-               parallel=False,
-               cache=True,
-               nogil=True)
-def amplitude_solver(base_args, term_args, meta_args, corr_mode):
+@generated_jit(
+    nopython=True,
+    fastmath=True,
+    parallel=False,
+    cache=True,
+    nogil=True
+)
+def amplitude_solver(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
 
     coerce_literal(amplitude_solver, ["corr_mode"])
 
     identity_params = get_identity_params(corr_mode)
 
-    def impl(base_args, term_args, meta_args, corr_mode):
+    def impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        corr_mode
+    ):
 
-        gains = base_args.gains
-        gain_flags = base_args.gain_flags
+        gains = chain_inputs.gains
+        gain_flags = chain_inputs.gain_flags
 
-        active_term = meta_args.active_term
-        max_iter = meta_args.iters
-        solve_per = meta_args.solve_per
-        dd_term = meta_args.dd_term
-        n_thread = meta_args.threads
+        active_term = meta_inputs.active_term
+        max_iter = meta_inputs.iters
+        solve_per = meta_inputs.solve_per
+        dd_term = meta_inputs.dd_term
+        n_thread = meta_inputs.threads
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
-        active_params = term_args.params[active_term]
+        active_params = chain_inputs.params[active_term]
 
         # Set up some intemediaries used for flagging
         km1_gain = active_gain.copy()
         km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
         abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
-        flag_imdry = \
-            flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
+        flag_imdry = flag_intermediaries(
+            km1_gain, km1_abs2_diffs, abs2_diffs_trend
+        )
 
         # Set up some intemediaries used for solving.
         real_dtype = active_gain.real.dtype
         param_shape = active_params.shape
 
-        active_t_map_g = base_args.time_maps[active_term]
-        active_f_map_g = base_args.freq_maps[active_term]
+        active_t_map_g = mapping_inputs.time_maps[active_term]
+        active_f_map_g = mapping_inputs.freq_maps[active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, param_shape, n_thread)
@@ -109,12 +113,15 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
 
         for loop_idx in range(max_iter):
 
-            compute_jhj_jhr(base_args,
-                            term_args,
-                            meta_args,
-                            upsampled_imdry,
-                            extents,
-                            corr_mode)
+            compute_jhj_jhr(
+                ms_inputs,
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs,
+                upsampled_imdry,
+                extents,
+                corr_mode
+            )
 
             if resampler.active:
                 downsample_jhj_jhr(upsampled_imdry, resampler.downsample_t_map)
@@ -122,70 +129,83 @@ def amplitude_solver(base_args, term_args, meta_args, corr_mode):
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
 
-            compute_update(native_imdry,
-                           corr_mode)
+            compute_update(native_imdry, corr_mode)
 
-            finalize_update(base_args,
-                            term_args,
-                            meta_args,
-                            native_imdry,
-                            loop_idx,
-                            corr_mode)
+            finalize_update(
+                chain_inputs,
+                meta_inputs,
+                native_imdry,
+                loop_idx,
+                corr_mode
+            )
 
             # Check for gain convergence. Produced as a side effect of
             # flagging. The converged percentage is based on unflagged
             # intervals.
-            conv_perc = update_gain_flags(base_args,
-                                          term_args,
-                                          meta_args,
-                                          flag_imdry,
-                                          loop_idx,
-                                          corr_mode)
+            conv_perc = update_gain_flags(
+                chain_inputs,
+                meta_inputs,
+                flag_imdry,
+                loop_idx,
+                corr_mode
+            )
 
             # Propagate gain flags to parameter flags.
-            update_param_flags(base_args,
-                               term_args,
-                               meta_args,
-                               identity_params)
+            update_param_flags(
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs,
+                identity_params
+            )
 
-            if conv_perc >= meta_args.stop_frac:
+            if conv_perc >= meta_inputs.stop_frac:
                 break
 
         # NOTE: Removes soft flags and flags points which have bad trends.
-        finalize_gain_flags(base_args,
-                            meta_args,
-                            flag_imdry,
-                            corr_mode)
+        finalize_gain_flags(
+            chain_inputs,
+            meta_inputs,
+            flag_imdry,
+            corr_mode
+        )
 
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
-            apply_gain_flags(base_args,
-                             meta_args)
+            apply_gain_flags(
+                ms_inputs,
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs
+            )
 
         return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
     return impl
 
 
-@generated_jit(nopython=True,
-               fastmath=True,
-               parallel=True,
-               cache=True,
-               nogil=True)
+@generated_jit(
+    nopython=True,
+    fastmath=True,
+    parallel=True,
+    cache=True,
+    nogil=True
+)
 def compute_jhj_jhr(
-    base_args,
-    term_args,
-    meta_args,
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
     upsampled_imdry,
     extents,
     corr_mode
 ):
 
     # We want to dispatch based on this field so we need its type.
-    row_weight_type = base_args[base_args.fields.index('row_weights')]
+    row_weights_idx = ms_inputs.fields.index('ROW_WEIGHTS')
+    row_weights_type = ms_inputs[row_weights_idx]
 
-    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weight_type)
+    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights_type)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
     v1ct_imul_v2 = factories.v1ct_imul_v2_factory(corr_mode)
@@ -201,34 +221,36 @@ def compute_jhj_jhr(
     compute_jhwj_jhwr_elem = compute_jhwj_jhwr_elem_factory(corr_mode)
 
     def impl(
-        base_args,
-        term_args,
-        meta_args,
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
         upsampled_imdry,
         extents,
         corr_mode
     ):
 
-        active_term = meta_args.active_term
+        active_term = meta_inputs.active_term
 
-        data = base_args.DATA
-        model = base_args.MODEL_DATA
-        weights = base_args.WEIGHT
-        flags = base_args.FLAG
-        antenna1 = base_args.ANTENNA1
-        antenna2 = base_args.ANTENNA2
-        row_map = base_args.row_map
-        row_weights = base_args.row_weights
+        data = ms_inputs.DATA
+        model = ms_inputs.MODEL_DATA
+        weights = ms_inputs.WEIGHT
+        flags = ms_inputs.FLAG
+        antenna1 = ms_inputs.ANTENNA1
+        antenna2 = ms_inputs.ANTENNA2
+        row_map = ms_inputs.ROW_MAP
+        row_weights = ms_inputs.ROW_WEIGHTS
 
-        gains = base_args.gains
-        time_maps = base_args.time_maps
-        freq_maps = base_args.freq_maps
-        dir_maps = base_args.dir_maps
+        time_maps = mapping_inputs.time_maps
+        freq_maps = mapping_inputs.freq_maps
+        dir_maps = mapping_inputs.dir_maps
+
+        gains = chain_inputs.gains
 
         jhj = upsampled_imdry.jhj
         jhr = upsampled_imdry.jhr
 
-        _, n_chan, n_dir, n_corr = model.shape
+        n_row, n_chan, n_dir, n_corr = model.shape
 
         jhj[:] = 0
         jhr[:] = 0
@@ -438,25 +460,39 @@ def compute_update(native_imdry, corr_mode):
     return impl
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
-               nogil=True)
-def finalize_update(base_args, term_args, meta_args, native_imdry, loop_idx,
-                    corr_mode):
+@generated_jit(
+    nopython=True,
+    fastmath=True,
+    parallel=False,
+    cache=True,
+    nogil=True
+)
+def finalize_update(
+    chain_inputs,
+    meta_inputs,
+    native_imdry,
+    loop_idx,
+    corr_mode
+):
 
     set_identity = factories.set_identity_factory(corr_mode)
     param_to_gain = param_to_gain_factory(corr_mode)
 
-    def impl(base_args, term_args, meta_args, native_imdry, loop_idx,
-             corr_mode):
+    def impl(
+        chain_inputs,
+        meta_inputs,
+        native_imdry,
+        loop_idx,
+        corr_mode
+    ):
 
-        dd_term = meta_args.dd_term
-        active_term = meta_args.active_term
-        pinned_directions = meta_args.pinned_directions
+        dd_term = meta_inputs.dd_term
+        active_term = meta_inputs.active_term
+        pinned_directions = meta_inputs.pinned_directions
 
-        gain = base_args.gains[active_term]
-        gain_flags = base_args.gain_flags[active_term]
-
-        params = term_args.params[active_term]
+        gain = chain_inputs.gains[active_term]
+        gain_flags = chain_inputs.gain_flags[active_term]
+        params = chain_inputs.params[active_term]
 
         update = native_imdry.update
 

@@ -1,9 +1,8 @@
 import numpy as np
 from quartical.gains.conversion import trig_to_angle
-from quartical.gains.gain import ParameterizedGain
+from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.crosshand_phase.kernel import (
     crosshand_phase_solver,
-    crosshand_phase_args,
     crosshand_params_to_gains
 )
 
@@ -11,7 +10,6 @@ from quartical.gains.crosshand_phase.kernel import (
 class CrosshandPhase(ParameterizedGain):
 
     solver = staticmethod(crosshand_phase_solver)
-    term_args = crosshand_phase_args
 
     native_to_converted = (
         (0, (np.cos,)),

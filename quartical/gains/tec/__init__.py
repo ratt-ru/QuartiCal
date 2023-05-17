@@ -1,17 +1,22 @@
 import numpy as np
+from collections import namedtuple
 from quartical.gains.conversion import no_op, trig_to_angle
-from quartical.gains.gain import ParameterizedGain
+from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.tec.kernel import (
     tec_solver,
-    tec_args,
     tec_params_to_gains
+)
+
+# Overload the default measurement set inputs to include the frequencies.
+ms_inputs = namedtuple(
+    'ms_inputs', ParameterizedGain.ms_inputs._fields + ('CHAN_FREQ',)
 )
 
 
 class TEC(ParameterizedGain):
 
     solver = staticmethod(tec_solver)
-    term_args = tec_args
+    ms_inputs = ms_inputs
 
     native_to_converted = (
         (0, (np.cos,)),

@@ -225,16 +225,22 @@ def solver_wrapper(
 
         active_term = chain.index(term)
 
-        base_fields = term.base_args._fields
-        base_args = term.base_args(
-            **{k: solver_kwargs.get(k, None) for k in base_fields}
-        )
-        term_fields = term.term_args._fields
-        term_args = term.term_args(
-            **{k: solver_kwargs.get(k, None) for k in term_fields}
+        ms_fields = term.ms_inputs._fields
+        ms_inputs = term.ms_inputs(
+            **{k: solver_kwargs.get(k, None) for k in ms_fields}
         )
 
-        meta_args = meta_args_nt(
+        mapping_fields = term.mapping_inputs._fields
+        mapping_inputs = term.mapping_inputs(
+            **{k: solver_kwargs.get(k, None) for k in mapping_fields}
+        )
+
+        chain_fields = term.chain_inputs._fields
+        chain_inputs = term.chain_inputs(
+            **{k: solver_kwargs.get(k, None) for k in chain_fields}
+        )
+
+        meta_inputs = meta_args_nt(
             iters,
             active_term,
             solver_opts.convergence_fraction,
@@ -248,9 +254,10 @@ def solver_wrapper(
 
         if iters != 0:
             jhj, info_tup = term.solver(
-                base_args,
-                term_args,
-                meta_args,
+                ms_inputs,
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs,
                 corr_mode
             )
         else:
@@ -267,12 +274,14 @@ def solver_wrapper(
             if current_epoch != next_epoch and next_epoch != final_epoch:
 
                 dof = robust_reweighting(
-                    base_args,
-                    meta_args,
+                    ms_inputs,
+                    mapping_inputs,
+                    chain_inputs,
                     etas,
                     icovariance,
                     dof,
-                    corr_mode)
+                    corr_mode
+                )
 
         # TODO: Ugly hack for larger jhj matrices. Refine.
         if jhj.ndim == 6:

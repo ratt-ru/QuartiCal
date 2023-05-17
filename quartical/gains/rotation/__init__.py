@@ -1,9 +1,8 @@
 import numpy as np
 from quartical.gains.conversion import trig_to_angle
-from quartical.gains.gain import ParameterizedGain
+from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.rotation.kernel import (
     rotation_solver,
-    rotation_args,
     rotation_params_to_gains
 )
 
@@ -11,7 +10,6 @@ from quartical.gains.rotation.kernel import (
 class Rotation(ParameterizedGain):
 
     solver = staticmethod(rotation_solver)
-    term_args = rotation_args
 
     native_to_converted = (
         (0, (np.cos,)),

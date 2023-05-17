@@ -1,22 +1,24 @@
 import numpy as np
+from collections import namedtuple
 from quartical.gains.conversion import no_op, trig_to_angle
-from quartical.gains.gain import ParameterizedGain
+from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.delay.kernel import (
     delay_solver,
-    delay_args,
     delay_params_to_gains
 )
 from quartical.gains.delay.pure_kernel import pure_delay_solver
 
 
-def reversion_function(a, c, s):
-    return a * np.exp(1j * np.arctan2(s, c))
+# Overload the default measurement set inputs to include the frequencies.
+ms_inputs = namedtuple(
+    'ms_inputs', ParameterizedGain.ms_inputs._fields + ('CHAN_FREQ',)
+)
 
 
 class Delay(ParameterizedGain):
 
     solver = staticmethod(delay_solver)
-    term_args = delay_args
+    ms_inputs = ms_inputs
 
     native_to_converted = (
         (0, (np.cos,)),

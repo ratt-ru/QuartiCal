@@ -1,17 +1,22 @@
 import numpy as np
+from collections import namedtuple
 from quartical.gains.conversion import no_op
-from quartical.gains.gain import ParameterizedGain
+from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.rotation_measure.kernel import (
     rm_solver,
-    rm_args,
     rm_params_to_gains
+)
+
+# Overload the default measurement set inputs to include the frequencies.
+ms_inputs = namedtuple(
+    'ms_inputs', ParameterizedGain.ms_inputs._fields + ('CHAN_FREQ',)
 )
 
 
 class RotationMeasure(ParameterizedGain):
 
     solver = staticmethod(rm_solver)
-    term_args = rm_args
+    ms_inputs = ms_inputs
 
     native_to_converted = (
         (1, (no_op,)),

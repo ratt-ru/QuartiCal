@@ -1,6 +1,6 @@
 import dask.array as da
 import numpy as np
-from quartical.gains.gain import ParameterizedGain
+from quartical.gains.parameterized_gain import ParameterizedGain
 
 
 class Converter(object):

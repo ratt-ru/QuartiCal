@@ -1,9 +1,8 @@
 import numpy as np
 from quartical.gains.conversion import trig_to_angle
-from quartical.gains.gain import ParameterizedGain
+from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.phase.kernel import (
     phase_solver,
-    phase_args,
     phase_params_to_gains
 )
 
@@ -11,7 +10,6 @@ from quartical.gains.phase.kernel import (
 class Phase(ParameterizedGain):
 
     solver = staticmethod(phase_solver)
-    term_args = phase_args
 
     native_to_converted = (
         (0, (np.cos,)),
