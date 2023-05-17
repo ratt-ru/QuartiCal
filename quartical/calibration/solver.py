@@ -130,12 +130,12 @@ def solver_wrapper(
         )
 
         # Add the quantities which we intend to return to the results dict.
-        results_dict[f"{term.name}-gain"] = gain_array
-        results_dict[f"{term.name}-gain_flags"] = gain_flag_array
-        results_dict[f"{term.name}-param"] = param_array
-        results_dict[f"{term.name}-param_flags"] = param_flag_array
-        results_dict[f"{term.name}-conviter"] = np.atleast_2d(0)   # int
-        results_dict[f"{term.name}-convperc"] = np.atleast_2d(0.)  # float
+        results_dict[f"{term.name}_gain"] = gain_array
+        results_dict[f"{term.name}_gain_flags"] = gain_flag_array
+        results_dict[f"{term.name}_param"] = param_array
+        results_dict[f"{term.name}_param_flags"] = param_flag_array
+        results_dict[f"{term.name}_conviter"] = np.atleast_2d(0)   # int
+        results_dict[f"{term.name}_convperc"] = np.atleast_2d(0.)  # float
 
     # Convert per-term values into appropriately ordered tuples which can be
     # passed into the numba layer.
@@ -161,16 +161,16 @@ def solver_wrapper(
         [v[f"{k}_param_freq_map"] for k, v in chain_kwargs.items()]
     )
     gain_array_tup = tuple(
-        [results_dict[f"{term.name}-gain"] for term in chain]
+        [results_dict[f"{term.name}_gain"] for term in chain]
     )
     gain_flag_array_tup = tuple(
-        [results_dict[f"{term.name}-gain_flags"] for term in chain]
+        [results_dict[f"{term.name}_gain_flags"] for term in chain]
     )
     param_array_tup = tuple(
-        [results_dict[f"{term.name}-param"] for term in chain]
+        [results_dict[f"{term.name}_param"] for term in chain]
     )
     param_flag_array_tup = tuple(
-        [results_dict[f"{term.name}-param_flags"] for term in chain]
+        [results_dict[f"{term.name}_param_flags"] for term in chain]
     )
 
     # Take the tuples above and create a new dictionary for these arguments,
@@ -262,7 +262,7 @@ def solver_wrapper(
             )
         else:
             # TODO: Actually compute it in this special case?
-            jhj = np.zeros_like(results_dict[f"{term.name}-gain"])
+            jhj = np.zeros_like(results_dict[f"{term.name}_gain"])
             info_tup = (0, 0)
 
         # If reweighting is enabled, do it when the epoch changes, except
@@ -287,9 +287,9 @@ def solver_wrapper(
         if jhj.ndim == 6:
             jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
 
-        results_dict[f"{term.name}-conviter"] += np.atleast_2d(info_tup[0])
-        results_dict[f"{term.name}-convperc"] = np.atleast_2d(info_tup[1])
-        results_dict[f"{term.name}-jhj"] = jhj
+        results_dict[f"{term.name}_conviter"] += np.atleast_2d(info_tup[0])
+        results_dict[f"{term.name}_convperc"] = np.atleast_2d(info_tup[1])
+        results_dict[f"{term.name}_jhj"] = jhj
 
     postsolve_chisq = compute_mean_postsolve_chisq(
         solver_kwargs["DATA"],
