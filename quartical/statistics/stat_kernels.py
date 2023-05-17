@@ -47,14 +47,14 @@ def compute_mean_postsolve_chisq(
     model,
     weights,
     flags,
-    gains,
     a1,
     a2,
+    row_map,
+    row_weights,
+    gains,
     time_maps,
     freq_maps,
     dir_maps,
-    row_map,
-    row_weights,
     corr_mode
 ):
 
@@ -72,14 +72,14 @@ def compute_mean_postsolve_chisq(
         model,
         weights,
         flags,
-        gains,
         a1,
         a2,
+        row_map,
+        row_weights,
+        gains,
         time_maps,
         freq_maps,
         dir_maps,
-        row_map,
-        row_weights,
         corr_mode
     ):
 

@@ -26,36 +26,34 @@ meta_args_nt = namedtuple(
 
 
 term_kwarg_defaults = {
-    "_time_bins": (0, np.int32),
-    "_time_map": (0, np.int32),
-    "_freq_map": (0, np.int32),
-    "_dir_map": (0, np.int32),
-    "_param_time_bins": (0, np.int32),
-    "_param_time_map": (0, np.int32),
-    "_param_freq_map": (0, np.int32),
-    "_initial_gain": ((0, 0, 0, 0, 0), np.complex128),
-    "_initial_params": ((0, 0, 0, 0, 0), np.float64)
+    "time_bins": (0, np.int32),
+    "time_map": (0, np.int32),
+    "freq_map": (0, np.int32),
+    "dir_map": (0, np.int32),
+    "param_time_bins": (0, np.int32),
+    "param_time_map": (0, np.int32),
+    "param_freq_map": (0, np.int32),
+    "initial_gain": ((0, 0, 0, 0, 0), np.complex128),
+    "initial_params": ((0, 0, 0, 0, 0), np.float64)
 }
 
 
-def sanitise_kwargs(kwarg_dict, chain):
+def make_per_term_kwargs(kwargs, chain):
 
-    chain_kwargs = {}
+    per_term_kwargs = {}
 
     for term in chain:
 
         term_kwargs = {}
 
-        for suff, default in term_kwarg_defaults.items():
+        for fld, default in term_kwarg_defaults.items():
 
-            key = f"{term.name}{suff}"
-            term_kwargs[key] = kwarg_dict.pop(key, np.empty(*default))
+            key = f"{term.name}_{fld}"
+            term_kwargs[key] = kwargs.pop(key, np.empty(*default))
 
-        chain_kwargs[term.name] = term_kwargs
+        per_term_kwargs[term.name] = term_kwargs
 
-    ms_kwargs = kwarg_dict
-
-    return ms_kwargs, chain_kwargs
+    return per_term_kwargs
 
 
 def solver_wrapper(
@@ -80,27 +78,37 @@ def solver_wrapper(
     Returns:
         results_dict: A dictionary containing the results of the solvers.
     """
-    # NOTE: Currently kwargs, while convenient, may unecessarily maintain
-    # references to unused inputs. It may be better unpack them in some way
-    # to allow early garbage collection.
+
+    set_num_threads(solver_opts.threads)  # Set numba threads.
 
     block_id = tuple(block_id_arr.squeeze())
 
-    set_num_threads(solver_opts.threads)
     ref_ant = solver_opts.reference_antenna
     iter_recipe = solver_opts.iter_recipe
 
-    # Take giant kwargs dict and partition into ms inputs and per-term inputs.
-    ms_kwargs, chain_kwargs = sanitise_kwargs(kwargs, chain)
+    # Remove ms/data kwargs from the overall kwargs.
+    ms_fields = {fld for term in chain for fld in term.ms_inputs._fields}
+    ms_kwargs = {k: kwargs.pop(k, None) for k in ms_fields}
+
+    per_term_kwargs = make_per_term_kwargs(kwargs, chain)
+
+    assert len(kwargs) == 0, f"Some kwargs not understood by solver: {kwargs}."
 
     results_dict = {}
+
+    # NOTE: This is a necessary evil. We do not want to modify the inputs
+    # and copying is the best way to ensure that that cannot happen.
+    ms_kwargs["WEIGHT"] = ms_kwargs["WEIGHT"].copy()
+    results_dict["weights"] = ms_kwargs["WEIGHT"]
+    ms_kwargs["FLAG"] = ms_kwargs["FLAG"].copy()
+    results_dict["flags"] = ms_kwargs["FLAG"]
 
     for term_ind, term in enumerate(chain):
 
         term_spec = term_spec_list[term_ind]
         (_, _, term_shape, term_pshape) = term_spec
 
-        term_kwargs = chain_kwargs[term.name]
+        term_kwargs = per_term_kwargs[term.name]
 
         # Perform term specific setup e.g. init gains and params.
         gain_array, param_array = term.init_term(
@@ -138,27 +146,28 @@ def solver_wrapper(
         results_dict[f"{term.name}_convperc"] = np.atleast_2d(0.)  # float
 
     # Convert per-term values into appropriately ordered tuples which can be
-    # passed into the numba layer.
+    # passed into the numba layer. TODO: Changing chain length will result
+    # in recompilation. Investigate fixed length tuples.
     time_bin_tup = tuple(
-        [v[f"{k}_time_bins"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_time_bins"] for k, v in per_term_kwargs.items()]
     )
     time_map_tup = tuple(
-        [v[f"{k}_time_map"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_time_map"] for k, v in per_term_kwargs.items()]
     )
     freq_map_tup = tuple(
-        [v[f"{k}_freq_map"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_freq_map"] for k, v in per_term_kwargs.items()]
     )
     dir_map_tup = tuple(
-        [v[f"{k}_dir_map"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_dir_map"] for k, v in per_term_kwargs.items()]
     )
     param_time_bin_tup = tuple(
-        [v[f"{k}_param_time_bins"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_param_time_bins"] for k, v in per_term_kwargs.items()]
     )
     param_time_map_tup = tuple(
-        [v[f"{k}_param_time_map"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_param_time_map"] for k, v in per_term_kwargs.items()]
     )
     param_freq_map_tup = tuple(
-        [v[f"{k}_param_freq_map"] for k, v in chain_kwargs.items()]
+        [v[f"{k}_param_freq_map"] for k, v in per_term_kwargs.items()]
     )
     gain_array_tup = tuple(
         [results_dict[f"{term.name}_gain"] for term in chain]
@@ -175,49 +184,42 @@ def solver_wrapper(
 
     # Take the tuples above and create a new dictionary for these arguments,
     # now in a form appropriate for the solver calls.
-    solver_kwargs = {
+    chain_kwargs = {
         "gains": gain_array_tup,
         "gain_flags": gain_flag_array_tup,
+        "params": param_array_tup,
+        "param_flags": param_flag_array_tup
+    }
+
+    mapping_kwargs = {
         "time_bins": time_bin_tup,
         "time_maps": time_map_tup,
         "freq_maps": freq_map_tup,
         "dir_maps": dir_map_tup,
-        "params": param_array_tup,
-        "param_flags": param_flag_array_tup,
         "param_time_bins": param_time_bin_tup,
         "param_time_maps": param_time_map_tup,
         "param_freq_maps": param_freq_map_tup
     }
 
-    # Solver uses both the above and the measurement set inputs.
-    solver_kwargs = {**ms_kwargs, **solver_kwargs}
-
-    # NOTE: This is a necessary evil. We do not want to modify the inputs
-    # and copying is the best way to ensure that that cannot happen.
-    solver_kwargs["WEIGHT"] = solver_kwargs["WEIGHT"].copy()
-    results_dict["weights"] = solver_kwargs["WEIGHT"]
-    solver_kwargs["FLAG"] = solver_kwargs["FLAG"].copy()
-    results_dict["flags"] = solver_kwargs["FLAG"]
-
     if solver_opts.robust:
         final_epoch = len(iter_recipe) // len(chain)
-        etas = np.zeros_like(solver_kwargs["WEIGHT"][..., 0])
+        etas = np.zeros_like(ms_kwargs["WEIGHT"][..., 0])
         icovariance = np.zeros(corr_mode, np.float64)
         dof = 5
 
     presolve_chisq = compute_mean_postsolve_chisq(
-        solver_kwargs["DATA"],
-        solver_kwargs["MODEL_DATA"],
-        solver_kwargs["WEIGHT"],
-        solver_kwargs["FLAG"],
-        solver_kwargs["gains"],
-        solver_kwargs["ANTENNA1"],
-        solver_kwargs["ANTENNA2"],
-        solver_kwargs["time_maps"],
-        solver_kwargs["freq_maps"],
-        solver_kwargs["dir_maps"],
-        solver_kwargs.get("ROW_MAP", None),
-        solver_kwargs.get("ROW_WEIGHTS", None),
+        ms_kwargs["DATA"],
+        ms_kwargs["MODEL_DATA"],
+        ms_kwargs["WEIGHT"],
+        ms_kwargs["FLAG"],
+        ms_kwargs["ANTENNA1"],
+        ms_kwargs["ANTENNA2"],
+        ms_kwargs.get("ROW_MAP", None),
+        ms_kwargs.get("ROW_WEIGHTS", None),
+        chain_kwargs["gains"],
+        mapping_kwargs["time_maps"],
+        mapping_kwargs["freq_maps"],
+        mapping_kwargs["dir_maps"],
         corr_mode
     )
 
@@ -227,17 +229,17 @@ def solver_wrapper(
 
         ms_fields = term.ms_inputs._fields
         ms_inputs = term.ms_inputs(
-            **{k: solver_kwargs.get(k, None) for k in ms_fields}
+            **{k: ms_kwargs.get(k, None) for k in ms_fields}
         )
 
         mapping_fields = term.mapping_inputs._fields
         mapping_inputs = term.mapping_inputs(
-            **{k: solver_kwargs.get(k, None) for k in mapping_fields}
+            **{k: mapping_kwargs.get(k, None) for k in mapping_fields}
         )
 
         chain_fields = term.chain_inputs._fields
         chain_inputs = term.chain_inputs(
-            **{k: solver_kwargs.get(k, None) for k in chain_fields}
+            **{k: chain_kwargs.get(k, None) for k in chain_fields}
         )
 
         meta_inputs = meta_args_nt(
@@ -292,18 +294,18 @@ def solver_wrapper(
         results_dict[f"{term.name}_jhj"] = jhj
 
     postsolve_chisq = compute_mean_postsolve_chisq(
-        solver_kwargs["DATA"],
-        solver_kwargs["MODEL_DATA"],
-        solver_kwargs["WEIGHT"],
-        solver_kwargs["FLAG"],
-        solver_kwargs["gains"],
-        solver_kwargs["ANTENNA1"],
-        solver_kwargs["ANTENNA2"],
-        solver_kwargs["time_maps"],
-        solver_kwargs["freq_maps"],
-        solver_kwargs["dir_maps"],
-        solver_kwargs.get("ROW_MAP", None),
-        solver_kwargs.get("ROW_WEIGHTS", None),
+        ms_kwargs["DATA"],
+        ms_kwargs["MODEL_DATA"],
+        ms_kwargs["WEIGHT"],
+        ms_kwargs["FLAG"],
+        ms_kwargs["ANTENNA1"],
+        ms_kwargs["ANTENNA2"],
+        ms_kwargs.get("ROW_MAP", None),
+        ms_kwargs.get("ROW_WEIGHTS", None),
+        chain_kwargs["gains"],
+        mapping_kwargs["time_maps"],
+        mapping_kwargs["freq_maps"],
+        mapping_kwargs["dir_maps"],
         corr_mode
     )
     log_chisq(presolve_chisq, postsolve_chisq, aux_block_info, block_id)
