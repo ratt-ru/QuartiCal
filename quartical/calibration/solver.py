@@ -17,12 +17,12 @@ meta_args_nt = namedtuple(
         "stop_frac",
         "stop_crit",
         "threads",
+        "robust",
         "dd_term",
         "pinned_directions",
         "solve_per",
-        "robust"
-        )
     )
+)
 
 
 def make_mapping_tuple(dictionary, field, default=None):
@@ -237,10 +237,10 @@ def solver_wrapper(
             solver_opts.convergence_fraction,
             solver_opts.convergence_criteria,
             solver_opts.threads,
+            solver_opts.robust,
             term.direction_dependent,
             term.pinned_directions,
-            term.solve_per,
-            solver_opts.robust
+            term.solve_per
         )
 
         if iters != 0:
@@ -276,7 +276,7 @@ def solver_wrapper(
 
         # TODO: Ugly hack for larger jhj matrices. Refine.
         if jhj.ndim == 6:
-            jhj = jhj[:, :, :, :, range(jhj.shape[-2]), range(jhj.shape[-1])]
+            jhj = jhj[..., range(jhj.shape[-2]), range(jhj.shape[-1])]
 
         results_dict[f"{term.name}_conviter"] += np.atleast_2d(info_tup[0])
         results_dict[f"{term.name}_convperc"] = np.atleast_2d(info_tup[1])
