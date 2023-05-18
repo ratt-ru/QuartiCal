@@ -66,6 +66,8 @@ class Gain:
     mapping_inputs = mapping_inputs
     chain_inputs = chain_inputs
 
+    is_parameterized = False
+
     gain_axes = (
         "gain_time",
         "gain_freq",
@@ -351,4 +353,4 @@ class Gain:
             if gain_shape[-1] == 4:
                 gains[..., (1, 2)] = 0  # 2-by-2 identity.
 
-        return gains, np.empty(param_shape, dtype=np.float64)
+        return gains

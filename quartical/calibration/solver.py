@@ -25,17 +25,13 @@ meta_args_nt = namedtuple(
     )
 
 
-term_kwarg_defaults = {
-    "time_bins": (0, np.int32),
-    "time_map": (0, np.int32),
-    "freq_map": (0, np.int32),
-    "dir_map": (0, np.int32),
-    "param_time_bins": (0, np.int32),
-    "param_time_map": (0, np.int32),
-    "param_freq_map": (0, np.int32),
-    "initial_gain": ((0, 0, 0, 0, 0), np.complex128),
-    "initial_params": ((0, 0, 0, 0, 0), np.float64)
-}
+def make_mapping_tuple(dictionary, field, default=None):
+
+    default = np.empty(0, dtype=np.int32) if default is None else default
+
+    return tuple(
+        [v.get(f"{k}_{field}", default) for k, v in dictionary.items()]
+    )
 
 
 def make_per_term_kwargs(kwargs, chain):
@@ -44,12 +40,9 @@ def make_per_term_kwargs(kwargs, chain):
 
     for term in chain:
 
-        term_kwargs = {}
+        term_keys = [k for k in kwargs.keys() if k.startswith(f"{term.name}_")]
 
-        for fld, default in term_kwarg_defaults.items():
-
-            key = f"{term.name}_{fld}"
-            term_kwargs[key] = kwargs.pop(key, np.empty(*default))
+        term_kwargs = {tk: kwargs.pop(tk) for tk in term_keys}
 
         per_term_kwargs[term.name] = term_kwargs
 
@@ -86,7 +79,9 @@ def solver_wrapper(
     ref_ant = solver_opts.reference_antenna
     iter_recipe = solver_opts.iter_recipe
 
-    # Remove ms/data kwargs from the overall kwargs.
+    # Remove ms/data kwargs from the overall kwargs. Note that missing fields
+    # will be assigned a value of None. This should only ever apply to the
+    # BDA related inputs.
     ms_fields = {fld for term in chain for fld in term.ms_inputs._fields}
     ms_kwargs = {k: kwargs.pop(k, None) for k in ms_fields}
 
@@ -111,9 +106,27 @@ def solver_wrapper(
         term_kwargs = per_term_kwargs[term.name]
 
         # Perform term specific setup e.g. init gains and params.
-        gain_array, param_array = term.init_term(
-            term_spec, ref_ant, ms_kwargs, term_kwargs
-        )
+        if term.is_parameterized:
+            gain_array, param_array = term.init_term(
+                term_spec, ref_ant, ms_kwargs, term_kwargs
+            )
+            # Init parameter flags by looking for intervals with no data.
+            param_flag_array = init_flags(
+                term_pshape,
+                term_kwargs[f"{term.name}_param_time_map"],
+                term_kwargs[f"{term.name}_param_freq_map"],
+                ms_kwargs["FLAG"],
+                ms_kwargs["ANTENNA1"],
+                ms_kwargs["ANTENNA2"],
+                ms_kwargs["ROW_MAP"]
+            )
+        else:
+            gain_array = term.init_term(
+                term_spec, ref_ant, ms_kwargs, term_kwargs
+            )
+            # Dummy arrays with standard dtypes - aids compilation.
+            param_array = np.empty(term_pshape, dtype=np.float64)
+            param_flag_array = np.empty(term_pshape[:-1], dtype=np.int8)
 
         # Init gain flags by looking for intervals with no data.
         gain_flag_array = init_flags(
@@ -123,18 +136,7 @@ def solver_wrapper(
             ms_kwargs["FLAG"],
             ms_kwargs["ANTENNA1"],
             ms_kwargs["ANTENNA2"],
-            ms_kwargs.get("ROW_MAP", None)
-        )
-
-        # Init parameter flags by looking for intervals with no data.
-        param_flag_array = init_flags(
-            term_pshape,
-            term_kwargs[f"{term.name}_param_time_map"],
-            term_kwargs[f"{term.name}_param_freq_map"],
-            ms_kwargs["FLAG"],
-            ms_kwargs["ANTENNA1"],
-            ms_kwargs["ANTENNA2"],
-            ms_kwargs.get("ROW_MAP", None)
+            ms_kwargs["ROW_MAP"]
         )
 
         # Add the quantities which we intend to return to the results dict.
@@ -148,27 +150,14 @@ def solver_wrapper(
     # Convert per-term values into appropriately ordered tuples which can be
     # passed into the numba layer. TODO: Changing chain length will result
     # in recompilation. Investigate fixed length tuples.
-    time_bin_tup = tuple(
-        [v[f"{k}_time_bins"] for k, v in per_term_kwargs.items()]
-    )
-    time_map_tup = tuple(
-        [v[f"{k}_time_map"] for k, v in per_term_kwargs.items()]
-    )
-    freq_map_tup = tuple(
-        [v[f"{k}_freq_map"] for k, v in per_term_kwargs.items()]
-    )
-    dir_map_tup = tuple(
-        [v[f"{k}_dir_map"] for k, v in per_term_kwargs.items()]
-    )
-    param_time_bin_tup = tuple(
-        [v[f"{k}_param_time_bins"] for k, v in per_term_kwargs.items()]
-    )
-    param_time_map_tup = tuple(
-        [v[f"{k}_param_time_map"] for k, v in per_term_kwargs.items()]
-    )
-    param_freq_map_tup = tuple(
-        [v[f"{k}_param_freq_map"] for k, v in per_term_kwargs.items()]
-    )
+    time_bin_tup = make_mapping_tuple(per_term_kwargs, "time_bins")
+    time_map_tup = make_mapping_tuple(per_term_kwargs, "time_map")
+    freq_map_tup = make_mapping_tuple(per_term_kwargs, "freq_map")
+    dir_map_tup = make_mapping_tuple(per_term_kwargs, "dir_map")
+    param_time_bin_tup = make_mapping_tuple(per_term_kwargs, "param_time_bins")
+    param_time_map_tup = make_mapping_tuple(per_term_kwargs, "param_time_map")
+    param_freq_map_tup = make_mapping_tuple(per_term_kwargs, "param_freq_map")
+
     gain_array_tup = tuple(
         [results_dict[f"{term.name}_gain"] for term in chain]
     )
@@ -214,8 +203,8 @@ def solver_wrapper(
         ms_kwargs["FLAG"],
         ms_kwargs["ANTENNA1"],
         ms_kwargs["ANTENNA2"],
-        ms_kwargs.get("ROW_MAP", None),
-        ms_kwargs.get("ROW_WEIGHTS", None),
+        ms_kwargs["ROW_MAP"],
+        ms_kwargs["ROW_WEIGHTS"],
         chain_kwargs["gains"],
         mapping_kwargs["time_maps"],
         mapping_kwargs["freq_maps"],
@@ -300,8 +289,8 @@ def solver_wrapper(
         ms_kwargs["FLAG"],
         ms_kwargs["ANTENNA1"],
         ms_kwargs["ANTENNA2"],
-        ms_kwargs.get("ROW_MAP", None),
-        ms_kwargs.get("ROW_WEIGHTS", None),
+        ms_kwargs["ROW_MAP"],
+        ms_kwargs["ROW_WEIGHTS"],
         chain_kwargs["gains"],
         mapping_kwargs["time_maps"],
         mapping_kwargs["freq_maps"],

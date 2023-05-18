@@ -102,6 +102,7 @@ def compute_mean_postsolve_chisq(
                     continue
 
                 iunpack(r, data[row, f])
+                imul_rweight(r, r, row_weights, row_ind)
                 m = model[row, f]
                 w = weights[row, f]
 

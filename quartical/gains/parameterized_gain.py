@@ -48,6 +48,8 @@ class ParameterizedGain(Gain):
     mapping_inputs = mapping_inputs
     chain_inputs = chain_inputs
 
+    is_parameterized = True
+
     param_axes = (
         "param_time",
         "param_freq",
