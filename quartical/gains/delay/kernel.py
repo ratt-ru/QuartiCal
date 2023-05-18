@@ -17,15 +17,6 @@ from quartical.gains.general.convenience import (get_row,
 import quartical.gains.general.factories as factories
 from quartical.gains.general.inversion import (invert_factory,
                                                inversion_buffer_factory)
-from collections import namedtuple
-
-
-# This can be done without a named tuple now. TODO: Add unpacking to
-# constructor.
-stat_fields = {"conv_iters": np.int64,
-               "conv_perc": np.float64}
-
-term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 
 def get_identity_params(corr_mode):
@@ -191,7 +182,7 @@ def delay_solver(
         active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
         native_imdry.jhj[..., 1::2] *= min_freq ** 2
 
-        return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
+        return native_imdry.jhj, loop_idx + 1, conv_perc
 
     return impl
 

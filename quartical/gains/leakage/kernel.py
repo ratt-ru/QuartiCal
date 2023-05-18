@@ -16,15 +16,6 @@ import quartical.gains.general.factories as factories
 from quartical.gains.complex.kernel import (get_jhj_dims_factory,
                                             compute_jhj_jhr,
                                             compute_update)
-from collections import namedtuple
-
-
-# This can be done without a named tuple now. TODO: Add unpacking to
-# constructor.
-stat_fields = {"conv_iters": np.int64,
-               "conv_perc": np.float64}
-
-term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
 
 
 @generated_jit(
@@ -158,7 +149,7 @@ def leakage_solver(
                 meta_inputs
             )
 
-        return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
+        return native_imdry.jhj, loop_idx + 1, conv_perc
 
     return impl
 
