@@ -1,9 +1,8 @@
 import numpy as np
 from quartical.gains.conversion import no_op
-from quartical.gains.gain import ParameterizedGain
+from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.amplitude.kernel import (
     amplitude_solver,
-    amplitude_args,
     amplitude_params_to_gains
 )
 
@@ -11,7 +10,6 @@ from quartical.gains.amplitude.kernel import (
 class Amplitude(ParameterizedGain):
 
     solver = staticmethod(amplitude_solver)
-    term_args = amplitude_args
 
     native_to_converted = (
         (1, (no_op,)),

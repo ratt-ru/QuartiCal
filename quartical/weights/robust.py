@@ -243,45 +243,65 @@ def update_weights(weights, etas, icovariance):
 
 
 @qcgjit
-def robust_reweighting(base_args, meta_args, etas, icovariance, dof, mode):
+def robust_reweighting(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    etas,
+    icovariance,
+    dof,
+    corr_mode
+):
 
-    def impl(base_args, meta_args, etas, icovariance, dof, mode):
-        model = base_args.MODEL_DATA
-        data = base_args.DATA
-        a1 = base_args.ANTENNA1
-        a2 = base_args.ANTENNA2
-        weights = base_args.WEIGHT
-        flags = base_args.FLAG
-        t_map_arr = base_args.time_maps
-        f_map_arr = base_args.freq_maps
-        d_map_arr = base_args.dir_maps
-        gains = base_args.gains
-        row_map = base_args.row_map
-        row_weights = base_args.row_weights
+    def impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        etas,
+        icovariance,
+        dof,
+        corr_mode
+    ):
+        model = ms_inputs.MODEL_DATA
+        data = ms_inputs.DATA
+        antenna1 = ms_inputs.ANTENNA1
+        antenna2 = ms_inputs.ANTENNA2
+        weights = ms_inputs.WEIGHT
+        flags = ms_inputs.FLAG
+        row_map = ms_inputs.ROW_MAP
+        row_weights = ms_inputs.ROW_WEIGHTS
 
-        residuals = compute_residual(data,
-                                     model,
-                                     gains,
-                                     a1,
-                                     a2,
-                                     t_map_arr,
-                                     f_map_arr,
-                                     d_map_arr,
-                                     row_map,
-                                     row_weights,
-                                     mode)
+        t_map_arr = mapping_inputs.time_maps
+        f_map_arr = mapping_inputs.freq_maps
+        d_map_arr = mapping_inputs.dir_maps
+
+        gains = chain_inputs.gains
+
+        residuals = compute_residual(
+            data,
+            model,
+            gains,
+            antenna1,
+            antenna2,
+            t_map_arr,
+            f_map_arr,
+            d_map_arr,
+            row_map,
+            row_weights,
+            corr_mode
+        )
 
         # First reweighting - we have already calibrated with MS weights.
         # This tries to approximate what that means in terms of initial values.
         if np.all(icovariance == 0):
             icovariance[:] = mean_weight(weights, flags)
-            update_etas(residuals, flags, etas, icovariance, dof, mode)
+            update_etas(residuals, flags, etas, icovariance, dof, corr_mode)
 
-        update_icovariance(residuals, flags, etas, icovariance, mode)
+        update_icovariance(residuals, flags, etas, icovariance, corr_mode)
 
-        dof = compute_dof(etas, flags, dof, mode)
+        dof = compute_dof(etas, flags, dof, corr_mode)
 
-        update_etas(residuals, flags, etas, icovariance, dof, mode)
+        update_etas(residuals, flags, etas, icovariance, dof, corr_mode)
 
         update_weights(weights, etas, icovariance)
 

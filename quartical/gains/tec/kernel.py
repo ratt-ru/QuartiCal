@@ -16,27 +16,6 @@ from quartical.gains.general.convenience import get_extents
 from quartical.gains.delay.kernel import (compute_jhj_jhr,
                                           compute_update,
                                           finalize_update)
-from collections import namedtuple
-
-
-# This can be done without a named tuple now. TODO: Add unpacking to
-# constructor.
-stat_fields = {"conv_iters": np.int64,
-               "conv_perc": np.float64}
-
-term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
-
-tec_args = namedtuple(
-    "tec_args",
-    (
-        "params",
-        "param_flags",
-        "CHAN_FREQ",
-        "param_time_bins",
-        "param_time_maps",
-        "param_freq_maps"
-    )
-)
 
 
 def get_identity_params(corr_mode):
@@ -49,12 +28,20 @@ def get_identity_params(corr_mode):
         raise ValueError("Unsupported number of correlations.")
 
 
-@generated_jit(nopython=True,
-               fastmath=True,
-               parallel=False,
-               cache=True,
-               nogil=True)
-def tec_solver(base_args, term_args, meta_args, corr_mode):
+@generated_jit(
+    nopython=True,
+    fastmath=True,
+    parallel=False,
+    cache=True,
+    nogil=True
+)
+def tec_solver(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
 
     # NOTE: This just reuses delay solver functionality.
 
@@ -62,20 +49,26 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
     identity_params = get_identity_params(corr_mode)
 
-    def impl(base_args, term_args, meta_args, corr_mode):
+    def impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        corr_mode
+    ):
 
-        gains = base_args.gains
-        gain_flags = base_args.gain_flags
+        gains = chain_inputs.gains
+        gain_flags = chain_inputs.gain_flags
 
-        active_term = meta_args.active_term
-        max_iter = meta_args.iters
-        solve_per = meta_args.solve_per
-        dd_term = meta_args.dd_term
-        n_thread = meta_args.threads
+        active_term = meta_inputs.active_term
+        max_iter = meta_inputs.iters
+        solve_per = meta_inputs.solve_per
+        dd_term = meta_inputs.dd_term
+        n_thread = meta_inputs.threads
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
-        active_params = term_args.params[active_term]
+        active_params = chain_inputs.params[active_term]
 
         # Set up some intemediaries used for flagging. TODO: Move?
         km1_gain = active_gain.copy()
@@ -88,8 +81,8 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         real_dtype = active_gain.real.dtype
         param_shape = active_params.shape
 
-        active_t_map_g = base_args.time_maps[active_term]
-        active_f_map_p = term_args.param_freq_maps[active_term]
+        active_t_map_g = mapping_inputs.time_maps[active_term]
+        active_f_map_p = mapping_inputs.param_freq_maps[active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, param_shape, n_thread)
@@ -109,7 +102,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
         upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
         native_imdry = native_intermediaries(jhj, jhr, update)
 
-        scaled_icf = term_args.CHAN_FREQ.copy()  # Don't mutate.
+        scaled_icf = ms_inputs.CHAN_FREQ.copy()  # Don't mutate.
         min_freq = np.min(scaled_icf)
         scaled_icf = min_freq/scaled_icf  # Scale freqs to avoid precision.
         scaled_icf *= 2*np.pi  # Introduce 2pi here - neglect everywhere else.
@@ -117,13 +110,16 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
         for loop_idx in range(max_iter):
 
-            compute_jhj_jhr(base_args,
-                            term_args,
-                            meta_args,
-                            upsampled_imdry,
-                            extents,
-                            scaled_icf,
-                            corr_mode)
+            compute_jhj_jhr(
+                ms_inputs,
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs,
+                upsampled_imdry,
+                extents,
+                scaled_icf,
+                corr_mode
+            )
 
             if resampler.active:
                 downsample_jhj_jhr(upsampled_imdry, resampler.downsample_t_map)
@@ -131,53 +127,63 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
 
-            compute_update(native_imdry,
-                           corr_mode)
+            compute_update(native_imdry, corr_mode)
 
-            finalize_update(base_args,
-                            term_args,
-                            meta_args,
-                            native_imdry,
-                            scaled_icf,
-                            loop_idx,
-                            corr_mode)
+            finalize_update(
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs,
+                native_imdry,
+                loop_idx,
+                scaled_icf,
+                corr_mode
+            )
 
             # Check for gain convergence. Produced as a side effect of
             # flagging. The converged percentage is based on unflagged
             # intervals.
-            conv_perc = update_gain_flags(base_args,
-                                          term_args,
-                                          meta_args,
-                                          flag_imdry,
-                                          loop_idx,
-                                          corr_mode,
-                                          numbness=1e9)
+            conv_perc = update_gain_flags(
+                chain_inputs,
+                meta_inputs,
+                flag_imdry,
+                loop_idx,
+                corr_mode,
+                numbness=1e9
+            )
 
             # Propagate gain flags to parameter flags.
-            update_param_flags(base_args,
-                               term_args,
-                               meta_args,
-                               identity_params)
+            update_param_flags(
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs,
+                identity_params
+            )
 
-            if conv_perc >= meta_args.stop_frac:
+            if conv_perc >= meta_inputs.stop_frac:
                 break
 
         # NOTE: Removes soft flags and flags points which have bad trends.
-        finalize_gain_flags(base_args,
-                            meta_args,
-                            flag_imdry,
-                            corr_mode)
+        finalize_gain_flags(
+            chain_inputs,
+            meta_inputs,
+            flag_imdry,
+            corr_mode
+        )
 
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
-            apply_gain_flags(base_args,
-                             meta_args)
+            apply_gain_flags(
+                ms_inputs,
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs
+            )
 
         active_params[..., 1::2] *= min_freq  # Undo scaling for SI units.
         native_imdry.jhj[..., 1::2] /= min_freq ** 2
 
-        return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
+        return native_imdry.jhj, loop_idx + 1, conv_perc
 
     return impl
 

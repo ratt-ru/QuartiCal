@@ -183,13 +183,13 @@ def populate_net_xds_list(
         for net_name, req_terms in net_map.items():
 
             req_time_bins = tuple(
-                [mapping_xds.get(f"{k}-time-bins").data for k in req_terms]
+                [mapping_xds.get(f"{k}_time_bins").data for k in req_terms]
             )
             req_freq_maps = tuple(
-                [mapping_xds.get(f"{k}-freq-map").data for k in req_terms]
+                [mapping_xds.get(f"{k}_freq_map").data for k in req_terms]
             )
             req_dir_maps = tuple(
-                [mapping_xds.get(f"{k}-dir-map").data for k in req_terms]
+                [mapping_xds.get(f"{k}_dir_map").data for k in req_terms]
             )
 
             net_xds = net_gains[net_name]

@@ -1,22 +1,24 @@
 import numpy as np
+from collections import namedtuple
 from quartical.gains.conversion import no_op, trig_to_angle
-from quartical.gains.gain import ParameterizedGain
+from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.delay.kernel import (
     delay_solver,
-    delay_args,
     delay_params_to_gains
 )
 from quartical.gains.delay.pure_kernel import pure_delay_solver
 
 
-def reversion_function(a, c, s):
-    return a * np.exp(1j * np.arctan2(s, c))
+# Overload the default measurement set inputs to include the frequencies.
+ms_inputs = namedtuple(
+    'ms_inputs', ParameterizedGain.ms_inputs._fields + ('CHAN_FREQ',)
+)
 
 
 class Delay(ParameterizedGain):
 
     solver = staticmethod(delay_solver)
-    term_args = delay_args
+    ms_inputs = ms_inputs
 
     native_to_converted = (
         (0, (np.cos,)),
@@ -63,7 +65,7 @@ class Delay(ParameterizedGain):
             param,
             gain,
             ms_kwargs["CHAN_FREQ"],
-            term_kwargs[f"{self.name}-param-freq-map"],
+            term_kwargs[f"{self.name}_param_freq_map"],
         )
 
         if self.load_from or not self.initial_estimate:
@@ -74,8 +76,8 @@ class Delay(ParameterizedGain):
         a1 = ms_kwargs["ANTENNA1"]
         a2 = ms_kwargs["ANTENNA2"]
         chan_freq = ms_kwargs["CHAN_FREQ"]
-        t_map = term_kwargs[f"{term_spec.name}-time-map"]
-        f_map = term_kwargs[f"{term_spec.name}-param-freq-map"]
+        t_map = term_kwargs[f"{term_spec.name}_time_map"]
+        f_map = term_kwargs[f"{term_spec.name}_param_freq_map"]
         _, n_chan, n_ant, n_dir, n_corr = gain.shape
 
         # We only need the baselines which include the ref_ant.

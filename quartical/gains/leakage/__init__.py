@@ -1,13 +1,12 @@
 import numpy as np
 from quartical.gains.conversion import amp_trig_to_complex
 from quartical.gains.gain import Gain
-from quartical.gains.leakage.kernel import leakage_solver, leakage_args
+from quartical.gains.leakage.kernel import leakage_solver
 
 
 class Leakage(Gain):
 
     solver = staticmethod(leakage_solver)
-    term_args = leakage_args
 
     native_to_converted = (
         (0, (np.abs,)),

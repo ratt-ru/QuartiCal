@@ -97,6 +97,7 @@ def log_summary_stats(stats_xds_list):
 
             attrs = [sxds.attrs.get(f, "?") for f in attr_fields]
 
+            # TODO: Chi-squared values of zero disappear here.
             data.append([f"{v:.2f}" if v else "" for v in frame.ravel()])
             headers.append(fmt.format(*attrs))
 

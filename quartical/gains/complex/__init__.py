@@ -1,14 +1,13 @@
 import numpy as np
 from quartical.gains.gain import Gain
 from quartical.gains.conversion import amp_trig_to_complex
-from quartical.gains.complex.kernel import complex_solver, complex_args
+from quartical.gains.complex.kernel import complex_solver
 from quartical.gains.complex.diag_kernel import diag_complex_solver
 
 
 class Complex(Gain):
 
     solver = staticmethod(complex_solver)
-    term_args = complex_args
     # Conversion functions required for interpolation NOTE: Non-parameterised
     # gains will always be reinterpreted and parameterised in amplitude and
     # phase for the sake of simplicity.

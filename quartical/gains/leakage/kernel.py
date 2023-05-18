@@ -17,40 +17,42 @@ from quartical.gains.complex.kernel import (get_jhj_dims_factory,
                                             compute_jhj_jhr,
                                             compute_update)
 
-from collections import namedtuple
 
-
-# This can be done without a named tuple now. TODO: Add unpacking to
-# constructor.
-stat_fields = {"conv_iters": np.int64,
-               "conv_perc": np.float64}
-
-term_conv_info = namedtuple("term_conv_info", " ".join(stat_fields.keys()))
-
-leakage_args = namedtuple("leakage_args", ())
-
-
-@generated_jit(nopython=True,
-               fastmath=True,
-               parallel=False,
-               cache=True,
-               nogil=True)
-def leakage_solver(base_args, term_args, meta_args, corr_mode):
+@generated_jit(
+    nopython=True,
+    fastmath=True,
+    parallel=False,
+    cache=True,
+    nogil=True
+)
+def leakage_solver(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
 
     coerce_literal(leakage_solver, ["corr_mode"])
 
     get_jhj_dims = get_jhj_dims_factory(corr_mode)
 
-    def impl(base_args, term_args, meta_args, corr_mode):
+    def impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        corr_mode
+    ):
 
-        gains = base_args.gains
-        gain_flags = base_args.gain_flags
+        gains = chain_inputs.gains
+        gain_flags = chain_inputs.gain_flags
 
-        active_term = meta_args.active_term
-        max_iter = meta_args.iters
-        solve_per = meta_args.solve_per
-        dd_term = meta_args.dd_term
-        n_thread = meta_args.threads
+        active_term = meta_inputs.active_term
+        max_iter = meta_inputs.iters
+        solve_per = meta_inputs.solve_per
+        dd_term = meta_inputs.dd_term
+        n_thread = meta_inputs.threads
 
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
@@ -66,8 +68,8 @@ def leakage_solver(base_args, term_args, meta_args, corr_mode):
         complex_dtype = active_gain.dtype
         gain_shape = active_gain.shape
 
-        active_t_map_g = base_args.time_maps[active_term]
-        active_f_map_g = base_args.freq_maps[active_term]
+        active_t_map_g = mapping_inputs.time_maps[active_term]
+        active_f_map_g = mapping_inputs.freq_maps[active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, gain_shape, n_thread)
@@ -89,12 +91,15 @@ def leakage_solver(base_args, term_args, meta_args, corr_mode):
 
         for loop_idx in range(max_iter):
 
-            compute_jhj_jhr(base_args,
-                            term_args,
-                            meta_args,
-                            upsampled_imdry,
-                            extents,
-                            corr_mode)
+            compute_jhj_jhr(
+                ms_inputs,
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs,
+                upsampled_imdry,
+                extents,
+                corr_mode
+            )
 
             if resampler.active:
                 downsample_jhj_jhr(upsampled_imdry, resampler.downsample_t_map)
@@ -102,62 +107,84 @@ def leakage_solver(base_args, term_args, meta_args, corr_mode):
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
 
-            compute_update(native_imdry,
-                           corr_mode)
+            compute_update(native_imdry, corr_mode)
 
-            finalize_update(base_args,
-                            term_args,
-                            meta_args,
-                            native_imdry,
-                            loop_idx,
-                            corr_mode)
+            finalize_update(
+                chain_inputs,
+                meta_inputs,
+                native_imdry,
+                loop_idx,
+                corr_mode
+            )
 
             # Check for gain convergence. Produced as a side effect of
             # flagging. The converged percentage is based on unflagged
             # intervals.
-            conv_perc = update_gain_flags(base_args,
-                                          term_args,
-                                          meta_args,
-                                          flag_imdry,
-                                          loop_idx,
-                                          corr_mode)
+            conv_perc = update_gain_flags(
+                chain_inputs,
+                meta_inputs,
+                flag_imdry,
+                loop_idx,
+                corr_mode
+            )
 
-            if conv_perc >= meta_args.stop_frac:
+            if conv_perc >= meta_inputs.stop_frac:
                 break
 
         # NOTE: Removes soft flags and flags points which have bad trends.
-        finalize_gain_flags(base_args,
-                            meta_args,
-                            flag_imdry,
-                            corr_mode)
+        finalize_gain_flags(
+            chain_inputs,
+            meta_inputs,
+            flag_imdry,
+            corr_mode
+        )
 
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
-            apply_gain_flags(base_args,
-                             meta_args)
+            apply_gain_flags(
+                ms_inputs,
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs
+            )
 
-        return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
+        return native_imdry.jhj, loop_idx + 1, conv_perc
 
     return impl
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
-               nogil=True)
-def finalize_update(base_args, term_args, meta_args, native_imdry, loop_idx,
-                    corr_mode):
+@generated_jit(
+    nopython=True,
+    fastmath=True,
+    parallel=False,
+    cache=True,
+    nogil=True
+)
+def finalize_update(
+    chain_inputs,
+    meta_inputs,
+    native_imdry,
+    loop_idx,
+    corr_mode
+):
 
     set_identity = factories.set_identity_factory(corr_mode)
 
-    def impl(base_args, term_args, meta_args, native_imdry, loop_idx,
-             corr_mode):
+    def impl(
+        chain_inputs,
+        meta_inputs,
+        native_imdry,
+        loop_idx,
+        corr_mode
+    ):
 
-        dd_term = meta_args.dd_term
-        active_term = meta_args.active_term
-        pinned_directions = meta_args.pinned_directions
+        dd_term = meta_inputs.dd_term
+        active_term = meta_inputs.active_term
+        pinned_directions = meta_inputs.pinned_directions
 
-        gain = base_args.gains[active_term]
-        gain_flags = base_args.gain_flags[active_term]
+        gain = chain_inputs.gains[active_term]
+        gain_flags = chain_inputs.gain_flags[active_term]
 
         update = native_imdry.update
 

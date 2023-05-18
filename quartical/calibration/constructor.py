@@ -41,6 +41,8 @@ def construct_solver(
     output_data_xds_list = []
     output_stats_xds_list = []
 
+    required_fields = {fld for term in chain for fld in term.ms_inputs._fields}
+
     itr = enumerate(zip(data_xds_list, mapping_xds_list, stats_xds_list))
 
     for xds_ind, (data_xds, mapping_xds, stats_xds) in itr:
@@ -67,7 +69,8 @@ def construct_solver(
         blocker = Blocker(solver_wrapper, ("row", "chan"))
 
         for v in data_xds.data_vars.values():
-            blocker.add_input(v.name, v.data, v.dims)
+            if v.name in required_fields:
+                blocker.add_input(v.name, v.data, v.dims)
 
         # NOTE: We need to treat time as a rowlike dimension here.
         for v in mapping_xds.data_vars.values():
@@ -136,14 +139,14 @@ def construct_solver(
         for term_name, term_xds in gain_terms.items():
 
             blocker.add_output(
-                f"{term_name}-gain",
+                f"{term_name}_gain",
                 ("row", "chan", "ant", "dir", "corr"),
                 term_xds.GAIN_SPEC,
                 np.complex128
             )
 
             blocker.add_output(
-                f"{term_name}-gain_flags",
+                f"{term_name}_gain_flags",
                 ("row", "chan", "ant", "dir"),
                 term_xds.GAIN_SPEC[:-1],
                 np.int8
@@ -152,21 +155,21 @@ def construct_solver(
             # If there is a PARAM_SPEC on the gain xds, it is also an output.
             if hasattr(term_xds, "PARAM_SPEC"):
                 blocker.add_output(
-                    f"{term_name}-param",
+                    f"{term_name}_param",
                     ("row", "chan", "ant", "dir", "param"),
                     term_xds.PARAM_SPEC,
                     np.float64
                 )
 
                 blocker.add_output(
-                    f"{term_name}-param_flags",
+                    f"{term_name}_param_flags",
                     ("row", "chan", "ant", "dir"),
                     term_xds.PARAM_SPEC[:-1],
                     np.int8
                 )
 
                 blocker.add_output(
-                    f"{term_name}-jhj",
+                    f"{term_name}_jhj",
                     ("row", "chan", "ant", "dir", "param"),
                     term_xds.PARAM_SPEC,
                     np.float64
@@ -174,7 +177,7 @@ def construct_solver(
 
             else:  # Only non-parameterised gains return a jhj (for now).
                 blocker.add_output(
-                    f"{term_name}-jhj",
+                    f"{term_name}_jhj",
                     ("row", "chan", "ant", "dir", "corr"),
                     term_xds.GAIN_SPEC,
                     np.complex128
@@ -182,13 +185,13 @@ def construct_solver(
 
             chunks = ((1,)*n_t_chunks, (1,)*n_f_chunks)
             blocker.add_output(
-                f"{term_name}-conviter",
+                f"{term_name}_conviter",
                 ("row", "chan"),
                 chunks,
                 np.int64
             )
             blocker.add_output(
-                f"{term_name}-convperc",
+                f"{term_name}_convperc",
                 ("row", "chan"),
                 chunks,
                 np.float64
@@ -225,30 +228,30 @@ def construct_solver(
 
             result_vars = {}
 
-            gain = output_dict[f"{term_name}-gain"]
+            gain = output_dict[f"{term_name}_gain"]
             result_vars["gains"] = (term_xds.GAIN_AXES, gain)
 
-            flags = output_dict[f"{term_name}-gain_flags"]
+            flags = output_dict[f"{term_name}_gain_flags"]
             result_vars["gain_flags"] = (term_xds.GAIN_AXES[:-1], flags)
 
-            convperc = output_dict[f"{term_name}-convperc"]
+            convperc = output_dict[f"{term_name}_convperc"]
             result_vars["conv_perc"] = (("time_chunk", "freq_chunk"), convperc)
 
-            conviter = output_dict[f"{term_name}-conviter"]
+            conviter = output_dict[f"{term_name}_conviter"]
             result_vars["conv_iter"] = (("time_chunk", "freq_chunk"), conviter)
 
             if hasattr(term_xds, "PARAM_SPEC"):
-                params = output_dict[f"{term_name}-param"]
+                params = output_dict[f"{term_name}_param"]
                 result_vars["params"] = (term_xds.PARAM_AXES, params)
 
-                param_flags = output_dict[f"{term_name}-param_flags"]
+                param_flags = output_dict[f"{term_name}_param_flags"]
                 result_vars["param_flags"] = \
                     (term_xds.PARAM_AXES[:-1], param_flags)
 
-                jhj = output_dict[f"{term_name}-jhj"]
+                jhj = output_dict[f"{term_name}_jhj"]
                 result_vars["jhj"] = (term_xds.PARAM_AXES, jhj)
             else:
-                jhj = output_dict[f"{term_name}-jhj"]
+                jhj = output_dict[f"{term_name}_jhj"]
                 result_vars["jhj"] = (term_xds.GAIN_AXES, jhj)
 
             solved_xds = term_xds.assign(result_vars)
