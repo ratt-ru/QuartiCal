@@ -2,10 +2,11 @@ import xarray
 import numpy as np
 import dask.array as da
 from daskms.experimental.zarr import xds_to_zarr
-from quartical.gains.general.generics import qcgjit
+from numba import njit
+from numba.extending import overload
+from quartical.utils.numba import coerce_literal, JIT_OPTIONS
 import quartical.gains.general.factories as factories
 from quartical.gains.general.convenience import get_dims, get_row
-from quartical.utils.numba import coerce_literal
 
 
 def write_baseline_datasets(bl_corr_xds_list, output_opts):
@@ -143,7 +144,7 @@ def dask_compute_baseline_corrections(
     )
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def _compute_baseline_corrections(
     data,
     model,
@@ -159,8 +160,59 @@ def _compute_baseline_corrections(
     row_weights,
     corr_mode
 ):
+    return _compute_baseline_corrections_impl(
+        data,
+        model,
+        weight,
+        flags,
+        gains,
+        a1,
+        a2,
+        time_maps,
+        freq_maps,
+        dir_maps,
+        row_map,
+        row_weights,
+        corr_mode
+    )
 
-    coerce_literal(_compute_baseline_corrections, ["corr_mode"])
+
+def _compute_baseline_corrections_impl(
+    data,
+    model,
+    weight,
+    flags,
+    gains,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode
+):
+    return NotImplementedError
+
+
+@overload(_compute_baseline_corrections_impl, jit_options=JIT_OPTIONS)
+def nb_compute_baseline_corrections_impl(
+    data,
+    model,
+    weight,
+    flags,
+    gains,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode
+):
+
+    coerce_literal(nb_compute_baseline_corrections_impl, ["corr_mode"])
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -297,38 +349,34 @@ def dask_apply_baseline_corrections(
     )
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def _apply_baseline_corrections(data, bl_corrections, a1, a2):
 
-    def impl(data, bl_corrections, a1, a2):
+    data = data.copy()
 
-        data = data.copy()
+    n_rows, n_chan, n_corr = data.shape
 
-        n_rows, n_chan, n_corr = data.shape
+    n_ant = int(max(np.max(a1), np.max(a2))) + 1
 
-        n_ant = int(max(np.max(a1), np.max(a2))) + 1
+    n_bla = int((n_ant*(n_ant - 1))/2 + n_ant)  # bls plus autos
 
-        n_bla = int((n_ant*(n_ant - 1))/2 + n_ant)  # bls plus autos
+    bl_ids = (n_bla - ((n_ant - a1 + 1)*(n_ant - a1))//2 + a2 - a1)
 
-        bl_ids = (n_bla - ((n_ant - a1 + 1)*(n_ant - a1))//2 + a2 - a1)
+    for row in range(n_rows):
 
-        for row in range(n_rows):
+        bl_m = bl_ids[row]
 
-            bl_m = bl_ids[row]
+        for f in range(n_chan):
 
-            for f in range(n_chan):
+            v = data[row, f]
 
-                v = data[row, f]
+            for c in range(n_corr):
 
-                for c in range(n_corr):
+                if bl_corrections[0, bl_m, f, c]:
+                    blg = 1/bl_corrections[0, bl_m, f, c]
+                else:
+                    blg = 1
 
-                    if bl_corrections[0, bl_m, f, c]:
-                        blg = 1/bl_corrections[0, bl_m, f, c]
-                    else:
-                        blg = 1
+                data[row, f, c] = blg * v[c]
 
-                    data[row, f, c] = blg * v[c]
-
-        return data
-
-    return impl
+    return data
