@@ -243,22 +243,13 @@ def solver_wrapper(
             term.solve_per
         )
 
-        if iters != 0:
-            jhj, conv_iter, conv_perc = term.solver(
-                ms_inputs,
-                mapping_inputs,
-                chain_inputs,
-                meta_inputs,
-                corr_mode
-            )
-        else:
-            # TODO: Actually compute it in this special case?
-            if term.is_paramterized:
-                jhj = np.zeros_like(results_dict[f"{term.name}_param"])
-            else:
-                jhj = np.zeros_like(results_dict[f"{term.name}_gain"])
-            conv_iter = 0
-            conv_perc = 0
+        jhj, conv_iter, conv_perc = term.solver(
+            ms_inputs,
+            mapping_inputs,
+            chain_inputs,
+            meta_inputs,
+            corr_mode
+        )
 
         # If reweighting is enabled, do it when the epoch changes, except
         # for the final epoch - we don't reweight if we won't solve again.

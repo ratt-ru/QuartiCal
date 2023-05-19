@@ -114,7 +114,7 @@ def nb_complex_solver_impl(
         upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
         native_imdry = native_intermediaries(jhj, jhr, update)
 
-        for loop_idx in range(max_iter):
+        for loop_idx in range(max_iter or 1):
 
             compute_jhj_jhr(
                 ms_inputs,
@@ -131,6 +131,11 @@ def nb_complex_solver_impl(
 
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
+
+            if not max_iter:  # Non-solvable term, we just want jhj.
+                conv_perc = 0  # Didn't converge.
+                loop_idx = -1  # Did zero iterations.
+                break
 
             compute_update(native_imdry, corr_mode)
 
