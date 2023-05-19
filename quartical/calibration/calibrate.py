@@ -12,22 +12,6 @@ from quartical.interpolation.interpolate import load_and_interpolate_gains
 from quartical.gains.baseline import (compute_baseline_corrections,
                                       apply_baseline_corrections)
 from loguru import logger  # noqa
-from collections import namedtuple
-
-
-# The following supresses the egregious numba pending deprecation warnings.
-# TODO: Make sure that the code doesn't break when they finally decprecate
-# reflected lists.
-from numba.core.errors import NumbaDeprecationWarning
-from numba.core.errors import NumbaPendingDeprecationWarning
-import warnings
-
-warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
-warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
-
-
-dstat_dims_tup = namedtuple("dstat_dims_tup",
-                            "n_utime n_chan n_ant n_t_chunk n_f_chunk")
 
 
 def dask_residual(

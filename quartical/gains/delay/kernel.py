@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, generated_jit, jit
-from quartical.utils.numba import coerce_literal
+from numba import prange, njit
+from numba.extending import overload
+from quartical.utils.numba import (coerce_literal,
+                                   JIT_OPTIONS,
+                                   PARALLEL_JIT_OPTIONS)
 from quartical.gains.general.generics import (native_intermediaries,
                                               upsampled_itermediaries,
                                               per_array_jhj_jhr,
@@ -29,13 +32,7 @@ def get_identity_params(corr_mode):
         raise ValueError("Unsupported number of correlations.")
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
+@njit(**JIT_OPTIONS)
 def delay_solver(
     ms_inputs,
     mapping_inputs,
@@ -43,8 +40,35 @@ def delay_solver(
     meta_inputs,
     corr_mode
 ):
+    return delay_solver_impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        corr_mode
+    )
 
-    coerce_literal(delay_solver, ["corr_mode"])
+
+def delay_solver_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(delay_solver_impl, jit_options=JIT_OPTIONS)
+def nb_delay_solver_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
+
+    coerce_literal(nb_delay_solver_impl, ["corr_mode"])
 
     identity_params = get_identity_params(corr_mode)
 
@@ -192,14 +216,21 @@ def delay_solver(
     return impl
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=True,
-    cache=True,
-    nogil=True
-)
 def compute_jhj_jhr(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    upsampled_imdry,
+    extents,
+    scaled_cf,
+    corr_mode
+):
+    return NotImplementedError
+
+
+@overload(compute_jhj_jhr, jit_options=PARALLEL_JIT_OPTIONS)
+def nb_compute_jhj_jhr(
     ms_inputs,
     mapping_inputs,
     chain_inputs,
@@ -437,12 +468,12 @@ def compute_jhj_jhr(
     return impl
 
 
-@generated_jit(nopython=True,
-               fastmath=True,
-               parallel=True,
-               cache=True,
-               nogil=True)
 def compute_update(native_imdry, corr_mode):
+    raise NotImplementedError
+
+
+@overload(compute_update, jit_options=PARALLEL_JIT_OPTIONS)
+def nb_compute_update(native_imdry, corr_mode):
 
     # We want to dispatch based on this field so we need its type.
     jhj = native_imdry[native_imdry.fields.index('jhj')]
@@ -481,14 +512,20 @@ def compute_update(native_imdry, corr_mode):
     return impl
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
 def finalize_update(
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    native_imdry,
+    loop_idx,
+    scaled_cf,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(finalize_update, jit_options=JIT_OPTIONS)
+def nb_finalize_update(
     mapping_inputs,
     chain_inputs,
     meta_inputs,
@@ -756,13 +793,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-@jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
+@njit(**JIT_OPTIONS)
 def delay_params_to_gains(
     params,
     gains,

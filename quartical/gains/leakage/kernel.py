@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import generated_jit
-from quartical.utils.numba import coerce_literal
+from numba import njit
+from numba.extending import overload
+from quartical.utils.numba import coerce_literal, JIT_OPTIONS
 from quartical.gains.general.generics import (native_intermediaries,
                                               upsampled_itermediaries,
                                               per_array_jhj_jhr,
@@ -18,13 +19,7 @@ from quartical.gains.complex.kernel import (get_jhj_dims_factory,
                                             compute_update)
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
+@njit(**JIT_OPTIONS)
 def leakage_solver(
     ms_inputs,
     mapping_inputs,
@@ -32,8 +27,35 @@ def leakage_solver(
     meta_inputs,
     corr_mode
 ):
+    return leakage_solver_impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        corr_mode
+    )
 
-    coerce_literal(leakage_solver, ["corr_mode"])
+
+def leakage_solver_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(leakage_solver_impl, jit_options=JIT_OPTIONS)
+def nb_leakage_solver_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
+
+    coerce_literal(nb_leakage_solver_impl, ["corr_mode"])
 
     get_jhj_dims = get_jhj_dims_factory(corr_mode)
 
@@ -159,14 +181,18 @@ def leakage_solver(
     return impl
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
 def finalize_update(
+    chain_inputs,
+    meta_inputs,
+    native_imdry,
+    loop_idx,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(finalize_update, jit_options=JIT_OPTIONS)
+def nb_finalize_update(
     chain_inputs,
     meta_inputs,
     native_imdry,
