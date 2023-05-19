@@ -114,7 +114,7 @@ def pure_delay_solver(
         active_params[..., 1::2] *= min_freq  # Scale delay consistently.
         scaled_cf *= 2*np.pi  # Introduce 2pi here - neglect everywhere else.
 
-        for loop_idx in range(max_iter):
+        for loop_idx in range(max_iter or 1):
 
             compute_jhj_jhr(
                 ms_inputs,
@@ -132,6 +132,11 @@ def pure_delay_solver(
 
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
+
+            if not max_iter:  # Non-solvable term, we just want jhj.
+                conv_perc = 0  # Didn't converge.
+                loop_idx = -1  # Did zero iterations.
+                break
 
             compute_update(native_imdry, corr_mode)
 
