@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, generated_jit, jit
+from numba import prange, njit
 from numba.typed import List
 from collections import namedtuple
-from quartical.utils.numba import coerce_literal
+from numba.extending import overload
+from quartical.utils.numba import JIT_OPTIONS, coerce_literal
 import quartical.gains.general.factories as factories
 from quartical.gains.general.convenience import get_dims, get_row
 
@@ -45,23 +46,19 @@ resample_outputs = namedtuple(
 )
 
 
-qcgjit = generated_jit(nopython=True,
-                       fastmath=True,
-                       parallel=False,
-                       cache=True,
-                       nogil=True)
-
-qcgjit_parallel = generated_jit(nopython=True,
-                                fastmath=True,
-                                parallel=True,
-                                cache=True,
-                                nogil=True)
-
-
-@qcgjit
+@njit(**JIT_OPTIONS)
 def invert_gains(gain_list, inverse_gains, corr_mode):
+    return invert_gains_impl(gain_list, inverse_gains, corr_mode)
 
-    coerce_literal(invert_gains, ["corr_mode"])
+
+def invert_gains_impl(gain_list, inverse_gains, corr_mode):
+    raise NotImplementedError
+
+
+@overload(invert_gains_impl, jit_options=JIT_OPTIONS)
+def nb_invert_gains_impl(gain_list, inverse_gains, corr_mode):
+
+    coerce_literal(nb_invert_gains_impl, ["corr_mode"])
 
     compute_det = factories.compute_det_factory(corr_mode)
     iinverse = factories.iinverse_factory(corr_mode)
@@ -91,7 +88,7 @@ def invert_gains(gain_list, inverse_gains, corr_mode):
     return impl
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def compute_residual(
     data,
     model,
@@ -106,8 +103,56 @@ def compute_residual(
     corr_mode,
     sub_dirs=None
 ):
+    return compute_residual_impl(
+        data,
+        model,
+        gain_tuple,
+        a1,
+        a2,
+        time_maps,
+        freq_maps,
+        dir_maps,
+        row_map,
+        row_weights,
+        corr_mode,
+        sub_dirs
+    )
 
-    coerce_literal(compute_residual, ["corr_mode"])
+
+def compute_residual_impl(
+    data,
+    model,
+    gain_tuple,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode,
+    sub_dirs=None
+):
+    raise NotImplementedError
+
+
+@overload(compute_residual_impl, jit_options=JIT_OPTIONS)
+def nb_compute_residual_impl(
+    data,
+    model,
+    gain_tuple,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode,
+    sub_dirs=None
+):
+
+    coerce_literal(nb_compute_residual_impl, ["corr_mode"])
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -177,7 +222,7 @@ def compute_residual(
     return impl
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def compute_corrected_residual(
     residual,
     gain_tuple,
@@ -190,8 +235,50 @@ def compute_corrected_residual(
     row_weights,
     corr_mode
 ):
+    return compute_corrected_residual_impl(
+        residual,
+        gain_tuple,
+        a1,
+        a2,
+        time_maps,
+        freq_maps,
+        dir_maps,
+        row_map,
+        row_weights,
+        corr_mode
+    )
 
-    coerce_literal(compute_corrected_residual, ["corr_mode"])
+
+def compute_corrected_residual_impl(
+    residual,
+    gain_tuple,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(compute_corrected_residual_impl, jit_options=JIT_OPTIONS)
+def nb_compute_corrected_residual_impl(
+    residual,
+    gain_tuple,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode
+):
+
+    coerce_literal(nb_compute_corrected_residual_impl, ["corr_mode"])
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -257,7 +344,7 @@ def compute_corrected_residual(
     return impl
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def compute_corrected_weights(
     weights,
     gain_tuple,
@@ -270,8 +357,50 @@ def compute_corrected_weights(
     row_weights,
     corr_mode
 ):
+    return compute_corrected_weights_impl(
+        weights,
+        gain_tuple,
+        a1,
+        a2,
+        time_maps,
+        freq_maps,
+        dir_maps,
+        row_map,
+        row_weights,
+        corr_mode
+    )
 
-    coerce_literal(compute_corrected_weights, ["corr_mode"])
+
+def compute_corrected_weights_impl(
+    weights,
+    gain_tuple,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(compute_corrected_weights_impl, jit_options=JIT_OPTIONS)
+def nb_compute_corrected_weights_impl(
+    weights,
+    gain_tuple,
+    a1,
+    a2,
+    time_maps,
+    freq_maps,
+    dir_maps,
+    row_map,
+    row_weights,
+    corr_mode
+):
+
+    coerce_literal(nb_compute_corrected_weights_impl, ["corr_mode"])
 
     imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights)
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
@@ -405,7 +534,7 @@ def corrected_weights_buffer_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def compute_convergence(gain, last_gain, criteria):
 
     n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
@@ -438,7 +567,7 @@ def compute_convergence(gain, last_gain, criteria):
     return n_cnvgd/(n_tint*n_fint*n_ant*n_dir)
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def combine_gains(
     gains,
     time_bins,
@@ -447,8 +576,38 @@ def combine_gains(
     net_shape,
     corr_mode
 ):
+    return combine_gains_impl(
+        gains,
+        time_bins,
+        freq_maps,
+        dir_maps,
+        net_shape,
+        corr_mode
+    )
 
-    coerce_literal(combine_gains, ["corr_mode"])
+
+def combine_gains_impl(
+    gains,
+    time_bins,
+    freq_maps,
+    dir_maps,
+    net_shape,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(combine_gains_impl, jit_options=JIT_OPTIONS)
+def nb_combine_gains_impl(
+    gains,
+    time_bins,
+    freq_maps,
+    dir_maps,
+    net_shape,
+    corr_mode
+):
+
+    coerce_literal(nb_combine_gains_impl, ["corr_mode"])
 
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
 
@@ -493,159 +652,134 @@ def combine_gains(
     return impl
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def combine_flags(
     flags,
     time_bins,
     freq_maps,
     dir_maps,
-    net_shape,
-    corr_mode
+    net_shape
 ):
 
-    def impl(
-        flags,
-        time_bins,
-        freq_maps,
-        dir_maps,
-        net_shape,
-        corr_mode
-    ):
+    n_term = len(flags)
+    n_time = time_bins[0].size  # Same for all terms.
+    n_freq = freq_maps[0].size  # Same for all terms.
+    _, _, n_ant, n_dir, _ = net_shape
 
-        n_term = len(flags)
-        n_time = time_bins[0].size  # Same for all terms.
-        n_freq = freq_maps[0].size  # Same for all terms.
-        _, _, n_ant, n_dir, _ = net_shape
+    shape = (n_time, n_freq, n_ant, n_dir)
 
-        shape = (n_time, n_freq, n_ant, n_dir)
+    net_flags = np.zeros(shape, dtype=np.int8)
 
-        net_flags = np.zeros(shape, dtype=np.int8)
+    for t in range(n_time):
+        for f in range(n_freq):
+            for a in range(n_ant):
+                for d in range(n_dir):
+                    for gi in range(n_term):
 
-        for t in range(n_time):
-            for f in range(n_freq):
-                for a in range(n_ant):
-                    for d in range(n_dir):
-                        for gi in range(n_term):
+                        tm = time_bins[gi][t]
+                        fm = freq_maps[gi][f]
+                        dm = dir_maps[gi][d]
 
-                            tm = time_bins[gi][t]
-                            fm = freq_maps[gi][f]
-                            dm = dir_maps[gi][d]
+                        net_flags[t, f, a, d] |= flags[gi][tm, fm, a, dm]
 
-                            net_flags[t, f, a, d] |= flags[gi][tm, fm, a, dm]
-
-        return net_flags
-
-    return impl
+    return net_flags
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
-               nogil=True)
+@njit(**JIT_OPTIONS)
 def per_array_jhj_jhr(solver_imdry):
     """This manipulates the entries of jhj and jhr to be over all antennas."""
 
-    def impl(solver_imdry):
+    jhj = solver_imdry.jhj
+    jhr = solver_imdry.jhr
 
-        jhj = solver_imdry.jhj
-        jhr = solver_imdry.jhr
+    n_tint, n_fint, n_ant = jhj.shape[:3]
 
-        n_tint, n_fint, n_ant = jhj.shape[:3]
+    for t in range(n_tint):
+        for f in range(n_fint):
+            for a in range(1, n_ant):
+                jhj[t, f, 0] += jhj[t, f, a]
+                jhr[t, f, 0] += jhr[t, f, a]
 
-        for t in range(n_tint):
-            for f in range(n_fint):
-                for a in range(1, n_ant):
-                    jhj[t, f, 0] += jhj[t, f, a]
-                    jhr[t, f, 0] += jhr[t, f, a]
-
-                for a in range(1, n_ant):
-                    jhj[t, f, a] = jhj[t, f, 0]
-                    jhr[t, f, a] = jhr[t, f, 0]
-
-    return impl
+            for a in range(1, n_ant):
+                jhj[t, f, a] = jhj[t, f, 0]
+                jhr[t, f, a] = jhr[t, f, 0]
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def resample_solints(native_map, native_shape, n_thread):
 
-    def impl(native_map, native_shape, n_thread):
+    n_tint, n_fint = native_shape[:2]
+    n_int = n_tint * n_fint
 
-        n_tint, n_fint = native_shape[:2]
-        n_int = n_tint * n_fint
+    if n_int < n_thread:  # TODO: Maybe put some integer factor here?
 
-        if n_int < n_thread:  # TODO: Maybe put some integer factor here?
+        active = True
 
-            active = True
+        remap_factor = np.ceil(n_thread/n_int)
 
-            remap_factor = np.ceil(n_thread/n_int)
+        target_n_tint = int(n_tint * remap_factor)
 
-            target_n_tint = int(n_tint * remap_factor)
+        upsample_map = np.empty_like(native_map)
+        downsample_map = np.empty(target_n_tint, dtype=np.int32)
+        remap_id = 0
+        offset = 0
 
-            upsample_map = np.empty_like(native_map)
-            downsample_map = np.empty(target_n_tint, dtype=np.int32)
-            remap_id = 0
-            offset = 0
+        for i in range(n_tint):
 
-            for i in range(n_tint):
+            sel = np.where(native_map == i)
 
-                sel = np.where(native_map == i)
+            sel_n_row = sel[0].size
 
-                sel_n_row = sel[0].size
+            upsample_n_row = int(np.ceil(sel_n_row/remap_factor))
 
-                upsample_n_row = int(np.ceil(sel_n_row/remap_factor))
+            for start in range(offset, offset + sel_n_row, upsample_n_row):
 
-                for start in range(offset, offset + sel_n_row, upsample_n_row):
+                stop = min(start + upsample_n_row, offset + sel_n_row)
 
-                    stop = min(start + upsample_n_row, offset + sel_n_row)
+                upsample_map[start:stop] = remap_id
+                downsample_map[remap_id] = i
 
-                    upsample_map[start:stop] = remap_id
-                    downsample_map[remap_id] = i
+                remap_id += 1
 
-                    remap_id += 1
+            offset += sel_n_row
 
-                offset += sel_n_row
+        upsample_shape = (target_n_tint,) + native_shape[1:]
 
-            upsample_shape = (target_n_tint,) + native_shape[1:]
+    else:
 
-        else:
+        active = False
+        upsample_map = native_map
+        downsample_map = np.empty(0, dtype=np.int32)
+        upsample_shape = native_shape
 
-            active = False
-            upsample_map = native_map
-            downsample_map = np.empty(0, dtype=np.int32)
-            upsample_shape = native_shape
-
-        return resample_outputs(
-            active, upsample_shape, upsample_map, downsample_map
-        )
-
-    return impl
+    return resample_outputs(
+        active, upsample_shape, upsample_map, downsample_map
+    )
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def downsample_jhj_jhr(upsampled_imdry, downsample_t_map):
 
-    def impl(upsampled_imdry, downsample_t_map):
+    jhj = upsampled_imdry.jhj
+    jhr = upsampled_imdry.jhr
 
-        jhj = upsampled_imdry.jhj
-        jhr = upsampled_imdry.jhr
+    n_tint, n_fint, n_ant, n_dir = jhj.shape[:4]
 
-        n_tint, n_fint, n_ant, n_dir = jhj.shape[:4]
+    prev_out_ti = -1
 
-        prev_out_ti = -1
+    for ti in range(n_tint):
 
-        for ti in range(n_tint):
+        out_ti = downsample_t_map[ti]
 
-            out_ti = downsample_t_map[ti]
+        for fi in range(n_fint):
+            for a in range(n_ant):
+                for d in range(n_dir):
 
-            for fi in range(n_fint):
-                for a in range(n_ant):
-                    for d in range(n_dir):
+                    if prev_out_ti != out_ti:
+                        jhj[out_ti, fi, a, d] = jhj[ti, fi, a, d]
+                        jhr[out_ti, fi, a, d] = jhr[ti, fi, a, d]
+                    else:
+                        jhj[out_ti, fi, a, d] += jhj[ti, fi, a, d]
+                        jhr[out_ti, fi, a, d] += jhr[ti, fi, a, d]
 
-                        if prev_out_ti != out_ti:
-                            jhj[out_ti, fi, a, d] = jhj[ti, fi, a, d]
-                            jhr[out_ti, fi, a, d] = jhr[ti, fi, a, d]
-                        else:
-                            jhj[out_ti, fi, a, d] += jhj[ti, fi, a, d]
-                            jhr[out_ti, fi, a, d] += jhr[ti, fi, a, d]
-
-            prev_out_ti = out_ti
-
-    return impl
+        prev_out_ti = out_ti

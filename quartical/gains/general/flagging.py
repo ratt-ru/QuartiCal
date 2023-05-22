@@ -268,7 +268,7 @@ def update_param_flags(
 
 
 @overload(update_param_flags, jit_options=JIT_OPTIONS)
-def update_param_flags(
+def update_param_flags_impl(
     mapping_inputs,
     chain_inputs,
     meta_inputs,
