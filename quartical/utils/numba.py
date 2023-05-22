@@ -1,4 +1,3 @@
-from numba import njit
 from numba.core.extending import SentryLiteralArgs
 import inspect
 
@@ -12,9 +11,6 @@ PARALLEL_JIT_OPTIONS = {
     **JIT_OPTIONS,
     "parallel": True
 }
-
-qcnjit = njit(**JIT_OPTIONS)
-qcnjit_parallel = njit(**PARALLEL_JIT_OPTIONS)
 
 
 def coerce_literal(func, literals):

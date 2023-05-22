@@ -1,6 +1,7 @@
 import numpy as np
-from numba import jit, types
+from numba import njit, types
 from numba.extending import overload
+from quartical.utils.numba import JIT_OPTIONS
 
 
 model_schema = ("rowlike", "chan", "ant", "dir", "corr")
@@ -8,7 +9,9 @@ data_schema = ("rowlike", "chan", "ant", "corr")
 gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
 
 
-# @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+# NOTE: None of this code is in use any more and can likely be deleted.
+
+# @njit(**JIT_OPTIONS)
 # def column_to_tifiac(in_col, t_map, f_map, ant1_col, ant2_col, n_ti, n_fi,
 #                      n_a):
 #     """Go from a column-like input to a (ti, fi, a, c) output."""
@@ -65,7 +68,7 @@ gain_schema = ("rowlike", "chan", "ant", "dir", "corr")
 #     out_arr[t_m, f_m, a2_m, :] += in_col[row, chan, :].conjugate()
 
 
-@jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def rfc_to_tfac(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
     """Accumulate a (r, f, c) column into (t, f, a, c) array."""
 
@@ -130,7 +133,7 @@ def get_output_dtype_impl(in_col):
         return lambda in_col: in_col.dtype
 
 
-# @jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+# @njit(**JIT_OPTIONS)
 # def rfdc_to_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
 #     """Accumulate a (r, f, d, c) column into (t, f, a, d, c) array."""
 
@@ -159,7 +162,7 @@ def get_output_dtype_impl(in_col):
 #     return out_arr
 
 
-@jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def rfdc_to_abs_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
     """Accumulate (r, f, d, c) column into abs**2 (t, f, a, d, c) array."""
 
@@ -190,7 +193,7 @@ def rfdc_to_abs_tfadc(in_col, ant1_col, ant2_col, utime_ind, n_ut, n_a):
     return out_arr
 
 
-@jit(nopython=True, fastmath=False, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def tfx_to_tifix(in_arr, t_map, f_map):
     """Sum a (t, f, ...) array into a (ti, fi, ...) array."""
 

@@ -3,7 +3,8 @@ from loguru import logger  # noqa
 import dask.array as da
 import numpy as np
 from scipy.interpolate import interp2d
-from numba import jit
+from numba import njit
+from quartical.utils.numba import JIT_OPTIONS
 
 
 def linear2d_interpolate_gains(source_xds, target_xds):
@@ -124,7 +125,7 @@ def spline2d_interpolate_gains(source_xds, target_xds):
     return output_xds
 
 
-@jit(nopython=True, nogil=True, cache=True)
+@njit(**JIT_OPTIONS)
 def map_ax_itp_to_ax(ax, ax_itp):
     """Given ax_itp, compute indices of closest left-hand points in ax."""
 
@@ -148,7 +149,7 @@ def map_ax_itp_to_ax(ax, ax_itp):
     return out
 
 
-@jit(nopython=True, nogil=True, cache=True)
+@njit(**JIT_OPTIONS)
 def bilinear_interp(x, y, f, x_itp, y_itp):
 
     f_itp = np.zeros((x_itp.size, y_itp.size), dtype=f.dtype)
@@ -187,7 +188,7 @@ def bilinear_interp(x, y, f, x_itp, y_itp):
     return f_itp
 
 
-@jit(nopython=True, nogil=True, cache=True)
+@njit(**{**JIT_OPTIONS, "fastmath": False})  # No fastmath due to nans.
 def _interpolate_missing(x1, x2, y):
     """Interpolate/extend data y along x1 and x2 to fill in missing values."""
 
@@ -228,7 +229,7 @@ def _interpolate_missing(x1, x2, y):
     return yy
 
 
-@jit(nopython=True, nogil=True, cache=True)
+@njit(**JIT_OPTIONS)
 def linterp(x_itp, x_data, y_data):
     """Basic linear interpolation. Extrapolates with closest good value.
 
@@ -274,7 +275,7 @@ def linterp(x_itp, x_data, y_data):
     return y_itp
 
 
-@jit(nopython=True, nogil=True, cache=True)
+@njit(**{**JIT_OPTIONS, "fastmath": False})  # No fastmath due to nans.
 def _interpolate_missing_phase(x1, x2, y):
     """Interpolate/extend data y along x1 and x2 to fill in missing values."""
 
@@ -315,7 +316,7 @@ def _interpolate_missing_phase(x1, x2, y):
     return yy
 
 
-@jit(nopython=True, nogil=True, cache=True)
+@njit(**JIT_OPTIONS)
 def phase_interp(x_itp, x_data, y_data):
     """Basic phase interpolation. Extrapolates with closest good value.
 

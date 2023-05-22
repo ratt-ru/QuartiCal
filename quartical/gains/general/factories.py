@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-from numba import jit, types
 import numpy as np
+from numba import njit, types
+from quartical.utils.numba import JIT_OPTIONS
+
 
 # Handy alias for functions that need to be jitted in this way.
-qcjit = jit(nogil=True,
-            nopython=True,
-            fastmath=True,
-            cache=True,
-            inline="always")
+qcjit = njit(**JIT_OPTIONS, inline="always")
 
 
 def imul_rweight_factory(mode, weight):
