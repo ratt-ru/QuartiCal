@@ -907,9 +907,9 @@ def compute_jhwj_jhwr_elem(n_corr, lop, rop, w, normf, nu, gain, res, jhr, jhj):
         upd_11 = (drv_23*r_1).real
 
         jhr[0] += upd_00
-        jhr[1] += nu*upd_00
+        jhr[1] += upd_00/nu
         jhr[2] += upd_11
-        jhr[3] += nu*upd_11
+        jhr[3] += upd_11/nu
 
         # Accumulate an element of jhwj.
         # jh_00, jh_11 = unpack(rop)
@@ -926,15 +926,15 @@ def compute_jhwj_jhwr_elem(n_corr, lop, rop, w, normf, nu, gain, res, jhr, jhj):
 
         tmp = (jh_00*n_00*w_00*j_00).real
         jhj[0, 0] += tmp
-        jhj[0, 1] += tmp*nu
-        jhj[1, 0] += tmp*nu
-        jhj[1, 1] += tmp*nusq
+        jhj[0, 1] += tmp/nu
+        jhj[1, 0] += tmp/nu
+        jhj[1, 1] += tmp/nusq
 
         tmp = (jh_11*n_11*w_11*j_11).real
         jhj[2, 2] += tmp
-        jhj[2, 3] += tmp*nu
-        jhj[3, 2] += tmp*nu
-        jhj[3, 3] += tmp*nusq
+        jhj[2, 3] += tmp/nu
+        jhj[3, 2] += tmp/nu
+        jhj[3, 3] += tmp/nusq
 
     elif n_corr == 1:
         # Compute normalization factor.
