@@ -42,11 +42,21 @@ tec_args = namedtuple(
 )
 
 
+# def get_identity_params(corr_mode):
+
+#     if corr_mode.literal_value in (2, 4):
+#         return np.zeros((4,), dtype=np.float64)
+#     elif corr_mode.literal_value == 1:
+#         return np.zeros((2,), dtype=np.float64)
+#     else:
+#         raise ValueError("Unsupported number of correlations.")
+
+
 def get_identity_params(corr_mode):
 
-    if corr_mode.literal_value in (2, 4):
+    if corr_mode in (2, 4):
         return np.zeros((4,), dtype=np.float64)
-    elif corr_mode.literal_value == 1:
+    elif corr_mode == 1:
         return np.zeros((2,), dtype=np.float64)
     else:
         raise ValueError("Unsupported number of correlations.")
@@ -62,6 +72,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
     # NOTE: This just reuses delay solver functionality.
     # coerce_literal(tec_solver, ["corr_mode"])
     # identity_params = get_identity_params(corr_mode)
+    identity_params = get_identity_params(corr_mode)
 
     # import ipdb; ipdb.set_trace()
     gains = base_args.gains
@@ -110,8 +121,9 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
     native_imdry = native_intermediaries(jhj, jhr, update)
 
     scaled_icf = term_args.chan_freqs.copy()  # Don't mutate.
+    scaled_icf = 2 * np.pi * scaled_icf
     min_freq = np.min(scaled_icf)
-    scaled_icf = 2 * np.pi * min_freq/scaled_icf  # Scale freqs to avoid precision.
+    scaled_icf = min_freq/scaled_icf  # Scale freqs to avoid precision.
     active_params[..., 1::2] /= min_freq  # Scale consistently with freq.
 
     for loop_idx in range(max_iter):
@@ -259,7 +271,7 @@ def compute_jhj_jhr(
     #     gt_active = np.arange(n_gains - 1, active_term, -1)
     #     lt_active = np.arange(active_term)
 
-    import ipdb; ipdb.set_trace()
+    # import ipdb; ipdb.set_trace()
     # Parallel over all solution intervals.
     #prange parallel range by numba
     # for i in prange(n_int):
@@ -368,6 +380,7 @@ def compute_jhj_jhr(
 
 
                     m = model[row, f, d]
+
                     # iunpack(rop_qp, m)
                     # iunpackct(rop_pq, rop_qp)
                     iunpack(n_corr, rop_qp, m)
@@ -997,6 +1010,7 @@ def inversion_buffer(n_param, dtype, generalised=False):
         return
 
 def invert(n_corr, A, b, x, buffers, generalised=False):
+
     if generalised:
         # mat_mul_vec = mat_mul_vec_factory(corr_mode)
         # vecct_mul_vec = vecct_mul_vec_factory(corr_mode)
@@ -1010,7 +1024,7 @@ def invert(n_corr, A, b, x, buffers, generalised=False):
         r[:] = b
         r -= Ax
         p[:] = r
-        r_k = vecct_mul_vec(n_corr, r, r)
+        r_k = vecct_mul_vec(r, r)
 
         # If the resdiual is exactly zero, x is exact or missing.
         if r_k == 0:
@@ -1018,11 +1032,11 @@ def invert(n_corr, A, b, x, buffers, generalised=False):
 
         for _ in range(x.size):
             mat_mul_vec(n_corr, A, p, Ap)
-            alpha_denom = vecct_mul_vec(n_corr, p, Ap)
+            alpha_denom = vecct_mul_vec(p, Ap)
             alpha = r_k / alpha_denom
             vec_iadd_svec(n_corr, x, alpha, p)
             vec_isub_svec(n_corr, r, alpha, Ap)
-            r_kplus1 = vecct_mul_vec(n_corr, r, r)
+            r_kplus1 = vecct_mul_vec(r, r)
             if r_kplus1.real < 1e-30:
                 break
             p *= (r_kplus1 / r_k)
@@ -1030,16 +1044,16 @@ def invert(n_corr, A, b, x, buffers, generalised=False):
             r_k = r_kplus1
 
     else:
+        # import ipdb; ipdb.set_trace()
 
         # v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
         # compute_det = factories.compute_det_factory(corr_mode)
         # iinverse = factories.iinverse_factory(corr_mode)
-        import ipdb; ipdb.set_trace()
-        det = compute_det(n_corr, A)
+        # det = compute_det(n_corr, A)
         ##try using numpy.linalg.det()
-        # det = np.linalg.det(A)
+        det = np.linalg.det(A)
 
-        if det.real.any() < 1e-6:
+        if det.real < 1e-6:
             x[:] = 0
         else:
             iinverse(n_corr, A, det, x)
@@ -1094,6 +1108,7 @@ def compute_det(n_corr, v1):
 
 
 def iinverse(n_corr, v1, det, o1):
+    import ipdb; ipdb.set_trace()
 
     if n_corr == 4:
         v1_00, v1_01, v1_10, v1_11 = unpack(n_corr, v1)
@@ -1130,6 +1145,16 @@ def param_to_gain(n_corr, params, chanfreq, gain):
         raise ValueError("Unsupported number of correlations.")
 
 
+def vecct_mul_vec(v1, v2):
+
+    n_ele = v1.size
+
+    out = 0
+
+    for i in range(n_ele):
+        out += v1[i].conjugate() * v2[i]
+
+    return out
 
 #-------------------------------------------------------
 #not a factory!
@@ -1215,7 +1240,7 @@ def compute_update(native_imdry, corr_mode):
                 invert(corr_mode, jhj[t, f, a, d],
                         jhr[t, f, a, d],
                         update[t, f, a, d],
-                        buffers)
+                        buffers, generalised=True)
 
 
 def finalize_update(base_args, term_args, meta_args, native_imdry, scaled_cf,
@@ -1224,7 +1249,7 @@ def finalize_update(base_args, term_args, meta_args, native_imdry, scaled_cf,
     # set_identity = factories.set_identity_factory(corr_mode)
     # param_to_gain = param_to_gain_factory(corr_mode)
 
-    if n_corr in (1, 2, 4):
+    if corr_mode in (1, 2, 4):
         # def impl(base_args, term_args, meta_args, native_imdry, scaled_cf,
         #          loop_idx, corr_mode):
 
@@ -1257,7 +1282,7 @@ def finalize_update(base_args, term_args, meta_args, native_imdry, scaled_cf,
                         p = params[t, f_m, a, d_m]
 
                         if fl == 1:
-                            set_identity(g)
+                            set_identity(corr_mode, g)
                         else:
                             param_to_gain(corr_mode, p, cf, g)
     else:
