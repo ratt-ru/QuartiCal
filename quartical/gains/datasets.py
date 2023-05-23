@@ -112,7 +112,6 @@ def combine_gains_wrapper(
 
 def combine_flags_wrapper(
     net_shape,
-    corr_mode,
     *args
 ):
     """Wrapper to stop dask from getting confused. See issue #99."""
@@ -127,8 +126,7 @@ def combine_flags_wrapper(
         time_bins,
         freq_maps,
         dir_maps,
-        net_shape,
-        corr_mode,
+        net_shape
     )
 
 
@@ -249,7 +247,6 @@ def populate_net_xds_list(
             net_flags = da.blockwise(
                 combine_flags_wrapper, net_xds.GAIN_AXES[:-1],
                 net_shape, None,
-                corr_mode, None,
                 *req_args,
                 dtype=np.int8,
                 align_arrays=False,

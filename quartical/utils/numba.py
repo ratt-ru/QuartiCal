@@ -1,6 +1,17 @@
 from numba.core.extending import SentryLiteralArgs
 import inspect
 
+JIT_OPTIONS = {
+    "nogil": True,
+    "fastmath": True,
+    "cache": True
+}
+
+PARALLEL_JIT_OPTIONS = {
+    **JIT_OPTIONS,
+    "parallel": True
+}
+
 
 def coerce_literal(func, literals):
     func_locals = inspect.stack()[1].frame.f_locals  # One frame up.

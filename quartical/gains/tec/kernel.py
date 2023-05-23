@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import generated_jit, jit
-from quartical.utils.numba import coerce_literal
+from numba import njit
+from numba.extending import overload
+from quartical.utils.numba import coerce_literal, JIT_OPTIONS
 from quartical.gains.general.generics import (native_intermediaries,
                                               upsampled_itermediaries,
                                               per_array_jhj_jhr,
@@ -28,14 +29,35 @@ def get_identity_params(corr_mode):
         raise ValueError("Unsupported number of correlations.")
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
+@njit(**JIT_OPTIONS)
 def tec_solver(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
+    return tec_solver_impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        corr_mode
+    )
+
+
+def tec_solver_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(tec_solver_impl, jit_options=JIT_OPTIONS)
+def nb_tec_solver_impl(
     ms_inputs,
     mapping_inputs,
     chain_inputs,
@@ -45,7 +67,7 @@ def tec_solver(
 
     # NOTE: This just reuses delay solver functionality.
 
-    coerce_literal(tec_solver, ["corr_mode"])
+    coerce_literal(nb_tec_solver_impl, ["corr_mode"])
 
     identity_params = get_identity_params(corr_mode)
 
@@ -193,13 +215,7 @@ def tec_solver(
     return impl
 
 
-@jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
+@njit(**JIT_OPTIONS)
 def tec_params_to_gains(
     params,
     gains,

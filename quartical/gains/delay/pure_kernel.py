@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import generated_jit
-from quartical.utils.numba import coerce_literal
+from numba import njit
+from numba.extending import overload
+from quartical.utils.numba import coerce_literal, JIT_OPTIONS
 from quartical.gains.general.generics import (
     native_intermediaries,
     upsampled_itermediaries,
@@ -36,13 +37,7 @@ def get_identity_params(corr_mode):
         raise ValueError("Unsupported number of correlations.")
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
+@njit(**JIT_OPTIONS)
 def pure_delay_solver(
     ms_inputs,
     mapping_inputs,
@@ -50,8 +45,35 @@ def pure_delay_solver(
     meta_inputs,
     corr_mode
 ):
+    return pure_delay_solver_impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        corr_mode
+    )
 
-    coerce_literal(pure_delay_solver, ["corr_mode"])
+
+def pure_delay_solver_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(pure_delay_solver_impl, jit_options=JIT_OPTIONS)
+def nb_pure_delay_solver_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
+
+    coerce_literal(nb_pure_delay_solver_impl, ["corr_mode"])
 
     identity_params = get_identity_params(corr_mode)
 

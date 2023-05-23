@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, generated_jit
-from quartical.utils.numba import coerce_literal
+from numba import prange, njit
+from numba.extending import overload
+from quartical.utils.numba import (coerce_literal,
+                                   JIT_OPTIONS,
+                                   PARALLEL_JIT_OPTIONS)
 from quartical.gains.general.generics import (native_intermediaries,
                                               upsampled_itermediaries,
                                               per_array_jhj_jhr,
@@ -18,13 +21,7 @@ from quartical.gains.general.inversion import (invert_factory,
                                                inversion_buffer_factory)
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
+@njit(**JIT_OPTIONS)
 def diag_complex_solver(
     ms_inputs,
     mapping_inputs,
@@ -32,8 +29,35 @@ def diag_complex_solver(
     meta_inputs,
     corr_mode
 ):
+    return diag_complex_solver_impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        corr_mode
+    )
 
-    coerce_literal(diag_complex_solver, ["corr_mode"])
+
+def diag_complex_solver_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(diag_complex_solver_impl, jit_options=JIT_OPTIONS)
+def nb_diag_complex_solver_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    corr_mode
+):
+
+    coerce_literal(nb_diag_complex_solver_impl, ["corr_mode"])
 
     def impl(
         ms_inputs,
@@ -156,14 +180,20 @@ def diag_complex_solver(
     return impl
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=True,
-    cache=True,
-    nogil=True
-)
 def compute_jhj_jhr(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    upsampled_imdry,
+    extents,
+    corr_mode
+):
+    return NotImplementedError
+
+
+@overload(compute_jhj_jhr, jit_options=PARALLEL_JIT_OPTIONS)
+def nb_compute_jhj_jhr(
     ms_inputs,
     mapping_inputs,
     chain_inputs,
@@ -388,12 +418,12 @@ def compute_jhj_jhr(
     return impl
 
 
-@generated_jit(nopython=True,
-               fastmath=True,
-               parallel=True,
-               cache=True,
-               nogil=True)
 def compute_update(native_imdry, corr_mode):
+    raise NotImplementedError
+
+
+@overload(compute_update, jit_options=PARALLEL_JIT_OPTIONS)
+def nb_compute_update(native_imdry, corr_mode):
 
     # We want to dispatch based on this field so we need its type.
     jhj = native_imdry[native_imdry.fields.index('jhj')]
@@ -432,14 +462,18 @@ def compute_update(native_imdry, corr_mode):
     return impl
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
 def finalize_update(
+    chain_inputs,
+    meta_inputs,
+    native_imdry,
+    loop_idx,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(finalize_update, jit_options=JIT_OPTIONS)
+def nb_finalize_update(
     chain_inputs,
     meta_inputs,
     native_imdry,

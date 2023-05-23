@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import jit, generated_jit
+from numba import njit
+from numba.extending import overload
+from quartical.utils.numba import coerce_literal, JIT_OPTIONS
 from collections import namedtuple
 from quartical.gains.general.convenience import get_row
 import quartical.gains.general.factories as factories
-from quartical.utils.numba import coerce_literal
 
 
 flag_intermediaries = namedtuple(
@@ -18,7 +19,7 @@ flag_intermediaries = namedtuple(
 )
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def init_flags(
     term_shape,
     time_map,
@@ -54,14 +55,19 @@ def init_flags(
     return flags
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
 def update_gain_flags(
+    chain_inputs,
+    meta_inputs,
+    flag_imdry,
+    loop_idx,
+    corr_mode,
+    numbness=1e-6
+):
+    raise NotImplementedError
+
+
+@overload(update_gain_flags, jit_options=JIT_OPTIONS)
+def nb_update_gain_flags(
     chain_inputs,
     meta_inputs,
     flag_imdry,
@@ -89,7 +95,7 @@ def update_gain_flags(
         iteration: An int containing the iteration number.
     """
 
-    coerce_literal(update_gain_flags, ['corr_mode'])
+    coerce_literal(nb_update_gain_flags, ['corr_mode'])
 
     set_identity = factories.set_identity_factory(corr_mode)
 
@@ -203,14 +209,12 @@ def update_gain_flags(
     return impl
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
 def finalize_gain_flags(chain_inputs, meta_inputs, flag_imdry, corr_mode):
+    return NotImplementedError
+
+
+@overload(finalize_gain_flags, jit_options=JIT_OPTIONS)
+def nb_finalize_gain_flags(chain_inputs, meta_inputs, flag_imdry, corr_mode):
     """Removes soft flags and flags points which failed to converge.
 
     Given the gains, assosciated gain flags and the trend of abosolute
@@ -225,6 +229,8 @@ def finalize_gain_flags(chain_inputs, meta_inputs, flag_imdry, corr_mode):
             the absolute difference between gains at each iteration. Positive
             values correspond to points which are nowhere near convergence.
     """
+
+    coerce_literal(nb_finalize_gain_flags, ['corr_mode'])
 
     set_identity = factories.set_identity_factory(corr_mode)
 
@@ -252,14 +258,17 @@ def finalize_gain_flags(chain_inputs, meta_inputs, flag_imdry, corr_mode):
     return impl
 
 
-@generated_jit(
-    nopython=True,
-    fastmath=True,
-    parallel=False,
-    cache=True,
-    nogil=True
-)
 def update_param_flags(
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    identity_params
+):
+    return NotImplementedError
+
+
+@overload(update_param_flags, jit_options=JIT_OPTIONS)
+def update_param_flags_impl(
     mapping_inputs,
     chain_inputs,
     meta_inputs,
@@ -325,7 +334,7 @@ def update_param_flags(
     return impl
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def apply_gain_flags(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
     """Apply gain_flags to flag_col."""
 
