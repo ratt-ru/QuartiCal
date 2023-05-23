@@ -818,9 +818,9 @@ def compute_jhwj_jhwr_elem(n_corr, lop, rop, w, normf, nu, gain, res, jhr, jhj):
         upd_11 = (drv_23*r_3).real
 
         jhr[0] += upd_00
-        jhr[1] += nu*upd_00
+        jhr[1] += upd_00/nu
         jhr[2] += upd_11
-        jhr[3] += nu*upd_11
+        jhr[3] += upd_11/nu
 
         # w_0, _, _, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
         # n_0, _, _, n_3 = unpack(normf)
@@ -859,26 +859,26 @@ def compute_jhwj_jhwr_elem(n_corr, lop, rop, w, normf, nu, gain, res, jhr, jhj):
 
         tmp_0 = jhwj_00.real
         jhj[0, 0] += tmp_0
-        jhj[0, 1] += tmp_0*nu
+        jhj[0, 1] += tmp_0/nu
         tmp_1 = (jhwj_03*gc_0*g_3).real
         jhj[0, 2] += tmp_1
-        jhj[0, 3] += tmp_1*nu
+        jhj[0, 3] += tmp_1/nu
 
         jhj[1, 0] = jhj[0, 1]
-        jhj[1, 1] += tmp_0*nusq
+        jhj[1, 1] += tmp_0/nusq
         jhj[1, 2] = jhj[0, 3]
-        jhj[1, 3] += tmp_1*nusq
+        jhj[1, 3] += tmp_1/nusq
 
         jhj[2, 0] = jhj[0, 2]
         jhj[2, 1] = jhj[1, 2]
         tmp_2 = jhwj_33.real
         jhj[2, 2] += tmp_2
-        jhj[2, 3] += tmp_2*nu
+        jhj[2, 3] += tmp_2/nu
 
         jhj[3, 0] = jhj[0, 3]
         jhj[3, 1] = jhj[1, 3]
         jhj[3, 2] = jhj[2, 3]
-        jhj[3, 3] += tmp_2*nusq
+        jhj[3, 3] += tmp_2/nusq
 
     elif n_corr == 2:
         # Compute normalization factor.
