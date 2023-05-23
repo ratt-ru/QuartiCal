@@ -2,7 +2,7 @@
 from loguru import logger  # noqa
 import dask.array as da
 import numpy as np
-from scipy.interpolate import interp2d
+from scipy.interpolate import RegularGridInterpolator as RGI
 from numba import njit
 from quartical.utils.numba import JIT_OPTIONS
 
@@ -66,15 +66,22 @@ def spline2d(x, y, z, xx, yy):
 
     zz = np.zeros((n_ti, n_fi, n_a, n_d, n_c), dtype=z.dtype)
 
-    # NOTE: x are the column coordinates and y and row coordinates.
+    xxg, yyg = np.meshgrid(xx, yy, indexing="ij")
+
     for a in range(n_a):
         for d in range(n_d):
             for c in range(n_c):
                 z_sel = z[:, :, a, d, c]
                 if not np.any(z_sel):
                     continue
-                interp_func = interp2d(y, x, z_sel, kind="cubic")
-                zz[:, :, a, d, c] = interp_func(yy, xx).reshape(n_ti, n_fi)
+                interp_func = RGI(
+                    (x, y),
+                    z_sel,
+                    method="cubic",
+                    bounds_error=False,
+                    fill_value=None
+                )
+                zz[:, :, a, d, c] = interp_func((xxg, yyg))
 
     return zz
 
