@@ -165,6 +165,8 @@ def nb_diag_complex_solver_impl(
             corr_mode
         )
 
+        reference_gains(chain_inputs, meta_inputs, corr_mode)
+
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
@@ -612,3 +614,57 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
         raise ValueError("Unsupported number of correlations.")
 
     return factories.qcjit(impl)
+
+
+@njit(**JIT_OPTIONS)
+def reference_gains(chain_inputs, meta_inputs, mode):
+    return reference_gains_impl(chain_inputs, meta_inputs, mode)
+
+
+def reference_gains_impl(chain_inputs, meta_inputs, mode):
+    raise NotImplementedError
+
+
+@overload(reference_gains_impl, jit_options=JIT_OPTIONS)
+def nb_reference_gains_impl(chain_inputs, meta_inputs, mode):
+
+    coerce_literal(nb_reference_gains_impl, ["mode"])
+    v1_imul_v2 = factories.v1_imul_v2_factory(mode)
+
+    def impl(chain_inputs, meta_inputs, mode):
+
+        active_term = meta_inputs.active_term
+        ref_ant = meta_inputs.reference_antenna
+
+        gains = chain_inputs.gains[active_term]
+        flags = chain_inputs.gain_flags[active_term]
+
+        n_ti, n_fi, n_ant, n_dir, n_corr = gains.shape
+
+        ref_gains = gains[:, :, ref_ant: ref_ant + 1, :, :].copy()
+
+        for t in range(n_ti):
+            for f in range(n_fi):
+                for d in range(n_dir):
+
+                    if flags[t, f, ref_ant, d]:  # TODO: Flagged refant?
+                        continue
+                    elif n_corr in (1, 2):
+                        rg = ref_gains[t, f, 0, d]
+                        rg[...] = rg.conjugate()/np.abs(rg)
+                    else:
+                        rg = ref_gains[t, f, 0, d]
+                        rg[1:3] = 0
+                        rg[::3] = rg[::3].conjugate()/np.abs(rg[::3])
+
+        for t in range(n_ti):
+            for f in range(n_fi):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+
+                        g = gains[t, f, a, d]
+                        rg = ref_gains[t, f, 0, d]
+
+                        v1_imul_v2(g, rg, g)
+
+    return impl

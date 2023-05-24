@@ -190,6 +190,8 @@ def nb_phase_solver_impl(
             corr_mode
         )
 
+        # reference_params(chain_inputs, meta_inputs)
+
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
@@ -738,3 +740,51 @@ def phase_params_to_gains(
 
                     if n_corr > 1:
                         g[-1] = np.exp(1j*p[-1])
+
+
+@njit(**JIT_OPTIONS)
+def reference_params(chain_inputs, meta_inputs):
+
+    active_term = meta_inputs.active_term
+    ref_ant = meta_inputs.reference_antenna
+
+    gains = chain_inputs.gains[active_term]
+    params = chain_inputs.params[active_term]
+    param_flags = chain_inputs.param_flags[active_term]
+    gain_flags = chain_inputs.gain_flags[active_term]
+
+    n_ti, n_fi, n_ant, n_dir, n_corr = params.shape
+
+    ref_params = params[:, :, ref_ant: ref_ant + 1, :, :].copy()
+
+    for t in range(n_ti):
+        for f in range(n_fi):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    p = params[t, f, a, d]
+                    rp = ref_params[t, f, 0, d]
+
+                    if param_flags[t, f, a, d] == 1:
+                        continue
+                    else:
+                        p -= rp
+
+    n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
+
+    for t in range(n_time):
+        for f in range(n_freq):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    g = gains[t, f, a, d]
+                    p = params[t, f, a, d]
+                    gf = gain_flags[t, f, a, d]
+
+                    if gf == 1:
+                        continue
+
+                    g[0] = np.exp(1j*p[0])
+
+                    if n_corr > 1:
+                        g[-1] = np.exp(1j*p[1])
