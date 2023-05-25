@@ -106,11 +106,11 @@ jobs:
           repository_url: https://test.pypi.org/legacy/
         continue-on-error: true
 
-      # - name: Publish distribution to PyPI
-      #   uses: pypa/gh-action-pypi-publish@v1.8.6
-      #   with:
-      #     user: __token__
-      #     password: ${{ secrets.PYPI }}
+      - name: Publish distribution to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.8.6
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI }}
 
   release:
     needs: [deploy]
