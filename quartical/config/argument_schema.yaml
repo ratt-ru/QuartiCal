@@ -377,10 +377,10 @@ solver:
     dtype: int
     default: 0
     info:
-      A reference antenna to use for terms which require one. This is shared
-      by all terms and currently only used for delay estimates - QuartiCal
-      does not guarantee zero phase on an antenna. Specify as the integer
-      index of the antenna - antenna names are not currently supported.
+      A reference antenna to use for terms which require one. QuartiCal will
+      also guarantee zero phase on the specified antenna for diagonal terms.
+      Specify as the integer index of the antenna - antenna names are not
+      currently supported.
 
 dask:
   threads:

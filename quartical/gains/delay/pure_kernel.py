@@ -23,7 +23,8 @@ from quartical.gains.general.convenience import (
 from quartical.gains.delay.kernel import (
     compute_jhj_jhr,
     compute_update,
-    finalize_update
+    finalize_update,
+    reference_params
 )
 
 
@@ -206,6 +207,13 @@ def nb_pure_delay_solver_impl(
             meta_inputs,
             flag_imdry,
             corr_mode
+        )
+
+        reference_params(
+            mapping_inputs,
+            chain_inputs,
+            meta_inputs,
+            scaled_cf
         )
 
         # Call this one last time to ensure points flagged by finialize are
