@@ -6,6 +6,7 @@ from ruamel.yaml import round_trip_dump
 from omegaconf import OmegaConf as oc
 from quartical.config.external import finalize_structure
 from quartical.config.internal import additional_validation
+from omegaconf.errors import ConfigKeyError, ValidationError
 
 
 def create_user_config():
@@ -118,7 +119,23 @@ def parse_inputs(bypass_sysargv=None):
     # Merge all configuration - priority is file1 < file2 < ... < cli.
     FinalConfig = finalize_structure(additional_config)
     config = oc.structured(FinalConfig)
-    config = oc.merge(config, *additional_config)
+
+    try:
+        config = oc.merge(config, *additional_config)
+    except ConfigKeyError as error:
+        raise ValueError(
+            f"User has specified an unrecognised parameter: {error.full_key}. "
+            f"This often indicates a simple typo or the use of a deprecated "
+            f"parameter. Please use 'goquartical help' to confirm that the "
+            f"parameter exists."
+        )
+    except ValidationError as error:
+        raise ValueError(
+            f"The value specified for {error.full_key} was not understood. "
+            f"This often means that the type of the argument was incorrect. "
+            f"Please use 'goquartical help' to check for the expected type "
+            f"and pay particular attention to parameters which expect lists."
+        )
 
     # Log the final state of the configuration object so that users are aware
     # of what the ultimate configuration was.
