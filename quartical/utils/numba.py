@@ -14,6 +14,6 @@ PARALLEL_JIT_OPTIONS = {
 
 
 def coerce_literal(func, literals):
-    func_locals = inspect.stack()[1].frame.f_locals  # One frame up.
+    func_locals = inspect.currentframe().f_back.f_locals  # One frame up.
     arg_types = [func_locals[k] for k in inspect.signature(func).parameters]
     SentryLiteralArgs(literals).for_function(func).bind(*arg_types)
