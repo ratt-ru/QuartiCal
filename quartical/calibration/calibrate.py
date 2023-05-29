@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import numpy as np
 import dask.array as da
 from quartical.calibration.mapping import make_mapping_datasets
 from quartical.gains.general.generics import (compute_residual,
@@ -297,7 +298,7 @@ def make_visibility_output(
             *((row_weights, ("rowlike",)) if is_bda else (None, None)),
             corr_mode, None,
             *term_args,
-            dtype=data_col.dtype,
+            meta=np.empty((0, 0, 0), dtype=data_col.dtype),
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
@@ -312,7 +313,7 @@ def make_visibility_output(
             *((row_weights, ("rowlike",)) if is_bda else (None, None)),
             corr_mode, None,
             *term_args,
-            dtype=residual.dtype,
+            meta=np.empty((0, 0, 0), dtype=residual.dtype),
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
@@ -329,7 +330,7 @@ def make_visibility_output(
             *((row_weights, ("rowlike",)) if is_bda else (None, None)),
             corr_mode, None,
             *term_args,
-            dtype=residual.dtype,
+            meta=np.empty((0, 0, 0), dtype=data_col.dtype),
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
@@ -346,7 +347,7 @@ def make_visibility_output(
             *((row_weights, ("rowlike",)) if is_bda else (None, None)),
             corr_mode, None,
             *term_args,
-            dtype=weight_col.dtype,
+            meta=np.empty((0, 0, 0), dtype=weight_col.dtype),
             align_arrays=False,
             concatenate=True,
             adjust_chunks={"rowlike": data_col.chunks[0],
