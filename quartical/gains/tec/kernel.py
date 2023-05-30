@@ -190,7 +190,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
     active_params[..., 1::2] *= min_freq  # Undo scaling for SI units.
     
-    np.save("/home/russeeawon/testing/testing_tecest_quartical/jhj.npy", native_imdry.jhj)
+    np.save("/home/russeeawon/testing/testing_tecest_myms/jhj.npy", native_imdry.jhj)
     return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
 
@@ -1049,9 +1049,9 @@ def invert(n_corr, A, b, x, buffers, generalised=False):
         # v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
         # compute_det = factories.compute_det_factory(corr_mode)
         # iinverse = factories.iinverse_factory(corr_mode)
-        # det = compute_det(n_corr, A)
+        det = compute_det(n_corr, A)
         ##try using numpy.linalg.det()
-        det = np.linalg.det(A)
+        # det = np.linalg.det(A)
 
         if det.real < 1e-6:
             x[:] = 0
@@ -1108,7 +1108,7 @@ def compute_det(n_corr, v1):
 
 
 def iinverse(n_corr, v1, det, o1):
-    import ipdb; ipdb.set_trace()
+    # import ipdb; ipdb.set_trace()
 
     if n_corr == 4:
         v1_00, v1_01, v1_10, v1_11 = unpack(n_corr, v1)
@@ -1209,7 +1209,7 @@ def compute_update(native_imdry, corr_mode):
     # We want to dispatch based on this field so we need its type.
     # jhj = native_imdry[native_imdry.fields.index('jhj')] 
     # << error: native_imdry does not have attribute 'fields'
-    import ipdb; ipdb.set_trace()
+    # import ipdb; ipdb.set_trace()
     jhj = native_imdry.jhj
 
     generalised = jhj.ndim == 6
