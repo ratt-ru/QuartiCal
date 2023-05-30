@@ -820,10 +820,10 @@ def delay_params_to_gains(
                     g = gains[t, f, a, d]
                     p = params[t, f_m, a, d]
 
-                    g[0] = np.exp(1j*2*np.pi*(cf*p[1] + p[0]))
+                    g[0] = np.exp(1j*(2*np.pi*cf*p[1] + p[0]))
 
                     if n_corr > 1:
-                        g[-1] = np.exp(1j*2*np.pi*(cf*p[3] + p[2]))
+                        g[-1] = np.exp(1j*(2*np.pi*cf*p[3] + p[2]))
 
 
 @njit(**JIT_OPTIONS)
