@@ -31,9 +31,9 @@ from quartical.gains.general.inversion import (invert_factory,
 def get_identity_params(corr_mode):
 
     if corr_mode.literal_value in (2, 4):
-        return np.zeros((4,), dtype=np.float64)
-    elif corr_mode.literal_value == 1:
         return np.zeros((2,), dtype=np.float64)
+    elif corr_mode.literal_value == 1:
+        return np.zeros((1,), dtype=np.float64)
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -228,7 +228,7 @@ def nb_pure_delay_solver_impl(
             )
 
         active_params /= (bandwidth / 2)  # Undo scaling for SI units.
-        native_imdry.jhj *= (bandwidth / 2) ** 2
+        native_imdry.jhj[:] *= (bandwidth / 2) ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
