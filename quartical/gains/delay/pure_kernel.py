@@ -665,10 +665,10 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             gc_0, _, _, gc_3 = unpackc(gain)
 
             drv_00 = -1j*gc_0
-            drv_23 = -1j*gc_3
+            drv_13 = -1j*gc_3
 
             upd_00 = (drv_00*r_0).real
-            upd_11 = (drv_23*r_3).real
+            upd_11 = (drv_13*r_3).real
 
             jhr[0] += nu*upd_00
             jhr[1] += nu*upd_11
@@ -676,8 +676,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_0, _, _, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
             n_0, _, _, n_3 = unpack(normf)
 
-            # Apply normalisation factors by scaling w. # Neglect (set weight
-            # to zero) off diagonal terms.
+            # Apply normalisation factors by scaling w.
             w_0 = n_0 * w_0
             w_3 = n_3 * w_3
 
@@ -702,28 +701,10 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             nusq = nu * nu
 
-            tmp_0 = jhwj_00.real
-            jhj[0, 0] += tmp_0
-            jhj[0, 1] += tmp_0*nu
-            tmp_1 = (jhwj_03*gc_0*g_3).real
-            jhj[0, 2] += tmp_1
-            jhj[0, 3] += tmp_1*nu
-
+            jhj[0, 0] += nusq * jhwj_00.real
+            jhj[0, 1] += nusq * (gc_0*jhwj_03*g_3).real
             jhj[1, 0] = jhj[0, 1]
-            jhj[1, 1] += tmp_0*nusq
-            jhj[1, 2] = jhj[0, 3]
-            jhj[1, 3] += tmp_1*nusq
-
-            jhj[2, 0] = jhj[0, 2]
-            jhj[2, 1] = jhj[1, 2]
-            tmp_2 = jhwj_33.real
-            jhj[2, 2] += tmp_2
-            jhj[2, 3] += tmp_2*nu
-
-            jhj[3, 0] = jhj[0, 3]
-            jhj[3, 1] = jhj[1, 3]
-            jhj[3, 2] = jhj[2, 3]
-            jhj[3, 3] += tmp_2*nusq
+            jhj[1, 1] += nusq * jhwj_33.real
 
     elif corr_mode.literal_value == 2:
         def impl(lop, rop, w, normf, nu, gain, res, jhr, jhj):
@@ -754,13 +735,10 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_00, w_11 = unpack(w)
             n_00, n_11 = unpack(normf)
 
-            nusq = nu*nu
+            nusq = nu * nu
 
-            tmp = (jh_00*n_00*w_00*j_00).real
-            jhj[0, 0] += tmp*nusq
-
-            tmp = (jh_11*n_11*w_11*j_11).real
-            jhj[1, 1] += tmp*nusq
+            jhj[0, 0] += nusq * (jh_00*n_00*w_00*j_00).real
+            jhj[1, 1] += nusq * (jh_11*n_11*w_11*j_11).real
 
     elif corr_mode.literal_value == 1:
         def impl(lop, rop, w, normf, nu, gain, res, jhr, jhj):
@@ -780,8 +758,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             upd_00 = (drv_00*r_0).real
 
-            jhr[0] += upd_00
-            jhr[1] += nu*upd_00
+            jhr[0] += nu*upd_00
 
             # Accumulate an element of jhwj.
             jh_00 = unpack(rop)
@@ -789,13 +766,9 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_00 = unpack(w)
             n_00 = unpack(normf)
 
-            nusq = nu*nu
+            nusq = nu * nu
 
-            tmp = (jh_00*n_00*w_00*j_00).real
-            jhj[0, 0] += tmp
-            jhj[0, 1] += tmp*nu
-            jhj[1, 0] += tmp*nu
-            jhj[1, 1] += tmp*nusq
+            jhj[0, 0] += nusq * (jh_00*n_00*w_00*j_00).real
     else:
         raise ValueError("Unsupported number of correlations.")
 
