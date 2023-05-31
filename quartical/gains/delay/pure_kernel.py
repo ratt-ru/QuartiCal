@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import njit
+from numba import njit, prange
 from numba.extending import overload
-from quartical.utils.numba import coerce_literal, JIT_OPTIONS
+from quartical.utils.numba import (
+    coerce_literal,
+    JIT_OPTIONS,
+    PARALLEL_JIT_OPTIONS
+)
 from quartical.gains.general.generics import (
     native_intermediaries,
     upsampled_itermediaries,
@@ -17,15 +21,11 @@ from quartical.gains.general.flagging import (
     apply_gain_flags,
     update_param_flags
 )
-from quartical.gains.general.convenience import (
-    get_extents
-)
-from quartical.gains.delay.kernel import (
-    compute_jhj_jhr,
-    compute_update,
-    finalize_update,
-    reference_params
-)
+from quartical.gains.general.convenience import (get_row,
+                                                 get_extents)
+import quartical.gains.general.factories as factories
+from quartical.gains.general.inversion import (invert_factory,
+                                               inversion_buffer_factory)
 
 
 def get_identity_params(corr_mode):
@@ -133,8 +133,11 @@ def nb_pure_delay_solver_impl(
 
         scaled_cf = ms_inputs.CHAN_FREQ.copy()  # Don't mutate.
         min_freq = np.min(scaled_cf)
-        scaled_cf /= min_freq  # Scale freqs to avoid precision.
-        active_params[..., 1::2] *= min_freq  # Scale delay consistently.
+        max_freq = np.max(scaled_cf)
+        mid_freq = (max_freq + min_freq)/2
+        bandwidth = (max_freq - min_freq)
+        scaled_cf = (scaled_cf - mid_freq)/(bandwidth / 2)  # Scale freqs to avoid precision.
+        active_params[..., 1::2] *= (bandwidth / 2)  # Scale delay consistently.
         scaled_cf *= 2*np.pi  # Introduce 2pi here - neglect everywhere else.
 
         for loop_idx in range(max_iter or 1):
@@ -162,11 +165,6 @@ def nb_pure_delay_solver_impl(
                 break
 
             compute_update(native_imdry, corr_mode)
-
-            # Minor hack which prevents offsets from being updated. TODO:
-            # There has to be a neater way to integrate this into the delay
-            # solver.
-            native_imdry.update[..., ::2] = 0
 
             finalize_update(
                 mapping_inputs,
@@ -226,9 +224,654 @@ def nb_pure_delay_solver_impl(
                 meta_inputs
             )
 
-        active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
-        native_imdry.jhj[..., 1::2] *= min_freq ** 2
+        active_params[..., 1::2] /= (bandwidth / 2)  # Undo scaling for SI units.
+        native_imdry.jhj[..., 1::2] *= (bandwidth / 2) ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
     return impl
+
+
+def compute_jhj_jhr(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    upsampled_imdry,
+    extents,
+    scaled_cf,
+    corr_mode
+):
+    return NotImplementedError
+
+
+@overload(compute_jhj_jhr, jit_options=PARALLEL_JIT_OPTIONS)
+def nb_compute_jhj_jhr(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    upsampled_imdry,
+    extents,
+    scaled_cf,
+    corr_mode
+):
+
+    # We want to dispatch based on this field so we need its type.
+    row_weights_idx = ms_inputs.fields.index('ROW_WEIGHTS')
+    row_weights_type = ms_inputs[row_weights_idx]
+
+    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights_type)
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
+    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
+    v1ct_imul_v2 = factories.v1ct_imul_v2_factory(corr_mode)
+    absv1_idiv_absv2 = factories.absv1_idiv_absv2_factory(corr_mode)
+    iunpack = factories.iunpack_factory(corr_mode)
+    iunpackct = factories.iunpackct_factory(corr_mode)
+    imul = factories.imul_factory(corr_mode)
+    iadd = factories.iadd_factory(corr_mode)
+    isub = factories.isub_factory(corr_mode)
+    valloc = factories.valloc_factory(corr_mode)
+    make_loop_vars = factories.loop_var_factory(corr_mode)
+    set_identity = factories.set_identity_factory(corr_mode)
+    compute_jhwj_jhwr_elem = compute_jhwj_jhwr_elem_factory(corr_mode)
+
+    def impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        upsampled_imdry,
+        extents,
+        scaled_cf,
+        corr_mode
+    ):
+
+        active_term = meta_inputs.active_term
+
+        data = ms_inputs.DATA
+        model = ms_inputs.MODEL_DATA
+        weights = ms_inputs.WEIGHT
+        flags = ms_inputs.FLAG
+        antenna1 = ms_inputs.ANTENNA1
+        antenna2 = ms_inputs.ANTENNA2
+        row_map = ms_inputs.ROW_MAP
+        row_weights = ms_inputs.ROW_WEIGHTS
+
+        # NOTE: These are the gain maps.
+        time_maps = mapping_inputs.time_maps
+        freq_maps = mapping_inputs.freq_maps
+        dir_maps = mapping_inputs.dir_maps
+
+        gains = chain_inputs.gains
+
+        jhj = upsampled_imdry.jhj
+        jhr = upsampled_imdry.jhr
+
+        row_starts = extents.row_starts
+        row_stops = extents.row_stops
+        chan_starts = extents.chan_starts
+        chan_stops = extents.chan_stops
+
+        n_row, n_chan, n_dir, n_corr = model.shape
+
+        jhj[:] = 0
+        jhr[:] = 0
+
+        n_tint, n_fint, n_ant, n_gdir, n_param = jhr.shape
+        n_int = n_tint*n_fint
+
+        complex_dtype = gains[active_term].dtype
+        weight_dtype = weights.dtype
+
+        n_gains = len(gains)
+
+        # Determine loop variables based on where we are in the chain.
+        # gt means greater than (n>j) and lt means less than (n<j).
+        all_terms, gt_active, lt_active = make_loop_vars(n_gains, active_term)
+
+        # Parallel over all solution intervals.
+        for i in prange(n_int):
+
+            ti = i//n_fint
+            fi = i - ti*n_fint
+
+            rs = row_starts[ti]
+            re = row_stops[ti]
+            fs = chan_starts[fi]
+            fe = chan_stops[fi]
+
+            rop_pq = valloc(complex_dtype)  # Right-multiply operator for pq.
+            rop_qp = valloc(complex_dtype)  # Right-multiply operator for qp.
+            lop_pq = valloc(complex_dtype)  # Left-multiply operator for pq.
+            lop_qp = valloc(complex_dtype)  # Left-multiply operator for qp.
+
+            w = valloc(weight_dtype)
+            r_pq = valloc(complex_dtype)
+            wr_pq = valloc(complex_dtype)
+            wr_qp = valloc(complex_dtype)
+            v_pqd = valloc(complex_dtype)
+            v_pq = valloc(complex_dtype)
+
+            gains_p = valloc(complex_dtype, leading_dims=(n_gains,))
+            gains_q = valloc(complex_dtype, leading_dims=(n_gains,))
+
+            lop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
+            rop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
+            lop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
+            rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
+
+            norm_factors = valloc(complex_dtype)
+
+            jhr_tifi = jhr[ti, fi]
+            jhj_tifi = jhj[ti, fi]
+
+            for row_ind in range(rs, re):
+
+                row = get_row(row_ind, row_map)
+                a1_m, a2_m = antenna1[row], antenna2[row]
+
+                for f in range(fs, fe):
+
+                    if flags[row, f]:  # Skip flagged data points.
+                        continue
+
+                    # Apply row weights in the BDA case, otherwise a no-op.
+                    imul_rweight(weights[row, f], w, row_weights, row_ind)
+                    iunpack(r_pq, data[row, f])
+
+                    lop_pq_arr[:] = 0
+                    rop_pq_arr[:] = 0
+                    lop_qp_arr[:] = 0
+                    rop_qp_arr[:] = 0
+                    v_pq[:] = 0
+
+                    for d in range(n_dir):
+
+                        set_identity(lop_pq)
+                        set_identity(lop_qp)
+
+                        # Construct a small contiguous gain array. This makes
+                        # the single term case fractionally slower.
+                        for gi in range(n_gains):
+                            d_m = dir_maps[gi][d]  # Broadcast dir.
+                            t_m = time_maps[gi][row_ind]
+                            f_m = freq_maps[gi][f]
+
+                            gain = gains[gi][t_m, f_m]
+
+                            iunpack(gains_p[gi], gain[a1_m, d_m])
+                            iunpack(gains_q[gi], gain[a2_m, d_m])
+
+                        m = model[row, f, d]
+                        iunpack(rop_qp, m)
+                        iunpackct(rop_pq, rop_qp)
+
+                        for g in all_terms:
+
+                            g_q = gains_q[g]
+                            v1_imul_v2(g_q, rop_pq, rop_pq)
+
+                            g_p = gains_p[g]
+                            v1_imul_v2(g_p, rop_qp, rop_qp)
+
+                        for g in gt_active:
+
+                            g_p = gains_p[g]
+                            v1_imul_v2ct(rop_pq, g_p, rop_pq)
+
+                            g_q = gains_q[g]
+                            v1_imul_v2ct(rop_qp, g_q, rop_qp)
+
+                        for g in lt_active:
+
+                            g_p = gains_p[g]
+                            v1ct_imul_v2(g_p, lop_pq, lop_pq)
+
+                            g_q = gains_q[g]
+                            v1ct_imul_v2(g_q, lop_qp, lop_qp)
+
+                        out_d = dir_maps[active_term][d]
+
+                        iunpack(lop_pq_arr[out_d], lop_pq)
+                        iadd(rop_pq_arr[out_d], rop_pq)
+
+                        iunpack(lop_qp_arr[out_d], lop_qp)
+                        iadd(rop_qp_arr[out_d], rop_qp)
+
+                        v1ct_imul_v2(lop_pq, gains_p[active_term], v_pqd)
+                        v1_imul_v2ct(v_pqd, rop_pq, v_pqd)
+                        iadd(v_pq, v_pqd)
+
+                    absv1_idiv_absv2(v_pq, r_pq, norm_factors)
+                    imul(r_pq, norm_factors)
+                    isub(r_pq, v_pq)
+
+                    nu = scaled_cf[f]
+
+                    for d in range(n_gdir):
+
+                        iunpack(wr_pq, r_pq)
+                        imul(wr_pq, w)
+                        iunpackct(wr_qp, wr_pq)
+
+                        lop_pq_d = lop_pq_arr[d]
+                        rop_pq_d = rop_pq_arr[d]
+
+                        compute_jhwj_jhwr_elem(lop_pq_d,
+                                               rop_pq_d,
+                                               w,
+                                               norm_factors,
+                                               nu,
+                                               gains_p[active_term],
+                                               wr_pq,
+                                               jhr_tifi[a1_m, d],
+                                               jhj_tifi[a1_m, d])
+
+                        lop_qp_d = lop_qp_arr[d]
+                        rop_qp_d = rop_qp_arr[d]
+
+                        compute_jhwj_jhwr_elem(lop_qp_d,
+                                               rop_qp_d,
+                                               w,
+                                               norm_factors,
+                                               nu,
+                                               gains_q[active_term],
+                                               wr_qp,
+                                               jhr_tifi[a2_m, d],
+                                               jhj_tifi[a2_m, d])
+        return
+    return impl
+
+
+def compute_update(native_imdry, corr_mode):
+    raise NotImplementedError
+
+
+@overload(compute_update, jit_options=PARALLEL_JIT_OPTIONS)
+def nb_compute_update(native_imdry, corr_mode):
+
+    # We want to dispatch based on this field so we need its type.
+    jhj = native_imdry[native_imdry.fields.index('jhj')]
+
+    generalised = jhj.ndim == 6
+    inversion_buffer = inversion_buffer_factory(generalised=generalised)
+    invert = invert_factory(corr_mode, generalised=generalised)
+
+    def impl(native_imdry, corr_mode):
+
+        jhj = native_imdry.jhj
+        jhr = native_imdry.jhr
+        update = native_imdry.update
+
+        n_tint, n_fint, n_ant, n_dir, n_param = jhr.shape
+
+        n_int = n_tint * n_fint
+
+        result_dtype = jhr.dtype
+
+        for i in prange(n_int):
+
+            t = i // n_fint
+            f = i - t * n_fint
+
+            buffers = inversion_buffer(n_param, result_dtype)
+
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    invert(jhj[t, f, a, d],
+                           jhr[t, f, a, d],
+                           update[t, f, a, d],
+                           buffers)
+
+    return impl
+
+
+def finalize_update(
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    native_imdry,
+    loop_idx,
+    scaled_cf,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(finalize_update, jit_options=JIT_OPTIONS)
+def nb_finalize_update(
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    native_imdry,
+    loop_idx,
+    scaled_cf,
+    corr_mode
+):
+
+    set_identity = factories.set_identity_factory(corr_mode)
+    param_to_gain = param_to_gain_factory(corr_mode)
+
+    if corr_mode.literal_value in (1, 2, 4):
+        def impl(
+            mapping_inputs,
+            chain_inputs,
+            meta_inputs,
+            native_imdry,
+            loop_idx,
+            scaled_cf,
+            corr_mode
+        ):
+
+            dd_term = meta_inputs.dd_term
+            active_term = meta_inputs.active_term
+            pinned_directions = meta_inputs.pinned_directions
+
+            gain = chain_inputs.gains[active_term]
+            gain_flags = chain_inputs.gain_flags[active_term]
+            params = chain_inputs.params[active_term]
+
+            param_freq_map = mapping_inputs.param_freq_maps[active_term]
+            dir_map = mapping_inputs.dir_maps[active_term]
+
+            update = native_imdry.update
+
+            update /= 2
+            params += update
+
+            n_time, n_freq, n_ant, n_dir, _ = gain.shape
+
+            if dd_term:
+                for pd in pinned_directions:
+                    params[..., pd, :] = 0
+
+            for t in range(n_time):
+                for f in range(n_freq):
+                    cf = scaled_cf[f]
+                    f_m = param_freq_map[f]
+                    for a in range(n_ant):
+                        for d in range(n_dir):
+
+                            d_m = dir_map[d]
+                            g = gain[t, f, a, d]
+                            fl = gain_flags[t, f, a, d]
+                            p = params[t, f_m, a, d_m]
+
+                            if fl == 1:
+                                set_identity(g)
+                            else:
+                                param_to_gain(p, cf, g)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return impl
+
+
+def param_to_gain_factory(corr_mode):
+
+    if corr_mode.literal_value == 4:
+        def impl(params, chanfreq, gain):
+            gain[0] = np.exp(1j*chanfreq*params[0])
+            gain[3] = np.exp(1j*chanfreq*params[1])
+    elif corr_mode.literal_value == 2:
+        def impl(params, chanfreq, gain):
+            gain[0] = np.exp(1j*chanfreq*params[0])
+            gain[1] = np.exp(1j*chanfreq*params[1])
+    elif corr_mode.literal_value == 1:
+        def impl(params, chanfreq, gain):
+            gain[0] = np.exp(1j*chanfreq*params[0])
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return factories.qcjit(impl)
+
+
+def compute_jhwj_jhwr_elem_factory(corr_mode):
+
+    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
+    unpack = factories.unpack_factory(corr_mode)
+    unpackc = factories.unpackc_factory(corr_mode)
+    iunpack = factories.iunpack_factory(corr_mode)
+    iabsdivsq = factories.iabsdivsq_factory(corr_mode)
+    imul = factories.imul_factory(corr_mode)
+
+    if corr_mode.literal_value == 4:
+        def impl(lop, rop, w, normf, nu, gain, res, jhr, jhj):
+
+            # Effectively apply zero weight to off-diagonal terms.
+            # TODO: Can be tidied but requires moving other weighting code.
+            res[1] = 0
+            res[2] = 0
+
+            # Compute normalization factor.
+            v1_imul_v2(lop, rop, normf)
+            iabsdivsq(normf)
+            imul(res, normf)  # Apply normalization factor to r.
+
+            # Accumulate an element of jhwr.
+            v1_imul_v2(res, rop, res)
+            v1_imul_v2(lop, res, res)
+
+            # Accumulate an element of jhwj.
+
+            r_0, _, _, r_3 = unpack(res)  # NOTE: XX, XY, YX, YY
+
+            _, _, _, g_3 = unpack(gain)
+            gc_0, _, _, gc_3 = unpackc(gain)
+
+            drv_00 = -1j*gc_0
+            drv_23 = -1j*gc_3
+
+            upd_00 = (drv_00*r_0).real
+            upd_11 = (drv_23*r_3).real
+
+            jhr[0] += nu*upd_00
+            jhr[1] += nu*upd_11
+
+            w_0, _, _, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
+            n_0, _, _, n_3 = unpack(normf)
+
+            # Apply normalisation factors by scaling w. # Neglect (set weight
+            # to zero) off diagonal terms.
+            w_0 = n_0 * w_0
+            w_3 = n_3 * w_3
+
+            lop_00, lop_01, lop_10, lop_11 = unpack(lop)
+            rop_00, rop_10, rop_01, rop_11 = unpack(rop)  # "Transpose"
+
+            jh_00 = lop_00 * rop_00
+            jh_03 = lop_01 * rop_01
+
+            j_00 = jh_00.conjugate()
+            j_03 = jh_03.conjugate()
+
+            jh_30 = lop_10 * rop_10
+            jh_33 = lop_11 * rop_11
+
+            j_30 = jh_30.conjugate()
+            j_33 = jh_33.conjugate()
+
+            jhwj_00 = jh_00*w_0*j_00 + jh_03*w_3*j_03
+            jhwj_03 = jh_00*w_0*j_30 + jh_03*w_3*j_33
+            jhwj_33 = jh_30*w_0*j_30 + jh_33*w_3*j_33
+
+            nusq = nu * nu
+
+            tmp_0 = jhwj_00.real
+            jhj[0, 0] += tmp_0
+            jhj[0, 1] += tmp_0*nu
+            tmp_1 = (jhwj_03*gc_0*g_3).real
+            jhj[0, 2] += tmp_1
+            jhj[0, 3] += tmp_1*nu
+
+            jhj[1, 0] = jhj[0, 1]
+            jhj[1, 1] += tmp_0*nusq
+            jhj[1, 2] = jhj[0, 3]
+            jhj[1, 3] += tmp_1*nusq
+
+            jhj[2, 0] = jhj[0, 2]
+            jhj[2, 1] = jhj[1, 2]
+            tmp_2 = jhwj_33.real
+            jhj[2, 2] += tmp_2
+            jhj[2, 3] += tmp_2*nu
+
+            jhj[3, 0] = jhj[0, 3]
+            jhj[3, 1] = jhj[1, 3]
+            jhj[3, 2] = jhj[2, 3]
+            jhj[3, 3] += tmp_2*nusq
+
+    elif corr_mode.literal_value == 2:
+        def impl(lop, rop, w, normf, nu, gain, res, jhr, jhj):
+
+            # Compute normalization factor.
+            iunpack(normf, rop)
+            iabsdivsq(normf)
+            imul(res, normf)  # Apply normalization factor to r.
+
+            # Accumulate an element of jhwr.
+            v1_imul_v2(res, rop, res)
+
+            r_0, r_1 = unpack(res)
+            gc_0, gc_1 = unpackc(gain)
+
+            drv_00 = -1j*gc_0
+            drv_23 = -1j*gc_1
+
+            upd_00 = (drv_00*r_0).real
+            upd_11 = (drv_23*r_1).real
+
+            jhr[0] += nu*upd_00
+            jhr[1] += nu*upd_11
+
+            # Accumulate an element of jhwj.
+            jh_00, jh_11 = unpack(rop)
+            j_00, j_11 = unpackc(rop)
+            w_00, w_11 = unpack(w)
+            n_00, n_11 = unpack(normf)
+
+            nusq = nu*nu
+
+            tmp = (jh_00*n_00*w_00*j_00).real
+            jhj[0, 0] += tmp*nusq
+
+            tmp = (jh_11*n_11*w_11*j_11).real
+            jhj[1, 1] += tmp*nusq
+
+    elif corr_mode.literal_value == 1:
+        def impl(lop, rop, w, normf, nu, gain, res, jhr, jhj):
+
+            # Compute normalization factor.
+            iunpack(normf, rop)
+            iabsdivsq(normf)
+            imul(res, normf)  # Apply normalization factor to r.
+
+            # Accumulate an element of jhwr.
+            v1_imul_v2(res, rop, res)
+
+            r_0 = unpack(res)
+            gc_0 = unpackc(gain)
+
+            drv_00 = -1j*gc_0
+
+            upd_00 = (drv_00*r_0).real
+
+            jhr[0] += upd_00
+            jhr[1] += nu*upd_00
+
+            # Accumulate an element of jhwj.
+            jh_00 = unpack(rop)
+            j_00 = unpackc(rop)
+            w_00 = unpack(w)
+            n_00 = unpack(normf)
+
+            nusq = nu*nu
+
+            tmp = (jh_00*n_00*w_00*j_00).real
+            jhj[0, 0] += tmp
+            jhj[0, 1] += tmp*nu
+            jhj[1, 0] += tmp*nu
+            jhj[1, 1] += tmp*nusq
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return factories.qcjit(impl)
+
+
+@njit(**JIT_OPTIONS)
+def pure_delay_params_to_gains(
+    params,
+    gains,
+    chan_freq,
+    param_freq_map
+):
+
+    n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
+
+    for t in range(n_time):
+        for f in range(n_freq):
+            cf = chan_freq[f]
+            f_m = param_freq_map[f]
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    g = gains[t, f, a, d]
+                    p = params[t, f_m, a, d]
+
+                    g[0] = np.exp(1j*2*np.pi*cf*p[0])
+
+                    if n_corr > 1:
+                        g[-1] = np.exp(1j*2*np.pi*cf*p[1])
+
+
+@njit(**JIT_OPTIONS)
+def reference_params(mapping_inputs, chain_inputs, meta_inputs, chan_freq):
+
+    active_term = meta_inputs.active_term
+    ref_ant = meta_inputs.reference_antenna
+
+    gains = chain_inputs.gains[active_term]
+    params = chain_inputs.params[active_term]
+    param_flags = chain_inputs.param_flags[active_term]
+    gain_flags = chain_inputs.gain_flags[active_term]
+
+    param_freq_map = mapping_inputs.param_freq_maps[active_term]
+
+    n_ti, n_fi, n_ant, n_dir, n_corr = params.shape
+
+    ref_params = params[:, :, ref_ant: ref_ant + 1, :, :].copy()
+
+    for t in range(n_ti):
+        for f in range(n_fi):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    p = params[t, f, a, d]
+                    rp = ref_params[t, f, 0, d]
+
+                    if param_flags[t, f, a, d] == 1:
+                        continue
+                    else:
+                        p -= rp
+
+    n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
+
+    for t in range(n_time):
+        for f in range(n_freq):
+            cf = chan_freq[f]
+            f_m = param_freq_map[f]
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    g = gains[t, f, a, d]
+                    p = params[t, f_m, a, d]
+                    gf = gain_flags[t, f, a, d]
+
+                    if gf == 1:
+                        continue
+
+                    g[0] = np.exp(1j*cf*p[0])
+
+                    if n_corr > 1:
+                        g[-1] = np.exp(1j*cf*p[1])
