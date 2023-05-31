@@ -20,7 +20,7 @@ def opts(base_opts, select_corr, solve_per):
     _opts.solver.convergence_fraction = 1
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.threads = 2
-    _opts.G.type = "delay"
+    _opts.G.type = "delay_and_offset"
     _opts.G.freq_interval = 0
     _opts.G.solve_per = solve_per
     _opts.G.initial_estimate = True
