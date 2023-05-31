@@ -1,20 +1,26 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, njit
+from numba import njit, prange
 from numba.extending import overload
-from quartical.utils.numba import (coerce_literal,
-                                   JIT_OPTIONS,
-                                   PARALLEL_JIT_OPTIONS)
-from quartical.gains.general.generics import (native_intermediaries,
-                                              upsampled_itermediaries,
-                                              per_array_jhj_jhr,
-                                              resample_solints,
-                                              downsample_jhj_jhr)
-from quartical.gains.general.flagging import (flag_intermediaries,
-                                              update_gain_flags,
-                                              finalize_gain_flags,
-                                              apply_gain_flags,
-                                              update_param_flags)
+from quartical.utils.numba import (
+    coerce_literal,
+    JIT_OPTIONS,
+    PARALLEL_JIT_OPTIONS
+)
+from quartical.gains.general.generics import (
+    native_intermediaries,
+    upsampled_itermediaries,
+    per_array_jhj_jhr,
+    resample_solints,
+    downsample_jhj_jhr
+)
+from quartical.gains.general.flagging import (
+    flag_intermediaries,
+    update_gain_flags,
+    finalize_gain_flags,
+    apply_gain_flags,
+    update_param_flags
+)
 from quartical.gains.general.convenience import (get_row,
                                                  get_extents)
 import quartical.gains.general.factories as factories
@@ -25,9 +31,9 @@ from quartical.gains.general.inversion import (invert_factory,
 def get_identity_params(corr_mode):
 
     if corr_mode.literal_value in (2, 4):
-        return np.zeros((4,), dtype=np.float64)
-    elif corr_mode.literal_value == 1:
         return np.zeros((2,), dtype=np.float64)
+    elif corr_mode.literal_value == 1:
+        return np.zeros((1,), dtype=np.float64)
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -127,9 +133,15 @@ def nb_delay_solver_impl(
 
         scaled_cf = ms_inputs.CHAN_FREQ.copy()  # Don't mutate.
         min_freq = np.min(scaled_cf)
-        scaled_cf /= min_freq  # Scale freqs to avoid precision.
-        active_params[..., 1::2] *= min_freq  # Scale delay consistently.
+        max_freq = np.max(scaled_cf)
+        mid_freq = (max_freq + min_freq)/2
+        bandwidth = (max_freq - min_freq)
+        # Scale the channel frequencies to a) avoide precision problems and b)
+        # ensure delays pass through the centre of the band. The delays are
+        # also scaled for consistency.
+        scaled_cf = (scaled_cf - mid_freq)/(bandwidth / 2)
         scaled_cf *= 2*np.pi  # Introduce 2pi here - neglect everywhere else.
+        active_params *= (bandwidth / 2)
 
         for loop_idx in range(max_iter or 1):
 
@@ -215,8 +227,8 @@ def nb_delay_solver_impl(
                 meta_inputs
             )
 
-        active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
-        native_imdry.jhj[..., 1::2] *= min_freq ** 2
+        active_params /= (bandwidth / 2)  # Undo scaling for SI units.
+        native_imdry.jhj[:] *= (bandwidth / 2) ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
@@ -604,15 +616,15 @@ def param_to_gain_factory(corr_mode):
 
     if corr_mode.literal_value == 4:
         def impl(params, chanfreq, gain):
-            gain[0] = np.exp(1j*(chanfreq*params[1] + params[0]))
-            gain[3] = np.exp(1j*(chanfreq*params[3] + params[2]))
+            gain[0] = np.exp(1j*chanfreq*params[0])
+            gain[3] = np.exp(1j*chanfreq*params[1])
     elif corr_mode.literal_value == 2:
         def impl(params, chanfreq, gain):
-            gain[0] = np.exp(1j*(chanfreq*params[1] + params[0]))
-            gain[1] = np.exp(1j*(chanfreq*params[3] + params[2]))
+            gain[0] = np.exp(1j*chanfreq*params[0])
+            gain[1] = np.exp(1j*chanfreq*params[1])
     elif corr_mode.literal_value == 1:
         def impl(params, chanfreq, gain):
-            gain[0] = np.exp(1j*(chanfreq*params[1] + params[0]))
+            gain[0] = np.exp(1j*chanfreq*params[0])
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -653,21 +665,18 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             gc_0, _, _, gc_3 = unpackc(gain)
 
             drv_00 = -1j*gc_0
-            drv_23 = -1j*gc_3
+            drv_13 = -1j*gc_3
 
             upd_00 = (drv_00*r_0).real
-            upd_11 = (drv_23*r_3).real
+            upd_11 = (drv_13*r_3).real
 
-            jhr[0] += upd_00
-            jhr[1] += nu*upd_00
-            jhr[2] += upd_11
-            jhr[3] += nu*upd_11
+            jhr[0] += nu*upd_00
+            jhr[1] += nu*upd_11
 
             w_0, _, _, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
             n_0, _, _, n_3 = unpack(normf)
 
-            # Apply normalisation factors by scaling w. # Neglect (set weight
-            # to zero) off diagonal terms.
+            # Apply normalisation factors by scaling w.
             w_0 = n_0 * w_0
             w_3 = n_3 * w_3
 
@@ -692,28 +701,10 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             nusq = nu * nu
 
-            tmp_0 = jhwj_00.real
-            jhj[0, 0] += tmp_0
-            jhj[0, 1] += tmp_0*nu
-            tmp_1 = (jhwj_03*gc_0*g_3).real
-            jhj[0, 2] += tmp_1
-            jhj[0, 3] += tmp_1*nu
-
+            jhj[0, 0] += nusq * jhwj_00.real
+            jhj[0, 1] += nusq * (gc_0*jhwj_03*g_3).real
             jhj[1, 0] = jhj[0, 1]
-            jhj[1, 1] += tmp_0*nusq
-            jhj[1, 2] = jhj[0, 3]
-            jhj[1, 3] += tmp_1*nusq
-
-            jhj[2, 0] = jhj[0, 2]
-            jhj[2, 1] = jhj[1, 2]
-            tmp_2 = jhwj_33.real
-            jhj[2, 2] += tmp_2
-            jhj[2, 3] += tmp_2*nu
-
-            jhj[3, 0] = jhj[0, 3]
-            jhj[3, 1] = jhj[1, 3]
-            jhj[3, 2] = jhj[2, 3]
-            jhj[3, 3] += tmp_2*nusq
+            jhj[1, 1] += nusq * jhwj_33.real
 
     elif corr_mode.literal_value == 2:
         def impl(lop, rop, w, normf, nu, gain, res, jhr, jhj):
@@ -735,10 +726,8 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             upd_00 = (drv_00*r_0).real
             upd_11 = (drv_23*r_1).real
 
-            jhr[0] += upd_00
-            jhr[1] += nu*upd_00
-            jhr[2] += upd_11
-            jhr[3] += nu*upd_11
+            jhr[0] += nu*upd_00
+            jhr[1] += nu*upd_11
 
             # Accumulate an element of jhwj.
             jh_00, jh_11 = unpack(rop)
@@ -746,19 +735,10 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_00, w_11 = unpack(w)
             n_00, n_11 = unpack(normf)
 
-            nusq = nu*nu
+            nusq = nu * nu
 
-            tmp = (jh_00*n_00*w_00*j_00).real
-            jhj[0, 0] += tmp
-            jhj[0, 1] += tmp*nu
-            jhj[1, 0] += tmp*nu
-            jhj[1, 1] += tmp*nusq
-
-            tmp = (jh_11*n_11*w_11*j_11).real
-            jhj[2, 2] += tmp
-            jhj[2, 3] += tmp*nu
-            jhj[3, 2] += tmp*nu
-            jhj[3, 3] += tmp*nusq
+            jhj[0, 0] += nusq * (jh_00*n_00*w_00*j_00).real
+            jhj[1, 1] += nusq * (jh_11*n_11*w_11*j_11).real
 
     elif corr_mode.literal_value == 1:
         def impl(lop, rop, w, normf, nu, gain, res, jhr, jhj):
@@ -778,8 +758,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             upd_00 = (drv_00*r_0).real
 
-            jhr[0] += upd_00
-            jhr[1] += nu*upd_00
+            jhr[0] += nu*upd_00
 
             # Accumulate an element of jhwj.
             jh_00 = unpack(rop)
@@ -787,13 +766,9 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_00 = unpack(w)
             n_00 = unpack(normf)
 
-            nusq = nu*nu
+            nusq = nu * nu
 
-            tmp = (jh_00*n_00*w_00*j_00).real
-            jhj[0, 0] += tmp
-            jhj[0, 1] += tmp*nu
-            jhj[1, 0] += tmp*nu
-            jhj[1, 1] += tmp*nusq
+            jhj[0, 0] += nusq * (jh_00*n_00*w_00*j_00).real
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -820,10 +795,10 @@ def delay_params_to_gains(
                     g = gains[t, f, a, d]
                     p = params[t, f_m, a, d]
 
-                    g[0] = np.exp(1j*(2*np.pi*cf*p[1] + p[0]))
+                    g[0] = np.exp(1j*2*np.pi*cf*p[0])
 
                     if n_corr > 1:
-                        g[-1] = np.exp(1j*(2*np.pi*cf*p[3] + p[2]))
+                        g[-1] = np.exp(1j*2*np.pi*cf*p[1])
 
 
 @njit(**JIT_OPTIONS)
@@ -872,7 +847,7 @@ def reference_params(mapping_inputs, chain_inputs, meta_inputs, chan_freq):
                     if gf == 1:
                         continue
 
-                    g[0] = np.exp(1j*(cf*p[1] + p[0]))
+                    g[0] = np.exp(1j*cf*p[0])
 
                     if n_corr > 1:
-                        g[-1] = np.exp(1j*(cf*p[3] + p[2]))
+                        g[-1] = np.exp(1j*cf*p[1])

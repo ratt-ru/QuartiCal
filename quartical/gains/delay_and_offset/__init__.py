@@ -1,10 +1,10 @@
 import numpy as np
 from collections import namedtuple
-from quartical.gains.conversion import no_op
+from quartical.gains.conversion import no_op, trig_to_angle
 from quartical.gains.parameterized_gain import ParameterizedGain
-from quartical.gains.delay.kernel import (
-    delay_solver,
-    delay_params_to_gains
+from quartical.gains.delay_and_offset.kernel import (
+    delay_and_offset_solver,
+    delay_and_offset_params_to_gains
 )
 
 # Overload the default measurement set inputs to include the frequencies.
@@ -13,15 +13,18 @@ ms_inputs = namedtuple(
 )
 
 
-class Delay(ParameterizedGain):
+class DelayAndOffset(ParameterizedGain):
 
-    solver = staticmethod(delay_solver)
+    solver = staticmethod(delay_and_offset_solver)
     ms_inputs = ms_inputs
 
     native_to_converted = (
+        (0, (np.cos,)),
+        (1, (np.sin,)),
         (1, (no_op,))
     )
     converted_to_native = (
+        (2, trig_to_angle),
         (1, no_op)
     )
     converted_dtype = np.float64
@@ -44,7 +47,7 @@ class Delay(ParameterizedGain):
 
         param_corr = [c for c in correlations if c in parameterisable]
 
-        template = ("delay_{}",)
+        template = ("phase_offset_{}", "delay_{}")
 
         return [n.format(c) for c in param_corr for n in template]
 
@@ -56,7 +59,7 @@ class Delay(ParameterizedGain):
         )
 
         # Convert the parameters into gains.
-        delay_params_to_gains(
+        delay_and_offset_params_to_gains(
             param,
             gain,
             ms_kwargs["CHAN_FREQ"],
