@@ -142,22 +142,22 @@ class Delay(ParameterizedGain):
 
                 for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
                     if p == ref_ant:
-                        param[t, uf, q, 0, 1] = -delay_est_00[q]
+                        param[t, uf, q, 0, 0] = -delay_est_00[q]
                         if n_corr > 1:
-                            param[t, uf, q, 0, 3] = -delay_est_11[q]
+                            param[t, uf, q, 0, 1] = -delay_est_11[q]
                     else:
-                        param[t, uf, p, 0, 1] = delay_est_00[p]
+                        param[t, uf, p, 0, 0] = delay_est_00[p]
                         if n_corr > 1:
-                            param[t, uf, p, 0, 3] = delay_est_11[p]
+                            param[t, uf, p, 0, 1] = delay_est_11[p]
 
         for ut in utint:
             for f in range(n_chan):
                 fm = f_map[f]
                 cf = 2j * np.pi * chan_freq[f]
 
-                gain[ut, f, :, :, 0] = np.exp(cf * param[ut, fm, :, :, 1])
+                gain[ut, f, :, :, 0] = np.exp(cf * param[ut, fm, :, :, 0])
 
                 if n_corr > 1:
-                    gain[ut, f, :, :, -1] = np.exp(cf * param[ut, fm, :, :, 3])
+                    gain[ut, f, :, :, -1] = np.exp(cf * param[ut, fm, :, :, 1])
 
         return gain, param
