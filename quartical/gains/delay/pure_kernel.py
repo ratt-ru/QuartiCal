@@ -136,9 +136,12 @@ def nb_pure_delay_solver_impl(
         max_freq = np.max(scaled_cf)
         mid_freq = (max_freq + min_freq)/2
         bandwidth = (max_freq - min_freq)
-        scaled_cf = (scaled_cf - mid_freq)/(bandwidth / 2)  # Scale freqs to avoid precision.
-        active_params[..., 1::2] *= (bandwidth / 2)  # Scale delay consistently.
+        # Scale the channel frequencies to a) avoide precision problems and b)
+        # ensure delays pass through the centre of the band. The delays are
+        # also scaled for consistency.
+        scaled_cf = (scaled_cf - mid_freq)/(bandwidth / 2)
         scaled_cf *= 2*np.pi  # Introduce 2pi here - neglect everywhere else.
+        active_params *= (bandwidth / 2)
 
         for loop_idx in range(max_iter or 1):
 
@@ -224,8 +227,8 @@ def nb_pure_delay_solver_impl(
                 meta_inputs
             )
 
-        active_params[..., 1::2] /= (bandwidth / 2)  # Undo scaling for SI units.
-        native_imdry.jhj[..., 1::2] *= (bandwidth / 2) ** 2
+        active_params /= (bandwidth / 2)  # Undo scaling for SI units.
+        native_imdry.jhj *= (bandwidth / 2) ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
