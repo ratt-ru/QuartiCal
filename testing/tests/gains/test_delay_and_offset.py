@@ -50,16 +50,18 @@ def true_gain_list(predicted_xds_list, solve_per):
         n_corr = xds.dims["corr"]
 
         chan_freq = xds.CHAN_FREQ.data
-        bw = chan_freq[-1] - chan_freq[0]
-
-        single_wrap_delay = 2*np.pi/bw
+        chan_width = chan_freq[1] - chan_freq[0]
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
-        delays = da.random.normal(size=(n_time, 1, n_ant, n_dir, n_corr),
-                                  loc=0,
-                                  scale=single_wrap_delay/3)
+        delays = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-1/(2*chan_width),
+            high=1/(2*chan_width)
+        )
+        delays[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
+
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
                       chunks=chunking)
 
