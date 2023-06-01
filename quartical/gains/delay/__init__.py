@@ -19,10 +19,10 @@ class Delay(ParameterizedGain):
     ms_inputs = ms_inputs
 
     native_to_converted = (
-        (1, (no_op,))
+        (1, (no_op,)),
     )
     converted_to_native = (
-        (1, no_op)
+        (1, no_op),
     )
     converted_dtype = np.float64
     native_dtype = np.float64
