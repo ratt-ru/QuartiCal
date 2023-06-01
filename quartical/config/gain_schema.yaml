@@ -6,8 +6,8 @@ gain:
       - complex
       - diag_complex
       - amplitude
-      - pure_delay
       - delay
+      - delay_and_offset
       - phase
       - tec
       - rotation_measure

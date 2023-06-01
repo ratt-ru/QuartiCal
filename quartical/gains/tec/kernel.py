@@ -14,9 +14,9 @@ from quartical.gains.general.flagging import (flag_intermediaries,
                                               apply_gain_flags,
                                               update_param_flags)
 from quartical.gains.general.convenience import get_extents
-from quartical.gains.delay.kernel import (compute_jhj_jhr,
-                                          compute_update,
-                                          finalize_update)
+from quartical.gains.delay_and_offset.kernel import (compute_jhj_jhr,
+                                                     compute_update,
+                                                     finalize_update)
 
 
 def get_identity_params(corr_mode):

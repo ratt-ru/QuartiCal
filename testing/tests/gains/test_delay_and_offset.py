@@ -20,7 +20,7 @@ def opts(base_opts, select_corr):
     _opts.solver.convergence_fraction = 1
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.threads = 2
-    _opts.G.type = "delay"
+    _opts.G.type = "delay_and_offset"
     _opts.G.freq_interval = 0
     _opts.G.initial_estimate = True
 
@@ -62,16 +62,24 @@ def true_gain_list(predicted_xds_list):
         )
         delays[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
 
-        amp = da.ones(
-            (n_time, n_chan, n_ant, n_dir, n_corr),
-            chunks=chunking
-        )
+        amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
+                      chunks=chunking)
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
 
+        # Using the full 2pi range makes some tests fail - this may be due to
+        # the fact that we only have 8 channels/degeneracy between parameters.
+        offsets = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-0.8*np.pi,
+            high=0.8*np.pi
+        )
+        offsets[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
+
         origin_chan_freq = chan_freq - band_centre
-        phase = 2*np.pi*delays*origin_chan_freq[None, :, None, None, None]
+        origin_chan_freq = origin_chan_freq[None, :, None, None, None]
+        phase = 2*np.pi*delays*origin_chan_freq + offsets
         gains = amp*da.exp(1j*phase)
 
         gain_list.append(gains)
