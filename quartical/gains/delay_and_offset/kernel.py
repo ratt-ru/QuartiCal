@@ -127,9 +127,15 @@ def nb_delay_and_offset_solver_impl(
 
         scaled_cf = ms_inputs.CHAN_FREQ.copy()  # Don't mutate.
         min_freq = np.min(scaled_cf)
-        scaled_cf /= min_freq  # Scale freqs to avoid precision.
-        active_params[..., 1::2] *= min_freq  # Scale delay consistently.
+        max_freq = np.max(scaled_cf)
+        mid_freq = (max_freq + min_freq)/2
+        bandwidth = (max_freq - min_freq)
+        # Scale the channel frequencies to a) avoid precision problems and b)
+        # ensure delays pass through the centre of the band. The delays are
+        # also scaled for consistency.
+        scaled_cf = (scaled_cf - mid_freq)/(bandwidth / 2)
         scaled_cf *= 2*np.pi  # Introduce 2pi here - neglect everywhere else.
+        active_params *= (bandwidth / 2)
 
         for loop_idx in range(max_iter or 1):
 
@@ -215,8 +221,8 @@ def nb_delay_and_offset_solver_impl(
                 meta_inputs
             )
 
-        active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
-        native_imdry.jhj[..., 1::2] *= min_freq ** 2
+        active_params /= (bandwidth / 2)  # Undo scaling for SI units.
+        native_imdry.jhj[:] *= (bandwidth / 2) ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 

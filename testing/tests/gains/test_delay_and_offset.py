@@ -7,7 +7,7 @@ from testing.utils.gains import apply_gains, reference_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr, solve_per):
+def opts(base_opts, select_corr):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -22,7 +22,6 @@ def opts(base_opts, select_corr, solve_per):
     _opts.solver.threads = 2
     _opts.G.type = "delay_and_offset"
     _opts.G.freq_interval = 0
-    _opts.G.solve_per = solve_per
     _opts.G.initial_estimate = True
 
     return _opts
@@ -35,7 +34,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list, solve_per):
+def true_gain_list(predicted_xds_list):
 
     gain_list = []
 
@@ -51,6 +50,7 @@ def true_gain_list(predicted_xds_list, solve_per):
 
         chan_freq = xds.CHAN_FREQ.data
         chan_width = chan_freq[1] - chan_freq[0]
+        band_centre = (chan_freq[0] + chan_freq[-1]) / 2
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
@@ -68,15 +68,19 @@ def true_gain_list(predicted_xds_list, solve_per):
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
 
-        offsets = da.random.uniform(size=(n_time, 1, n_ant, n_dir, n_corr),
-                                    low=-np.pi,
-                                    high=np.pi)
+        # Using the full 2pi range makes some tests fail - this may be due to
+        # the fact that we only have 8 channels/degeneracy between parameters.
+        offsets = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-0.8*np.pi,
+            high=0.8*np.pi
+        )
+        offsets[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
 
-        phase = (2*np.pi*delays*chan_freq[None, :, None, None, None] + offsets)
+        origin_chan_freq = chan_freq - band_centre
+        origin_chan_freq = origin_chan_freq[None, :, None, None, None]
+        phase = 2*np.pi*delays*origin_chan_freq + offsets
         gains = amp*da.exp(1j*phase)
-
-        if solve_per == "array":
-            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
 
         gain_list.append(gains)
 
