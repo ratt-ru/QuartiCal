@@ -83,6 +83,9 @@ class Delay(ParameterizedGain):
         data = data[sel]
         flags = flags[sel]
 
+        # Move the channel frequencies to be around the origin.
+        origin_chan_freq = chan_freq - (chan_freq[0] + chan_freq[-1])/2
+
         data[flags == 1] = 0  # Ignore UV-cut, otherwise there may be no est.
 
         utint = np.unique(t_map)
@@ -127,7 +130,7 @@ class Delay(ParameterizedGain):
                 )
                 fft_data = np.fft.fftshift(fft_data, axes=1)
 
-                delta_freq = chan_freq[1] - chan_freq[0]
+                delta_freq = origin_chan_freq[1] - origin_chan_freq[0]
                 fft_freq = np.fft.fftfreq(n, delta_freq)
                 fft_freq = np.fft.fftshift(fft_freq)
 
@@ -153,7 +156,7 @@ class Delay(ParameterizedGain):
         for ut in utint:
             for f in range(n_chan):
                 fm = f_map[f]
-                cf = 2j * np.pi * chan_freq[f]
+                cf = 2j * np.pi * origin_chan_freq[f]
 
                 gain[ut, f, :, :, 0] = np.exp(cf * param[ut, fm, :, :, 0])
 
