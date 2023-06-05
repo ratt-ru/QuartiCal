@@ -244,7 +244,7 @@ def process_bda_output(xds_list, ref_xds_list, output_cols):
                         lambda d, a: np.bitwise_or.reduce(d, axis=a),
                         chan_ind + 1,
                         drop_axis=chan_ind + 1)
-                elif np.issubdtype(scdtype, np.bool):
+                elif np.issubdtype(scdtype, bool):
                     # Corresponds to FLAG style column.
                     data = data.any(axis=chan_ind + 1)
 
