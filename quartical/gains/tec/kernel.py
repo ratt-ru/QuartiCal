@@ -74,7 +74,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
     # identity_params = get_identity_params(corr_mode)
     identity_params = get_identity_params(corr_mode)
 
-    # import ipdb; ipdb.set_trace()
+    import ipdb; ipdb.set_trace()
     gains = base_args.gains
     gain_flags = base_args.gain_flags
 
@@ -357,6 +357,8 @@ def compute_jhj_jhr(
                 rop_qp_arr[:] = 0
                 v_pq[:] = 0
 
+                ##checking out gains
+                # import ipdb; ipdb.set_trace()
                 for d in range(n_dir):
 
                     # set_identity(lop_pq)
@@ -759,7 +761,7 @@ def isub(n_corr, outvec, invec):
         raise ValueError("Unsupported number of correlations.")
 
 
-def iabsdivsq(n_corr, v1):
+def iabsdivsq(n_corr, v1): 
     if n_corr == 4:
         v1_0, v1_1, v1_2, v1_3 = unpack(n_corr, v1)
 
@@ -1541,5 +1543,83 @@ def apply_gain_flags(base_args, meta_args):
             flag_col[row, f] |= gain_flags[t_m, f_m, a1, 0] == 1
             flag_col[row, f] |= gain_flags[t_m, f_m, a2, 0] == 1
 
+#-----------------------------------------------------
+sigmaf = 0.1
+lscale = 1.
+jitter = 1e-6
+
+#and also consider the following point sources
+pt_sources = np.load("5ptsrc.npy")
+print(pt_sources)
+#get the covariance matrix
+def squared_exp0(lcoord, mcoord, sigmaf, lscale):
+    """
+    The function returns a covariance matrix using the squared 
+    exponential (SE) kernel.
+    
+    k(x, xp) = sigma^2 * exp(-(x-xp)^2/(2*l^2))
+    
+    """
+    
+    def get_cov(ld, md):
+        # if x.ndim > 1 or xp.ndim > 1:
+        #    raise ValueError("Inputs must be 1D")
+        
+        #
+        n_dir = len(lcoord)
+
+        #Create covariance matrix.
+        cov = np.zeros((n_dir))
+
+        for i in range(n_dir):
+            cov[i] = sigmaf**2*np.exp(-(1/2*lscale**2)*((lcoord[i] - ld)**2 + (mcoord[i] - md)**2))
+                
+        return cov
+
+    return get_cov
+
+
+#perform the Cholesky decomposition
+def cholesky_decompose_expression0(lcoord, mcoord, bparams=None):
+    """
+    Returns a Cholesky decomposition of a covariance matrix.
+    
+    """
+
+
+    #Get covariance vector.
+    # K = squared_exp(sources, sources, bparams["sigmaf"], bparams["lscale"])
+    K = squared_exp0(lcoord, mcoord, sigmaf, lscale)
+
+    #Compute Cholesky decomposition of K_inv.
+    # L = np.linalg.cholesky(K + bparams["jitter"] * np.eye(K.shape[0]))
+    L = np.linalg.cholesky(K + jitter * np.eye(K.shape[0]))
+
+    #Remember L and K are of shapes n_sources \times n_sources, or
+    #if I am incorrect, they should at least be of the same shapes.
+
+    return L
+
+
+##compute gains
+def compute_gains(base_args, param_axes):
+
+    arr0 = base_args.gains
+    #get shape of gains
+    n_tint, n_fint, n_ant, n_dir, n_corr = arr0.shape
+
+    basis = cholesky_decompose_expression0(pt_sources[:, 1], pt_sources[:, 2])
+    alpha = np.zeros((param_axes), dtype=float)
+
+    for ti in range(n_tint):
+        for fi in range(n_fint):
+            for p in range(n_ant):
+                for d in range(n_dir):
+                    if n_corr == 1:
+                        arr0[ti, fi, p, d, 0] = np.exp(1.j * basis[d].dot(alpha[ti, fi, p, d, 0])/chan_freq[fi] + 1.j * alpha[ti, fi, p, d, 1])
+
+        # gains[t, f, p, d, k] = np.exp(1.0j * basis[d].dot(alpha[t, ff, p, :, k])/chan_freq[f])
+
+    return arr0
 
     
