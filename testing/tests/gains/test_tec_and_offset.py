@@ -7,7 +7,7 @@ from testing.utils.gains import apply_gains, reference_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr, solve_per):
+def opts(base_opts, select_corr):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -20,9 +20,8 @@ def opts(base_opts, select_corr, solve_per):
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
     _opts.solver.threads = 2
-    _opts.G.type = "tec"
+    _opts.G.type = "tec_and_offset"
     _opts.G.freq_interval = 0
-    _opts.G.solve_per = solve_per
 
     return _opts
 
@@ -34,7 +33,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list, solve_per):
+def true_gain_list(predicted_xds_list):
 
     gain_list = []
 
@@ -48,28 +47,42 @@ def true_gain_list(predicted_xds_list, solve_per):
         n_dir = xds.dims["dir"]
         n_corr = xds.dims["corr"]
 
-        chan_freq = xds.CHAN_FREQ.data[0] / xds.CHAN_FREQ.data
+        chan_freq = xds.CHAN_FREQ.data
+        max_tec = 1/(1/chan_freq[-1] - 1/chan_freq[-2])
+        cf_min = chan_freq.min()
+        cf_max = chan_freq.max()
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
         tec_chunking = (utime_chunks, 1, n_ant, n_dir, n_corr)
 
-        bound = np.pi/4 if solve_per == "array" else np.pi/2
-
         da.random.seed(0)
-        tec = da.random.uniform(size=(n_time, 1, n_ant, n_dir, n_corr),
-                                high=bound,
-                                low=-bound,
-                                chunks=tec_chunking)
+        tec = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-0.05*max_tec,
+            high=0.05*max_tec,
+            chunks=tec_chunking
+        )
+        tec[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
+
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
                       chunks=chunking)
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
 
-        gains = amp*da.exp(1j*tec*chan_freq[None, :, None, None, None])
+        # Using the full 2pi range makes some tests fail - this may be due to
+        # the fact that we only have 8 channels/degeneracy between parameters.
+        offsets = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-0.5*np.pi,
+            high=0.5*np.pi
+        )
+        offsets[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
 
-        if solve_per == "array":
-            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
+        offset = np.log(cf_min/cf_max)/(cf_max - cf_min)
+        coeff = 2 * np.pi * (1/chan_freq[None, :, None, None, None] + offset)
+        phase = tec*coeff + offsets
+        gains = amp*da.exp(1j*phase)
 
         gain_list.append(gains)
 

@@ -9,7 +9,7 @@ gain:
       - delay
       - delay_and_offset
       - phase
-      - tec
+      - tec_and_offset
       - rotation_measure
       - rotation
       - crosshand_phase

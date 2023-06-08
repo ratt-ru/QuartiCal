@@ -1,26 +1,20 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import njit, prange
+from numba import prange, njit
 from numba.extending import overload
-from quartical.utils.numba import (
-    coerce_literal,
-    JIT_OPTIONS,
-    PARALLEL_JIT_OPTIONS
-)
-from quartical.gains.general.generics import (
-    native_intermediaries,
-    upsampled_itermediaries,
-    per_array_jhj_jhr,
-    resample_solints,
-    downsample_jhj_jhr
-)
-from quartical.gains.general.flagging import (
-    flag_intermediaries,
-    update_gain_flags,
-    finalize_gain_flags,
-    apply_gain_flags,
-    update_param_flags
-)
+from quartical.utils.numba import (coerce_literal,
+                                   JIT_OPTIONS,
+                                   PARALLEL_JIT_OPTIONS)
+from quartical.gains.general.generics import (native_intermediaries,
+                                              upsampled_itermediaries,
+                                              per_array_jhj_jhr,
+                                              resample_solints,
+                                              downsample_jhj_jhr)
+from quartical.gains.general.flagging import (flag_intermediaries,
+                                              update_gain_flags,
+                                              finalize_gain_flags,
+                                              apply_gain_flags,
+                                              update_param_flags)
 from quartical.gains.general.convenience import (get_row,
                                                  get_extents)
 import quartical.gains.general.factories as factories
@@ -31,22 +25,22 @@ from quartical.gains.general.inversion import (invert_factory,
 def get_identity_params(corr_mode):
 
     if corr_mode.literal_value in (2, 4):
-        return np.zeros((2,), dtype=np.float64)
+        return np.zeros((4,), dtype=np.float64)
     elif corr_mode.literal_value == 1:
-        return np.zeros((1,), dtype=np.float64)
+        return np.zeros((2,), dtype=np.float64)
     else:
         raise ValueError("Unsupported number of correlations.")
 
 
 @njit(**JIT_OPTIONS)
-def delay_solver(
+def tec_and_offset_solver(
     ms_inputs,
     mapping_inputs,
     chain_inputs,
     meta_inputs,
     corr_mode
 ):
-    return delay_solver_impl(
+    return tec_and_offset_solver_impl(
         ms_inputs,
         mapping_inputs,
         chain_inputs,
@@ -55,7 +49,7 @@ def delay_solver(
     )
 
 
-def delay_solver_impl(
+def tec_and_offset_solver_impl(
     ms_inputs,
     mapping_inputs,
     chain_inputs,
@@ -65,8 +59,8 @@ def delay_solver_impl(
     raise NotImplementedError
 
 
-@overload(delay_solver_impl, jit_options=JIT_OPTIONS)
-def nb_delay_solver_impl(
+@overload(tec_and_offset_solver_impl, jit_options=JIT_OPTIONS)
+def nb_tec_and_offset_solver_impl(
     ms_inputs,
     mapping_inputs,
     chain_inputs,
@@ -74,7 +68,9 @@ def nb_delay_solver_impl(
     corr_mode
 ):
 
-    coerce_literal(nb_delay_solver_impl, ["corr_mode"])
+    # NOTE: This just reuses delay solver functionality.
+
+    coerce_literal(nb_tec_and_offset_solver_impl, ["corr_mode"])
 
     identity_params = get_identity_params(corr_mode)
 
@@ -99,7 +95,7 @@ def nb_delay_solver_impl(
         active_gain_flags = gain_flags[active_term]
         active_params = chain_inputs.params[active_term]
 
-        # Set up some intemediaries used for flagging.
+        # Set up some intemediaries used for flagging. TODO: Move?
         km1_gain = active_gain.copy()
         km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
         abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
@@ -131,11 +127,11 @@ def nb_delay_solver_impl(
         upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
         native_imdry = native_intermediaries(jhj, jhr, update)
 
-        # We actually solve for D' = (D(nu_min + nu_max))/2. This helps avoid
+        # We actually solve for TEC' = TEC/bandwidth. This helps avoid
         # numerical issues, but requires some scaling of the parameters.
         chan_freq = ms_inputs.CHAN_FREQ
-        mid_freq = (chan_freq.min() + chan_freq.max())/2
-        active_params[:] *= mid_freq
+        bandwidth = chan_freq.max() - chan_freq.min()
+        active_params[..., 1::2] /= bandwidth
 
         for loop_idx in range(max_iter or 1):
 
@@ -207,7 +203,7 @@ def nb_delay_solver_impl(
             ms_inputs,
             mapping_inputs,
             chain_inputs,
-            meta_inputs,
+            meta_inputs
         )
 
         # Call this one last time to ensure points flagged by finialize are
@@ -221,8 +217,8 @@ def nb_delay_solver_impl(
             )
 
         # Undo rescaling so that quantities are in native units.
-        active_params[:] /= mid_freq
-        native_imdry.jhj[:] *= mid_freq ** 2
+        active_params[..., 1::2] *= bandwidth
+        native_imdry.jhj[..., 1::2, 1::2] /= bandwidth ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
@@ -323,7 +319,8 @@ def nb_compute_jhj_jhr(
 
         cf_min = chan_freq.min()
         cf_max = chan_freq.max()
-        cf_mid = (cf_min + cf_max) / 2
+        bandwidth = cf_max - cf_min
+        offset = np.log(cf_min / cf_max)
 
         # Determine loop variables based on where we are in the chain.
         # gt means greater than (n>j) and lt means less than (n<j).
@@ -447,7 +444,7 @@ def nb_compute_jhj_jhr(
                     isub(r_pq, v_pq)
 
                     # Coefficient introduced by differentiation of exponent.
-                    coeff = 2 * np.pi * (chan_freq[f]/cf_mid - 1)
+                    coeff = 2 * np.pi * (bandwidth/chan_freq[f] + offset)
 
                     for d in range(n_gdir):
 
@@ -590,12 +587,13 @@ def nb_finalize_update(
             chan_freq = ms_inputs.CHAN_FREQ
             cf_min = chan_freq.min()
             cf_max = chan_freq.max()
-            cf_mid = (cf_min + cf_max) / 2
+            bandwidth = cf_max - cf_min
+            offset = np.log(cf_min/cf_max)
 
             for t in range(n_time):
                 for f in range(n_freq):
                     f_m = param_freq_map[f]
-                    coeff = 2 * np.pi * (chan_freq[f]/cf_mid - 1)
+                    coeff = 2 * np.pi * (bandwidth / chan_freq[f] + offset)
                     for a in range(n_ant):
                         for d in range(n_dir):
 
@@ -618,15 +616,15 @@ def param_to_gain_factory(corr_mode):
 
     if corr_mode.literal_value == 4:
         def impl(params, coeff, gain):
-            gain[0] = np.exp(1j * coeff * params[0])
-            gain[3] = np.exp(1j * coeff * params[1])
+            gain[0] = np.exp(1j * (coeff * params[1] + params[0]))
+            gain[3] = np.exp(1j * (coeff * params[3] + params[2]))
     elif corr_mode.literal_value == 2:
         def impl(params, coeff, gain):
-            gain[0] = np.exp(1j * coeff * params[0])
-            gain[1] = np.exp(1j * coeff * params[1])
+            gain[0] = np.exp(1j * (coeff * params[1] + params[0]))
+            gain[1] = np.exp(1j * (coeff * params[3] + params[2]))
     elif corr_mode.literal_value == 1:
         def impl(params, coeff, gain):
-            gain[0] = np.exp(1j * coeff * params[0])
+            gain[0] = np.exp(1j * (coeff * params[1] + params[0]))
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -667,18 +665,21 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             gc_0, _, _, gc_3 = unpackc(gain)
 
             drv_00 = -1j*gc_0
-            drv_13 = -1j*gc_3
+            drv_23 = -1j*gc_3
 
             upd_00 = (drv_00*r_0).real
-            upd_11 = (drv_13*r_3).real
+            upd_11 = (drv_23*r_3).real
 
-            jhr[0] += coeff*upd_00
-            jhr[1] += coeff*upd_11
+            jhr[0] += upd_00
+            jhr[1] += coeff*upd_00
+            jhr[2] += upd_11
+            jhr[3] += coeff*upd_11
 
             w_0, _, _, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
             n_0, _, _, n_3 = unpack(normf)
 
-            # Apply normalisation factors by scaling w.
+            # Apply normalisation factors by scaling w. # Neglect (set weight
+            # to zero) off diagonal terms.
             w_0 = n_0 * w_0
             w_3 = n_3 * w_3
 
@@ -703,10 +704,28 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             coeffsq = coeff ** 2
 
-            jhj[0, 0] += coeffsq * jhwj_00.real
-            jhj[0, 1] += coeffsq * (gc_0*jhwj_03*g_3).real
+            tmp_0 = jhwj_00.real
+            jhj[0, 0] += tmp_0
+            jhj[0, 1] += tmp_0*coeff
+            tmp_1 = (jhwj_03*gc_0*g_3).real
+            jhj[0, 2] += tmp_1
+            jhj[0, 3] += tmp_1*coeff
+
             jhj[1, 0] = jhj[0, 1]
-            jhj[1, 1] += coeffsq * jhwj_33.real
+            jhj[1, 1] += tmp_0*coeffsq
+            jhj[1, 2] = jhj[0, 3]
+            jhj[1, 3] += tmp_1*coeffsq
+
+            jhj[2, 0] = jhj[0, 2]
+            jhj[2, 1] = jhj[1, 2]
+            tmp_2 = jhwj_33.real
+            jhj[2, 2] += tmp_2
+            jhj[2, 3] += tmp_2*coeff
+
+            jhj[3, 0] = jhj[0, 3]
+            jhj[3, 1] = jhj[1, 3]
+            jhj[3, 2] = jhj[2, 3]
+            jhj[3, 3] += tmp_2*coeffsq
 
     elif corr_mode.literal_value == 2:
         def impl(lop, rop, w, normf, coeff, gain, res, jhr, jhj):
@@ -728,8 +747,10 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             upd_00 = (drv_00*r_0).real
             upd_11 = (drv_23*r_1).real
 
-            jhr[0] += coeff*upd_00
-            jhr[1] += coeff*upd_11
+            jhr[0] += upd_00
+            jhr[1] += coeff*upd_00
+            jhr[2] += upd_11
+            jhr[3] += coeff*upd_11
 
             # Accumulate an element of jhwj.
             jh_00, jh_11 = unpack(rop)
@@ -739,8 +760,17 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             coeffsq = coeff ** 2
 
-            jhj[0, 0] += coeffsq * (jh_00*n_00*w_00*j_00).real
-            jhj[1, 1] += coeffsq * (jh_11*n_11*w_11*j_11).real
+            tmp = (jh_00*n_00*w_00*j_00).real
+            jhj[0, 0] += tmp
+            jhj[0, 1] += tmp*coeff
+            jhj[1, 0] += tmp*coeff
+            jhj[1, 1] += tmp*coeffsq
+
+            tmp = (jh_11*n_11*w_11*j_11).real
+            jhj[2, 2] += tmp
+            jhj[2, 3] += tmp*coeff
+            jhj[3, 2] += tmp*coeff
+            jhj[3, 3] += tmp*coeffsq
 
     elif corr_mode.literal_value == 1:
         def impl(lop, rop, w, normf, coeff, gain, res, jhr, jhj):
@@ -760,7 +790,8 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             upd_00 = (drv_00*r_0).real
 
-            jhr[0] += coeff*upd_00
+            jhr[0] += upd_00
+            jhr[1] += coeff*upd_00
 
             # Accumulate an element of jhwj.
             jh_00 = unpack(rop)
@@ -768,7 +799,13 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             w_00 = unpack(w)
             n_00 = unpack(normf)
 
-            jhj[0, 0] += coeff ** 2 * (jh_00*n_00*w_00*j_00).real
+            coeffsq = coeff*coeff
+
+            tmp = (jh_00*n_00*w_00*j_00).real
+            jhj[0, 0] += tmp
+            jhj[0, 1] += tmp*coeff
+            jhj[1, 0] += tmp*coeff
+            jhj[1, 1] += tmp*coeffsq
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -776,7 +813,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
 
 @njit(**JIT_OPTIONS)
-def delay_params_to_gains(
+def tec_and_offset_params_to_gains(
     params,
     gains,
     chan_freq,
@@ -788,29 +825,29 @@ def delay_params_to_gains(
 
     cf_min = chan_freq.min()
     cf_max = chan_freq.max()
-    cf_mid = (cf_min + cf_max) / 2
+    bandwidth = cf_max - cf_min
 
     if rescaled:
-        offset = 1.0
-        denom = cf_mid
+        offset = np.log(cf_min/cf_max)
+        numerator = bandwidth
     else:
-        offset = cf_mid
-        denom = 1.0
+        offset = np.log(cf_min/cf_max)/bandwidth
+        numerator = 1.0
 
     for t in range(n_time):
         for f in range(n_freq):
             f_m = param_freq_map[f]
-            coeff = 2 * np.pi * (chan_freq[f] / denom - offset)
+            coeff = 2 * np.pi * (numerator / chan_freq[f] + offset)
             for a in range(n_ant):
                 for d in range(n_dir):
 
                     g = gains[t, f, a, d]
                     p = params[t, f_m, a, d]
 
-                    g[0] = np.exp(1j * coeff * p[0])
+                    g[0] = np.exp(1j*(coeff*p[1] + p[0]))
 
                     if n_corr > 1:
-                        g[-1] = np.exp(1j * coeff * p[1])
+                        g[-1] = np.exp(1j*(coeff*p[3] + p[2]))
 
 
 @njit(**JIT_OPTIONS)
@@ -844,6 +881,6 @@ def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
                     else:
                         p -= rp
 
-    delay_params_to_gains(
+    tec_and_offset_params_to_gains(
         params, gains, chan_freq, param_freq_map, rescaled=True
     )
