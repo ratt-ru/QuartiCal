@@ -127,7 +127,11 @@ def nb_tec_and_offset_solver_impl(
         upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
         native_imdry = native_intermediaries(jhj, jhr, update)
 
-        # ms_inputs.CHAN_FREQ[:] /= ms_inputs.CHAN_FREQ[0]
+        # We actually solve for TEC' = TEC/bandwidth. This helps avoid
+        # numerical issues, but requires some scaling of the parameters.
+        chan_freq = ms_inputs.CHAN_FREQ
+        bandwidth = chan_freq.max() - chan_freq.min()
+        active_params[..., 1::2] /= bandwidth
 
         for loop_idx in range(max_iter or 1):
 
@@ -211,6 +215,10 @@ def nb_tec_and_offset_solver_impl(
                 chain_inputs,
                 meta_inputs
             )
+
+        # Undo rescaling so that quantities are in native units.
+        active_params[..., 1::2] *= bandwidth
+        native_imdry.jhj[..., 1::2, 1::2] /= bandwidth ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
@@ -311,7 +319,8 @@ def nb_compute_jhj_jhr(
 
         cf_min = chan_freq.min()
         cf_max = chan_freq.max()
-        offset = np.log(cf_min/cf_max)/(cf_max - cf_min)
+        bandwidth = cf_max - cf_min
+        offset = np.log(cf_min / cf_max)
 
         # Determine loop variables based on where we are in the chain.
         # gt means greater than (n>j) and lt means less than (n<j).
@@ -435,7 +444,7 @@ def nb_compute_jhj_jhr(
                     isub(r_pq, v_pq)
 
                     # Coefficient introduced by differentiation of exponent.
-                    coeff = 2 * np.pi * (1/chan_freq[f] + offset)
+                    coeff = 2 * np.pi * (bandwidth/chan_freq[f] + offset)
 
                     for d in range(n_gdir):
 
@@ -578,13 +587,13 @@ def nb_finalize_update(
             chan_freq = ms_inputs.CHAN_FREQ
             cf_min = chan_freq.min()
             cf_max = chan_freq.max()
-            offset = np.log(cf_min/cf_max)/(cf_max - cf_min)
+            bandwidth = cf_max - cf_min
+            offset = np.log(cf_min/cf_max)
 
             for t in range(n_time):
                 for f in range(n_freq):
-                    icf = 1/chan_freq[f]
                     f_m = param_freq_map[f]
-                    coeff = 2 * np.pi * (icf + offset)
+                    coeff = 2 * np.pi * (bandwidth / chan_freq[f] + offset)
                     for a in range(n_ant):
                         for d in range(n_dir):
 
@@ -808,20 +817,27 @@ def tec_and_offset_params_to_gains(
     params,
     gains,
     chan_freq,
-    param_freq_map
+    param_freq_map,
+    rescaled=False
 ):
 
     n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
 
     cf_min = chan_freq.min()
     cf_max = chan_freq.max()
-    offset = np.log(cf_min/cf_max)/(cf_max - cf_min)
+    bandwidth = cf_max - cf_min
+
+    if rescaled:
+        offset = np.log(cf_min/cf_max)
+        numerator = bandwidth
+    else:
+        offset = np.log(cf_min/cf_max)/bandwidth
+        numerator = 1.0
 
     for t in range(n_time):
         for f in range(n_freq):
-            icf = 1/chan_freq[f]
             f_m = param_freq_map[f]
-            coeff = 2 * np.pi * (icf + offset)
+            coeff = 2 * np.pi * (numerator / chan_freq[f] + offset)
             for a in range(n_ant):
                 for d in range(n_dir):
 
@@ -865,4 +881,6 @@ def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
                     else:
                         p -= rp
 
-    tec_and_offset_params_to_gains(params, gains, chan_freq, param_freq_map)
+    tec_and_offset_params_to_gains(
+        params, gains, chan_freq, param_freq_map, rescaled=True
+    )

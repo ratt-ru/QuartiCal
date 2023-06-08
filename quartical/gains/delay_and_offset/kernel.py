@@ -125,6 +125,12 @@ def nb_delay_and_offset_solver_impl(
         upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
         native_imdry = native_intermediaries(jhj, jhr, update)
 
+        # We actually solve for D' = (D(nu_min + nu_max))/2. This helps avoid
+        # numerical issues, but requires some scaling of the parameters.
+        chan_freq = ms_inputs.CHAN_FREQ
+        mid_freq = (chan_freq.min() + chan_freq.max())/2
+        active_params[..., 1::2] *= mid_freq
+
         for loop_idx in range(max_iter or 1):
 
             compute_jhj_jhr(
@@ -207,6 +213,10 @@ def nb_delay_and_offset_solver_impl(
                 chain_inputs,
                 meta_inputs
             )
+
+        # Undo rescaling so that quantities are in native units.
+        active_params[..., 1::2] /= mid_freq
+        native_imdry.jhj[..., 1::2] *= mid_freq ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
@@ -431,7 +441,7 @@ def nb_compute_jhj_jhr(
                     isub(r_pq, v_pq)
 
                     # Coefficient introduced by differentiation of exponent.
-                    coeff = 2 * np.pi * (chan_freq[f] - cf_mid)
+                    coeff = 2 * np.pi * (chan_freq[f]/cf_mid - 1)
 
                     for d in range(n_gdir):
 
@@ -578,9 +588,8 @@ def nb_finalize_update(
 
             for t in range(n_time):
                 for f in range(n_freq):
-                    cf = chan_freq[f]
                     f_m = param_freq_map[f]
-                    coeff = 2 * np.pi * (cf - cf_mid)
+                    coeff = 2 * np.pi * (chan_freq[f]/cf_mid - 1)
                     for a in range(n_ant):
                         for d in range(n_dir):
 
@@ -804,7 +813,8 @@ def delay_and_offset_params_to_gains(
     params,
     gains,
     chan_freq,
-    param_freq_map
+    param_freq_map,
+    rescaled=False
 ):
 
     n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
@@ -813,11 +823,17 @@ def delay_and_offset_params_to_gains(
     cf_max = chan_freq.max()
     cf_mid = (cf_min + cf_max) / 2
 
+    if rescaled:
+        offset = 1.0
+        denom = cf_mid
+    else:
+        offset = cf_mid
+        denom = 1.0
+
     for t in range(n_time):
         for f in range(n_freq):
-            cf = chan_freq[f]
             f_m = param_freq_map[f]
-            coeff = 2 * np.pi * (cf - cf_mid)
+            coeff = 2 * np.pi * (chan_freq[f] / denom - offset)
             for a in range(n_ant):
                 for d in range(n_dir):
 
@@ -861,4 +877,6 @@ def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
                     else:
                         p -= rp
 
-    delay_and_offset_params_to_gains(params, gains, chan_freq, param_freq_map)
+    delay_and_offset_params_to_gains(
+        params, gains, chan_freq, param_freq_map, rescaled=True
+    )
