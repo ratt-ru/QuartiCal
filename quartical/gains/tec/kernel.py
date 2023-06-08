@@ -74,7 +74,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
     # identity_params = get_identity_params(corr_mode)
     identity_params = get_identity_params(corr_mode)
 
-    import ipdb; ipdb.set_trace()
+    # import ipdb; ipdb.set_trace()
     gains = base_args.gains
     gain_flags = base_args.gain_flags
 
@@ -125,6 +125,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
     min_freq = np.min(scaled_icf)
     scaled_icf = min_freq/scaled_icf  # Scale freqs to avoid precision.
     active_params[..., 1::2] /= min_freq  # Scale consistently with freq.
+
 
     for loop_idx in range(max_iter):
 
@@ -1251,6 +1252,9 @@ def finalize_update(base_args, term_args, meta_args, native_imdry, scaled_cf,
     # set_identity = factories.set_identity_factory(corr_mode)
     # param_to_gain = param_to_gain_factory(corr_mode)
 
+    #Not sure where to put the basis just yet - CR
+    basis = cholesky_decompose_expression0(pt_sources[:, 1], pt_sources[:, 2])
+
     if corr_mode in (1, 2, 4):
         # def impl(base_args, term_args, meta_args, native_imdry, scaled_cf,
         #          loop_idx, corr_mode):
@@ -1276,17 +1280,18 @@ def finalize_update(base_args, term_args, meta_args, native_imdry, scaled_cf,
                 cf = scaled_cf[f]
                 f_m = f_map_arr_p[f]
                 for a in range(n_ant):
-                    for d in range(n_dir):
+                    # for d in range(n_dir):
 
-                        d_m = d_map_arr[d]
-                        g = gain[t, f, a, d]
-                        fl = gain_flags[t, f, a, d]
-                        p = params[t, f_m, a, d_m]
+                    #     d_m = d_map_arr[d]
+                    #     g = gain[t, f, a, d]
+                    #     fl = gain_flags[t, f, a, d]
+                    #     p = params[t, f_m, a, d_m]
 
-                        if fl == 1:
-                            set_identity(corr_mode, g)
-                        else:
-                            param_to_gain(corr_mode, p, cf, g)
+                    # if fl == 1:
+                    #     set_identity(corr_mode, g)
+                    # else:
+                        # param_to_gain(corr_mode, p, cf, g)
+                    compute_gains(params[t, f_m, a], cf, gain[t, f, a], basis)
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -1561,22 +1566,23 @@ def squared_exp0(lcoord, mcoord, sigmaf, lscale):
     
     """
     
-    def get_cov(ld, md):
-        # if x.ndim > 1 or xp.ndim > 1:
-        #    raise ValueError("Inputs must be 1D")
-        
-        #
-        n_dir = len(lcoord)
+    # def get_cov(ld, md):
+    # if x.ndim > 1 or xp.ndim > 1:
+    #    raise ValueError("Inputs must be 1D")
+    
+    #
+    n_dir = len(lcoord)
 
-        #Create covariance matrix.
-        cov = np.zeros((n_dir))
+    #Create covariance matrix.
+    cov = np.zeros((n_dir, n_dir))
 
-        for i in range(n_dir):
-            cov[i] = sigmaf**2*np.exp(-(1/2*lscale**2)*((lcoord[i] - ld)**2 + (mcoord[i] - md)**2))
-                
-        return cov
+    for i in range(n_dir):
+        for j in range(n_dir):
+            cov[i, j] = sigmaf**2*np.exp(-(1/2*lscale**2)*((lcoord[i] - lcoord[j])**2 + (mcoord[i] - mcoord[j])**2))
+            
+    return cov
 
-    return get_cov
+    # return get_cov
 
 
 #perform the Cholesky decomposition
@@ -1602,24 +1608,59 @@ def cholesky_decompose_expression0(lcoord, mcoord, bparams=None):
 
 
 ##compute gains
-def compute_gains(base_args, param_axes):
+def compute_gains0(params, chan_freq, gains):
 
-    arr0 = base_args.gains
+    # import ipdb; ipdb.set_trace()
     #get shape of gains
-    n_tint, n_fint, n_ant, n_dir, n_corr = arr0.shape
+    n_tint, n_fint, n_ant, n_dir, n_corr = gains.shape
 
     basis = cholesky_decompose_expression0(pt_sources[:, 1], pt_sources[:, 2])
-    alpha = np.zeros((param_axes), dtype=float)
 
     for ti in range(n_tint):
         for fi in range(n_fint):
             for p in range(n_ant):
                 for d in range(n_dir):
                     if n_corr == 1:
-                        arr0[ti, fi, p, d, 0] = np.exp(1.j * basis[d].dot(alpha[ti, fi, p, d, 0])/chan_freq[fi] + 1.j * alpha[ti, fi, p, d, 1])
+                        gains[ti, fi, p, d, 0] = np.exp(1.j * (basis[d].dot(params[ti, fi, p, :, 1])/chan_freq[fi] + params[ti, fi, p, d, 0]))
+                    elif n_corr == 2:
+                        gains[ti, fi, p, d, 0] = np.exp(1.j * (basis[:, d].dot(params[ti, fi, p, :, 1])/chan_freq[fi] + params[ti, fi, p, d, 0]))
+                        gains[ti, fi, p, d, 1] = np.exp(1.j * (basis[d].dot(params[ti, fi, p, :, 3])/chan_freq[fi] + params[ti, fi, p, d, 2]))
+                    elif n_corr == 4:
+                        gains[ti, fi, p, d, 0] = np.exp(1.j * (basis[d].dot(params[ti, fi, p, :, 1])/chan_freq[fi] + params[ti, fi, p, d, 0]))
+                        # arr0[ti, fi, p, d, 1] = 0
+                        # arr0[ti, fi, p, d, 2] = 0
+                        gains[ti, fi, p, d, 3] = np.exp(1.j * (basis[d].dot(params[ti, fi, p, :, 3])/chan_freq[fi] + params[ti, fi, p, d, 2]))
 
-        # gains[t, f, p, d, k] = np.exp(1.0j * basis[d].dot(alpha[t, ff, p, :, k])/chan_freq[f])
+    return gains
 
-    return arr0
+
+
+def compute_gains(param, chanfreq, gain, basis):
+    """
+    d_m = d_map_arr[d]
+    param = params[t, f_m, a, d_m]
+    cf = scaled_cf[f]
+    gain = gain[t, f, a, d]
+
+    """
+
+    #get number of directions
+    n_dir, n_corr = gain.shape
+
+    for d in range(n_dir):
+
+        if n_corr == 4:
+            gain[d, 0] = np.exp(1j*(basis[d].dot(param[:, 1])/chanfreq + param[d, 0]))
+            gain[d, 3] = np.exp(1j*(basis[d].dot(param[:, 3])/chanfreq + param[d, 2]))
+        elif n_corr == 2:
+            gain[d, 0] = np.exp(1j*(basis[d].dot(param[:, 1])/chanfreq + param[d, 0]))
+            gain[d, 1] = np.exp(1j*(basis[d].dot(param[:, 3])/chanfreq + param[d, 2]))
+        elif n_corr == 1:
+            # gain[0] = np.exp(1j*(chanfreq*params[1] + params[0]))
+            gain[d, 0] = np.exp(1j*(basis[d].dot(param[:, 1])/chanfreq + param[d, 0]))
+        else:
+            raise ValueError("Unsupported number of correlations.")
+
+                    
 
     
