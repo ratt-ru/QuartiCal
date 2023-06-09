@@ -135,6 +135,9 @@ def __output_post_init__(self):
             # In the non-nested case, introduce outer list (consistent).
             self.net_gains = [self.net_gains]
 
+    if isinstance(self.subtract_directions, list):
+        self.subtract_directions = tuple(self.subtract_directions)
+
 
 def __mad_flags_post_init__(self):
     self.__validate_choices__()
@@ -172,6 +175,8 @@ def __gain_post_init__(self):
             "Crosshand phase can only be solved as a per array term. Please "
             "set the appropriate term.solve_per to 'array'."
         )
+    if isinstance(self.pinned_directions, list):
+        self.pinned_directions = tuple(self.pinned_directions)
 
 
 POST_INIT_MAP = {
