@@ -83,7 +83,7 @@ class Gain:
         self.type = term_opts.type
         self.solve_per = term_opts.solve_per
         self.direction_dependent = term_opts.direction_dependent
-        self.pinned_directions = tuple(term_opts.pinned_directions)
+        self.pinned_directions = term_opts.pinned_directions
         self.time_interval = term_opts.time_interval
         self.freq_interval = term_opts.freq_interval
         self.respect_scan_boundaries = term_opts.respect_scan_boundaries

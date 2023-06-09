@@ -99,6 +99,7 @@ def _execute(exitstack):
     # Reads the measurement set using the relavant configuration from opts.
     model_columns = model_vis_recipe.ingredients.model_columns
     data_xds_list, ref_xds_list = read_xds_list(model_columns, ms_opts)
+    data_xds_list = data_xds_list[:1]
 
     # Preprocess the xds_list - initialise some values and fix bad data.
     data_xds_list = preprocess_xds_list(data_xds_list, ms_opts)
