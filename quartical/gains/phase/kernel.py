@@ -13,7 +13,7 @@ from quartical.gains.general.generics import (native_intermediaries,
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
-                                              apply_gain_flags,
+                                              apply_gain_flags_to_flag_col,
                                               update_param_flags)
 from quartical.gains.general.convenience import (get_row,
                                                  get_extents)
@@ -195,7 +195,7 @@ def nb_phase_solver_impl(
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
-            apply_gain_flags(
+            apply_gain_flags_to_flag_col(
                 ms_inputs,
                 mapping_inputs,
                 chain_inputs,

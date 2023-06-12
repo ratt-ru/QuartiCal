@@ -11,7 +11,7 @@ from quartical.gains.general.generics import (native_intermediaries,
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
-                                              apply_gain_flags)
+                                              apply_gain_flags_to_flag_col)
 from quartical.gains.general.convenience import get_extents
 import quartical.gains.general.factories as factories
 from quartical.gains.complex.kernel import (get_jhj_dims_factory,
@@ -169,7 +169,7 @@ def nb_leakage_solver_impl(
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
-            apply_gain_flags(
+            apply_gain_flags_to_flag_col(
                 ms_inputs,
                 mapping_inputs,
                 chain_inputs,
