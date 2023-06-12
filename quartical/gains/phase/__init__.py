@@ -5,6 +5,10 @@ from quartical.gains.phase.kernel import (
     phase_solver,
     phase_params_to_gains
 )
+from quartical.gains.general.flagging import (
+    apply_gain_flags_to_gains,
+    apply_param_flags_to_params
+)
 
 
 class Phase(ParameterizedGain):
@@ -38,11 +42,15 @@ class Phase(ParameterizedGain):
     def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
         """Initialise the gains (and parameters)."""
 
-        gains, params = super().init_term(
+        gains, gain_flags, params, param_flags = super().init_term(
             term_spec, ref_ant, ms_kwargs, term_kwargs
         )
 
         # Convert the parameters into gains.
         phase_params_to_gains(params, gains)
 
-        return gains, params
+        # Apply flags to gains and parameters.
+        apply_param_flags_to_params(param_flags, params, 1)
+        apply_gain_flags_to_gains(gain_flags, gains)
+
+        return gains, gain_flags, params, param_flags

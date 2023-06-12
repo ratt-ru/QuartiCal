@@ -6,6 +6,10 @@ from quartical.gains.tec_and_offset.kernel import (
     tec_and_offset_solver,
     tec_and_offset_params_to_gains
 )
+from quartical.gains.general.flagging import (
+    apply_gain_flags_to_gains,
+    apply_param_flags_to_params
+)
 
 # Overload the default measurement set inputs to include the frequencies.
 ms_inputs = namedtuple(
@@ -54,7 +58,7 @@ class TecAndOffset(ParameterizedGain):
     def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
         """Initialise the gains (and parameters)."""
 
-        gains, params = super().init_term(
+        gains, gain_flags, params, param_flags = super().init_term(
             term_spec, ref_ant, ms_kwargs, term_kwargs
         )
 
@@ -66,4 +70,8 @@ class TecAndOffset(ParameterizedGain):
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 
-        return gains, params
+        # Apply flags to gains and parameters.
+        apply_param_flags_to_params(param_flags, params, 1)
+        apply_gain_flags_to_gains(gain_flags, gains)
+
+        return gains, gain_flags, params, param_flags

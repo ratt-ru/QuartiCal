@@ -6,6 +6,10 @@ from quartical.gains.rotation_measure.kernel import (
     rm_solver,
     rm_params_to_gains
 )
+from quartical.gains.general.flagging import (
+    apply_gain_flags_to_gains,
+    apply_param_flags_to_params
+)
 
 # Overload the default measurement set inputs to include the frequencies.
 ms_inputs = namedtuple(
@@ -70,12 +74,12 @@ class RotationMeasure(ParameterizedGain):
     def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
         """Initialise the gains (and parameters)."""
 
-        gains, params = super().init_term(
+        gains, gain_flags, params, param_flags = super().init_term(
             term_spec, ref_ant, ms_kwargs, term_kwargs
         )
 
         chan_freq = ms_kwargs["CHAN_FREQ"]
-        lambda_sq = (299792458/chan_freq)**2
+        lambda_sq = (299792458 / chan_freq) ** 2
 
         # Convert the parameters into gains.
         rm_params_to_gains(
@@ -85,4 +89,8 @@ class RotationMeasure(ParameterizedGain):
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 
-        return gains, params
+        # Apply flags to gains and parameters.
+        apply_param_flags_to_params(param_flags, params, 1)
+        apply_gain_flags_to_gains(gain_flags, gains)
+
+        return gains, gain_flags, params, param_flags
