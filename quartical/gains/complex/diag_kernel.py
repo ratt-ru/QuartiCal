@@ -13,7 +13,8 @@ from quartical.gains.general.generics import (native_intermediaries,
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
-                                              apply_gain_flags)
+                                              apply_gain_flags_to_flag_col,
+                                              apply_gain_flags_to_gains)
 from quartical.gains.general.convenience import (get_row,
                                                  get_extents)
 import quartical.gains.general.factories as factories
@@ -170,7 +171,7 @@ def nb_diag_complex_solver_impl(
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
-            apply_gain_flags(
+            apply_gain_flags_to_flag_col(
                 ms_inputs,
                 mapping_inputs,
                 chain_inputs,
@@ -637,7 +638,7 @@ def nb_reference_gains_impl(chain_inputs, meta_inputs, mode):
         ref_ant = meta_inputs.reference_antenna
 
         gains = chain_inputs.gains[active_term]
-        flags = chain_inputs.gain_flags[active_term]
+        gain_flags = chain_inputs.gain_flags[active_term]
 
         n_ti, n_fi, n_ant, n_dir, n_corr = gains.shape
 
@@ -647,7 +648,7 @@ def nb_reference_gains_impl(chain_inputs, meta_inputs, mode):
             for f in range(n_fi):
                 for d in range(n_dir):
 
-                    if flags[t, f, ref_ant, d]:  # TODO: Flagged refant?
+                    if gain_flags[t, f, ref_ant, d]:  # TODO: Flagged refant?
                         continue
                     elif n_corr in (1, 2):
                         rg = ref_gains[t, f, 0, d]
@@ -666,5 +667,7 @@ def nb_reference_gains_impl(chain_inputs, meta_inputs, mode):
                         rg = ref_gains[t, f, 0, d]
 
                         v1_imul_v2(g, rg, g)
+
+        apply_gain_flags_to_gains(gain_flags, gains)
 
     return impl

@@ -13,8 +13,10 @@ from quartical.gains.general.generics import (native_intermediaries,
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
-                                              apply_gain_flags,
-                                              update_param_flags)
+                                              apply_gain_flags_to_flag_col,
+                                              update_param_flags,
+                                              apply_gain_flags_to_gains,
+                                              apply_param_flags_to_params)
 from quartical.gains.general.convenience import (get_row,
                                                  get_extents)
 import quartical.gains.general.factories as factories
@@ -190,12 +192,12 @@ def nb_phase_solver_impl(
             corr_mode
         )
 
-        # reference_params(chain_inputs, meta_inputs)
+        reference_params(chain_inputs, meta_inputs)
 
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
-            apply_gain_flags(
+            apply_gain_flags_to_flag_col(
                 ms_inputs,
                 mapping_inputs,
                 chain_inputs,
@@ -749,9 +751,9 @@ def reference_params(chain_inputs, meta_inputs):
     ref_ant = meta_inputs.reference_antenna
 
     gains = chain_inputs.gains[active_term]
+    gain_flags = chain_inputs.gain_flags[active_term]
     params = chain_inputs.params[active_term]
     param_flags = chain_inputs.param_flags[active_term]
-    gain_flags = chain_inputs.gain_flags[active_term]
 
     n_ti, n_fi, n_ant, n_dir, n_corr = params.shape
 
@@ -770,21 +772,8 @@ def reference_params(chain_inputs, meta_inputs):
                     else:
                         p -= rp
 
-    n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
+    phase_params_to_gains(params, gains)
 
-    for t in range(n_time):
-        for f in range(n_freq):
-            for a in range(n_ant):
-                for d in range(n_dir):
-
-                    g = gains[t, f, a, d]
-                    p = params[t, f, a, d]
-                    gf = gain_flags[t, f, a, d]
-
-                    if gf == 1:
-                        continue
-
-                    g[0] = np.exp(1j*p[0])
-
-                    if n_corr > 1:
-                        g[-1] = np.exp(1j*p[1])
+    # Referencing may move flagged gains/params from identity.
+    apply_param_flags_to_params(param_flags, params, 0)
+    apply_gain_flags_to_gains(gain_flags, gains)

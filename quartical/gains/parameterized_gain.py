@@ -2,6 +2,7 @@ from collections import namedtuple
 import numpy as np
 import dask.array as da
 from quartical.gains.gain import Gain
+from quartical.gains.general.flagging import init_flags
 
 ms_inputs = namedtuple(
     "ms_inputs",
@@ -183,8 +184,30 @@ class ParameterizedGain(Gain):
         else:
             params = np.zeros(param_shape, dtype=np.float64)
 
+        # Init parameter flags by looking for intervals with no data.
+        param_flags = init_flags(
+            param_shape,
+            term_kwargs[f"{self.name}_param_time_map"],
+            term_kwargs[f"{self.name}_param_freq_map"],
+            ms_kwargs["FLAG"],
+            ms_kwargs["ANTENNA1"],
+            ms_kwargs["ANTENNA2"],
+            ms_kwargs["ROW_MAP"]
+        )
+
         gains = np.ones(gain_shape, dtype=np.complex128)
         if gain_shape[-1] == 4:
             gains[..., (1, 2)] = 0  # 2-by-2 identity.
 
-        return gains, params
+        # Init gain flags by looking for intervals with no data.
+        gain_flags = init_flags(
+            gain_shape,
+            term_kwargs[f"{self.name}_time_map"],
+            term_kwargs[f"{self.name}_freq_map"],
+            ms_kwargs["FLAG"],
+            ms_kwargs["ANTENNA1"],
+            ms_kwargs["ANTENNA2"],
+            ms_kwargs["ROW_MAP"]
+        )
+
+        return gains, gain_flags, params, param_flags

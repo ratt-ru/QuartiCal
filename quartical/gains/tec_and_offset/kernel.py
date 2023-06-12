@@ -13,8 +13,10 @@ from quartical.gains.general.generics import (native_intermediaries,
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
-                                              apply_gain_flags,
-                                              update_param_flags)
+                                              apply_gain_flags_to_flag_col,
+                                              update_param_flags,
+                                              apply_gain_flags_to_gains,
+                                              apply_param_flags_to_params)
 from quartical.gains.general.convenience import (get_row,
                                                  get_extents)
 import quartical.gains.general.factories as factories
@@ -209,7 +211,7 @@ def nb_tec_and_offset_solver_impl(
         # Call this one last time to ensure points flagged by finialize are
         # propagated (in the DI case).
         if not dd_term:
-            apply_gain_flags(
+            apply_gain_flags_to_flag_col(
                 ms_inputs,
                 mapping_inputs,
                 chain_inputs,
@@ -859,6 +861,7 @@ def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
     ref_ant = meta_inputs.reference_antenna
 
     gains = chain_inputs.gains[active_term]
+    gain_flags = chain_inputs.gain_flags[active_term]
     params = chain_inputs.params[active_term]
     param_flags = chain_inputs.param_flags[active_term]
 
@@ -884,3 +887,7 @@ def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
     tec_and_offset_params_to_gains(
         params, gains, chan_freq, param_freq_map, rescaled=True
     )
+
+    # Referencing may move flagged gains/params from identity.
+    apply_param_flags_to_params(param_flags, params, 0)
+    apply_gain_flags_to_gains(gain_flags, gains)

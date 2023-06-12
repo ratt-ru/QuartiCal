@@ -335,7 +335,12 @@ def update_param_flags_impl(
 
 
 @njit(**JIT_OPTIONS)
-def apply_gain_flags(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
+def apply_gain_flags_to_flag_col(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs
+):
     """Apply gain_flags to flag_col."""
 
     active_term = meta_inputs.active_term
@@ -361,3 +366,38 @@ def apply_gain_flags(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
             # NOTE: We only care about the DI case for now.
             flag_col[row, f] |= gain_flags[t_m, f_m, a1, 0] == 1
             flag_col[row, f] |= gain_flags[t_m, f_m, a2, 0] == 1
+
+
+@njit(**JIT_OPTIONS)
+def apply_gain_flags_to_gains(gain_flags, gains):
+
+    n_time, n_chan, n_ant, n_dir, n_corr = gains.shape
+
+    if n_corr == 4:
+        identity_element = np.array([1, 0, 0, 1], dtype=np.complex128)
+    elif n_corr == 2:
+        identity_element = np.array([1, 1], dtype=np.complex128)
+    else:
+        identity_element = np.array([1], dtype=np.complex128)
+
+    for t in range(n_time):
+        for f in range(n_chan):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    if gain_flags[t, f, a, d]:
+                        gains[t, f, a, d] = identity_element
+
+
+@njit(**JIT_OPTIONS)
+def apply_param_flags_to_params(param_flags, params, identity_element):
+
+    n_time, n_chan, n_ant, n_dir, n_corr = params.shape
+
+    for t in range(n_time):
+        for f in range(n_chan):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    if param_flags[t, f, a, d]:
+                        params[t, f, a, d] = identity_element

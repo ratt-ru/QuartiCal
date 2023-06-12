@@ -139,7 +139,7 @@ def construct_solver(
         for term_name, term_xds in gain_terms.items():
 
             blocker.add_output(
-                f"{term_name}_gain",
+                f"{term_name}_gains",
                 ("row", "chan", "ant", "dir", "corr"),
                 term_xds.GAIN_SPEC,
                 np.complex128
@@ -155,7 +155,7 @@ def construct_solver(
             # If there is a PARAM_SPEC on the gain xds, it is also an output.
             if hasattr(term_xds, "PARAM_SPEC"):
                 blocker.add_output(
-                    f"{term_name}_param",
+                    f"{term_name}_params",
                     ("row", "chan", "ant", "dir", "param"),
                     term_xds.PARAM_SPEC,
                     np.float64
@@ -228,7 +228,7 @@ def construct_solver(
 
             result_vars = {}
 
-            gain = output_dict[f"{term_name}_gain"]
+            gain = output_dict[f"{term_name}_gains"]
             result_vars["gains"] = (term_xds.GAIN_AXES, gain)
 
             flags = output_dict[f"{term_name}_gain_flags"]
@@ -241,7 +241,7 @@ def construct_solver(
             result_vars["conv_iter"] = (("time_chunk", "freq_chunk"), conviter)
 
             if hasattr(term_xds, "PARAM_SPEC"):
-                params = output_dict[f"{term_name}_param"]
+                params = output_dict[f"{term_name}_params"]
                 result_vars["params"] = (term_xds.PARAM_AXES, params)
 
                 param_flags = output_dict[f"{term_name}_param_flags"]
