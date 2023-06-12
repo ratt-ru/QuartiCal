@@ -2,6 +2,9 @@ from collections import namedtuple
 import numpy as np
 import dask.array as da
 from dask.graph_manipulation import clone
+from quartical.gains.general.flagging import (
+    init_flags, apply_gain_flags_to_gains
+)
 
 
 gain_spec_tup = namedtuple(
@@ -344,7 +347,7 @@ class Gain:
     def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
         """Initialise the gains (and parameters)."""
 
-        (_, _, gain_shape, param_shape) = term_spec
+        (_, _, gain_shape, _) = term_spec
 
         if self.load_from:
             gains = term_kwargs[f"{self.name}_initial_gain"].copy()
@@ -353,4 +356,16 @@ class Gain:
             if gain_shape[-1] == 4:
                 gains[..., (1, 2)] = 0  # 2-by-2 identity.
 
-        return gains
+        gain_flags = init_flags(
+            gain_shape,
+            term_kwargs[f"{self.name}_time_map"],
+            term_kwargs[f"{self.name}_freq_map"],
+            ms_kwargs["FLAG"],
+            ms_kwargs["ANTENNA1"],
+            ms_kwargs["ANTENNA2"],
+            ms_kwargs["ROW_MAP"]
+        )
+
+        apply_gain_flags_to_gains(gain_flags, gains)
+
+        return gains, gain_flags

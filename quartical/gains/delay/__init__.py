@@ -6,6 +6,10 @@ from quartical.gains.delay.kernel import (
     delay_solver,
     delay_params_to_gains
 )
+from quartical.gains.general.flagging import (
+    apply_gain_flags_to_gains,
+    apply_param_flags_to_params
+)
 
 # Overload the default measurement set inputs to include the frequencies.
 ms_inputs = namedtuple(
@@ -51,20 +55,24 @@ class Delay(ParameterizedGain):
     def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
         """Initialise the gains (and parameters)."""
 
-        gain, param = super().init_term(
+        gains, gain_flags, params, param_flags = super().init_term(
             term_spec, ref_ant, ms_kwargs, term_kwargs
         )
 
         # Convert the parameters into gains.
         delay_params_to_gains(
-            param,
-            gain,
+            params,
+            gains,
             ms_kwargs["CHAN_FREQ"],
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 
         if self.load_from or not self.initial_estimate:
-            return gain, param
+
+            apply_param_flags_to_params(param_flags, params, 0)
+            apply_gain_flags_to_gains(gain_flags, gains)
+
+            return gains, gain_flags, params, param_flags
 
         data = ms_kwargs["DATA"]  # (row, chan, corr)
         flags = ms_kwargs["FLAG"]  # (row, chan)
@@ -73,7 +81,7 @@ class Delay(ParameterizedGain):
         chan_freq = ms_kwargs["CHAN_FREQ"]
         t_map = term_kwargs[f"{term_spec.name}_time_map"]
         f_map = term_kwargs[f"{term_spec.name}_param_freq_map"]
-        _, n_chan, n_ant, n_dir, n_corr = gain.shape
+        _, n_chan, n_ant, n_dir, n_corr = gains.shape
 
         # We only need the baselines which include the ref_ant.
         sel = np.where((a1 == ref_ant) | (a2 == ref_ant))
@@ -142,19 +150,22 @@ class Delay(ParameterizedGain):
 
                 for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
                     if p == ref_ant:
-                        param[t, uf, q, 0, 0] = -delay_est_00[q]
+                        params[t, uf, q, 0, 0] = -delay_est_00[q]
                         if n_corr > 1:
-                            param[t, uf, q, 0, 1] = -delay_est_11[q]
+                            params[t, uf, q, 0, 1] = -delay_est_11[q]
                     else:
-                        param[t, uf, p, 0, 0] = delay_est_00[p]
+                        params[t, uf, p, 0, 0] = delay_est_00[p]
                         if n_corr > 1:
-                            param[t, uf, p, 0, 1] = delay_est_11[p]
+                            params[t, uf, p, 0, 1] = delay_est_11[p]
 
         delay_params_to_gains(
-            param,
-            gain,
+            params,
+            gains,
             ms_kwargs["CHAN_FREQ"],
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 
-        return gain, param
+        apply_param_flags_to_params(param_flags, params, 0)
+        apply_gain_flags_to_gains(gain_flags, gains)
+
+        return gains, gain_flags, params, param_flags

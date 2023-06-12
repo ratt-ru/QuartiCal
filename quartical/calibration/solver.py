@@ -5,7 +5,6 @@ from numba import set_num_threads
 from collections import namedtuple
 from itertools import cycle
 from quartical.weights.robust import robust_reweighting
-from quartical.gains.general.flagging import init_flags
 from quartical.statistics.stat_kernels import compute_mean_postsolve_chisq
 from quartical.statistics.logging import log_chisq
 
@@ -108,43 +107,22 @@ def solver_wrapper(
 
         # Perform term specific setup e.g. init gains and params.
         if term.is_parameterized:
-            gain_array, param_array = term.init_term(
+            gains, gain_flags, params, param_flags = term.init_term(
                 term_spec, ref_ant, ms_kwargs, term_kwargs
             )
-            # Init parameter flags by looking for intervals with no data.
-            param_flag_array = init_flags(
-                term_pshape,
-                term_kwargs[f"{term.name}_param_time_map"],
-                term_kwargs[f"{term.name}_param_freq_map"],
-                ms_kwargs["FLAG"],
-                ms_kwargs["ANTENNA1"],
-                ms_kwargs["ANTENNA2"],
-                ms_kwargs["ROW_MAP"]
-            )
         else:
-            gain_array = term.init_term(
+            gains, gain_flags = term.init_term(
                 term_spec, ref_ant, ms_kwargs, term_kwargs
             )
             # Dummy arrays with standard dtypes - aids compilation.
-            param_array = np.empty(term_pshape, dtype=np.float64)
-            param_flag_array = np.empty(term_pshape[:-1], dtype=np.int8)
-
-        # Init gain flags by looking for intervals with no data.
-        gain_flag_array = init_flags(
-            term_shape,
-            term_kwargs[f"{term.name}_time_map"],
-            term_kwargs[f"{term.name}_freq_map"],
-            ms_kwargs["FLAG"],
-            ms_kwargs["ANTENNA1"],
-            ms_kwargs["ANTENNA2"],
-            ms_kwargs["ROW_MAP"]
-        )
+            params = np.empty(term_pshape, dtype=np.float64)
+            param_flags = np.empty(term_pshape[:-1], dtype=np.int8)
 
         # Add the quantities which we intend to return to the results dict.
-        results_dict[f"{term.name}_gain"] = gain_array
-        results_dict[f"{term.name}_gain_flags"] = gain_flag_array
-        results_dict[f"{term.name}_param"] = param_array
-        results_dict[f"{term.name}_param_flags"] = param_flag_array
+        results_dict[f"{term.name}_gains"] = gains
+        results_dict[f"{term.name}_gain_flags"] = gain_flags
+        results_dict[f"{term.name}_params"] = params
+        results_dict[f"{term.name}_param_flags"] = param_flags
         results_dict[f"{term.name}_conviter"] = np.atleast_2d(0)   # int
         results_dict[f"{term.name}_convperc"] = np.atleast_2d(0.)  # float
 
@@ -159,26 +137,22 @@ def solver_wrapper(
     param_time_map_tup = make_mapping_tuple(per_term_kwargs, "param_time_map")
     param_freq_map_tup = make_mapping_tuple(per_term_kwargs, "param_freq_map")
 
-    gain_array_tup = tuple(
-        [results_dict[f"{term.name}_gain"] for term in chain]
-    )
-    gain_flag_array_tup = tuple(
+    gains_tup = tuple([results_dict[f"{term.name}_gains"] for term in chain])
+    gain_flags_tup = tuple(
         [results_dict[f"{term.name}_gain_flags"] for term in chain]
     )
-    param_array_tup = tuple(
-        [results_dict[f"{term.name}_param"] for term in chain]
-    )
-    param_flag_array_tup = tuple(
+    params_tup = tuple([results_dict[f"{term.name}_params"] for term in chain])
+    param_flags_tup = tuple(
         [results_dict[f"{term.name}_param_flags"] for term in chain]
     )
 
     # Take the tuples above and create a new dictionary for these arguments,
     # now in a form appropriate for the solver calls.
     chain_kwargs = {
-        "gains": gain_array_tup,
-        "gain_flags": gain_flag_array_tup,
-        "params": param_array_tup,
-        "param_flags": param_flag_array_tup
+        "gains": gains_tup,
+        "gain_flags": gain_flags_tup,
+        "params": params_tup,
+        "param_flags": param_flags_tup
     }
 
     mapping_kwargs = {
@@ -195,7 +169,7 @@ def solver_wrapper(
         final_epoch = len(iter_recipe) // len(chain)
         etas = np.zeros_like(ms_kwargs["WEIGHT"][..., 0])
         icovariance = np.zeros(corr_mode, np.float64)
-        dof = 5
+        dof = 5  # TODO: Expose?
 
     presolve_chisq = compute_mean_postsolve_chisq(
         ms_kwargs["DATA"],
