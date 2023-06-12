@@ -268,6 +268,7 @@ def solver_wrapper(
         mapping_kwargs["dir_maps"],
         corr_mode
     )
+
     log_chisq(presolve_chisq, postsolve_chisq, aux_block_info, block_id)
 
     results_dict["presolve_chisq"] = presolve_chisq
