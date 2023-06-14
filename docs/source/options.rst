@@ -33,8 +33,23 @@ Options pertaining to the input measurement set.
 
     {% for k, v in input_ms.items() %}
 
-    * {{"{}".format("input_ms." + k)}}:
-        {{v}}
+    {{"{}".format("input_ms." + k) | code}}
+        {{"{} ".format(v["info"])}}
+        
+        {% if "choices" in v %}
+            * {{"Choices: {}".format(v["choices"])}}
+        {% endif %}
+    
+        {% if "element_choices" in v %}
+            * {{"Choices: {} ".format(v["element_choices"])}}
+        {% endif %}
+    
+        {% if "default" in v %}
+            * {{"Default: {} ".format(v["default"])}}
+        {% else %}
+            * Default: N/A
+        {% endif %}
+    
     {% endfor %}
 
 
@@ -47,8 +62,26 @@ Options pertaining to the input model.
 
     {% for k, v in input_model.items() %}
 
-    * {{"{}".format("input_model." + k)}}:
-        {{v}}
+    {{"{}".format("input_model." + k) | code}}
+        {{"{} ".format(v["info"])}}
+        
+        {% if "choices" in v %}
+            * {{"Choices: {}".format(v["choices"])}}
+        {% endif %}
+    
+        {% if "element_choices" in v %}
+            * Choices: 
+            {% for i in v["element_choices"] %}
+                - {{i}}
+            {% endfor %}
+        {% endif %}
+    
+        {% if "default" in v %}
+            * {{"Default: {} ".format(v["default"])}}
+        {% else %}
+            * Default: N/A
+        {% endif %}
+
     {% endfor %}
 
 
@@ -61,8 +94,26 @@ Options pertaining to output.
 
     {% for k, v in output.items() %}
 
-    * {{"{}".format("output." + k)}}:
-        {{v}}
+    {{"{}".format("output." + k) | code}}
+        {{"{} ".format(v["info"])}}
+        
+        {% if "choices" in v %}
+            * {{"Choices: {}".format(v["choices"])}}
+        {% endif %}
+    
+        {% if "element_choices" in v %}
+            * Choices: 
+            {% for i in v["element_choices"] %}
+                - {{i}}
+            {% endfor %}
+        {% endif %}
+    
+        {% if "default" in v %}
+            * {{"Default: {} ".format(v["default"])}}
+        {% else %}
+            * Default: N/A
+        {% endif %}
+
     {% endfor %}
 
 
@@ -75,8 +126,26 @@ Options pertaining to MAD (Median Absolute Deviation) flagging.
 
     {% for k, v in mad_flags.items() %}
 
-    * {{"{}".format("mad_flags." + k)}}:
-        {{v}}
+    {{"{}".format("mad_flags." + k) | code}}
+        {{"{} ".format(v["info"])}}
+        
+        {% if "choices" in v %}
+            * {{"Choices: {}".format(v["choices"])}}
+        {% endif %}
+    
+        {% if "element_choices" in v %}
+            * Choices: 
+            {% for i in v["element_choices"] %}
+                - {{i}}
+            {% endfor %}
+        {% endif %}
+    
+        {% if "default" in v %}
+            * {{"Default: {} ".format(v["default"])}}
+        {% else %}
+            * Default: N/A
+        {% endif %}
+
     {% endfor %}
 
 
@@ -87,10 +156,28 @@ Options pertaining to Dask (and therefore parallelism).
 
 .. jinja:: dask
 
-    {% for k, v in dask.items() %}
+        {% for k, v in dask.items() %}
 
-    * {{"{}".format("dask." + k)}}:
-        {{v}}
+    {{"{}".format("dask." + k) | code}}
+        {{"{} ".format(v["info"])}}
+        
+        {% if "choices" in v %}
+            * {{"Choices: {}".format(v["choices"])}}
+        {% endif %}
+    
+        {% if "element_choices" in v %}
+            * Choices: 
+            {% for i in v["element_choices"] %}
+                - {{i}}
+            {% endfor %}
+        {% endif %}
+    
+        {% if "default" in v %}
+            * {{"Default: {} ".format(v["default"])}}
+        {% else %}
+            * Default: N/A
+        {% endif %}
+
     {% endfor %}
 
 
@@ -103,8 +190,26 @@ Options pertaining to all solvers (as opposed to specific terms).
 
     {% for k, v in solver.items() %}
 
-    * {{"{}".format("solver." + k)}}:
-        {{v}}
+    {{"{}".format("solver." + k) | code}}
+        {{"{} ".format(v["info"])}}
+        
+        {% if "choices" in v %}
+            * {{"Choices: {}".format(v["choices"])}}
+        {% endif %}
+    
+        {% if "element_choices" in v %}
+            * Choices: 
+            {% for i in v["element_choices"] %}
+                - {{i}}
+            {% endfor %}
+        {% endif %}
+    
+        {% if "default" in v %}
+            * {{"Default: {} ".format(v["default"])}}
+        {% else %}
+            * Default: N/A
+        {% endif %}
+
     {% endfor %}
 
 
@@ -123,6 +228,24 @@ Options pertaining to a specific gain/Jones term.
 
     {% for k, v in gain.items() %}
 
-    * {{"{}".format("gain." + k)}}:
-        {{v}}
+    {{"{}".format("gain." + k) | code}}
+        {{"{} ".format(v["info"])}}
+        
+        {% if "choices" in v %}
+            * {{"Choices: {}".format(v["choices"])}}
+        {% endif %}
+    
+        {% if "element_choices" in v %}
+            * Choices: 
+            {% for i in v["element_choices"] %}
+                - {{i}}
+            {% endfor %}
+        {% endif %}
+    
+        {% if "default" in v %}
+            * {{"Default: {} ".format(v["default"])}}
+        {% else %}
+            * Default: N/A
+        {% endif %}
+
     {% endfor %}
