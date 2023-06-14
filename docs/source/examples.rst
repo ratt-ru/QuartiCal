@@ -37,7 +37,6 @@ column and produces corrected residuals and corrected weights.
         iter_recipe:
             - 25
     output:
-        overwrite: false
         products:
             - corrected_residual
             - corrected_weight
@@ -73,8 +72,6 @@ The following performs diagonal, phase and amplitude selfcal using a Tigger
         iter_recipe:
             - 25
     output:
-        directory: outputs.qc
-        overwrite: false
         products:
             - corrected_data
             - corrected_weight
