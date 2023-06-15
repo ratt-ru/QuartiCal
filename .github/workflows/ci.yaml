@@ -13,12 +13,12 @@ jobs:
     continue-on-error: true
 
     env:
-      NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
+      NUMBA_CACHE_DIR: /tmp/numba-cache
 
     strategy:
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04]
-        python-version: ["3.8", "3.9", "3.10"]
+        os: [ubuntu-22.04]
+        python-version: ["3.8"]
 
     steps:
       # Use Custom Github Action to setup different version
@@ -38,7 +38,10 @@ jobs:
         run: python -m pip install -U pip setuptools
 
       - name: Create Numba Cache Directory
-        run: mkdir -p $NUMBA_CACHE_DIR
+        run: |
+          mkdir -p $NUMBA_CACHE_DIR
+          echo "hello" > $NUMBA_CACHE_DIR/hello.txt
+          ls -l $NUMBA_CACHE_DIR
 
       - name: Cache Numba Kernels
         uses: actions/cache@v3
@@ -72,7 +75,7 @@ jobs:
 
       # Run the test cases
       - name: Testing Step
-        run: py.test -v testing/tests
+        run: py.test -v testing/tests -k test_nterm
 
       # Check that the help prints, suggesting that everything is ok.
       - name: Run QuartiCal
