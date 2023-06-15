@@ -38,17 +38,14 @@ jobs:
         run: python -m pip install -U pip setuptools
 
       - name: Create Numba Cache Directory
-        run: |
-          mkdir -p $NUMBA_CACHE_DIR
-          echo "hello" > $NUMBA_CACHE_DIR/hello.txt
-          ls -l $NUMBA_CACHE_DIR
+        run: mkdir -p $NUMBA_CACHE_DIR
 
       - name: Cache Numba Kernels
         uses: actions/cache@v3
         with:
-          key: numba-cache-${{ matrix.python_version }}
-          restore-keys: numba-cache-${{ matrix.python_version }}
-          path: $NUMBA_CACHE_DIR
+          key: numba-cache-${{ matrix.python-version }}
+          restore-keys: numba-cache-${{ matrix.python-version }}
+          path: ${{ env.NUMBA_CACHE_DIR }}
 
       - name: List the measures directory
         run: curl ftp://ftp.astron.nl/outgoing/Measures/ > measures_dir.txt
