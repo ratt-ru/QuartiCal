@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 from loguru import logger
+import atexit
 import numpy as np
 import dask.array as da
 import xarray
 from copy import deepcopy
 from daskms.experimental.zarr import xds_from_zarr
+from quartical.utils import remove_directory
 from quartical.gains.conversion import Converter
 from quartical.interpolation.interpolants import (
     interpolate_missing,
@@ -28,6 +30,10 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
     Returns:
         A list like gain_xds_list with the relevant gains loaded from disk.
     """
+
+    temp_directory = f"{output_directory}/partials.tmp"
+    # Use atexit to remove temporary directory when QuartiCal has finished.
+    atexit.register(remove_directory, temp_directory)
 
     interpolated_xds_lol = []
 
@@ -106,14 +112,6 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
             for xds in interpolated_xds_list
         ]
 
-        # This is a workaround - parameterized terms may end up with
-        # inconsistent chunks in their gains if we do not do the initial write
-        # with a dummy array. This ensures the auto rechunking remains
-        # consistent and the coordinates are chunked appropriately on disk.
-        interpolated_xds_list = [
-            add_dummy_gains(xds) for xds in interpolated_xds_list
-        ]
-
         # Make the interpolated xds consistent with the current run.
         interpolated_xds_list = [
             reindex_and_rechunk(ixds, rxds)
@@ -126,7 +124,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
         # that makes testing painful.
 
         interpolated_xds_list = compute_and_reload(
-            output_directory, interpolated_xds_list
+            temp_directory, interpolated_xds_list
         )
 
         logger.success(f"Successfully loaded/interpolated {term_name}.")
@@ -212,20 +210,6 @@ def interpolate(source_xds, target_xds, term):
     )
 
     return interpolated_xds
-
-
-def add_dummy_gains(xds):
-
-    if "gains" in xds.data_vars.keys():
-        output_xds = xds
-    else:
-        axes = xds.GAIN_AXES
-        shape = [xds.dims[ax] for ax in axes]
-        chunks = tuple([(d,) for d in shape])
-        dummy_gains = da.empty(shape, chunks=chunks, dtype=np.complex128)
-        output_xds = xds.assign({"gains": (axes, dummy_gains)})
-
-    return output_xds
 
 
 def reindex_and_rechunk(interpolated_xds, reference_xds):
