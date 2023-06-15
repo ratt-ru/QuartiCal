@@ -6,7 +6,7 @@ import dask.array as da
 import xarray
 from copy import deepcopy
 from daskms.experimental.zarr import xds_from_zarr
-from quartical.utils import remove_directory
+from quartical.utils import remove_store
 from quartical.gains.conversion import Converter
 from quartical.interpolation.interpolants import (
     interpolate_missing,
@@ -33,7 +33,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
 
     temp_directory = f"{output_directory}/partials.tmp"
     # Use atexit to remove temporary directory when QuartiCal has finished.
-    atexit.register(remove_directory, temp_directory)
+    atexit.register(remove_store, temp_directory)
 
     interpolated_xds_lol = []
 
