@@ -106,6 +106,14 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
             for xds in interpolated_xds_list
         ]
 
+        # This is a workaround - parameterized terms may end up with
+        # inconsistent chunks in their gains if we do not do the initial write
+        # with a dummy array. This ensures the auto rechunking remains
+        # consistent and the coordinates are chunked appropriately on disk.
+        interpolated_xds_list = [
+            add_dummy_gains(xds) for xds in interpolated_xds_list
+        ]
+
         # Make the interpolated xds consistent with the current run.
         interpolated_xds_list = [
             reindex_and_rechunk(ixds, rxds)
@@ -204,6 +212,20 @@ def interpolate(source_xds, target_xds, term):
     )
 
     return interpolated_xds
+
+
+def add_dummy_gains(xds):
+
+    if "gains" in xds.data_vars.keys():
+        output_xds = xds
+    else:
+        axes = xds.GAIN_AXES
+        shape = [xds.dims[ax] for ax in axes]
+        chunks = tuple([(d,) for d in shape])
+        dummy_gains = da.empty(shape, chunks=chunks, dtype=np.complex128)
+        output_xds = xds.assign({"gains": (axes, dummy_gains)})
+
+    return output_xds
 
 
 def reindex_and_rechunk(interpolated_xds, reference_xds):
