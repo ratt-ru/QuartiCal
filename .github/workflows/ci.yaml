@@ -13,7 +13,7 @@ jobs:
     continue-on-error: true
 
     env:
-      NUMBA_CACHE_DIR: ${{ runner.tmp }}/numba-cache
+      NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
 
     strategy:
       matrix:
