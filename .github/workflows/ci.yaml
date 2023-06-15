@@ -45,6 +45,7 @@ jobs:
         shell: bash
 
       - name: Cache Numba Kernels
+        uses: actions/cache@v3
         with:
           key: numba-cache-${{ steps.numba-cache-key.outputs.date }}
           restore-keys: numba-cache-
@@ -55,7 +56,7 @@ jobs:
 
       - name: Load cached CASA Measures Data
         id: load-cached-casa-measures
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           key: casa-measures-${{ hashFiles('measures_dir.txt')}}
           path: |
