@@ -17,14 +17,14 @@ input_ms:
       When given, the weights will be reinitialized as 1/sigma_column**2. This
       should be preferred over weight_column to ensure that the correct
       data weights are used and not those from a previous calibration run.
-      Mutually exclusive with weight_column.
+      Mutually exclusive with input_ms.weight_column.
 
   weight_column:
     dtype: Optional[str]
     info:
       Column to read weights from. An empty string will result in all weights
       being treated as unity if sigma_column is not set. Mutually
-      exclusive with sigma_column (which is preferred).
+      exclusive with input_ms.sigma_column (which is preferred).
 
   time_chunk:
     dtype: str

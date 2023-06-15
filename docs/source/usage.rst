@@ -10,21 +10,21 @@ Command Line Interface
 Once QuartiCal has been successfully installed, it can be run from the command
 line using:
 
-.. code:: bash
+.. code:: text
 
 	goquartical
 
 This will produce detailed help on all the input parameters. The help can also
 be displayed using:
 
-.. code:: bash
+.. code:: text
 
 	goquartical help
 
 We appreciate that this can be overwhelming and difficult to navigate. Thus,
 users can ask for help on specific sections using the following:
 
-.. code:: bash
+.. code:: text
 
 	goquartical help=[section1,section2]
 
@@ -120,8 +120,10 @@ The contents of the .yaml would look as follows for this case:
             - 25
 
     G:
+        type: diag_complex
         freq_interval: 0
     B:
+        type: diag_complex
         time_interval: 0
 
 QuartiCal will automatically know that each term has its own dynamically
@@ -132,7 +134,7 @@ The above can also be specified on the command line using:
 
 .. code-block:: bash
 
-    solver.terms="[G,B]" solver.iter_recipe="[25,25]" G.freq_interval=0 B.time_interval=0
+    solver.terms="[G,B]" solver.iter_recipe="[25,25]" G.type=diag_complex G.freq_interval=0 B.type=diag_complex B.time_interval=0
 
 
 .. note::

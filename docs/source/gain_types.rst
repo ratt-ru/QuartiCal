@@ -4,6 +4,20 @@ Gain Types
 This page details the various different gain types which QuartiCal can solve
 for and includes some tips for ensuring you get good results.
 
+
+Amplitude - ``amplitude``
+-------------------------
+
+This solves for amplitudes given gains of the following form (in the case of
+linear feeds, but the same is true for circular feeds):
+
+.. math::
+
+    \mathbf{G} = \begin{bmatrix} A^{XX} & 0 \\
+                                 0 & A^{YY} \end{bmatrix}
+
+where :math:`A` is a real-valued, positive amplitude.
+
 Complex - ``complex``
 ---------------------
 
@@ -15,12 +29,86 @@ but the same is true for circular feeds):
     \mathbf{G} = \begin{bmatrix} g^{XX} & g^{XY} \\
                                  g^{YX} & g^{YY} \end{bmatrix}
 
-Note:
+.. note::
     * This term contains amplitude, phase and leakage information and may not
       be appropriate in the absence of a polarised model.
-    * Can be used in conjunction with ``input_ms.select_corr`` to solve over
-      a subset of the correlations present in the measurement set.
 
+Crosshand Phase - ``crosshand_phase``
+--------------------------------------
+
+This solves for the crosshand phase given gains of the following form (in the
+case of linear feeds, but the same is true for circular feeds):
+
+.. math::
+
+    \mathbf{G} = \begin{bmatrix} e^{i\theta} & 0 \\
+                                 0 & 1 \end{bmatrix}
+
+where :math:`\theta` is the crosshand phase.
+
+.. note::
+    * This term requires four correlation data.
+    * This term requires an excellent polarisation model.
+    * This term must be solved over the entire array rather than per antenna.
+
+Delay - ``delay``
+-----------------
+
+This solves for the delays given gains of the following form (in the case of
+linear feeds, but the same is true for circular feeds):
+
+.. math::
+
+    \mathbf{G} = \begin{bmatrix}
+        e^{i 2\pi d_{XX}(\nu - \nu_c)} & 0 \\
+        0 & e^{i 2\pi d_{YY}(\nu - \nu_c)}
+    \end{bmatrix}
+
+where :math:`\nu` is the frequency of a particular channel, :math:`\nu_c` is
+the central frequency and :math:`d` is the delay.
+
+.. note::
+
+    Delay solutions support the ``initial_estimate`` parameter. If specified,
+    this will initialise the delays using the Fourier transform.
+
+.. warning::
+
+    Solving for a delay is very difficult if the phases are not approximately
+    aligned. Thus, it is recommended to to solve for residual delay errors
+    after applying a term which will approximately align the phases. This
+    can be accomplished using e.g. ``solver.terms="[G,K]"`` where ``G`` is a 
+    ``diag_complex`` term with long solution intervals.
+
+Delay and Offset - ``delay_and_offset``
+---------------------------------------
+
+This solves for the delays and offsets (means) given gains of the following
+form (in the case of linear feeds, but the same is true for circular feeds):
+
+.. math::
+
+    \mathbf{G} = \begin{bmatrix}
+        e^{i (2\pi d_{XX}(\nu - \nu_c) + \theta_{XX})} & 0 \\
+        0 & e^{i (2\pi d_{YY}(\nu - \nu_c) + \theta_{YY})}
+    \end{bmatrix}
+
+where :math:`\nu` is the frequency of a particular channel, :math:`\nu_c` is
+the central frequency, :math:`d` is the delay and :math:`\theta` is some mean
+phase offset.
+
+.. note::
+
+    Delay solutions support the ``initial_estimate`` parameter. If specified,
+    this will initialise the delays using the Fourier transform.
+
+.. warning::
+
+    Solving for a delay is very difficult if the phases are not approximately
+    aligned. Thus, it is recommended to to solve for residual delay errors
+    after applying a term which will approximately align the phases. This
+    can be accomplished using e.g. ``solver.terms="[G,K]"`` where ``G`` is a 
+    ``diag_complex`` term with long solution intervals.
 
 Diagonal Complex - ``diag_complex``
 -----------------------------------
@@ -33,78 +121,37 @@ but the same is true for circular feeds):
     \mathbf{G} = \begin{bmatrix} g^{XX} & 0 \\
                                  0 & g^{YY} \end{bmatrix}
 
-Note:
+.. note::
     * This term contains amplitude and phase information but does not
       not incorporate leakage information. This makes it appropriate for
       the majority of use-cases.
 
-
-Amplitude - ``amplitude``
--------------------------
+Leakage - ``leakage``
+---------------------
 
 This solves for gains of the following form (in the case of linear feeds,
 but the same is true for circular feeds):
 
 .. math::
 
-    \mathbf{G} = \begin{bmatrix} |g^{XX}| & 0 \\
-                                 0 & |g^{YY}| \end{bmatrix}
+    \mathbf{G} = \begin{bmatrix} 1 & d^{XY} \\
+                                 d^{YX} & 1 \end{bmatrix}
 
-Note:
-    * This term contains only amplitude information and should be used with
-      caution. Amplitude only solutions are prone to introducing ghosts in the
-      presence of an incomplete model.
-
+where :math:`d` is a complex-valued quanitity which descibes the leakage.
 
 Phase - ``phase``
 -----------------
 
-This solves for gains of the following form (in the case of linear feeds,
-but the same is true for circular feeds):
+This solves for the phase given gains of the following form (in the case of
+linear feeds, but the same is true for circular feeds):
 
 .. math::
 
-    \mathbf{G} = \begin{bmatrix} e^{\theta_{XX}} & 0 \\
-                                 0 & e^{\theta_{YY}} \end{bmatrix}
+    \mathbf{G} = \begin{bmatrix} e^{i\theta_{XX}} & 0 \\
+                                 0 & e^{i\theta_{YY}} \end{bmatrix}
 
-Note:
-    * This term contains only phase information and should be used with
-      caution. Phase only solutions are prone to introducing ghosts in the
-      presence of an incomplete model.
-
-
-Delay - ``delay``
------------------
-
-This solves for gains of the following form (in the case of linear feeds,
-but the same is true for circular feeds):
-
-.. math::
-
-    \mathbf{G} = \begin{bmatrix} \exp(a_{XX}\nu + b_{XX}) & 0 \\
-                                 0 & \exp(a_{YY}\nu + b_{YY}) \end{bmatrix}
-
-where :math:`\nu` is the frequency of a particular channel, :math:`a` is the
-delay and :math:`b` is a phase offset.
-
-Note:
-    * This term contains only phase information and should be used with
-      caution. Phase only solutions are prone to introducing ghosts in the
-      presence of an incomplete model.
-
-.. warning::
-
-    Solving for a delay is very difficult if the phases are not approximately
-    aligned. Thus, it is recommended to to solve for residual delay errors
-    after applying a term which will approximately align the phases. This
-    can be accomplished using e.g. ``solver.terms=[K,G,B]`` and
-    ``solver.iter_recipe=[0,25,25,25,25,25]``. This means that the delay is
-    only solved after first letting the gain and bandpass solutions
-    approximately align the phases.
-
-
-TEC - ``tec``
--------------
+Rotation - ``rotation``
+-----------------------
 
 This solves for gains of the following form (in the case of linear feeds,
 but the same is true for circular feeds):
@@ -112,23 +159,20 @@ but the same is true for circular feeds):
 .. math::
 
     \mathbf{G} = \begin{bmatrix}
-        \exp(a_{XX}{\nu}^{-1} + b_{XX}) & 0 \\
-        0 & \exp(a_{YY}{\nu}^{-1} + b_{YY})
+        \cos{\theta} & -\sin{\theta} \\
+        \sin{\theta} & \cos{\theta}
     \end{bmatrix}
 
-where :math:`\nu` is the frequency of a particular channel, :math:`a` is the
-tec multiplied by some constants and :math:`b` is a phase offset.
+where :math:`\theta` is some unknown angle.
 
-Note:
-    * This term contains only phase information and should be used with
-      caution. Phase only solutions are prone to introducing ghosts in the
-      presence of an incomplete model.
+.. note::
+    * This term is only applicable to four correlation data.
+    * Solving for this term requires a polarised model.
 
 .. warning::
 
     This solver is highly experimental. Any problems should be reported via
-    the issue tracker.
-
+    the issue tracker.  
 
 Rotation Measure - ``rotation_measure``
 ---------------------------------------
@@ -146,11 +190,37 @@ but the same is true for circular feeds):
 where :math:`\lambda` is the wavelength in a particular channel and
 :math:`\mathrm{RM}` is an estimate of the rotation measure.
 
-Note:
-    * This terms is only applicable to four correlation data.
+.. note::
+    * This term is only applicable to four correlation data.
     * Solving for this term requires a polarised model.
 
 .. warning::
 
     This solver is highly experimental. Any problems should be reported via
     the issue tracker.
+
+TEC and Offset - ``tec_and_offset``
+-----------------------------------
+
+This solves for the differential TEC values and offsets (means) given gains of
+the following form (in the case of linear feeds, but the same is true for
+circular feeds):
+
+.. math::
+
+    \mathbf{G} = \begin{bmatrix}
+        e^{i (2\pi t_{XX}(\nu^{-1} + \frac{\log(\nu_{min}) - \log(\nu_{max})}{\nu_{max} - \nu_{min}}) + \theta_{XX})} & 0 \\
+        0 & e^{i (2\pi t_{YY}(\nu^{-1} + \frac{\log(\nu_{min}) - \log(\nu_{max})}{\nu_{max} - \nu_{min}}) + \theta_{YY})} 
+    \end{bmatrix}
+
+where :math:`\nu` is the frequency of a particular channel, :math:`\nu_{min}`
+is the smallest frequency, :math:`\nu_{max}` is the largest frequency,
+:math:`t` is the differential (not absolute) TEC and :math:`\theta` is some
+mean phase offset.
+
+.. warning::
+
+    This solver is highly experimental. Any problems should be reported via
+    the issue tracker.
+
+

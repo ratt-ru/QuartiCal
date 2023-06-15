@@ -21,4 +21,6 @@ of QuartiCal's interfaces.
    gain_types
    gain_files
    examples
+   interpolation
+   parallelism
    distribution

@@ -37,7 +37,7 @@ author = 'Jonathan Kenyon'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'sphinxcontrib.jinja'
+    'sphinx_jinja'
 ]
 
 jinja_contexts = {
@@ -46,6 +46,7 @@ jinja_contexts = {
 
 jinja_filters = {
     'bold': lambda value: f'**{value}**',
+    'code': lambda value: f'``{value}``'
 }
 
 jinja_base = os.path.realpath(
