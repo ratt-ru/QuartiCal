@@ -41,7 +41,7 @@ jobs:
         id: numba-key
         run: |
           mkdir -p ${{ env.NUMBA_CACHE_DIR }}
-          echo "timestamp=$(/bin/date -u '+%Y%m%d%H%M%S')" >> GITHUB_OUTPUT
+          echo "timestamp=$(/bin/date -u '+%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
 
       - name: Cache Numba Kernels
         uses: actions/cache@v3
