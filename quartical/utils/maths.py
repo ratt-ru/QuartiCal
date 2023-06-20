@@ -1,7 +1,7 @@
 import numba as nb
 import numpy as np
-from numba import jit
-import math
+from numba import njit
+from quartical.utils.numba import JIT_OPTIONS
 
 
 @nb.vectorize([nb.float64(nb.complex128), nb.float32(nb.complex64)])
@@ -44,7 +44,7 @@ def arr_gcd(arr):
     return net_gcd
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def mean_for_index(arr, inds):
 
     sums = np.zeros(np.max(inds) + 1, dtype=arr.dtype)

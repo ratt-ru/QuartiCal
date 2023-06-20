@@ -1,45 +1,49 @@
-from quartical.gains.gain import Gain, gain_spec_tup, param_spec_tup
-from quartical.gains.rotation_measure.kernel import rm_solver, rm_args
 import numpy as np
+from collections import namedtuple
+from quartical.gains.conversion import no_op
+from quartical.gains.parameterized_gain import ParameterizedGain
+from quartical.gains.rotation_measure.kernel import (
+    rm_solver,
+    rm_params_to_gains
+)
+from quartical.gains.general.flagging import (
+    apply_gain_flags_to_gains,
+    apply_param_flags_to_params
+)
+
+# Overload the default measurement set inputs to include the frequencies.
+ms_inputs = namedtuple(
+    'ms_inputs', ParameterizedGain.ms_inputs._fields + ('CHAN_FREQ',)
+)
 
 
-class RotationMeasure(Gain):
+class RotationMeasure(ParameterizedGain):
 
-    solver = rm_solver
-    term_args = rm_args
+    solver = staticmethod(rm_solver)
+    ms_inputs = ms_inputs
 
-    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
+    native_to_converted = (
+        (1, (no_op,)),
+    )
+    converted_to_native = (
+        (1, no_op),
+    )
+    converted_dtype = np.float64
+    native_dtype = np.float64
 
-        Gain.__init__(self, term_name, term_opts, data_xds, coords, tipc, fipc)
+    def __init__(self, term_name, term_opts):
 
-        self.n_param = 1  # This term only makes sense in a 2x2 chain.
-        self.gain_chunk_spec = gain_spec_tup(self.n_tipc_g,
-                                             self.n_fipc_g,
-                                             (self.n_ant,),
-                                             (self.n_dir,),
-                                             (self.n_corr,))
-        self.param_chunk_spec = param_spec_tup(self.n_tipc_g,  # Check!
-                                               self.n_fipc_p,
-                                               (self.n_ant,),
-                                               (self.n_dir,),
-                                               (self.n_param,))
+        super().__init__(term_name, term_opts)
 
-        self.gain_axes = ("gain_t", "gain_f", "ant", "dir", "corr")
-        self.param_axes = ("param_t", "param_f", "ant", "dir", "param")
+    @classmethod
+    def _make_freq_map(cls, chan_freqs, chan_widths, freq_interval):
+        # Overload gain mapping construction - we evaluate it in every channel.
+        return np.arange(chan_freqs.size, dtype=np.int32)
 
-    def make_xds(self):
+    @classmethod
+    def make_param_names(cls, correlations):
 
-        xds = Gain.make_xds(self)
-
-        xds = xds.assign_coords({"param": np.array(["rotation_measure"]),
-                                 "param_t": self.gain_times,
-                                 "param_f": self.param_freqs})
-        xds = xds.assign_attrs({"GAIN_SPEC": self.gain_chunk_spec,
-                                "PARAM_SPEC": self.param_chunk_spec,
-                                "GAIN_AXES": self.gain_axes,
-                                "PARAM_AXES": self.param_axes})
-
-        return xds
+        return ["rotation_measure"]
 
     @staticmethod
     def make_f_maps(chan_freqs, chan_widths, f_int):
@@ -66,3 +70,27 @@ class RotationMeasure(Gain):
         f_map_arr[0, :] = np.arange(n_chan)
 
         return f_map_arr
+
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
+        """Initialise the gains (and parameters)."""
+
+        gains, gain_flags, params, param_flags = super().init_term(
+            term_spec, ref_ant, ms_kwargs, term_kwargs
+        )
+
+        chan_freq = ms_kwargs["CHAN_FREQ"]
+        lambda_sq = (299792458 / chan_freq) ** 2
+
+        # Convert the parameters into gains.
+        rm_params_to_gains(
+            params,
+            gains,
+            lambda_sq,
+            term_kwargs[f"{self.name}_param_freq_map"],
+        )
+
+        # Apply flags to gains and parameters.
+        apply_param_flags_to_params(param_flags, params, 1)
+        apply_gain_flags_to_gains(gain_flags, gains)
+
+        return gains, gain_flags, params, param_flags

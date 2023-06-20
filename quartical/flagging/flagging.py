@@ -99,10 +99,16 @@ def _initialise_flags(data_col, weight_col, flag_col, flag_row_col):
     # have off-diagonal only data, although in that case the flagging
     # logic is probablly equally applicable.
 
-    missing_points = np.any(data_col[..., (0, -1)] == 0, axis=-1)
+    n_corr = data_col.shape[-1]
+    start = 0
+    stop = n_corr
+    step = 3 if n_corr == 4 else 1
+    corr_sel = slice(start, stop, step)
+
+    missing_points = np.any(data_col[..., corr_sel] == 0, axis=-1)
     flags[missing_points] = True
 
-    noweight_points = np.any(weight_col[..., (0, -1)] == 0, axis=-1)
+    noweight_points = np.any(weight_col[..., corr_sel] == 0, axis=-1)
     flags[noweight_points] = True
 
     # At this point, if any correlation is flagged, flag other correlations.

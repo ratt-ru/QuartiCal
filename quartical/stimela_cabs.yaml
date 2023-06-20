@@ -1,0 +1,10 @@
+cabs:
+  quartical:
+    command: goquartical
+    policies:
+      key_value: true
+      repeat: '[]'
+      prefix: ''
+    inputs:
+      _include: (quartical.config)argument_schema.yaml
+    dynamic_schema: quartical.config.external.make_stimela_schema

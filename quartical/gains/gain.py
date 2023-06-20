@@ -1,6 +1,10 @@
 from collections import namedtuple
 import numpy as np
-import xarray
+import dask.array as da
+from dask.graph_manipulation import clone
+from quartical.gains.general.flagging import (
+    init_flags, apply_gain_flags_to_gains
+)
 
 
 gain_spec_tup = namedtuple(
@@ -25,119 +29,105 @@ param_spec_tup = namedtuple(
     )
 )
 
-base_args = namedtuple(
-    "base_args",
+ms_inputs = namedtuple(
+    "ms_inputs",
     (
-        "model",
-        "data",
-        "a1",
-        "a2",
-        "weights",
-        "flags",
-        "t_map_arr",
-        "f_map_arr",
-        "d_map_arr",
-        "inverse_gains",
+        "MODEL_DATA",
+        "DATA",
+        "ANTENNA1",
+        "ANTENNA2",
+        "WEIGHT",
+        "FLAG",
+        "ROW_MAP",
+        "ROW_WEIGHTS"
+    )
+)
+
+mapping_inputs = namedtuple(
+    "mapping_inputs",
+    (
+        "time_bins",
+        "time_maps",
+        "freq_maps",
+        "dir_maps",
+    )
+)
+
+
+chain_inputs = namedtuple(
+    "chain_inputs",
+    (
         "gains",
-        "gain_flags",
-        "row_map",
-        "row_weights"
+        "gain_flags"
     )
 )
 
 
 class Gain:
 
-    base_args = base_args
+    ms_inputs = ms_inputs
+    mapping_inputs = mapping_inputs
+    chain_inputs = chain_inputs
 
-    def __init__(self, term_name, term_opts, data_xds, coords, tipc, fipc):
+    is_parameterized = False
+
+    gain_axes = (
+        "gain_time",
+        "gain_freq",
+        "antenna",
+        "direction",
+        "correlation"
+    )
+    interpolation_targets = ["gains", "gain_flags"]
+
+    def __init__(self, term_name, term_opts):
 
         self.name = term_name
-        self.dd_term = term_opts.direction_dependent
         self.type = term_opts.type
-        self.n_chan = data_xds.dims["chan"]
-        self.n_ant = data_xds.dims["ant"]
-        self.n_dir = data_xds.dims["dir"] if self.dd_term else 1
-        self.n_corr = data_xds.dims["corr"]
-        partition_schema = data_xds.__daskms_partition_schema__
-        self.id_fields = {f: data_xds.attrs[f] for f, _ in partition_schema}
-        self.field_name = data_xds.FIELD_NAME
-        self.utime_chunks = list(map(int, data_xds.UTIME_CHUNKS))
-        self.freq_chunks = list(map(int, data_xds.chunks["chan"]))
-        self.n_t_chunk = len(self.utime_chunks)
-        self.n_f_chunk = len(self.freq_chunks)
+        self.solve_per = term_opts.solve_per
+        self.direction_dependent = term_opts.direction_dependent
+        self.pinned_directions = term_opts.pinned_directions
+        self.time_interval = term_opts.time_interval
+        self.freq_interval = term_opts.freq_interval
+        self.respect_scan_boundaries = term_opts.respect_scan_boundaries
+        self.initial_estimate = term_opts.initial_estimate
+        self.load_from = term_opts.load_from
+        self.interp_mode = term_opts.interp_mode
+        self.interp_method = term_opts.interp_method
 
-        self.ant_names = data_xds.ant.values
-        self.corr_types = data_xds.corr.values
+    @classmethod
+    def make_time_bins(
+        cls,
+        time_col,
+        interval_col,
+        scan_col,
+        time_interval,
+        respect_scan_boundaries,
+        chunks=None
+    ):
 
-        self.n_tipc_g = tuple(map(int, tipc[0]))
-        self.n_tint_g = np.sum(self.n_tipc_g)
-        self.n_tipc_p = tuple(map(int, tipc[1]))
-        self.n_tint_p = np.sum(self.n_tipc_p)
+        time_bins = da.map_blocks(
+            cls._make_time_bins,
+            time_col,
+            interval_col,
+            scan_col,
+            time_interval,
+            respect_scan_boundaries,
+            dtype=np.int64,
+            chunks=chunks
+        )
 
-        self.n_fipc_g = tuple(map(int, fipc[0]))
-        self.n_fint_g = np.sum(self.n_fipc_g)
-        self.n_fipc_p = tuple(map(int, fipc[1]))
-        self.n_fint_p = np.sum(self.n_fipc_p)
+        return time_bins
 
-        self.unique_times = coords["time"]
-        self.unique_freqs = coords["freq"]
-
-        self.gain_times = coords.get(f"{self.name}_mean_gtime",
-                                     coords["time"])
-        self.param_times = coords.get(f"{self.name}_mean_ptime",
-                                      coords["time"])
-        self.gain_freqs = coords.get(f"{self.name}_mean_gfreq",
-                                     coords["freq"])
-        self.param_freqs = coords.get(f"{self.name}_mean_pfreq",
-                                      coords["freq"])
-
-    def make_xds(self):
-
-        # Set up an xarray.Dataset describing the gain term.
-        xds = xarray.Dataset(
-            coords={"ant": ("ant", self.ant_names),
-                    "dir": ("dir", np.arange(self.n_dir, dtype=np.int32)),
-                    "corr": ("corr", self.corr_types),
-                    "t_chunk": ("t_chunk",
-                                np.arange(self.n_t_chunk, dtype=np.int32)),
-                    "f_chunk": ("f_chunk",
-                                np.arange(self.n_f_chunk, dtype=np.int32)),
-                    "gain_t": ("gain_t", self.gain_times),
-                    "gain_f": ("gain_f", self.gain_freqs)},
-            attrs={"NAME": self.name,
-                   "TYPE": self.type,
-                   "FIELD_NAME": self.field_name,
-                   **self.id_fields})
-
-        return xds
-
-    @staticmethod
-    def make_f_maps(chan_freqs, chan_widths, f_int):
-        """Internals of the frequency interval mapper."""
-
-        n_chan = chan_freqs.size
-
-        # The leading dimension corresponds (gain, param). For unparameterised
-        # gains, the parameter mapping is irrelevant.
-        f_map_arr = np.empty((2, n_chan,), dtype=np.int32)
-
-        if isinstance(f_int, float):
-            net_ivl = 0
-            bin_num = 0
-            for i, ivl in enumerate(chan_widths):
-                f_map_arr[:, i] = bin_num
-                net_ivl += ivl
-                if net_ivl >= f_int:
-                    net_ivl = 0
-                    bin_num += 1
-        else:
-            f_map_arr[:, :] = np.arange(n_chan)//f_int
-
-        return f_map_arr
-
-    @staticmethod
-    def make_t_bins(n_utime, utime_intervals, utime_scan_numbers, t_int, rsb):
+    @classmethod
+    def _make_time_bins(
+        cls,
+        time_col,
+        interval_col,
+        scan_col,
+        time_interval,
+        respect_scan_boundaries
+    ):
         """Internals of the time binner.
 
         Args:
@@ -152,16 +142,20 @@ class Gain:
                 enabled for the current term.
         """
 
-        tbin_arr = np.empty((2, utime_intervals.size), dtype=np.int32)
+        utime, utime_ind = np.unique(time_col, return_index=True)
 
-        if rsb:
-            _, scan_boundaries = np.unique(
-                utime_scan_numbers,
-                return_index=True
-            )
+        time_interval = time_interval or utime.size  # Handle 0.
+
+        utime_intervals = interval_col[utime_ind]
+        utime_scans = scan_col[utime_ind]
+
+        time_bins = np.empty((utime_intervals.size,), dtype=np.int32)
+
+        if respect_scan_boundaries:
+            _, scan_boundaries = np.unique(utime_scans, return_index=True)
             scan_boundaries = list(scan_boundaries - 1)  # Offset.
             scan_boundaries.pop(0)  # The first boundary will be zero.
-            scan_boundaries.append(n_utime.item())  # Add a final boundary.
+            scan_boundaries.append(utime.size)  # Add a final boundary.
         else:
             scan_boundaries = [-1]
 
@@ -170,32 +164,208 @@ class Gain:
         bin_num = 0
         break_interval = False
         for i, ivl in enumerate(utime_intervals):
-            tbin_arr[:, i] = bin_num
-            bin_size += ivl if isinstance(t_int, float) else 1
+            time_bins[i] = bin_num
+            bin_size += ivl if isinstance(time_interval, float) else 1
             if i == scan_boundaries[scan_id]:
                 scan_id += 1
                 break_interval = True
-            if bin_size >= t_int or break_interval:
+            if bin_size >= time_interval or break_interval:
                 bin_size = 0
                 bin_num += 1
                 break_interval = False
 
-        return tbin_arr
+        return time_bins
 
-    @staticmethod
-    def init_term(
-        gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs
-    ):
+    @classmethod
+    def make_time_map(cls, time_col, time_bins):
+
+        time_map = da.map_blocks(
+            cls._make_time_map,
+            time_col,
+            time_bins,
+            dtype=np.int64
+        )
+
+        return time_map
+
+    @classmethod
+    def _make_time_map(cls, time_col, time_bins):
+
+        _, utime_inv = np.unique(time_col, return_inverse=True)
+
+        return time_bins[utime_inv]
+
+    @classmethod
+    def make_time_chunks(cls, time_bins):
+
+        time_chunks = da.map_blocks(
+            cls._make_time_chunks,
+            time_bins,
+            chunks=(1,),
+            dtype=np.int64
+        )
+
+        return time_chunks
+
+    @classmethod
+    def _make_time_chunks(cls, time_bins):
+        return np.array([time_bins.max() + 1])
+
+    @classmethod
+    def make_time_coords(cls, time_col, time_bins):
+
+        time_coords = da.map_blocks(
+            cls._make_time_coords,
+            time_col,
+            time_bins,
+            dtype=time_col.dtype
+        )
+
+        return time_coords
+
+    @classmethod
+    def _make_time_coords(cls, time_col, time_bins):
+
+        unique_values = np.unique(time_col)
+
+        sums = np.zeros(time_bins.max() + 1, dtype=np.float64)
+        counts = np.zeros_like(sums, dtype=np.int64)
+
+        np.add.at(sums, time_bins, unique_values)
+        np.add.at(counts, time_bins, 1)
+
+        return sums / counts
+
+    @classmethod
+    def make_freq_map(cls, chan_freqs, chan_widths, freq_interval):
+
+        freq_map = da.map_blocks(
+            cls._make_freq_map,
+            chan_freqs,
+            chan_widths,
+            freq_interval,
+            dtype=np.int64
+        )
+
+        return freq_map
+
+    @classmethod
+    def _make_freq_map(cls, chan_freqs, chan_widths, freq_interval):
+        """Internals of the frequency interval mapper."""
+
+        freq_interval = freq_interval or chan_freqs.size  # Handle 0.
+
+        n_chan = chan_freqs.size
+
+        freq_map = np.empty((n_chan,), dtype=np.int32)
+
+        if isinstance(freq_interval, float):
+            net_ivl = 0
+            bin_num = 0
+            for i, ivl in enumerate(chan_widths):
+                freq_map[i] = bin_num
+                net_ivl += ivl
+                if net_ivl >= freq_interval:
+                    net_ivl = 0
+                    bin_num += 1
+        else:
+            freq_map[:] = np.arange(n_chan)//freq_interval
+
+        return freq_map
+
+    @classmethod
+    def make_freq_chunks(cls, freq_map):
+
+        freq_chunks = da.map_blocks(
+            cls._make_freq_chunks,
+            freq_map,
+            chunks=(1,),
+            dtype=np.int64
+        )
+
+        return freq_chunks
+
+    @classmethod
+    def _make_freq_chunks(cls, freq_map):
+        return np.array([freq_map.max() + 1])
+
+    @classmethod
+    def make_freq_coords(cls, chan_freq, freq_map):
+
+        freq_coords = da.map_blocks(
+            cls._make_freq_coords,
+            chan_freq,
+            freq_map,
+            dtype=chan_freq.dtype
+        )
+
+        return freq_coords
+
+    @classmethod
+    def _make_freq_coords(cls, chan_freq, freq_map):
+
+        unique_values = np.unique(chan_freq)
+
+        sums = np.zeros(freq_map.max() + 1, dtype=np.float64)
+        counts = np.zeros_like(sums, dtype=np.int64)
+
+        np.add.at(sums, freq_map, unique_values)
+        np.add.at(counts, freq_map, 1)
+
+        return sums / counts
+
+    @classmethod
+    def make_dir_map(cls, n_dir, direction_dependent):
+
+        # TODO: Does this produce unique nodes? Should we clone?
+        dir_map = da.map_blocks(
+            cls._make_dir_map,
+            n_dir,
+            direction_dependent,
+            new_axis=0,
+            chunks=(n_dir,)
+        )
+
+        return clone(dir_map)
+
+    @classmethod
+    def _make_dir_map(cls, n_dir, direction_dependent):
+
+        if direction_dependent:
+            dir_map = np.arange(
+                n_dir,
+                dtype=np.int32
+            )
+        else:
+            dir_map = np.zeros(
+                n_dir,
+                dtype=np.int32
+            )
+
+        return dir_map
+
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
         """Initialise the gains (and parameters)."""
 
-        (term_name, term_type, term_shape, term_pshape) = term_spec
+        (_, _, gain_shape, _) = term_spec
 
-        # TODO: This needs to be more sophisticated on parameterised terms.
-        if f"{term_name}_initial_gain" in kwargs:
-            gain[:] = kwargs[f"{term_name}_initial_gain"]
-            loaded = True
+        if self.load_from:
+            gains = term_kwargs[f"{self.name}_initial_gain"].copy()
         else:
-            gain[..., (0, -1)] = 1  # Set first and last correlations to 1.
-            loaded = False
+            gains = np.ones(gain_shape, dtype=np.complex128)
+            if gain_shape[-1] == 4:
+                gains[..., (1, 2)] = 0  # 2-by-2 identity.
 
-        return loaded
+        gain_flags = init_flags(
+            gain_shape,
+            term_kwargs[f"{self.name}_time_map"],
+            term_kwargs[f"{self.name}_freq_map"],
+            ms_kwargs["FLAG"],
+            ms_kwargs["ANTENNA1"],
+            ms_kwargs["ANTENNA2"],
+            ms_kwargs["ROW_MAP"]
+        )
+
+        apply_gain_flags_to_gains(gain_flags, gains)
+
+        return gains, gain_flags

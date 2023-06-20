@@ -1,0 +1,54 @@
+[tool.poetry]
+name = "quartical"
+version = "0.1.10"
+description = "Fast and flexible calibration suite for radio interferometer data."
+repository = "https://github.com/ratt-ru/QuartiCal"
+documentation = "https://quartical.readthedocs.io"
+authors = ["Jonathan Kenyon <jonathan.simon.kenyon@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Astronomy"
+]
+include = [
+    "quartical/config/argument_schema.yaml",
+    "quartical/config/gain_schema.yaml",
+    "quartical/stimela_cabs.yaml"
+]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+tbump = "^6.10.0"
+columnar = "^1.4.1"
+"ruamel.yaml" = "^0.17.26"
+dask = {extras = ["diagnostics"], version = "^2023.1.0"}
+distributed = "^2023.1.0"
+dask-ms = {extras = ["s3", "xarray", "zarr"], version = "^0.2.16"}
+codex-africanus = {extras = ["dask", "scipy", "astropy", "python-casacore"], version = "^0.3.4"}
+astro-tigger-lsm = "^1.7.2"
+loguru = "^0.7.0"
+requests = "^2.31.0"
+pytest = "^7.3.1"
+omegaconf = "^2.3.0"
+colorama = "^0.4.6"
+stimela = "2.0rc4"
+
+[tool.poetry.scripts]
+goquartical = 'quartical.executor:execute'
+goquartical-config = 'quartical.config.parser:create_user_config'
+goquartical-backup = 'quartical.apps.backup:backup'
+goquartical-restore = 'quartical.apps.backup:restore'
+goquartical-summary = 'quartical.apps.summary:summary'
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

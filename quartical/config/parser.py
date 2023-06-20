@@ -6,15 +6,15 @@ from ruamel.yaml import round_trip_dump
 from omegaconf import OmegaConf as oc
 from quartical.config.external import finalize_structure
 from quartical.config.internal import additional_validation
+from omegaconf.errors import ConfigKeyError, ValidationError
 
 
 def create_user_config():
     """Creates a blank .yaml file with up-to-date field names and defaults."""
 
-    if not sys.argv[-1].endswith("goquartical-config"):
-        config_file_path = sys.argv[-1]
-    else:
-        config_file_path = "user_config.yaml"
+    config_file_path = (
+        "user_config.yaml" if len(sys.argv) == 1 else sys.argv[-1]
+    )
 
     logger.info("Output config file path: {}", config_file_path)
 
@@ -34,8 +34,9 @@ def create_user_config():
             indent=2
         )
 
-    logger.success("{} successfully generated. Go forth and calibrate!",
-                   config_file_path)
+    logger.success(
+        f"{config_file_path} successfully generated. Go forth and calibrate!"
+    )
 
     return
 
@@ -63,18 +64,11 @@ def log_final_config(config, config_files=[]):
     for cf in config_files:
         logger.info(f"Using user-defined config file: {cf}")
 
-    log_message = "Final configuration state:"
-
-    current_section = None
+    log_message = "Final configuration state:\n\n"
 
     for section, options in config.items():
 
-        if current_section != section:
-            log_message += "" if current_section is None \
-                else "<blue>{0:-^{1}}</blue>\n".format("", columns)
-            log_message += "\n<blue>{0:-^{1}}</blue>\n".format(
-                section, columns)
-            current_section = section
+        log_message += f"<blue>{section:-^{columns}}</blue>\n"
 
         maxlen = max(map(len, [f"{section}.{key}" for key in options.keys()]))
 
@@ -83,14 +77,18 @@ def log_final_config(config, config_files=[]):
             msg = f"{option:<{maxlen + 1}}{str(value):>{columns - maxlen - 1}}"
 
             if len(msg) > columns:
-                split = [msg[i:i+columns] for i in range(0, len(msg), columns)]
 
-                msg = "\n".join((split[0],
-                                *[f"{s:>{columns}}" for s in split[1:]]))
+                split = [
+                    msg[i:i + columns] for i in range(0, len(msg), columns)
+                ]
+
+                msg = "\n".join(
+                    (split[0], *[f"{s:>{columns}}" for s in split[1:]])
+                )
 
             log_message += msg + "\n"
 
-    log_message += "<blue>{0:-^{1}}</blue>".format("", columns)
+        log_message += f"<blue>{'':-^{columns}}</blue>\n\n"
 
     logger.opt(ansi=True).info(log_message)
 
@@ -121,7 +119,23 @@ def parse_inputs(bypass_sysargv=None):
     # Merge all configuration - priority is file1 < file2 < ... < cli.
     FinalConfig = finalize_structure(additional_config)
     config = oc.structured(FinalConfig)
-    config = oc.merge(config, *additional_config)
+
+    try:
+        config = oc.merge(config, *additional_config)
+    except ConfigKeyError as error:
+        raise ValueError(
+            f"User has specified an unrecognised parameter: {error.full_key}. "
+            f"This often indicates a simple typo or the use of a deprecated "
+            f"parameter. Please use 'goquartical help' to confirm that the "
+            f"parameter exists."
+        )
+    except ValidationError as error:
+        raise ValueError(
+            f"The value specified for {error.full_key} was not understood. "
+            f"This often means that the type of the argument was incorrect. "
+            f"Please use 'goquartical help' to check for the expected type "
+            f"and pay particular attention to parameters which expect lists."
+        )
 
     # Log the final state of the configuration object so that users are aware
     # of what the ultimate configuration was.

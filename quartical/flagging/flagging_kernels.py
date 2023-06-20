@@ -1,13 +1,14 @@
 import numpy as np
-from numba import jit
+from numba import njit
+from quartical.utils.numba import JIT_OPTIONS
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def get_bl_ids(a1, a2, n_ant):
     return a1*(2*n_ant - a1 - 1)//2 + a2
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def compute_whitened_residual(resid_arr, weights):
 
     n_row, n_chan, n_corr = resid_arr.shape
@@ -26,7 +27,7 @@ def compute_whitened_residual(resid_arr, weights):
     return wres
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def compute_bl_mad_and_med(wres, flags, a1, a2, n_ant):
 
     n_corr = wres.shape[-1]
@@ -45,13 +46,15 @@ def compute_bl_mad_and_med(wres, flags, a1, a2, n_ant):
             continue
 
         bl_flags = flags[bl_sel].ravel()
-        unflagged_sel = np.where(bl_flags != 1)
 
-        if unflagged_sel[0].size:  # Not fully flagged.
+        unflagged_sel = np.where(bl_flags != 1)[0]
+
+        if unflagged_sel.size:  # Not fully flagged.
             for c in range(n_corr):
 
                 # Unflagged elements of baseline whitened residuals.
-                bl_wres = wres[bl_sel, :, c].ravel()[unflagged_sel]
+                # NOTE: https://github.com/numba/numba/issues/8999.
+                bl_wres = wres[bl_sel][:, :, c].ravel()[unflagged_sel]
 
                 bl_med = np.median(bl_wres)
                 bl_mad = np.median(np.abs(bl_wres - bl_med))
@@ -61,7 +64,7 @@ def compute_bl_mad_and_med(wres, flags, a1, a2, n_ant):
     return mad_and_med
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def compute_gbl_mad_and_med(wres, flags):
 
     n_corr = wres.shape[-1]
@@ -84,7 +87,7 @@ def compute_gbl_mad_and_med(wres, flags):
     return mad_and_med
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
+@njit(**JIT_OPTIONS)
 def compute_mad_flags(
     wres,
     gbl_mad_and_med_real,

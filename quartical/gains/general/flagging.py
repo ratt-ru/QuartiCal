@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import jit, generated_jit
+from numba import njit
+from numba.extending import overload
+from quartical.utils.numba import coerce_literal, JIT_OPTIONS
 from collections import namedtuple
 from quartical.gains.general.convenience import get_row
 import quartical.gains.general.factories as factories
-from quartical.utils.numba import coerce_literal
 
 
 flag_intermediaries = namedtuple(
@@ -18,47 +19,26 @@ flag_intermediaries = namedtuple(
 )
 
 
-def init_gain_flags(term_shape, term_ind, **kwargs):
-    """Initialise the gain flags for a term using the various mappings."""
-
-    flag_col = kwargs["flags"]
-    ant1_col = kwargs["a1"]
-    ant2_col = kwargs["a2"]
-    t_map_arr = kwargs["t_map_arr"][0]
-    f_map_arr = kwargs["f_map_arr"][0]
-    row_map = kwargs.get("row_map", None)
-
-    return _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                       t_map_arr, f_map_arr, row_map)
-
-
-def init_param_flags(term_shape, term_ind, **kwargs):
-    """Initialise the param flags for a term using the various mappings."""
-
-    flag_col = kwargs["flags"]
-    ant1_col = kwargs["a1"]
-    ant2_col = kwargs["a2"]
-    t_map_arr = kwargs["t_map_arr"][1]
-    f_map_arr = kwargs["f_map_arr"][1]
-    row_map = kwargs.get("row_map", None)
-
-    return _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                       t_map_arr, f_map_arr, row_map)
-
-
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
-                t_map_arr, f_map_arr, row_map):
+@njit(**JIT_OPTIONS)
+def init_flags(
+    term_shape,
+    time_map,
+    freq_map,
+    flag_col,
+    ant1_col,
+    ant2_col,
+    row_map
+):
     """Initialise the flags for a term using the various mappings."""
 
     flags = np.ones(term_shape[:-1], dtype=np.int8)
     _, _, _, n_dir, _ = term_shape
 
-    n_row = t_map_arr.shape[0]
-    n_chan = f_map_arr.shape[0]
+    n_row = time_map.shape[0]
+    n_chan = freq_map.shape[0]
 
     for row_ind in range(n_row):
-        ti = t_map_arr[row_ind, term_ind]
+        ti = time_map[row_ind]
 
         # NOTE: The following handles the BDA case where an element in the
         # time map may be backed by a different row in the data.
@@ -66,7 +46,7 @@ def _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
         a1, a2 = ant1_col[row], ant2_col[row]
 
         for f in range(n_chan):
-            fi = f_map_arr[f, term_ind]
+            fi = freq_map[f]
             flag = flag_col[row, f]
             for d in range(n_dir):
                 flags[ti, fi, a1, d] &= flag
@@ -75,10 +55,26 @@ def _init_flags(term_shape, term_ind, flag_col, ant1_col, ant2_col,
     return flags
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
-               nogil=True)
-def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
-                      corr_mode, numbness=1e-6):
+def update_gain_flags(
+    chain_inputs,
+    meta_inputs,
+    flag_imdry,
+    loop_idx,
+    corr_mode,
+    numbness=1e-6
+):
+    raise NotImplementedError
+
+
+@overload(update_gain_flags, jit_options=JIT_OPTIONS)
+def nb_update_gain_flags(
+    chain_inputs,
+    meta_inputs,
+    flag_imdry,
+    loop_idx,
+    corr_mode,
+    numbness=1e-6
+):
     """Update the current state of the gain flags.
 
     Uses the current (km0) and previous (km1) gains to identify diverging
@@ -99,27 +95,26 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
         iteration: An int containing the iteration number.
     """
 
-    coerce_literal(update_gain_flags, ['corr_mode'])
+    coerce_literal(nb_update_gain_flags, ['corr_mode'])
 
     set_identity = factories.set_identity_factory(corr_mode)
 
     def impl(
-        base_args,
-        term_args,
-        meta_args,
+        chain_inputs,
+        meta_inputs,
         flag_imdry,
         loop_idx,
         corr_mode,
         numbness=1e-6
     ):
 
-        active_term = meta_args.active_term
-        max_iter = meta_args.iters
-        stop_frac = meta_args.stop_frac
-        stop_crit2 = meta_args.stop_crit**2
+        active_term = meta_inputs.active_term
+        max_iter = meta_inputs.iters
+        stop_frac = meta_inputs.stop_frac
+        stop_crit2 = meta_inputs.stop_crit**2
 
-        gain = base_args.gains[active_term]
-        gain_flags = base_args.gain_flags[active_term]
+        gain = chain_inputs.gains[active_term]
+        gain_flags = chain_inputs.gain_flags[active_term]
 
         km1_gain = flag_imdry.km1_gain
         km1_abs2_diffs = flag_imdry.km1_abs2_diffs
@@ -214,9 +209,12 @@ def update_gain_flags(base_args, term_args, meta_args, flag_imdry, loop_idx,
     return impl
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
-               nogil=True)
-def finalize_gain_flags(base_args, meta_args, flag_imdry, corr_mode):
+def finalize_gain_flags(chain_inputs, meta_inputs, flag_imdry, corr_mode):
+    return NotImplementedError
+
+
+@overload(finalize_gain_flags, jit_options=JIT_OPTIONS)
+def nb_finalize_gain_flags(chain_inputs, meta_inputs, flag_imdry, corr_mode):
     """Removes soft flags and flags points which failed to converge.
 
     Given the gains, assosciated gain flags and the trend of abosolute
@@ -232,14 +230,16 @@ def finalize_gain_flags(base_args, meta_args, flag_imdry, corr_mode):
             values correspond to points which are nowhere near convergence.
     """
 
+    coerce_literal(nb_finalize_gain_flags, ['corr_mode'])
+
     set_identity = factories.set_identity_factory(corr_mode)
 
-    def impl(base_args, meta_args, flag_imdry, corr_mode):
+    def impl(chain_inputs, meta_inputs, flag_imdry, corr_mode):
 
-        active_term = meta_args.active_term
+        active_term = meta_inputs.active_term
 
-        gain = base_args.gains[active_term]
-        gain_flags = base_args.gain_flags[active_term]
+        gain = chain_inputs.gains[active_term]
+        gain_flags = chain_inputs.gain_flags[active_term]
 
         abs2_diffs_trend = flag_imdry.abs2_diffs_trend
 
@@ -258,9 +258,22 @@ def finalize_gain_flags(base_args, meta_args, flag_imdry, corr_mode):
     return impl
 
 
-@generated_jit(nopython=True, fastmath=True, parallel=False, cache=True,
-               nogil=True)
-def update_param_flags(base_args, term_args, meta_args, identity_params):
+def update_param_flags(
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    identity_params
+):
+    return NotImplementedError
+
+
+@overload(update_param_flags, jit_options=JIT_OPTIONS)
+def update_param_flags_impl(
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs,
+    identity_params
+):
     """Propagate gain flags into parameter flags.
 
     Given the gain flags, parameter flags and the relevant mappings, propagate
@@ -275,27 +288,34 @@ def update_param_flags(base_args, term_args, meta_args, identity_params):
         t_bin_arr: A (2, n_utime, n_term) array of utime to solint mappings.
         f_map_arr: A (2, n_ufreq, n_term) array of ufreq to solint mappings.
         d_map_arr: A (n_term, n_dir) array of direction mappings.
-        """
+    """
 
-    def impl(base_args, term_args, meta_args, identity_params):
+    def impl(
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        identity_params
+    ):
 
-        active_term = meta_args.active_term
+        active_term = meta_inputs.active_term
 
         # NOTE: We don't yet let params and gains have different direction
         # maps but this will eventually be neccessary.
-        t_bin_arr = term_args.t_bin_arr[:, :, active_term]
-        f_map_arr = base_args.f_map_arr[:, :, active_term]
+        time_bins = mapping_inputs.time_bins[active_term]
+        param_time_bins = mapping_inputs.param_time_bins[active_term]
+        freq_maps = mapping_inputs.freq_maps[active_term]
+        param_freq_maps = mapping_inputs.param_freq_maps[active_term]
 
-        gain_flags = base_args.gain_flags[active_term]
-        param_flags = term_args.param_flags[active_term]
-        params = term_args.params[active_term]
+        gain_flags = chain_inputs.gain_flags[active_term]
+        param_flags = chain_inputs.param_flags[active_term]
+        params = chain_inputs.params[active_term]
 
         _, _, n_ant, n_dir = gain_flags.shape
 
         param_flags[:] = 1
 
-        for gt, pt in zip(t_bin_arr[0], t_bin_arr[1]):
-            for gf, pf in zip(f_map_arr[0], f_map_arr[1]):
+        for gt, pt in zip(time_bins, param_time_bins):
+            for gf, pf in zip(freq_maps, param_freq_maps):
                 for a in range(n_ant):
                     for d in range(n_dir):
 
@@ -314,20 +334,26 @@ def update_param_flags(base_args, term_args, meta_args, identity_params):
     return impl
 
 
-@jit(nopython=True, fastmath=True, parallel=False, cache=True, nogil=True)
-def apply_gain_flags(base_args, meta_args):
+@njit(**JIT_OPTIONS)
+def apply_gain_flags_to_flag_col(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    meta_inputs
+):
     """Apply gain_flags to flag_col."""
 
-    active_term = meta_args.active_term
+    active_term = meta_inputs.active_term
 
-    gain_flags = base_args.gain_flags[active_term]
-    flag_col = base_args.flags
-    ant1_col = base_args.a1
-    ant2_col = base_args.a2
+    gain_flags = chain_inputs.gain_flags[active_term]
+
+    flag_col = ms_inputs.FLAG
+    ant1_col = ms_inputs.ANTENNA1
+    ant2_col = ms_inputs.ANTENNA2
 
     # Select out just the mappings we need.
-    t_map_arr = base_args.t_map_arr[0, :, active_term]
-    f_map_arr = base_args.f_map_arr[0, :, active_term]
+    t_map_arr = mapping_inputs.time_maps[active_term]
+    f_map_arr = mapping_inputs.freq_maps[active_term]
 
     n_row, n_chan = flag_col.shape
 
@@ -340,3 +366,38 @@ def apply_gain_flags(base_args, meta_args):
             # NOTE: We only care about the DI case for now.
             flag_col[row, f] |= gain_flags[t_m, f_m, a1, 0] == 1
             flag_col[row, f] |= gain_flags[t_m, f_m, a2, 0] == 1
+
+
+@njit(**JIT_OPTIONS)
+def apply_gain_flags_to_gains(gain_flags, gains):
+
+    n_time, n_chan, n_ant, n_dir, n_corr = gains.shape
+
+    if n_corr == 4:
+        identity_element = np.array([1, 0, 0, 1], dtype=np.complex128)
+    elif n_corr == 2:
+        identity_element = np.array([1, 1], dtype=np.complex128)
+    else:
+        identity_element = np.array([1], dtype=np.complex128)
+
+    for t in range(n_time):
+        for f in range(n_chan):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    if gain_flags[t, f, a, d]:
+                        gains[t, f, a, d] = identity_element
+
+
+@njit(**JIT_OPTIONS)
+def apply_param_flags_to_params(param_flags, params, identity_element):
+
+    n_time, n_chan, n_ant, n_dir, n_corr = params.shape
+
+    for t in range(n_time):
+        for f in range(n_chan):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    if param_flags[t, f, a, d]:
+                        params[t, f, a, d] = identity_element

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-from numba import jit, types, generated_jit
+from numba import njit, types
+from numba.extending import overload
+from quartical.utils.numba import JIT_OPTIONS
 import numpy as np
 from collections import namedtuple
 
@@ -14,24 +16,23 @@ extent_tuple = namedtuple(
     )
 )
 
-# Handy alias for functions that need to be jitted in this way.
-qcjit = jit(nogil=True,
-            nopython=True,
-            fastmath=True,
-            cache=True,
-            inline="always")
-
-qcgjit = generated_jit(nogil=True,
-                       nopython=True,
-                       fastmath=True,
-                       cache=True)
 
 # TODO: Consider whether these should have true optionals. This will likely
-# require them all to be implemented as overloads.
+# require them all to be implemented as overloads. We could also consider
+# moving this code into the factories.
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def get_dims(col, row_map):
+    return get_dims_impl(col, row_map)
+
+
+def get_dims_impl(col, row_map):
+    return NotImplementedError
+
+
+@overload(get_dims_impl, jit_options=JIT_OPTIONS)
+def nb_get_dims_impl(col, row_map):
     """Returns effective column dimensions. This may be larger than col.
 
     Args:
@@ -59,8 +60,17 @@ def get_dims(col, row_map):
     return impl
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def get_row(row_ind, row_map):
+    return get_row_impl(row_ind, row_map)
+
+
+def get_row_impl(row_ind, row_map):
+    return NotImplementedError
+
+
+@overload(get_row_impl, jit_options=JIT_OPTIONS)
+def nb_get_row_impl(row_ind, row_map):
     """Gets the current row index. Row map is needed for the BDA case.
 
     Args:
@@ -80,7 +90,7 @@ def get_row(row_ind, row_map):
     return impl
 
 
-@qcjit
+@njit(**JIT_OPTIONS)
 def get_extents(t_map, f_map):
     """Given the time/freq mappings, determine run start and stop indices."""
 
@@ -90,7 +100,7 @@ def get_extents(t_map, f_map):
     return extent_tuple(row_starts, row_stops, chan_starts, chan_stops)
 
 
-@qcjit
+@njit(**JIT_OPTIONS)
 def get_chan_extents(f_map_arr):
     """Given the frequency mappings, determines the start/stop indices."""
 
@@ -111,7 +121,7 @@ def get_chan_extents(f_map_arr):
     return chan_starts, chan_stops
 
 
-@qcjit
+@njit(**JIT_OPTIONS)
 def get_row_extents(t_map_arr):
     """Given the time mappings, determines the row start/stop indices."""
 
