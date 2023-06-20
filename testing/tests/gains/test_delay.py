@@ -7,7 +7,7 @@ from testing.utils.gains import apply_gains, reference_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr, solve_per):
+def opts(base_opts, select_corr):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -22,7 +22,7 @@ def opts(base_opts, select_corr, solve_per):
     _opts.solver.threads = 2
     _opts.G.type = "delay"
     _opts.G.freq_interval = 0
-    _opts.G.solve_per = solve_per
+    _opts.G.initial_estimate = True
 
     return _opts
 
@@ -34,7 +34,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list, solve_per):
+def true_gain_list(predicted_xds_list):
 
     gain_list = []
 
@@ -49,31 +49,30 @@ def true_gain_list(predicted_xds_list, solve_per):
         n_corr = xds.dims["corr"]
 
         chan_freq = xds.CHAN_FREQ.data
-        bw = chan_freq[-1] - chan_freq[0]
-
-        single_wrap_delay = 2*np.pi/bw
+        chan_width = chan_freq[1] - chan_freq[0]
+        band_centre = (chan_freq[0] + chan_freq[-1]) / 2
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
-        delays = da.random.normal(size=(n_time, 1, n_ant, n_dir, n_corr),
-                                  loc=0,
-                                  scale=single_wrap_delay/3)
-        amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
-                      chunks=chunking)
+        delays = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-1/(2*chan_width),
+            high=1/(2*chan_width)
+        )
+        delays[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
+
+        amp = da.ones(
+            (n_time, n_chan, n_ant, n_dir, n_corr),
+            chunks=chunking
+        )
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
 
-        offsets = da.random.uniform(size=(n_time, 1, n_ant, n_dir, n_corr),
-                                    low=-np.pi,
-                                    high=np.pi)
-
-        phase = (2*np.pi*delays*chan_freq[None, :, None, None, None] + offsets)
+        origin_chan_freq = chan_freq - band_centre
+        phase = 2*np.pi*delays*origin_chan_freq[None, :, None, None, None]
         gains = amp*da.exp(1j*phase)
-
-        if solve_per == "array":
-            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
 
         gain_list.append(gains)
 
@@ -124,10 +123,10 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
 @pytest.fixture(scope="module")
 def add_calibration_graph_outputs(corrupted_data_xds_list, stats_xds_list,
-                                  solver_opts, chain_opts, output_opts):
+                                  solver_opts, chain, output_opts):
     # Overload this fixture as we need to use the corrupted xdss.
     return add_calibration_graph(corrupted_data_xds_list, stats_xds_list,
-                                 solver_opts, chain_opts, output_opts)
+                                 solver_opts, chain, output_opts)
 
 
 # -----------------------------------------------------------------------------

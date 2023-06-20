@@ -33,12 +33,10 @@ column and produces corrected residuals and corrected weights.
         recipe: MODEL_DATA
     solver:
         terms:
-            - G
+            - P
         iter_recipe:
             - 25
     output:
-        directory: outputs.qc
-        overwrite: false
         products:
             - corrected_residual
             - corrected_weight
@@ -47,7 +45,7 @@ column and produces corrected residuals and corrected weights.
             - WEIGHT_SPECTRUM
     dask:
         threads: 6
-    G:
+    P:
         type: phase
         time_interval: '60s'
         freq_interval: '128'
@@ -56,7 +54,7 @@ Complex (amplitude and phase) selfcal
 -------------------------------------
 
 The following performs diagonal, phase and amplitude selfcal using a Tigger
-.lsm sky model and produces corrected data.
+.lsm sky model and produces corrected data and corrected weights.
 
 .. code-block:: yaml
 
@@ -74,8 +72,6 @@ The following performs diagonal, phase and amplitude selfcal using a Tigger
         iter_recipe:
             - 25
     output:
-        directory: outputs.qc
-        overwrite: false
         products:
             - corrected_data
             - corrected_weight
@@ -85,7 +81,7 @@ The following performs diagonal, phase and amplitude selfcal using a Tigger
     dask:
         threads: 6
     G:
-        type: complex
+        type: diag_complex
         time_interval: '60s'
         freq_interval: '128'
 
@@ -115,8 +111,6 @@ using a measurement set column as input and produces uncorrected residuals.
             - 10
             - 10
     output:
-        directory: outputs.qc
-        overwrite: false
         products:
             - residual
         columns:
@@ -124,11 +118,11 @@ using a measurement set column as input and produces uncorrected residuals.
     dask:
         threads: 6
     G:
-        type: complex
+        type: diag_complex
         time_interval: '1'
         freq_interval: '0'
     B:
-        type: complex
+        type: diag_complex
         time_interval: '0'
         freq_interval: '1'
 
@@ -185,8 +179,6 @@ calibration simultaneously, using a tagged sky model as input and produces
             - 10
             - 10
     output:
-        directory: outputs.qc
-        overwrite: false
         products:
             - corrected_residual
         columns:
@@ -194,10 +186,11 @@ calibration simultaneously, using a tagged sky model as input and produces
     dask:
         threads: 6
     G:
-        type: complex
+        type: diag_complex
         time_interval: '10'
         freq_interval: '10'
     dE:
         type: complex
         time_interval: '100'
         freq_interval: '100'
+        direction_dependent: true

@@ -3,10 +3,6 @@ import pytest
 import dask.array as da
 import numpy as np
 from numpy.testing import assert_array_equal
-from quartical.config.internal import yield_from
-from quartical.calibration.mapping import (make_t_binnings,
-                                           make_f_mappings,
-                                           make_d_mappings)
 
 
 @pytest.fixture(scope="module")
@@ -28,62 +24,50 @@ def opts(base_opts, time_int, freq_int):
 
 
 @pytest.mark.parametrize("time_chunk", [33, 60])
-def test_t_binnings(time_chunk, chain_opts):
+def test_t_binnings(time_chunk, chain):
     """Test construction of time mappings for different chunks/intervals."""
 
     n_time = 100  # Total number of unique times to consider.
     n_bl = 351  # 27 antenna array - VLA-like.
     interval = 8
 
-    time_stamps = da.arange(100, chunks=time_chunk)
-
-    utime_per_chunk = da.from_array(time_stamps.chunks[0],
-                                    chunks=(1,))
+    time_stamps = da.arange(n_time, chunks=time_chunk)
 
     time_col = da.map_blocks(
         np.repeat,
         time_stamps,
         n_bl,
-        chunks=(tuple(c*n_bl for c in time_stamps.chunks[0]),))
+        chunks=(tuple(c*n_bl for c in time_stamps.chunks[0]),)
+    )
 
     interval_col = da.ones_like(time_col)*interval
-
-    utime_loc = da.map_blocks(
-        lambda a, **kwargs: np.unique(a, **kwargs)[1],
-        time_col,
-        return_index=True,
-        chunks=time_stamps.chunks)
-
-    utime_intervals = da.map_blocks(
-        lambda arr, inds: arr[inds],
-        interval_col,
-        utime_loc,
-        chunks=utime_loc.chunks,
-        dtype=np.float64)
-
-    utime_scan_numbers = da.zeros_like(utime_intervals, dtype=np.int32)
+    scan_col = da.zeros_like(time_col)  # TODO: Scan boundary case?
 
     # TODO: Should also check parameter mappings.
-    da_t_bins = make_t_binnings(utime_per_chunk,
-                                utime_intervals,
-                                utime_scan_numbers,
-                                chain_opts)[0, ...]
+    for term in chain:
 
-    t_ints = [ti or n_time
-              for _, ti in yield_from(chain_opts, "time_interval")]
+        t_int = term.time_interval or n_time
 
-    for block_ind in range(da_t_bins.npartitions):
-        binning = da_t_bins.blocks[block_ind].compute()
-        ivl_col = interval_col.blocks[block_ind].compute()
-        for g_ind, t_int in enumerate(t_ints):
-            if isinstance(t_int, float):
-                sol_widths = np.zeros(np.max(binning[:, g_ind] + 1))
-                for ivl_ind, target in enumerate(binning[:, g_ind]):
+        da_t_bins = term.make_time_bins(
+            time_col,
+            interval_col,
+            scan_col,
+            t_int,
+            term.respect_scan_boundaries,
+            chunks=time_stamps.chunks
+        )
+
+        for block_ind in range(da_t_bins.npartitions):
+            binning = da_t_bins.blocks[block_ind].compute()
+            ivl_col = interval_col.blocks[block_ind].compute()
+
+            if isinstance(term.time_interval, float):
+                sol_widths = np.zeros(np.max(binning) + 1)
+                for ivl_ind, target in enumerate(binning):
                     sol_widths[target] += ivl_col[ivl_ind]
                 assert all(sol_widths[:-1] >= t_int)
             else:
-                assert all(np.unique(binning[:, g_ind],
-                                     return_counts=True)[1] <= t_int)
+                assert all(np.unique(binning, return_counts=True)[1] <= t_int)
 
 # ------------------------------make_t_mappings--------------------------------
 
@@ -132,7 +116,7 @@ def test_t_binnings(time_chunk, chain_opts):
 
 
 @pytest.mark.parametrize("freq_chunk", [30, 64])
-def test_f_mappings(freq_chunk, chain_opts):
+def test_f_mappings(freq_chunk, chain):
     """Test construction of freq mappings for different chunks/intervals."""
 
     n_freq = 64  # Total number of channels to consider.
@@ -140,46 +124,49 @@ def test_f_mappings(freq_chunk, chain_opts):
     chan_freqs = da.arange(n_freq, chunks=freq_chunk)
     chan_widths = da.ones(n_freq, chunks=freq_chunk)*7
 
-    # Pull out just the gain mapping, not the parameter mapping. TODO: Should
-    # also check parameter mappings.
-    da_f_maps = make_f_mappings(chan_freqs, chan_widths, chain_opts)[0, ...]
+    # TODO: Should also check parameter mappings.
+    for term in chain:
 
-    # Set up and compute numpy values to test against.
+        f_int = term.freq_interval or n_freq
 
-    f_ints = [fi or n_freq
-              for _, fi in yield_from(chain_opts, "freq_interval")]
+        da_f_maps = term.make_freq_map(
+            chan_freqs,
+            chan_widths,
+            term.freq_interval
+        )
 
-    for block_ind in range(da_f_maps.npartitions):
-        f_map = da_f_maps.blocks[block_ind].compute()
-        chan_width = chan_widths.blocks[block_ind].compute()
-        for g_ind, f_int in enumerate(f_ints):
+        # Set up and compute numpy values to test against.
+
+        for block_ind in range(da_f_maps.npartitions):
+            f_map = da_f_maps.blocks[block_ind].compute()
+            chan_width = chan_widths.blocks[block_ind].compute()
             if isinstance(f_int, float):
-                sol_widths = np.zeros(np.max(f_map[:, g_ind] + 1))
-                for ivl_ind, target in enumerate(f_map[:, g_ind]):
+                sol_widths = np.zeros(np.max(f_map) + 1)
+                for ivl_ind, target in enumerate(f_map):
                     sol_widths[target] += chan_width[ivl_ind]
                 assert all(sol_widths[:-1] >= f_int)
             else:
-                assert all(np.unique(f_map[:, g_ind],
-                                     return_counts=True)[1] <= f_int)
+                assert all(np.unique(f_map, return_counts=True)[1] <= f_int)
 
 # ------------------------------make_d_mappings--------------------------------
 
 
 @pytest.mark.parametrize("n_dir", [2, 10])
 @pytest.mark.parametrize("has_dd_term", [False, True])
-def test_d_mappings(n_dir, has_dd_term, chain_opts):
+def test_d_mappings(n_dir, has_dd_term, chain):
     """Test construction of direction mappings for different n_dir."""
 
-    chain_opts.B.direction_dependent = has_dd_term
+    # Make second term in the chain direction dependent.
+    chain[1].direction_dependent = has_dd_term
 
-    d_maps = make_d_mappings(n_dir, chain_opts)  # Not a dask array.
+    for term in chain:
 
-    # Set up and compute numpy values to test against.
+        d_map = term.make_dir_map(n_dir, term.direction_dependent)
 
-    dd_terms = [dd for _, dd in yield_from(chain_opts, "direction_dependent")]
+        # Set up and compute numpy values to test against.
 
-    np_d_maps = np.array(list(map(lambda dd: np.arange(n_dir)*dd, dd_terms)))
+        np_d_map = np.array(np.arange(n_dir)*term.direction_dependent)
 
-    assert_array_equal(d_maps, np_d_maps)
+        assert_array_equal(d_map, np_d_map)
 
 # -----------------------------------------------------------------------------

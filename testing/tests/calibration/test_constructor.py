@@ -25,20 +25,24 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def construct_solver_output(predicted_xds_list, stats_xds_list, gain_xds_lod,
-                            t_bin_list, t_map_list, f_map_list, d_map_list,
-                            solver_opts, chain_opts):
+def construct_solver_output(
+    predicted_xds_list,
+    mapping_xds_list,
+    stats_xds_list,
+    gain_xds_lod,
+    solver_opts,
+    chain
+):
 
     # Call the construct solver function with the relevant inputs.
-    output = construct_solver(predicted_xds_list,
-                              stats_xds_list,
-                              gain_xds_lod,
-                              t_bin_list,
-                              t_map_list,
-                              f_map_list,
-                              d_map_list,
-                              solver_opts,
-                              chain_opts)
+    output = construct_solver(
+        predicted_xds_list,
+        mapping_xds_list,
+        stats_xds_list,
+        gain_xds_lod,
+        solver_opts,
+        chain
+    )
 
     return output
 
@@ -66,7 +70,7 @@ def expanded_specs(solver_xds_list):
 
 @pytest.mark.xfail(reason="Dynamic classes cannot be pickled (easily).")
 def test_pickling(solver_xds_list):
-    # NOTE: This fails due to the dynamic construction of chain_opts. It does
+    # NOTE: This fails due to the dynamic construction of chain. It does
     # not seem to break the distributed scheduler, so marking as xfail for now.
     assert pickle.loads(pickle.dumps(solver_xds_list)) == solver_xds_list
 
@@ -93,7 +97,7 @@ def test_t_chunks(solver_xds_list, predicted_xds_list):
 
     expected_t_chunks = predicted_xds_list[0].DATA.data.numblocks[0]
 
-    assert all([len(gxds.chunks["t_chunk"]) == expected_t_chunks
+    assert all([len(gxds.chunks["time_chunk"]) == expected_t_chunks
                for gxds in term_xds_dict.values()])
 
 
@@ -104,7 +108,7 @@ def test_f_chunks(solver_xds_list, predicted_xds_list):
 
     expected_f_chunks = predicted_xds_list[0].DATA.data.numblocks[1]
 
-    assert all([len(gxds.chunks["f_chunk"]) == expected_f_chunks
+    assert all([len(gxds.chunks["freq_chunk"]) == expected_f_chunks
                for gxds in term_xds_dict.values()])
 
 # -------------------------------expand_specs----------------------------------

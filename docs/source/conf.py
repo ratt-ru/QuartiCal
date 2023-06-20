@@ -3,9 +3,9 @@ from omegaconf import OmegaConf as oc
 from pathlib import Path
 
 path = Path(__file__).resolve()
-path_to_helpstrings = \
-    path.parents[2].joinpath("quartical/config/helpstrings.yaml")
-HELPSTRINGS = oc.load(path_to_helpstrings)
+config_path = path.parents[2].joinpath("quartical/config")
+HELPSTRINGS = oc.load(config_path.joinpath("argument_schema.yaml"))
+HELPSTRINGS.update(oc.load(config_path.joinpath("gain_schema.yaml")))
 
 # Configuration file for the Sphinx documentation builder.
 #
@@ -37,7 +37,7 @@ author = 'Jonathan Kenyon'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'sphinxcontrib.jinja'
+    'sphinx_jinja'
 ]
 
 jinja_contexts = {
@@ -46,6 +46,7 @@ jinja_contexts = {
 
 jinja_filters = {
     'bold': lambda value: f'**{value}**',
+    'code': lambda value: f'``{value}``'
 }
 
 jinja_base = os.path.realpath(

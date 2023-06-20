@@ -42,19 +42,28 @@ def log_chisq(pre, post, attrs, block_id=None):
     msg += f"T_CHUNK: {t_chunk} "
     msg += f"F_CHUNK: {f_chunk} "
 
-    if pre.item() > post.item():
-        colour = colours['green']
-    elif pre.item() <= post.item():
-        colour = colours['red']
+    pre = pre.item()
+    post = post.item()
+
+    if np.isfinite(pre) and np.isfinite(post):
+        fractional_change = (post - pre) / pre
+    else:
+        fractional_change = np.nan
+
+    if np.isfinite(fractional_change):
+        if np.abs(fractional_change) < 1e-12:  # Slightly numb to jitter.
+            colour = colours['yellow']
+        elif fractional_change < 0:
+            colour = colours['green']
+        elif fractional_change > 0:
+            colour = colours['red']
     else:
         colour = colours['grey']
 
     co, cc = f"<fg #{colour}>", f"</fg #{colour}>"
-    msg += f"{co}CHISQ: {pre.item():.2f} -> {post.item():.2f}{cc}"
+    msg += f"{co}CHISQ: {pre:.2f} -> {post:.2f}{cc}"
 
     logger.opt(colors=True).info(msg)
-
-    return post.copy()
 
 
 def log_summary_stats(stats_xds_list):
@@ -95,6 +104,7 @@ def log_summary_stats(stats_xds_list):
 
             attrs = [sxds.attrs.get(f, "?") for f in attr_fields]
 
+            # TODO: Chi-squared values of zero disappear here.
             data.append([f"{v:.2f}" if v else "" for v in frame.ravel()])
             headers.append(fmt.format(*attrs))
 
