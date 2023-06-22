@@ -79,7 +79,7 @@ class TEC(Gain):
 
 
     @staticmethod 
-    def init_term( gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs ):
+    def init_term(gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs ):
         """Initialise the gains (and parameters)."""
  
         loaded = Gain.init_term(
@@ -89,6 +89,8 @@ class TEC(Gain):
         if loaded or not term_opts.initial_estimate: 
             return
 
+        # import ipdb; ipdb.set_trace()
+
         data = kwargs["data"] # (row, chan, corr)
         flags = kwargs["flags"] # (row, chan)
         a1 = kwargs["a1"]
@@ -97,7 +99,8 @@ class TEC(Gain):
         t_map = kwargs["t_map_arr"][0, :, term_ind] # time -> solint
         f_map = kwargs["f_map_arr"][1, :, term_ind] # freq -> solint 
         _, n_chan, n_ant, n_dir, n_corr = gain.shape
-        
+        n_param = param.shape[4]
+
         # We only need the baselines which include the ref_ant.
         sel = np.where((a1 == ref_ant) | (a2 == ref_ant))
         a1 = a1[sel]
@@ -159,11 +162,18 @@ class TEC(Gain):
                 #domain to pick tec_est from
                 fft_freq = np.linspace(-lim0, lim0, n)
 
-                tec_est = np.zeros((n_ant, n_corr), dtype=np.float64)
-                fft_arr = np.zeros((n_ant, n, n_corr), dtype=fsel_data.dtype)
+                if n_corr == 1:
+                    n_param_tec = 1
+                elif n_corr in (2, 4):
+                    n_param_tec = 2
+                else:
+                    raise ValueError("Unsupported number of correlations.")
+
+                tec_est = np.zeros((n_ant, n_param_tec), dtype=np.float64)
+                fft_arr = np.zeros((n_ant, n, n_param_tec), dtype=fsel_data.dtype)
 
                 for p in range(n_ant): 
-                    for k in range(n_corr):
+                    for k in range(n_param_tec):
                         vis_finufft = finufft.nufft1d3(invfreq, fsel_data[p, :, k], fft_freq, eps=1e-11, isign=-1)
                         fft_arr[p, :, k] = vis_finufft
                         fft_data_pk = np.abs(vis_finufft)
@@ -182,8 +192,9 @@ class TEC(Gain):
                         if n_corr > 1:
                             param[t, uf, p, 0, 3] = tec_est[p, 1]
 
-                np.save("/home/russeeawon/testing/testing_tecest_quartical/tecest.npy", tec_est)
-                np.save("/home/russeeawon/testing/testing_tecest_quartical/fftarr.npy", fft_arr)
+                np.save("/home/russeeawon/testing/sim_tecest_expt1/tecest.npy", tec_est)
+                np.save("/home/russeeawon/testing/sim_tecest_expt1/fftarr.npy", fft_arr)
+                np.save("/home/russeeawon/testing/sim_tecest_expt1/fft_freq.npy", fft_freq)
         
         # import ipdb; ipdb.set_trace()
         for ut in utint:

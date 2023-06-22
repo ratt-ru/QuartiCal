@@ -1554,7 +1554,7 @@ lscale = 1.
 jitter = 1e-6
 
 #and also consider the following point sources
-pt_sources = np.load("5ptsrc.npy")
+pt_sources = np.load("1ptsrc.npy")
 print(pt_sources)
 #get the covariance matrix
 def squared_exp0(lcoord, mcoord, sigmaf, lscale):
