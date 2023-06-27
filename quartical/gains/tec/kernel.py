@@ -121,7 +121,6 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
     native_imdry = native_intermediaries(jhj, jhr, update)
 
     scaled_icf = term_args.chan_freqs.copy()  # Don't mutate.
-    scaled_icf = 2 * np.pi * scaled_icf
     min_freq = np.min(scaled_icf)
     scaled_icf = min_freq/scaled_icf  # Scale freqs to avoid precision.
     active_params[..., 1::2] /= min_freq  # Scale consistently with freq.
@@ -191,7 +190,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
     active_params[..., 1::2] *= min_freq  # Undo scaling for SI units.
     
-    np.save("/home/russeeawon/testing/testing_tecest_myms/jhj.npy", native_imdry.jhj)
+    np.save("/home/russeeawon/testing/sim_tecest_expt5/jhj.npy", native_imdry.jhj)
     return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
 

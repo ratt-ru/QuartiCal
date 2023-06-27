@@ -79,7 +79,7 @@ class TEC(Gain):
 
 
     @staticmethod 
-    def init_term(gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs ):
+    def init_term( gain, param, term_ind, term_spec, term_opts, ref_ant, **kwargs ):
         """Initialise the gains (and parameters)."""
  
         loaded = Gain.init_term(
@@ -137,6 +137,7 @@ class TEC(Gain):
             )
 
             for uf in ufint:
+                # import ipdb; ipdb.set_trace()
                 fsel = np.where(f_map == uf)[0]
                 sel_n_chan = fsel.size
 
@@ -147,7 +148,7 @@ class TEC(Gain):
                 invfreq = 1./chan_freq 
                 
                 ##factor for rescaling frequency
-                ffactor = 1
+                ffactor = 1e8
                 invfreq *= ffactor
 
                 #delta_freq is the smallest difference between the frequency values
@@ -192,11 +193,12 @@ class TEC(Gain):
                         if n_corr > 1:
                             param[t, uf, p, 0, 3] = tec_est[p, 1]
 
-                np.save("/home/russeeawon/testing/sim_tecest_expt1/tecest.npy", tec_est)
-                np.save("/home/russeeawon/testing/sim_tecest_expt1/fftarr.npy", fft_arr)
-                np.save("/home/russeeawon/testing/sim_tecest_expt1/fft_freq.npy", fft_freq)
+                np.save("/home/russeeawon/testing/sim_tecest_expt5/tecest.npy", tec_est)
+                np.save("/home/russeeawon/testing/sim_tecest_expt5/fftarr.npy", fft_arr)
+                np.save("/home/russeeawon/testing/sim_tecest_expt5/fft_freq.npy", fft_freq)
         
-        # import ipdb; ipdb.set_trace()
+        param /= 2 * np.pi
+
         for ut in utint:
             for f in range(n_chan):
                 fm = f_map[f]
