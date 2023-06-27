@@ -193,9 +193,9 @@ class TEC(Gain):
                         if n_corr > 1:
                             param[t, uf, p, 0, 3] = tec_est[p, 1]
 
-                np.save("/home/russeeawon/testing/sim_tecest_expt5/tecest.npy", tec_est)
-                np.save("/home/russeeawon/testing/sim_tecest_expt5/fftarr.npy", fft_arr)
-                np.save("/home/russeeawon/testing/sim_tecest_expt5/fft_freq.npy", fft_freq)
+                np.save("/home/russeeawon/testing/sim_tecest_expt6/tecest.npy", tec_est)
+                np.save("/home/russeeawon/testing/sim_tecest_expt6/fftarr.npy", fft_arr)
+                np.save("/home/russeeawon/testing/sim_tecest_expt6/fft_freq.npy", fft_freq)
         
         param /= 2 * np.pi
 

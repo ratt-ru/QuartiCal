@@ -190,7 +190,7 @@ def tec_solver(base_args, term_args, meta_args, corr_mode):
 
     active_params[..., 1::2] *= min_freq  # Undo scaling for SI units.
     
-    np.save("/home/russeeawon/testing/sim_tecest_expt5/jhj.npy", native_imdry.jhj)
+    np.save("/home/russeeawon/testing/sim_tecest_expt6/jhj.npy", native_imdry.jhj)
     return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
 
 
