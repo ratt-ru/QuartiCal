@@ -152,7 +152,7 @@ def plot():
 
         fig_name = "-".join(map(str, chain.from_iterable(sel.items())))
 
-        subdir_name = f"{gain_name}-{args.transform}"
+        subdir_name = f"{gain_name}-{args.plot_var}-{args.transform}"
         args.output_path.makedirs(subdir_name, exist_ok=True)
 
         fig.savefig(
