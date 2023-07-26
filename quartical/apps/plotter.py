@@ -99,13 +99,8 @@ def plot():
         f"Some or all of {args.iter_axes} are not present on {args.plot_var}."
     )
 
-    # If the user has requested a transform, grab it from the dict.
-    if args.transform and args.transform in TRANSFORMS:
-        transform = TRANSFORMS[args.transform]
-    else:
-        def no_op(x):
-            return x
-        transform = no_op
+    # Grab the required transform from the dict.
+    transform = TRANSFORMS[args.transform]
 
     # NOTE: This mututates the data variables in place.
     data = xds[args.plot_var].values
