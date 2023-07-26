@@ -8,6 +8,7 @@ from daskms.fsspec_store import DaskMSStore
 
 
 TRANSFORMS = {
+    "raw": np.array,
     "amplitude": np.abs,
     "phase": np.angle,
     "real": np.real,
@@ -53,8 +54,9 @@ def cli():
     parser.add_argument(
         "--transform",
         type=str,
-        default=None,
-        help="Name of coordinate to use for y-axis."
+        default="raw",
+        choices=list(TRANSFORMS.keys()),
+        help="Transform to apply to data before plotting."
     )
     parser.add_argument(
         "--iter-axes",
