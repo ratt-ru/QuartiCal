@@ -10,7 +10,7 @@ import dask
 def backup():
     parser = argparse.ArgumentParser(
         description='Backup any Measurement Set column to zarr. Backups will '
-                    'be labelled automatically using the current datetime, '
+                    'be labelled the passed in label (defaults to datetime), '
                     'the Measurement Set name and the column name.'
     )
 
@@ -34,10 +34,20 @@ def backup():
         help='Name of column to be backed up.'
     )
     parser.add_argument(
+        'label',
+        type=str,
+        help='A label for the backup. Default to datetime.'
+    )
+    parser.add_argument(
         '--nthread',
         type=int,
         default=1,
         help='Number of threads to use.'
+    )
+    parser.add_argument(
+        '--fieldid',
+        type=int,
+        help='Field ID to back up.'
     )
 
     args = parser.parse_args()
@@ -45,7 +55,10 @@ def backup():
     ms_name = args.ms_path.full_path.rsplit("/", 1)[1]
     column_name = args.column_name
 
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    if args.label is not None:
+        label = args.label
+    else:
+        label = time.strftime("%Y%m%d-%H%M%S")
 
     # This call exists purely to get the relevant shape and dtype info.
     data_xds_list = xds_from_storage_ms(
@@ -54,6 +67,11 @@ def backup():
         index_cols=("TIME",),
         group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),
     )
+
+    if args.fieldid is not None:
+        for ds in data_xds_list:
+            if ds.FIELD_ID != args.fieldid:
+                data_xds_list.pop(ds)
 
     # Compute appropriate chunks (256MB by default) to keep zarr happy.
     chunks = [chunk_by_size(xds[column_name]) for xds in data_xds_list]
@@ -67,9 +85,14 @@ def backup():
         chunks=chunks
     )
 
+    if args.fieldid is not None:
+        for ds in data_xds_list:
+            if ds.FIELD_ID != args.fieldid:
+                data_xds_list.pop(ds)
+
     bkp_xds_list = xds_to_zarr(
         data_xds_list,
-        f"{args.zarr_dir.url}::{timestamp}-{ms_name}-{column_name}.bkp.qc",
+        f"{args.zarr_dir.url}::{label}-{ms_name}-{column_name}.bkp.qc",
     )
 
     dask.compute(bkp_xds_list, num_workers=args.nthread)
