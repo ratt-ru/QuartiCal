@@ -155,6 +155,6 @@ def transcribe_recipe(user_recipe):
         logger.info("Recipe contains sky models - enabling prediction step.")
 
     if model_recipe.ingredients.degrid_models:
-        logger.info("Recipe contains degrid models - enabling degridding.")    
+        logger.info("Recipe contains degrid models - enabling degridding.")
 
     return model_recipe

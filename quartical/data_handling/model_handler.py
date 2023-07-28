@@ -2,6 +2,7 @@
 import dask.array as da
 import numpy as np
 from quartical.data_handling.predict import predict
+from quartical.data_handling.degridder import degrid
 from quartical.data_handling.angles import apply_parangles
 from quartical.config.preprocess import IdentityRecipe, Ingredients
 from quartical.utils.array import flat_ident_like
@@ -36,13 +37,38 @@ def add_model_graph(
     # Generates a predicition scheme (graph) per-xds. If no predict is
     # required, it is a list of empty dictionaries.
 
-    if model_vis_recipe.ingredients.sky_models:
-        predict_schemes = predict(data_xds_list,
-                                  model_vis_recipe,
-                                  ms_path,
-                                  model_opts)
-    else:
-        predict_schemes = [{}]*len(data_xds_list)
+    # TODO: Add handling for mds inputs. This will need to read the model
+    # and figure out the relevant steps to take.
+
+    predict_required = bool(model_vis_recipe.ingredients.sky_models)
+    degrid_required = bool(model_vis_recipe.ingredients.degrid_models)
+
+    # TODO: Ensure that things work correctly when we have a mixture of the
+    # below.
+
+    predict_schemes = [{}]*len(data_xds_list)
+
+    if predict_required:
+        rime_schemes = predict(
+            data_xds_list,
+            model_vis_recipe,
+            ms_path,
+            model_opts
+        )
+        predict_schemes = [
+            {**ps, **rs} for ps, rs in zip(predict_schemes, rime_schemes)
+        ]
+
+    if degrid_required:
+        degrid_schemes = degrid(
+            data_xds_list,
+            model_vis_recipe,
+            ms_path,
+            model_opts
+        )
+        predict_schemes = [
+            {**ps, **ds} for ps, ds in zip(predict_schemes, degrid_schemes)
+        ]
 
     # Special case: in the event that we have an IdentityRecipe, modify the
     # datasets and model appropriately.
