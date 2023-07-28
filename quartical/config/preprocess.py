@@ -6,15 +6,31 @@ from collections import namedtuple
 import os.path
 from dataclasses import dataclass
 from typing import List, Dict, Set, Any
+from ast import literal_eval
 
 
 sky_model_nt = namedtuple("sky_model_nt", ("name", "tags"))
+degrid_model_nt = namedtuple(
+    "degrid_model_nt",
+    (
+        "name",
+        "nxo",
+        "nyo",
+        "cellxo",
+        "cellyo",
+        "x0o",
+        "y0o",
+        "ipi",
+        "cpi"
+    )
+)
 
 
 @dataclass
 class Ingredients:
     model_columns: Set[Any]
     sky_models: Set[sky_model_nt]
+    degrid_models: Set[degrid_model_nt]
 
 
 @dataclass
@@ -49,6 +65,8 @@ def transcribe_recipe(user_recipe):
 
     model_columns = set()
     sky_models = set()
+    degrid_models = set()
+
     instructions = {}
 
     # Strip accidental whitepsace from input recipe and splits on ":".
@@ -92,6 +110,18 @@ def transcribe_recipe(user_recipe):
                 sky_models.add(sky_model)
                 instructions[recipe_index].append(sky_model)
 
+            elif ".mds" in ingredient:
+
+                filename, _, options = ingredient.partition("@")
+                options = literal_eval(options)  # Add fail on missing option.
+
+                if not os.path.exists(filename):
+                    raise FileNotFoundError("{} not found.".format(filename))
+
+                degrid_model = degrid_model_nt(filename, *options)
+                degrid_models.add(degrid_model)
+                instructions[recipe_index].append(degrid_model)
+
             elif ingredient != "":
                 model_columns.add(ingredient)
                 instructions[recipe_index].append(ingredient)
@@ -99,19 +129,32 @@ def transcribe_recipe(user_recipe):
             else:
                 instructions[recipe_index].append(ingredient)
 
+    # TODO: Add message to log.
     logger.info("The following model sources were obtained from "
                 "--input-model-recipe: \n"
                 "   Columns: {} \n"
-                "   Sky Models: {}",
+                "   Sky Models: {} \n"
+                "   Degrid Models: {}",
                 model_columns or 'None',
-                {sm.name for sm in sky_models} or 'None')
+                {sm.name for sm in sky_models} or 'None',
+                {dm.name for dm in degrid_models} or 'None')
 
     # Generate a named tuple containing all the information required to
     # build the model visibilities.
 
-    model_recipe = Recipe(Ingredients(model_columns, sky_models), instructions)
+    model_recipe = Recipe(
+        Ingredients(
+            model_columns,
+            sky_models,
+            degrid_models
+        ),
+        instructions
+    )
 
     if model_recipe.ingredients.sky_models:
         logger.info("Recipe contains sky models - enabling prediction step.")
+
+    if model_recipe.ingredients.degrid_models:
+        logger.info("Recipe contains degrid models - enabling degridding.")    
 
     return model_recipe
