@@ -71,7 +71,7 @@ def backup():
     if args.fieldid is not None:
         for ds in data_xds_list:
             if ds.FIELD_ID != args.fieldid:
-                data_xds_list.pop(ds)
+                data_xds_list.remove(ds)
 
     # Compute appropriate chunks (256MB by default) to keep zarr happy.
     chunks = [chunk_by_size(xds[column_name]) for xds in data_xds_list]
@@ -88,7 +88,7 @@ def backup():
     if args.fieldid is not None:
         for ds in data_xds_list:
             if ds.FIELD_ID != args.fieldid:
-                data_xds_list.pop(ds)
+                data_xds_list.remove(ds)
 
     bkp_xds_list = xds_to_zarr(
         data_xds_list,
