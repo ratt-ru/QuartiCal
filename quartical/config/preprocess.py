@@ -14,14 +14,14 @@ degrid_model_nt = namedtuple(
     "degrid_model_nt",
     (
         "name",
-        "nxo",
-        "nyo",
-        "cellxo",
-        "cellyo",
-        "x0o",
-        "y0o",
-        "ipi",
-        "cpi"
+        "npix_x",
+        "npix_y",
+        "cellsize_x",
+        "cellsize_y",
+        "centre_x",
+        "centre_y",
+        "integrations_per_image",
+        "channels_per_image"
     )
 )
 

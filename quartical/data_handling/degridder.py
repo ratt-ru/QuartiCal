@@ -10,14 +10,22 @@ from ducc0.wgridder.experimental import dirty2vis
 from quartical.utils.collections import freeze_default_dict
 
 
-def _degrid(time, freq, uvw, model):
+def _degrid(time, freq, uvw, component):
 
-    name, nxo, nyo, cellxo, cellyo, x0o, y0o, ipi, cpi = model
+    name = component.name
+    npix_x = component.npix_x  # Will be used in interpolation mode.
+    npix_y = component.npix_y  # Will be used in interpolation mode.
+    cellsize_x = component.cellsize_x
+    cellsize_y = component.cellsize_y
+    centre_x = component.centre_x
+    centre_y = component.centre_y
+    integrations_per_image = component.integrations_per_image
+    channels_per_image = component.channels_per_image
 
     # TODO: Dodgy pattern, as this will produce dask arrays which will
     # need to be evaluated i.e. task-in-task which is a bad idea. OK for
     # the purposes of a prototype.
-    model_xds = xds_from_zarr(model.name)[0]
+    model_xds = xds_from_zarr(name)[0]
 
     # TODO: We want to go from the model to an image cube appropriate for this
     # chunks of data. The dimensions of the image cube will be determined
@@ -26,29 +34,35 @@ def _degrid(time, freq, uvw, model):
 
     utime, utime_inv = np.unique(time, return_inverse=True)
     n_utime = utime.size
-    ipi = ipi or n_utime  # Catch zero case. NOTE: -1?
+    ipi = integrations_per_image or n_utime
     n_mean_times = int(np.ceil(n_utime / ipi))
 
     n_freq = freq.size
+    cpi = channels_per_image or n_freq
     n_mean_freqs = int(np.ceil(n_freq / cpi))
 
     # Let's start off by simply reconstructing the model image as generated
     # by pfb-clean.
 
-    nxi, nyi = model_xds.npix_x, model_xds.npix_y
-    image_in = np.zeros((nxi, nyi), dtype=float)
+    native_npix_x = model_xds.npix_x
+    native_npix_y = model_xds.npix_y
+    native_image = np.zeros((native_npix_x, native_npix_y), dtype=float)
+
+    # Sey up sympy symbols for expression evaluation.
     params = sm.symbols(('t', 'f'))
     params += sm.symbols(tuple(model_xds.params.values))
     symexpr = parse_expr(model_xds.parametrisation)
-    modelf = lambdify(params, symexpr)
-    texpr = parse_expr(model_xds.texpr)
-    tfunc = lambdify(params[0], texpr)
-    fexpr = parse_expr(model_xds.fexpr)
-    ffunc = lambdify(params[1], fexpr)
-    Ix = model_xds.location_x.values
-    Iy = model_xds.location_y.values
-    coeffs = model_xds.coefficients.values
+    model_func = lambdify(params, symexpr)
+    time_expr = parse_expr(model_xds.texpr)
+    time_func = lambdify(params[0], time_expr)
+    freq_expr = parse_expr(model_xds.fexpr)
+    freq_func = lambdify(params[1], freq_expr)
 
+    pixel_xs = model_xds.location_x.values
+    pixel_ys = model_xds.location_y.values
+    pixel_coeffs = model_xds.coefficients.values
+
+    # TODO: How do we handle the correlation axis neatly?
     vis = np.empty((time.size, freq.size, 4), dtype=np.complex128)
 
     for ti in range(n_mean_times):
@@ -62,8 +76,8 @@ def _degrid(time, freq, uvw, model):
             degrid_time = utime[time_sel]
             mean_time = degrid_time.mean()
 
-            image_in[Ix, Iy] = modelf(
-                tfunc(mean_time), ffunc(mean_freq), *coeffs
+            native_image[pixel_xs, pixel_ys] = model_func(
+                time_func(mean_time), freq_func(mean_freq), *pixel_coeffs
             )
 
             # NOTE: Select out appropriate rows for ipi and make selection
@@ -75,19 +89,19 @@ def _degrid(time, freq, uvw, model):
                 vis=vis[row_sel, freq_sel, 0],
                 uvw=uvw,
                 freq=degrid_freq,
-                dirty=image_in,
-                pixsize_x=model_xds.cell_rad_x,  # Should be output value.
-                pixsize_y=model_xds.cell_rad_y,  # Should be output value.
-                center_x=model_xds.center_x,     # Should be output value.
-                center_y=model_xds.center_y,     # Should be output value.
+                dirty=native_image,
+                pixsize_x=cellsize_x or model_xds.cell_rad_x,
+                pixsize_y=cellsize_y or model_xds.cell_rad_y,
+                center_x=centre_x or model_xds.center_x,
+                center_y=centre_y or model_xds.center_y,
                 epsilon=1e-7,  # TODO: Is this too high?
                 do_wgridding=True,  # Should be ok to leave True.
                 divide_by_n=False,  # Until otherwise informed.
                 nthreads=6  # Should be equivalent to solver threads.
             )
 
-            # Zero the image array between image slices.
-            image_in[:, :] = 0
+            # Zero the image array between image slices as a precaution.
+            native_image[:, :] = 0
 
     # Degridder only produces I - will need to be more sophisticated.
     vis[..., -1] = vis[..., 0]
