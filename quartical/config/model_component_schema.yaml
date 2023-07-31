@@ -17,10 +17,10 @@ model_component:
     dtype: Optional[List[str]]
     info:
       Tag for use in the predict.
-  region:
-    dtype: Optional[str]
-    info:
-      Name of region file to use in degridder.
+  # region:  # Add when implemented.
+  #   dtype: Optional[str]
+  #   info:
+  #     Name of region file to use in degridder.
   npix_x:
     dtype: Optional[int]
     info:

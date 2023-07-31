@@ -217,7 +217,7 @@ def transcribe_recipe(user_recipe, model_components):
                 if not os.path.isfile(filename):
                     raise FileNotFoundError("{} not found.".format(filename))
 
-                sky_model = sky_model_nt(filename, tags)
+                sky_model = sky_model_nt(filename, tuple(tags))
                 sky_models.add(sky_model)
                 instructions[recipe_index].append(sky_model)
 
@@ -253,7 +253,6 @@ def transcribe_recipe(user_recipe, model_components):
             else:
                 instructions[recipe_index].append(ingredient)
 
-    # TODO: Add message to log.
     logger.info("The following model sources were obtained from "
                 "--input-model-recipe: \n"
                 "   Columns: {} \n"

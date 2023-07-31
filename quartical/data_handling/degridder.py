@@ -97,13 +97,13 @@ def _degrid(time, freq, uvw, component):
                 epsilon=1e-7,  # TODO: Is this too high?
                 do_wgridding=True,  # Should be ok to leave True.
                 divide_by_n=False,  # Until otherwise informed.
-                nthreads=6  # Should be equivalent to solver threads.
+                nthreads=6  # TODO: Should be equivalent to solver threads.
             )
 
             # Zero the image array between image slices as a precaution.
             native_image[:, :] = 0
 
-    # Degridder only produces I - will need to be more sophisticated.
+    # TODO: Degridder only produces I - will need to be more sophisticated.
     vis[..., -1] = vis[..., 0]
 
     return vis
