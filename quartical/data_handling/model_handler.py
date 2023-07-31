@@ -2,7 +2,6 @@
 import dask.array as da
 import numpy as np
 from quartical.data_handling.predict import predict
-from quartical.data_handling.degridder import degrid
 from quartical.data_handling.angles import apply_parangles
 from quartical.config.preprocess import IdentityRecipe, Ingredients
 from quartical.utils.array import flat_ident_like
@@ -60,6 +59,17 @@ def add_model_graph(
         ]
 
     if degrid_required:
+
+        try:
+            from quartical.data_handling.degridder import degrid
+        except ImportError:
+            raise ImportError(
+                "QuartiCal was unable to import the degrid module. This may "
+                "indicate that QuartiCal was installed without the necessary "
+                "extras. Please try 'pip install quartical[degrid]'. If the "
+                "error persists, please raise an issue."
+            )
+
         degrid_schemes = degrid(
             data_xds_list,
             model_vis_recipe,

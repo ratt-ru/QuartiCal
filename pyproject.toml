@@ -40,6 +40,11 @@ pytest = "^7.3.1"
 omegaconf = "^2.3.0"
 colorama = "^0.4.6"
 stimela = "2.0rc4"
+ducc0 = "^0.31.0"
+sympy = "^1.12"
+
+[tool.poetry.extras]
+degrid = ["ducc0", "sympy"]
 
 [tool.poetry.scripts]
 goquartical = 'quartical.executor:execute'
