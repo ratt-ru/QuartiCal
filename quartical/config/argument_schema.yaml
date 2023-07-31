@@ -119,6 +119,12 @@ input_model:
       given by the dE tagged clusters in LSM1. Leaving this value unset
       (the default) will use an identity model.
 
+  advanced_recipe:
+    dtype: Optional[str]
+    info:
+      Optional advanced recipe specification for use with degridder/more
+      complicated modes of model construction.
+
   beam:
     dtype: Optional[str]
     info:

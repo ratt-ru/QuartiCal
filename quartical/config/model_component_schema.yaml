@@ -1,0 +1,61 @@
+model_component:
+  path_or_name:
+    dtype: str
+    required: true
+    info:
+      Path to model/name of column.
+  type:
+    dtype: str
+    choices:
+      - mds  # Replace with awesome acronym eventually.
+      - tigger-lsm
+      - column
+    default: column
+    info:
+      Type of model component  
+  tags:
+    dtype: Optional[List[str]]
+    info:
+      Tag for use in the predict.
+  region:
+    dtype: Optional[str]
+    info:
+      Name of region file to use in degridder.
+  npix_x:
+    dtype: Optional[int]
+    info:
+      Image x size in pixels for use in degridding.
+  npix_y:
+    dtype: Optional[int]
+    info:
+      Image y size in pixels for use in degridding.
+  cellsize_x:
+    dtype: Optional[float]
+    info:
+      Pixel x cellsize in radians.
+  cellsize_y:
+    dtype: Optional[float]
+    info:
+      Pixel y cellsize in radians.
+  centre_x:
+    dtype: int
+    default: 0
+    info:
+      x coordinate of central pixel.
+  centre_y:
+    dtype: int
+    default: 0
+    info:
+      y coordinate of central pixel. 
+  integrations_per_image:
+    dtype: int
+    default: 0
+    info:
+      Number of integrations per image to use in degridding. The default
+      (zero) is all times in a chunk.
+  channels_per_image:
+    dtype: int
+    default: 0
+    info:
+      Number of channels per image to use in degridding. The default
+      (zero) is all channels in a chunk.
