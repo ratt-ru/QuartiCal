@@ -1,6 +1,7 @@
 from collections import defaultdict
 import numpy as np
 import dask.array as da
+from dask.graph_manipulation import clone
 import xarray
 from daskms.experimental.zarr import xds_from_zarr
 from scipy.interpolate import RegularGridInterpolator
@@ -196,7 +197,7 @@ def degrid(data_xds_list, model_vis_recipe, ms_path, model_opts):
             degrid_vis = da.blockwise(
                 _degrid, ("rowlike", "chan", "corr"),
                 data_xds.TIME.data, ("rowlike",),
-                data_xds.CHAN_FREQ.data, ("chan",),
+                clone(data_xds.CHAN_FREQ.data), ("chan",),
                 data_xds.UVW.data, ("rowlike", "uvw"),
                 model_xds.coefficients.data, ("params", "comps"),
                 degrid_model, None,
