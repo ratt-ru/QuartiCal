@@ -58,7 +58,7 @@ def _degrid(time, freq, uvw, pixel_coeffs, component, meta_xds):
     pixel_ys = meta_xds.location_y.values
 
     # TODO: How do we handle the correlation axis neatly?
-    vis = np.empty((time.size, freq.size, 4), dtype=np.complex128)
+    vis = np.zeros((time.size, freq.size, 4), dtype=np.complex128)
 
     for ti in range(n_mean_times):
         for fi in range(n_mean_freqs):
