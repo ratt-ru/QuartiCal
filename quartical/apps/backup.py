@@ -68,13 +68,17 @@ def backup():
         group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),
     )
 
+    xdso = []
     if args.fieldid is not None:
         for ds in data_xds_list:
-            if ds.FIELD_ID != args.fieldid:
-                data_xds_list.remove(ds)
+            if ds.FIELD_ID == args.fieldid:
+                # data_xds_list.remove(ds)  # this fails with reindexing error
+                xdso.append(ds)
+    else:
+        xdso = data_xds_list
 
     # Compute appropriate chunks (256MB by default) to keep zarr happy.
-    chunks = [chunk_by_size(xds[column_name]) for xds in data_xds_list]
+    chunks = [chunk_by_size(xds[column_name]) for xds in xdso]
 
     # Repeat of above call but now with correct chunking information.
     data_xds_list = xds_from_storage_ms(
@@ -85,13 +89,17 @@ def backup():
         chunks=chunks
     )
 
+    xdso = []
     if args.fieldid is not None:
         for ds in data_xds_list:
-            if ds.FIELD_ID != args.fieldid:
-                data_xds_list.remove(ds)
+            if ds.FIELD_ID == args.fieldid:
+                # data_xds_list.remove(ds)
+                xdso.append(ds)
+    else:
+        xdso = data_xds_list
 
     bkp_xds_list = xds_to_zarr(
-        data_xds_list,
+        xdso,
         f"{args.zarr_dir.url}::{label}-{ms_name}-{column_name}.bkp.qc",
     )
 
