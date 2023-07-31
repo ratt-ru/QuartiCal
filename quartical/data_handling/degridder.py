@@ -1,6 +1,7 @@
 from collections import defaultdict
 import numpy as np
 import dask.array as da
+import xarray
 from daskms.experimental.zarr import xds_from_zarr
 from scipy.interpolate import RegularGridInterpolator
 import sympy as sm
@@ -10,9 +11,8 @@ from ducc0.wgridder.experimental import dirty2vis
 from quartical.utils.collections import freeze_default_dict
 
 
-def _degrid(time, freq, uvw, component):
+def _degrid(time, freq, uvw, pixel_coeffs, component, meta_xds):
 
-    name = component.name
     npix_x = component.npix_x  # Will be used in interpolation mode.
     npix_y = component.npix_y  # Will be used in interpolation mode.
     cellsize_x = component.cellsize_x
@@ -21,11 +21,6 @@ def _degrid(time, freq, uvw, component):
     centre_y = component.centre_y
     integrations_per_image = component.integrations_per_image
     channels_per_image = component.channels_per_image
-
-    # TODO: Dodgy pattern, as this will produce dask arrays which will
-    # need to be evaluated i.e. task-in-task which is a bad idea. OK for
-    # the purposes of a prototype.
-    model_xds = xds_from_zarr(name)[0]
 
     # TODO: We want to go from the model to an image cube appropriate for this
     # chunks of data. The dimensions of the image cube will be determined
@@ -44,23 +39,22 @@ def _degrid(time, freq, uvw, component):
     # Let's start off by simply reconstructing the model image as generated
     # by pfb-clean.
 
-    native_npix_x = model_xds.npix_x
-    native_npix_y = model_xds.npix_y
+    native_npix_x = meta_xds.npix_x
+    native_npix_y = meta_xds.npix_y
     native_image = np.zeros((native_npix_x, native_npix_y), dtype=float)
 
     # Sey up sympy symbols for expression evaluation.
     params = sm.symbols(('t', 'f'))
-    params += sm.symbols(tuple(model_xds.params.values))
-    symexpr = parse_expr(model_xds.parametrisation)
+    params += sm.symbols(tuple(meta_xds.params.values))
+    symexpr = parse_expr(meta_xds.parametrisation)
     model_func = lambdify(params, symexpr)
-    time_expr = parse_expr(model_xds.texpr)
+    time_expr = parse_expr(meta_xds.texpr)
     time_func = lambdify(params[0], time_expr)
-    freq_expr = parse_expr(model_xds.fexpr)
+    freq_expr = parse_expr(meta_xds.fexpr)
     freq_func = lambdify(params[1], freq_expr)
 
-    pixel_xs = model_xds.location_x.values
-    pixel_ys = model_xds.location_y.values
-    pixel_coeffs = model_xds.coefficients.values
+    pixel_xs = meta_xds.location_x.values
+    pixel_ys = meta_xds.location_y.values
 
     # TODO: How do we handle the correlation axis neatly?
     vis = np.empty((time.size, freq.size, 4), dtype=np.complex128)
@@ -90,10 +84,10 @@ def _degrid(time, freq, uvw, component):
                 uvw=uvw,
                 freq=degrid_freq,
                 dirty=native_image,
-                pixsize_x=cellsize_x or model_xds.cell_rad_x,
-                pixsize_y=cellsize_y or model_xds.cell_rad_y,
-                center_x=centre_x or model_xds.center_x,
-                center_y=centre_y or model_xds.center_y,
+                pixsize_x=cellsize_x or meta_xds.cell_rad_x,
+                pixsize_y=cellsize_y or meta_xds.cell_rad_y,
+                center_x=centre_x or meta_xds.center_x,
+                center_y=centre_y or meta_xds.center_y,
                 epsilon=1e-7,  # TODO: Is this too high?
                 do_wgridding=True,  # Should be ok to leave True.
                 divide_by_n=False,  # Until otherwise informed.
@@ -191,12 +185,22 @@ def degrid(data_xds_list, model_vis_recipe, ms_path, model_opts):
 
         for degrid_model in degrid_models:
 
+            model_xds = xds_from_zarr(degrid_model.name)[0]
+
+            # NOTE: This is convenient but will result in some extra
+            # information being embedded in the graph. Shouldn't be a problem.
+            meta_xds = xarray.Dataset(
+                coords=model_xds.coords, attrs=model_xds.attrs
+            )
+
             degrid_vis = da.blockwise(
                 _degrid, ("rowlike", "chan", "corr"),
                 data_xds.TIME.data, ("rowlike",),
                 data_xds.CHAN_FREQ.data, ("chan",),
                 data_xds.UVW.data, ("rowlike", "uvw"),
+                model_xds.coefficients.data, ("params", "comps"),
                 degrid_model, None,
+                meta_xds, None,
                 concatenate=True,
                 align_arrays=False,
                 meta=np.empty([0, 0, 0], dtype=np.complex128),
