@@ -24,13 +24,14 @@ def finalize_structure(additional_config):
 
     # Get last specified version of input_model.recipe.
     for cfg in additional_config[::-1]:
-        recipe = oc.select(cfg, "input_model.advanced_recipe")
-        if recipe is not None:
+        advanced_recipe = oc.select(cfg, "input_model.advanced_recipe")
+        recipe = oc.select(cfg, "input_model.recipe")
+        if recipe is not None and advanced_recipe:
             ingredients = re.split(r'([\+~:])', recipe)
             ingredients = [
                 i for i in ingredients if not bool(re.search(r'([\+~:])', i))
             ]
-            models = set(i.split("@")[0] for i in ingredients)
+            models = list(dict.fromkeys(i.split("@")[0] for i in ingredients))
             break
 
     FinalConfig = make_dataclass(

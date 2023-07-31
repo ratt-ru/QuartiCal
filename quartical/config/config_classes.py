@@ -111,9 +111,6 @@ def __input_model_post_init__(self):
     self.__validate_choices__()
     self.__validate_element_choices__()
 
-    assert not (self.recipe and self.advanced_recipe), \
-        "recipe and advanced_recipe are mutually exclusive."
-
 
 def __model_component_post_init__(self):
     self.__validate_choices__()

@@ -62,13 +62,13 @@ def _execute(exitstack):
     parser.log_final_config(opts, config_files)
 
     # TODO: Deprecate legacy models.
-    if model_opts.recipe:
-        model_vis_recipe = preprocess.transcribe_legacy_recipe(
-            model_opts.recipe
+    if model_opts.advanced_recipe:
+        model_vis_recipe = preprocess.transcribe_recipe(
+            model_opts.recipe, model_components
         )
     else:
-        model_vis_recipe = preprocess.transcribe_recipe(
-            model_opts.advanced_recipe, model_components
+        model_vis_recipe = preprocess.transcribe_legacy_recipe(
+            model_opts.recipe
         )
 
     if dask_opts.scheduler == "distributed":

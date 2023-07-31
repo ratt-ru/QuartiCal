@@ -120,9 +120,10 @@ input_model:
       (the default) will use an identity model.
 
   advanced_recipe:
-    dtype: Optional[str]
+    dtype: bool
+    default: false
     info:
-      Optional advanced recipe specification for use with degridder/more
+      Enable advanced recipe specification for use with degridder/more
       complicated modes of model construction.
 
   beam:
