@@ -12,7 +12,7 @@ from ducc0.wgridder.experimental import dirty2vis
 from quartical.utils.collections import freeze_default_dict
 
 
-def _degrid(time, freq, uvw, pixel_coeffs, component, meta_xds):
+def _degrid(time, freq, uvw, pixel_coeffs, component, meta_xds, n_corr):
 
     npix_x = component.npix_x  # Will be used in interpolation mode.
     npix_y = component.npix_y  # Will be used in interpolation mode.
@@ -58,7 +58,7 @@ def _degrid(time, freq, uvw, pixel_coeffs, component, meta_xds):
     pixel_ys = meta_xds.location_y.values
 
     # TODO: How do we handle the correlation axis neatly?
-    vis = np.zeros((time.size, freq.size, 4), dtype=np.complex128)
+    vis = np.zeros((time.size, freq.size, n_corr), dtype=np.complex128)
 
     for ti in range(n_mean_times):
         for fi in range(n_mean_freqs):
@@ -182,6 +182,8 @@ def degrid(data_xds_list, model_vis_recipe, ms_path, model_opts):
 
     for data_xds in data_xds_list:
 
+        n_corr = data_xds.dims["corr"]
+
         model_vis = defaultdict(list)
 
         for degrid_model in degrid_models:
@@ -202,10 +204,11 @@ def degrid(data_xds_list, model_vis_recipe, ms_path, model_opts):
                 model_xds.coefficients.data, ("params", "comps"),
                 degrid_model, None,
                 meta_xds, None,
+                n_corr, None,
                 concatenate=True,
                 align_arrays=False,
                 meta=np.empty([0, 0, 0], dtype=np.complex128),
-                new_axes={"corr": 4}  # TODO: Shouldn't be hardcoded.
+                new_axes={"corr": n_corr}
             )
 
             model_vis[degrid_model].append(degrid_vis)
