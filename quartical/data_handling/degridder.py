@@ -12,7 +12,16 @@ from ducc0.wgridder.experimental import dirty2vis
 from quartical.utils.collections import freeze_default_dict
 
 
-def _degrid(time, freq, uvw, pixel_coeffs, component, meta_xds, n_corr):
+def _degrid(
+    time,
+    freq,
+    uvw,
+    pixel_coeffs,
+    component,
+    meta_xds,
+    n_corr,
+    n_thread
+):
 
     npix_x = component.npix_x  # Will be used in interpolation mode.
     npix_y = component.npix_y  # Will be used in interpolation mode.
@@ -92,7 +101,7 @@ def _degrid(time, freq, uvw, pixel_coeffs, component, meta_xds, n_corr):
                 epsilon=1e-7,  # TODO: Is this too high?
                 do_wgridding=True,  # Should be ok to leave True.
                 divide_by_n=False,  # Until otherwise informed.
-                nthreads=6  # TODO: Should be equivalent to solver threads.
+                nthreads=n_thread
             )
 
             # Zero the image array between image slices as a precaution.
@@ -178,6 +187,8 @@ def degrid(data_xds_list, model_vis_recipe, ms_path, model_opts):
 
     degrid_models = model_vis_recipe.ingredients.degrid_models
 
+    n_thread = model_opts.threads
+
     degrid_list = []
 
     for data_xds in data_xds_list:
@@ -205,6 +216,7 @@ def degrid(data_xds_list, model_vis_recipe, ms_path, model_opts):
                 degrid_model, None,
                 meta_xds, None,
                 n_corr, None,
+                n_thread, None,
                 concatenate=True,
                 align_arrays=False,
                 meta=np.empty([0, 0, 0], dtype=np.complex128),

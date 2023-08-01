@@ -126,6 +126,15 @@ input_model:
       Enable advanced recipe specification for use with degridder/more
       complicated modes of model construction.
 
+  threads:
+    dtype: int
+    default: 1
+    info:
+      Controls the number of threads used internally by the various predict
+      methods. This should typically be set to the same value as
+      solver.threads if solver.threads is in use. Currently only supported
+      for degridding.
+
   beam:
     dtype: Optional[str]
     info:
