@@ -6,7 +6,6 @@ from collections import namedtuple
 import os.path
 from dataclasses import dataclass
 from typing import List, Dict, Set, Any
-from ast import literal_eval
 
 
 sky_model_nt = namedtuple("sky_model_nt", ("name", "tags"))
@@ -108,15 +107,10 @@ def transcribe_legacy_recipe(user_recipe):
 
             elif ".mds" in ingredient:
 
-                filename, _, options = ingredient.partition("@")
-                options = literal_eval(options)  # Add fail on missing option.
-
-                if not os.path.exists(filename):
-                    raise FileNotFoundError("{} not found.".format(filename))
-
-                degrid_model = degrid_model_nt(filename, *options)
-                degrid_models.add(degrid_model)
-                instructions[recipe_index].append(degrid_model)
+                # TODO: Add link to documentation.
+                raise ValueError(
+                    ".mds inputs are only supported in advanced model mode."
+                )
 
             elif ingredient != "":
                 model_columns.add(ingredient)
@@ -149,9 +143,6 @@ def transcribe_legacy_recipe(user_recipe):
 
     if model_recipe.ingredients.sky_models:
         logger.info("Recipe contains sky models - enabling prediction step.")
-
-    if model_recipe.ingredients.degrid_models:
-        logger.info("Recipe contains degrid models - enabling degridding.")
 
     return model_recipe
 
