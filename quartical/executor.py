@@ -69,10 +69,7 @@ def _execute(exitstack):
         # distributed enviroment. This *may* be dangerous. Monitor.
         dask.config.set({"distributed.worker.daemon": False})
 
-        address = (
-            dask_opts.address or
-            os.environ.get("DASK_SCHEDULER_ADDRESS").encode("ascii")
-        )
+        address = dask_opts.address or os.environ.get("DASK_SCHEDULER_ADDRESS")
 
         if address:
             logger.info(
