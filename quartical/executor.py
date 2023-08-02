@@ -69,10 +69,16 @@ def _execute(exitstack):
         # distributed enviroment. This *may* be dangerous. Monitor.
         dask.config.set({"distributed.worker.daemon": False})
 
-        address = dask_opts.address or os.environ.get("DASK_SCHEDULER_ADDRESS")
+        address = (
+            dask_opts.address or
+            os.environ.get("DASK_SCHEDULER_ADDRESS").encode("ascii")
+        )
 
         if address:
-            logger.info("Initializing distributed client.")
+            logger.info(
+                f"Initializing distributed client using scheduler address: "
+                f"{address}"
+            )
             client = exitstack.enter_context(Client(address))
         else:
             logger.info("Initializing distributed client using LocalCluster.")
