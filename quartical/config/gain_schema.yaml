@@ -71,7 +71,7 @@ gain:
   interp_method:
     dtype: str
     default: "2dlinear"
-    choices: ["2dlinear", "2dspline"]
+    choices: ["2dlinear", "2dspline", "1dsmooth"]
     info:
       Set interpolation method.
 

@@ -92,25 +92,33 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
         # Remove time/chan chunking and rechunk by antenna.
         merged_xds = merged_xds.chunk({**merged_xds.dims, "antenna": 1})
 
-        # Create a converter object to handle moving between native and
-        # interpolation representations.
-        converter = Converter(term)
+        if term.interp_method == "1dsmooth":
+            if merged_xds.TYPE != "diag_complex":
+                raise ValueError("Smoothing only supported for diag_complex type")
+            ntime, nchan, nant, ndir, ncorr = merged_xds.gains.shape
+            if ndir > 1:
+                raise ValueError("Smoothing only supported for direction independent gains")
+            interpolated_xds_list = bsmooth(merged_xds, term_xds_list)
+        else:
+            # Create a converter object to handle moving between native and
+            # interpolation representations.
+            converter = Converter(term)
 
-        # Convert standard representation to a representation which can
-        # be interpolated. Replace flags with NaNs.
-        merged_xds = convert_native_to_interp(merged_xds, converter)
+            # Convert standard representation to a representation which can
+            # be interpolated. Replace flags with NaNs.
+            merged_xds = convert_native_to_interp(merged_xds, converter)
 
-        # Interpolate onto the given grids. TODO: Add back spline support.
-        interpolated_xds_list = [
-            interpolate(merged_xds, xds, term) for xds in term_xds_list
-        ]
+            # Interpolate onto the given grids. TODO: Add back spline support.
+            interpolated_xds_list = [
+                interpolate(merged_xds, xds, term) for xds in term_xds_list
+            ]
 
-        # Convert from representation which can be interpolated back into
-        # native representation.
-        interpolated_xds_list = [
-            convert_interp_to_native(xds, converter)
-            for xds in interpolated_xds_list
-        ]
+            # Convert from representation which can be interpolated back into
+            # native representation.
+            interpolated_xds_list = [
+                convert_interp_to_native(xds, converter)
+                for xds in interpolated_xds_list
+            ]
 
         # Make the interpolated xds consistent with the current run.
         interpolated_xds_list = [
@@ -275,3 +283,50 @@ def compute_and_reload(directory, gain_xds_list):
             rxds[k] = lxds[k]
 
     return gain_xds_list
+
+
+def bsmooth(merged_xds, target_xds):
+    out_time = []
+    out_freq =[]
+    for ds in target_xds:
+        out_time.append(ds.gain_time.data)
+        out_freq.append(ds.gain_freq.data)
+    out_time = np.unique(np.concatenate(out_time))
+    out_freq = np.unique(np.concatenate(out_freq))
+    ntimeo = out_time.size
+    nfreqo = out_freq.size
+    ntimei, nfreqi, nant, ndir, ncorr = merged_xds.gains.shape
+
+    # we also want to chunk by correlation since they can be smoothed separately
+    merged_xds = merged_xds.chunk({"correlation": 1})
+
+    from quartical.interpolation.interpolants import smooth_ampphase
+    combine_by_time = True
+    smoothed_gains = da.blockwise(
+        smooth_ampphase, 'tfpdc',
+        merged_xds.gains.data, 'tfpdc',
+        merged_xds.jhj.data, 'tfpdc',
+        merged_xds.gain_flags.data, 'tfpd',
+        merged_xds.gain_time.data, None,
+        merged_xds.gain_freq.data, None,
+        out_time, None,
+        out_freq, None,
+        combine_by_time, None,
+        dtype=merged_xds.gains.dtype,
+        align_arrays=False,
+        adjust_chunks={'t': ntimeo, 'f': nfreqo},
+        meta=np.empty((ntimeo, nfreqo, nant, ndir, ncorr),
+                      dtype=merged_xds.gains.dtype)
+    )
+
+    for i, ds in enumerate(target_xds):
+        t = ds.gain_time.data
+        _, idx0, idx1 = np.intersect1d(t, out_time,
+                                       assume_unique=True,
+                                       return_indices=True)
+        ds['gains'] = (ds.GAIN_AXES, smoothed_gains[idx1])
+
+    target_xds = [ds.chunk({"correlation": ncorr}) for ds in target_xds]
+
+    return target_xds
+

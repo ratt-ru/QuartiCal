@@ -402,3 +402,127 @@ def interpolate_missing(input_xda, mode="normal"):
     )
 
     return input_xda.copy(data=interp)
+
+
+def smooth_ampphase(gains,
+                    jhj,
+                    flags,
+                    ti,
+                    fi,
+                    to,
+                    fo,
+                    combine_by_time=True,
+                    niter=5,
+                    nu0=2.0,
+                    padding=1.2):
+    import nifty8 as ift
+    from ducc0.fft import good_size
+    if not combine_by_time:
+        raise NotImplementedError
+    # weighted sum over time axis
+    ntimei, nchani, nanti, ndiri, ncorri = gains.shape
+    ntimeo = to.size
+    nfreqo = fo.size
+    assert nanti == 1
+    assert ndiri == 1
+    assert ncorri == 1
+    gains = gains.squeeze()
+    jhj = jhj.squeeze().real
+    gain = np.zeros((nchani), dtype=gains.dtype)
+    wgt = np.zeros((nchani), dtype=jhj.dtype)
+    flags = flags.squeeze().astype(bool)
+    jhj[flags] = 0.0
+    for t in range(ntimei):
+        gain += jhj[t].squeeze() * gains[t].squeeze()
+        wgt += jhj[t].squeeze()
+    # normalise by sum of weights
+    mask = wgt > 0
+    if not mask.any():
+        return np.ones((ntimeo, nfreqo, nanti, ndiri, ncorri),
+                       dtype=gains.dtype)
+
+    print(wgt[mask].max(), wgt[mask].min())
+    gain[mask] = gain[mask]/wgt[mask]
+
+    # set up correlated field model (hardcoding hypers for now)
+    npix_f = good_size(int(nchani*padding))
+    pospace_large = ift.RGSpace([npix_f])
+    pospace_small = ift.RGSpace([nchani])
+    spfreq_amp = ift.RGSpace(npix_f)
+    spfreq_phase = ift.RGSpace(npix_f)
+
+    # amplitude model
+    cfmakera = ift.CorrelatedFieldMaker('amplitude')
+    cfmakera.add_fluctuations(spfreq_amp, (0.1, 1e-2), None, None, (-3, 1),
+                             'f')
+    cfmakera.set_amplitude_total_offset(0., (1e-2, 1e-6))
+    cf_amp = cfmakera.finalize()
+
+    normalized_amp = cfmakera.get_normalized_amplitudes()
+    pspec_freq_amp = normalized_amp[0]**2
+
+    # phase model
+    cfmakerp = ift.CorrelatedFieldMaker('phase')
+    cfmakerp.add_fluctuations(spfreq_phase, (0.1, 1e-2), None, None, (-3, 1),
+                             'f')
+    cfmakerp.set_amplitude_total_offset(0., (1e-2, 1e-6))
+    cf_phase = cfmakerp.finalize()
+
+    normalized_phase = cfmakerp.get_normalized_amplitudes()
+    pspec_freq_phase = normalized_phase[0]**2
+
+    TF = ift.SliceOperator(cf_amp.target, pospace_small.shape)
+
+    signal = TF @ ift.exp(cf_amp.real + 1j*cf_phase.real)
+
+    cf_amp_small = TF @ cf_amp
+    cf_phase_small = TF @ cf_phase
+
+    tmp = ift.makeField(signal.target, ~mask)
+    # TODO - this should include averaging
+    R = ift.MaskOperator(tmp)
+    dspace = R.target
+    data = ift.makeField(dspace, gain[mask])
+    signal_response = R(signal)
+
+    # Minimization parameters
+    n_samples = 3
+    n_iterations = 5
+    ic_sampling = ift.AbsDeltaEnergyController(name='Sampling', deltaE=0.01, iteration_limit=50)
+    ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.01, iteration_limit=15)
+    minimizer = ift.NewtonCG(ic_newton, enable_logging=True)
+
+    # Set up likelihood energy and information Hamiltonian
+    W = wgt[mask]
+    assert (W > 0).all()
+    covinv = ift.makeField(dspace, W)
+    Ninv = ift.DiagonalOperator(covinv, sampling_dtype=complex)
+    inp = (ift.Adder(data, neg=True) @ signal_response)  # required to compute the resid for VariableCovGaussianEnergy
+    BC = ift.ContractionOperator(dspace, None).adjoint   # broadcast scalar over everything (None)
+    weightop = ift.DiagonalOperator(ift.makeField(dspace, W))
+    scalarop = ift.GammaOperator(BC.domain, mean=2.0, var=2).ducktape('icov_scalar')
+    icovop = weightop @ BC @ scalarop.real
+    inp = inp.ducktape_left('resid') + icovop.ducktape_left('icov')
+    likelihood_energy = ift.VariableCovarianceGaussianEnergy(R.target, 'resid', 'icov',
+                                                                data.dtype) @ inp
+
+    samples = ift.optimize_kl(likelihood_energy,
+                              n_iterations,
+                              n_samples,
+                              minimizer,
+                              ic_sampling,
+                              None)  # for GeoVI
+
+    # get the mean
+    signal_mean = samples.average(signal.force).val
+
+    # interpolate to output frequencies
+    amp = np.interp(fo, fi, np.abs(signal_mean))
+    phase = np.interp(fo, fi, np.angle(signal_mean))
+    signal_mean = amp*np.exp(1j*phase)
+
+    # broadcast to output times
+    signal_mean = np.tile(signal_mean[None, :], (to.size, 1))
+
+    # broadcast to expected output shape
+    return signal_mean[:, :, None, None, None]
