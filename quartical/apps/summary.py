@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from daskms.experimental.multisource import (
+from daskms.experimental.fragments import (
     xds_from_ms_fragment,
     xds_from_table_fragment
 )

@@ -1,7 +1,7 @@
 import dask.delayed as dd
 import numpy as np
 import dask.array as da
-from daskms.experimental.multisource import (
+from daskms.experimental.fragments import (
     xds_from_ms_fragment,
     xds_from_table_fragment
 )

@@ -3,7 +3,7 @@ import warnings
 import dask.array as da
 import numpy as np
 from daskms import xds_to_storage_table
-from daskms.experimental.multisource import (
+from daskms.experimental.fragments import (
     xds_from_ms_fragment,
     xds_from_table_fragment,
     xds_to_table_fragment
@@ -305,6 +305,7 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
             rechunk=True  # Needed to ensure zarr chunks map correctly to disk.
         )
 
+        # TODO: This needs to be controlled in a sensible way.
         # write_xds_list = xds_to_table_fragment(
         #     xds_list,
         #     "delta1.ms",

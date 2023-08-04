@@ -2,7 +2,7 @@ import numpy as np
 import casacore.measures
 import casacore.quanta as pq
 
-from daskms.experimental.multisource import xds_from_table_fragment
+from daskms.experimental.fragments import xds_from_table_fragment
 import dask.array as da
 import threading
 from dask.graph_manipulation import clone

@@ -7,7 +7,7 @@ import dask.array as da
 import dask
 from xarray import DataArray, Dataset
 from dask.graph_manipulation import clone
-from daskms.experimental.multisource import xds_from_table_fragment
+from daskms.experimental.fragments import xds_from_table_fragment
 
 from loguru import logger
 import numpy as np
