@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from contextlib import ExitStack
+import os
 import sys
 from loguru import logger
 import dask
@@ -77,9 +78,14 @@ def _execute(exitstack):
         # distributed enviroment. This *may* be dangerous. Monitor.
         dask.config.set({"distributed.worker.daemon": False})
 
-        if dask_opts.address:
-            logger.info("Initializing distributed client.")
-            client = exitstack.enter_context(Client(dask_opts.address))
+        address = dask_opts.address or os.environ.get("DASK_SCHEDULER_ADDRESS")
+
+        if address:
+            logger.info(
+                f"Initializing distributed client using scheduler address: "
+                f"{address}"
+            )
+            client = exitstack.enter_context(Client(address))
         else:
             logger.info("Initializing distributed client using LocalCluster.")
             cluster = LocalCluster(
