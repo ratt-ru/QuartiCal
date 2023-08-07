@@ -61,7 +61,10 @@ def parse_sky_models(sky_models):
 
             tagged = any([source.getTag(tag) for tag in sky_model_tags])
 
-            parent_group = source.getTag("cluster") if tagged else "DIE"
+            if tagged:
+                parent_group = source.getTag("cluster") or source.name
+            else:
+                parent_group = "DIE"
 
             ra = source.pos.ra
             dec = source.pos.dec

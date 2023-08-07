@@ -1,0 +1,92 @@
+gain:
+  type:
+    dtype: str
+    default: complex
+    choices:
+      - complex
+      - diag_complex
+      - amplitude
+      - delay
+      - delay_and_offset
+      - phase
+      - tec_and_offset
+      - rotation_measure
+      - rotation
+      - crosshand_phase
+      - leakage
+    info:
+      Type of gain to solve for.
+
+  solve_per:
+    dtype: str
+    default: antenna
+    choices: [antenna, array]
+    info:
+      Determines whether this term should be solved per antenna (conventional)
+      or over the entire array (doesn't vary with antenna).
+
+  direction_dependent:
+    dtype: bool
+    default: False
+    info:
+      Determines whether this term is treated as direction dependent.
+
+  pinned_directions:
+    dtype: List[int]
+    default: [0]
+    info:
+      If this term is direction dependent, this can be used to exclude
+      integer indexed directions during gain updates i.e. effectively disable
+      updates in the given directions. Accepts a list of integer values e.g.
+      '[0,3]'.
+
+  time_interval:
+    dtype: str
+    default: "1"
+    info:
+      Number of timeslots/amount of time to include in a single solution.
+      Specify as an integer number of timeslots, or a value with a unit
+      (e.g. '300s'). 0 means use full time axis.
+
+  freq_interval:
+    dtype: str
+    default: "1"
+    info:
+      Number of channels/bandwidth to include in a single solution. Specify as
+      an integer number of channels, or a value with a unit (e.g. '128MHz').
+      0 means use full frequency axis.
+
+  load_from:
+    dtype: Optional[str]
+    info:
+      Load solutions from given database.
+
+  interp_mode:
+    dtype: str
+    default: reim
+    choices: [reim, ampphase, amp, phase]
+    info:
+      Set interpolation mode. THIS OPTION IS CURRENTLY UNAVAILABLE.
+
+  interp_method:
+    dtype: str
+    default: "2dlinear"
+    choices: ["2dlinear", "2dspline"]
+    info:
+      Set interpolation method.
+
+  respect_scan_boundaries:
+    dtype: bool
+    default: true
+    info: Determines whether solution intervals may span multiple scans. This
+          only works when input_ms.group_by does not include SCAN_NUMBER. Can
+          be used in conjunction with time_interval to solve a term per scan
+          even when data is not partitioned by scan (by setting this to True
+          and time_interval to 0).
+
+  initial_estimate:
+    dtype: bool
+    default: false
+    info: Controls whether or not a term will be populated with an initial
+          estimiate where applicable. Currently only supported for delay
+          terms.

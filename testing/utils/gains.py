@@ -1,13 +1,23 @@
 import numpy as np
-from numba import generated_jit
+from numba import njit
+from numba.extending import overload
+from quartical.utils.numba import coerce_literal, JIT_OPTIONS
 import quartical.gains.general.factories as factories
-from quartical.utils.numba import coerce_literal
 
 
-@generated_jit(nopython=True, nogil=True, cache=True)
+@njit(**JIT_OPTIONS)
 def apply_gains(model, gains, ant1, ant2, row_ind, mode):
+    return apply_gains_impl(model, gains, ant1, ant2, row_ind, mode)
 
-    coerce_literal(apply_gains, ["mode"])
+
+def apply_gains_impl(model, gains, ant1, ant2, row_ind, mode):
+    raise NotImplementedError
+
+
+@overload(apply_gains_impl, jit_options=JIT_OPTIONS)
+def nb_apply_gains_impl(model, gains, ant1, ant2, row_ind, mode):
+
+    coerce_literal(nb_apply_gains_impl, ["mode"])
 
     v1_imul_v2 = factories.v1_imul_v2_factory(mode)
     v1_imul_v2ct = factories.v1_imul_v2ct_factory(mode)
@@ -43,10 +53,19 @@ def apply_gains(model, gains, ant1, ant2, row_ind, mode):
     return impl
 
 
-@generated_jit(nopython=True, nogil=True, cache=True)
+@njit(**JIT_OPTIONS)
 def reference_gains(gains, mode):
+    return reference_gains_impl(gains, mode)
 
-    coerce_literal(reference_gains, ["mode"])
+
+def reference_gains_impl(gains, mode):
+    raise NotImplementedError
+
+
+@overload(reference_gains_impl, jit_options=JIT_OPTIONS)
+def nb_reference_gains_impl(gains, mode):
+
+    coerce_literal(nb_reference_gains_impl, ["mode"])
 
     v1_imul_v2 = factories.v1_imul_v2_factory(mode)
     compute_det = factories.compute_det_factory(mode)

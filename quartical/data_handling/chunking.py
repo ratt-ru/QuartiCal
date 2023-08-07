@@ -47,16 +47,20 @@ def compute_chunking(ms_opts, compute=True):
         [{"__row__": 1, "chan": c} for c in chan_chunking_per_spw.values()]
 
     if compute:
-        return da.compute(utime_chunking_per_xds,
-                          chunking_per_data_xds,
-                          chunking_per_spw_xds)
+        return da.compute(
+            utime_chunking_per_xds,
+            chunking_per_data_xds,
+            chunking_per_spw_xds
+        )
     else:
         utime_chunking_per_xds, chunking_per_data_xds, chunking_per_spw_xds
 
 
-def chan_chunking(spw_xds_list,
-                  freq_chunk,
-                  compute=True):
+def chan_chunking(
+    spw_xds_list,
+    freq_chunk,
+    compute=True
+):
     """Compute frequency chunks for the input data.
 
     Given a list of indexing xds's, and a list of spw xds's, determines how to
@@ -111,11 +115,17 @@ def chan_chunking(spw_xds_list,
 
                 n_chan = chan_widths.size
                 freq_chunk = freq_chunk or n_chan  # Catch zero case.
-                chunks = (freq_chunk,) * (n_chan // freq_chunk)
-                remainder = n_chan - sum(chunks)
-                chunks += (remainder,) if remainder else ()
 
-                return np.array(chunks, dtype=np.int32)
+                chunk_starts = np.arange(0, n_chan, freq_chunk)
+
+                chunks = np.array(
+                    [
+                        freq_chunk if i + freq_chunk < n_chan else n_chan - i
+                        for i in chunk_starts
+                    ]
+                )
+
+                return chunks.astype(np.int32)
 
             chunking = da.map_blocks(integer_chunking,
                                      xds.CHAN_WIDTH.data[0],
@@ -132,9 +142,11 @@ def chan_chunking(spw_xds_list,
         return chan_chunking_per_spw
 
 
-def row_chunking(indexing_xds_list,
-                 time_chunk,
-                 compute=True):
+def row_chunking(
+    indexing_xds_list,
+    time_chunk,
+    compute=True
+):
     """Compute time and frequency chunks for the input data.
 
     Given a list of indexing xds's, and a list of spw xds's, determines how to
@@ -150,7 +162,6 @@ def row_chunking(indexing_xds_list,
         A tuple of utime_chunking_per_xds and row_chunking_per_xds which
         describe the chunking of the data.
     """
-    # row_chunks is a list of dictionaries containing row chunks per data set.
 
     row_chunking_per_xds = []
     utime_chunking_per_xds = []
@@ -158,9 +169,7 @@ def row_chunking(indexing_xds_list,
     for xds in indexing_xds_list:
 
         # If the chunking interval is a float after preprocessing, we are
-        # dealing with a duration rather than a number of intervals. TODO:
-        # Need to take resulting chunks and reprocess them based on chunk-on
-        # columns and jumps.
+        # dealing with a duration rather than a number of intervals.
 
         # TODO: BDA will assume no chunking, and in general we can skip this
         # bit if the row axis is unchunked.
@@ -168,8 +177,9 @@ def row_chunking(indexing_xds_list,
         if isinstance(time_chunk, float):
 
             def interval_chunking(time_col, interval_col, time_chunk):
+                """Given a time column, figure out interval chunking."""
 
-                utimes, uinds, ucounts = \
+                _, uinds, ucounts = \
                     np.unique(time_col, return_counts=True, return_index=True)
                 cumulative_interval = np.cumsum(interval_col[uinds])
                 cumulative_interval -= cumulative_interval[0]
@@ -185,40 +195,47 @@ def row_chunking(indexing_xds_list,
 
                 return np.vstack((utime_chunks, row_chunks)).astype(np.int32)
 
-            chunking = da.map_blocks(interval_chunking,
-                                     xds.TIME.data,
-                                     xds.INTERVAL.data,
-                                     time_chunk,
-                                     chunks=((2,), (np.nan,)),
-                                     dtype=np.int32)
+            chunking = da.map_blocks(
+                interval_chunking,
+                xds.TIME.data,
+                xds.INTERVAL.data,
+                time_chunk,
+                chunks=((2,), (np.nan,)),
+                dtype=np.int32
+            )
 
         else:
 
             def integer_chunking(time_col, time_chunk):
+                """Given a time column, figure out integer chunking."""
 
                 utimes, ucounts = np.unique(time_col, return_counts=True)
                 n_utime = utimes.size
-                time_chunk = time_chunk or n_utime  # Catch time_chunk == 0.
-
-                utime_chunks = [time_chunk] * (n_utime // time_chunk)
-                last_chunk = n_utime % time_chunk
-
-                utime_chunks += [last_chunk] if last_chunk else []
-                utime_chunks = np.array(utime_chunks)
+                time_chunk = time_chunk or n_utime  # Catch 0.
 
                 chunk_starts = np.arange(0, n_utime, time_chunk)
+
+                utime_chunks = np.array(
+                    [
+                        time_chunk if i + time_chunk < n_utime else n_utime - i
+                        for i in chunk_starts
+                    ]
+                )
 
                 row_chunks = np.add.reduceat(ucounts, chunk_starts)
 
                 return np.vstack((utime_chunks, row_chunks)).astype(np.int32)
 
-            chunking = da.map_blocks(integer_chunking,
-                                     xds.TIME.data,
-                                     time_chunk,
-                                     chunks=((2,), (np.nan,)),
-                                     dtype=np.int32)
+            chunking = da.map_blocks(
+                integer_chunking,
+                xds.TIME.data,
+                time_chunk,
+                chunks=((2,), (np.nan,)),
+                dtype=np.int32
+            )
 
         # We use delayed to convert to tuples and satisfy daskms/dask.
+        # TODO: Why was this necessary and can we avoid it?
         utime_per_chunk = dd(tuple)(chunking[0, :])
         row_chunks = dd(tuple)(chunking[1, :])
 

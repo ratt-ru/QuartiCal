@@ -1,22 +1,22 @@
 import numpy as np
-from numba import generated_jit, jit
+from numba import njit
+from numba.extending import overload
+from quartical.utils.numba import coerce_literal, JIT_OPTIONS
 import quartical.gains.general.factories as factories
 from quartical.gains.general.generics import compute_residual
 
 
-qcgjit = generated_jit(nopython=True,
-                       fastmath=True,
-                       cache=True,
-                       nogil=True)
-
-qcjit = jit(nopython=True,
-            fastmath=True,
-            cache=True,
-            nogil=True)
-
-
-@qcgjit
+@njit(**JIT_OPTIONS)
 def update_icovariance(residuals, flags, etas, icovariance, mode):
+    return update_icovariance_impl(residuals, flags, etas, icovariance, mode)
+
+
+def update_icovariance_impl(residuals, flags, etas, icovariance, mode):
+    raise NotImplementedError
+
+
+@overload(update_icovariance_impl, jit_options=JIT_OPTIONS)
+def nb_update_icovariance_impl(residuals, flags, etas, icovariance, mode):
 
     update_covariance_inner = update_covariance_inner_factory(mode)
 
@@ -76,11 +76,20 @@ def update_covariance_inner_factory(mode):
     else:
         raise ValueError("Unsupported number of correlations.")
 
-    return qcjit(impl)
+    return factories.qcjit(impl)
 
 
-@qcgjit
+@njit(**JIT_OPTIONS)
 def update_etas(residuals, flags, etas, icovariance, dof, mode):
+    return update_etas_impl(residuals, flags, etas, icovariance, dof, mode)
+
+
+def update_etas_impl(residuals, flags, etas, icovariance, dof, mode):
+    raise NotImplementedError
+
+
+@overload(update_etas_impl, jit_options=JIT_OPTIONS)
+def nb_update_etas_impl(residuals, flags, etas, icovariance, dof, mode):
 
     update_etas_inner = update_etas_inner_factory(mode)
 
@@ -133,10 +142,10 @@ def update_etas_inner_factory(mode):
     else:
         raise ValueError("Unsupported number of correlations.")
 
-    return qcjit(impl)
+    return factories.qcjit(impl)
 
 
-@qcjit
+@njit(**JIT_OPTIONS)
 def digamma(x):
 
     result = 0
@@ -154,12 +163,12 @@ def digamma(x):
     return result
 
 
-@qcjit
+@njit(**JIT_OPTIONS)
 def dof_variable(dof):
     return np.log(dof) - digamma(dof)
 
 
-@qcjit
+@njit(**JIT_OPTIONS)
 def dof_constant(etas, flags, dof, n_corr):
 
     n_row, n_chan = etas.shape
@@ -182,7 +191,7 @@ def dof_constant(etas, flags, dof, n_corr):
     return constant + 1 + digamma(dof + n_corr) - np.log(dof + n_corr)
 
 
-@qcjit
+@njit(**JIT_OPTIONS)
 def compute_dof(etas, flags, dof, n_corr):
 
     constant = dof_constant(etas, flags, dof, n_corr)
@@ -206,7 +215,7 @@ def compute_dof(etas, flags, dof, n_corr):
     return mid
 
 
-@qcjit
+@njit(**JIT_OPTIONS)
 def mean_weight(weights, flags):
 
     n_row, n_chan, n_corr = weights.shape
@@ -230,7 +239,7 @@ def mean_weight(weights, flags):
     return mean
 
 
-@qcjit
+@njit(**JIT_OPTIONS)
 def update_weights(weights, etas, icovariance):
 
     n_row, n_chan, n_corr = weights.shape
@@ -242,46 +251,101 @@ def update_weights(weights, etas, icovariance):
                 weights[r, f, c] = etas[r, f] * icovariance[c]
 
 
-@qcgjit
-def robust_reweighting(base_args, meta_args, etas, icovariance, dof, mode):
+@njit(**JIT_OPTIONS)
+def robust_reweighting(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    etas,
+    icovariance,
+    dof,
+    corr_mode
+):
+    return robust_reweighting_impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        etas,
+        icovariance,
+        dof,
+        corr_mode
+    )
 
-    def impl(base_args, meta_args, etas, icovariance, dof, mode):
-        model = base_args.model
-        data = base_args.data
-        a1 = base_args.a1
-        a2 = base_args.a2
-        weights = base_args.weights
-        flags = base_args.flags
-        t_map_arr = base_args.t_map_arr[0]  # Ignore parameter mappings.
-        f_map_arr = base_args.f_map_arr[0]  # Ignore parameter mappings.
-        d_map_arr = base_args.d_map_arr
-        gains = base_args.gains
-        row_map = base_args.row_map
-        row_weights = base_args.row_weights
 
-        residuals = compute_residual(data,
-                                     model,
-                                     gains,
-                                     a1,
-                                     a2,
-                                     t_map_arr,
-                                     f_map_arr,
-                                     d_map_arr,
-                                     row_map,
-                                     row_weights,
-                                     mode)
+def robust_reweighting_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    etas,
+    icovariance,
+    dof,
+    corr_mode
+):
+    raise NotImplementedError
+
+
+@overload(robust_reweighting_impl, jit_options=JIT_OPTIONS)
+def nb_robust_reweighting_impl(
+    ms_inputs,
+    mapping_inputs,
+    chain_inputs,
+    etas,
+    icovariance,
+    dof,
+    corr_mode
+):
+
+    coerce_literal(nb_robust_reweighting_impl, ["corr_mode"])
+
+    def impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        etas,
+        icovariance,
+        dof,
+        corr_mode
+    ):
+        model = ms_inputs.MODEL_DATA
+        data = ms_inputs.DATA
+        antenna1 = ms_inputs.ANTENNA1
+        antenna2 = ms_inputs.ANTENNA2
+        weights = ms_inputs.WEIGHT
+        flags = ms_inputs.FLAG
+        row_map = ms_inputs.ROW_MAP
+        row_weights = ms_inputs.ROW_WEIGHTS
+
+        t_map_arr = mapping_inputs.time_maps
+        f_map_arr = mapping_inputs.freq_maps
+        d_map_arr = mapping_inputs.dir_maps
+
+        gains = chain_inputs.gains
+
+        residuals = compute_residual(
+            data,
+            model,
+            gains,
+            antenna1,
+            antenna2,
+            t_map_arr,
+            f_map_arr,
+            d_map_arr,
+            row_map,
+            row_weights,
+            corr_mode
+        )
 
         # First reweighting - we have already calibrated with MS weights.
         # This tries to approximate what that means in terms of initial values.
         if np.all(icovariance == 0):
             icovariance[:] = mean_weight(weights, flags)
-            update_etas(residuals, flags, etas, icovariance, dof, mode)
+            update_etas(residuals, flags, etas, icovariance, dof, corr_mode)
 
-        update_icovariance(residuals, flags, etas, icovariance, mode)
+        update_icovariance(residuals, flags, etas, icovariance, corr_mode)
 
-        dof = compute_dof(etas, flags, dof, mode)
+        dof = compute_dof(etas, flags, dof, corr_mode)
 
-        update_etas(residuals, flags, etas, icovariance, dof, mode)
+        update_etas(residuals, flags, etas, icovariance, dof, corr_mode)
 
         update_weights(weights, etas, icovariance)
 

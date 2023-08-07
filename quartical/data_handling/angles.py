@@ -7,10 +7,11 @@ import dask.array as da
 import threading
 from dask.graph_manipulation import clone
 import xarray
-from numba import generated_jit
+from numba import njit
+from numba.extending import overload
+from quartical.utils.numba import coerce_literal, JIT_OPTIONS
 from quartical.utils.dask import blockwise_unique
 import quartical.gains.general.factories as factories
-from quartical.utils.numba import coerce_literal
 
 
 # Create thread local storage for the measures server. TODO: This works for
@@ -203,18 +204,19 @@ def apply_parangles(data_xds_list, parangle_xds_list, data_var_names,
             # Negate the angles if the desired output is a derotation.
             parangles = -parangles if derotate else parangles
 
-            rot_vars[data_var_name] = da.blockwise(py_apply_parangle_rot,
-                                                   "rfc",
-                                                   data_var, "rfc",
-                                                   parangles, "ra2",
-                                                   utime_ind, "r",
-                                                   ant1_col, "r",
-                                                   ant2_col, "r",
-                                                   corr_mode, None,
-                                                   feed_type, None,
-                                                   align_arrays=False,
-                                                   concatenate=True,
-                                                   dtype=data_var.dtype)
+            rot_vars[data_var_name] = da.blockwise(
+                apply_parangle, "rfc",
+                data_var, "rfc",
+                parangles, "ra2",
+                utime_ind, "r",
+                ant1_col, "r",
+                ant2_col, "r",
+                corr_mode, None,
+                feed_type, None,
+                align_arrays=False,
+                concatenate=True,
+                dtype=data_var.dtype
+            )
 
         output_data_xds_list.append(
             xds.assign({n: ((xds[n].dims), v) for n, v in rot_vars.items()}))
@@ -222,14 +224,40 @@ def apply_parangles(data_xds_list, parangle_xds_list, data_var_names,
     return output_data_xds_list
 
 
-def py_apply_parangle_rot(data_col, parangles, utime_ind, ant1_col, ant2_col,
-                          corr_mode, feed_type):
-    """Wrapper for numba function to ensure pickling works."""
-    return nb_apply_parangle_rot(data_col, parangles, utime_ind, ant1_col,
-                                 ant2_col, corr_mode, feed_type)
+@njit(**JIT_OPTIONS)
+def apply_parangle(
+    data_col,
+    parangles,
+    utime_ind,
+    ant1_col,
+    ant2_col,
+    corr_mode,
+    feed_type
+):
+    return apply_parangle_impl(
+        data_col,
+        parangles,
+        utime_ind,
+        ant1_col,
+        ant2_col,
+        corr_mode,
+        feed_type
+    )
 
 
-@generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
+def apply_parangle_impl(
+    data_col,
+    parangles,
+    utime_ind,
+    ant1_col,
+    ant2_col,
+    corr_mode,
+    feed_type
+):
+    return NotImplementedError
+
+
+@overload(apply_parangle_impl, jit_options=JIT_OPTIONS)
 def nb_apply_parangle_rot(data_col, parangles, utime_ind, ant1_col, ant2_col,
                           corr_mode, feed_type):
 
