@@ -40,7 +40,6 @@ pytest = "^7.3.1"
 omegaconf = "^2.3.0"
 colorama = "^0.4.6"
 stimela = "2.0rc4"
-finufft = "^2.1.0"
 
 [tool.poetry.scripts]
 goquartical = 'quartical.executor:execute'
