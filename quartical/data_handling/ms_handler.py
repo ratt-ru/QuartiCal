@@ -298,21 +298,23 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
 
     with warnings.catch_warnings():  # We anticipate spurious warnings.
         warnings.simplefilter("ignore")
-        write_xds_list = xds_to_storage_table(
-            xds_list,
-            ms_path,
-            columns=output_cols,
-            rechunk=True  # Needed to ensure zarr chunks map correctly to disk.
-        )
 
-        # TODO: This needs to be controlled in a sensible way.
-        # write_xds_list = xds_to_table_fragment(
-        #     xds_list,
-        #     "delta1.ms",
-        #     ms_path,
-        #     columns=output_cols,
-        #     rechunk=True  # Needed to ensure zarr chunks map correctly to disk.
-        # )
+        if output_opts.fragment_path:
+            write_xds_list = xds_to_table_fragment(
+                xds_list,
+                output_opts.fragment_path,
+                ms_path,
+                columns=output_cols,
+                rechunk=True  # Ensure zarr chunks map correctly to disk.
+            )
+
+        else:
+            write_xds_list = xds_to_storage_table(
+                xds_list,
+                ms_path,
+                columns=output_cols,
+                rechunk=True  # Ensure zarr chunks map correctly to disk.
+            )
 
     return write_xds_list
 
