@@ -39,7 +39,7 @@ requests = "^2.31.0"
 pytest = "^7.3.1"
 omegaconf = "^2.3.0"
 colorama = "^0.4.6"
-stimela = {git = "https://github.com/caracal-pipeline/stimela", branch = "FIASCO3"}
+stimela = {git = "https://github.com/caracal-pipeline/stimela", branch = "FIASCO3-hlb"}
 ducc0 = "^0.31.0"
 sympy = "^1.12"
 
