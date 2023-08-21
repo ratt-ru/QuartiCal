@@ -71,6 +71,20 @@ def cli():
         default="gain_freq",
         help="Axis over which take the average when plotting."
     )
+    parser.add_argument(
+        "--time-range",
+        type=float,
+        nargs=2,
+        default=[None],
+        help="Time range to plot."
+    )
+    parser.add_argument(
+        "--freq-range",
+        type=float,
+        nargs=2,
+        default=[None],
+        help="Frequency range to plot."
+    )
 
     return parser.parse_args()
 
@@ -93,6 +107,15 @@ def plot():
     # TODO: This currently precludes plotting per scan/spw and doesn't
     # work for overlapping spws.
     xds = xarray.combine_by_coords(xdsl, combine_attrs="drop").compute()
+
+    if args.freq_range or args.time_range:
+        time_ax, freq_ax = xds[args.plot_var].dims[:2]
+        xds = xds.sel(
+            {
+                time_ax: slice(*args.time_range),
+                freq_ax: slice(*args.freq_range)
+            }
+        )
 
     dims = xds[args.plot_var].dims  # Dimensions of plot quantity.
     assert all(map(lambda x: x in dims, args.iter_axes)), (
