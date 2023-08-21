@@ -129,6 +129,8 @@ def nb_diag_complex_solver_impl(
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
 
+            apply_convolution(native_imdry, active_gain_flags)
+
             if not max_iter:  # Non-solvable term, we just want jhj.
                 conv_perc = 0  # Didn't converge.
                 loop_idx = -1  # Did zero iterations.
@@ -669,5 +671,63 @@ def nb_reference_gains_impl(chain_inputs, meta_inputs, mode):
                         v1_imul_v2(g, rg, g)
 
         apply_gain_flags_to_gains(gain_flags, gains)
+
+    return impl
+
+
+def apply_convolution(native_imdry, gain_flags):
+    raise NotImplementedError
+
+
+@overload(apply_convolution, jit_options=JIT_OPTIONS)
+def nb_apply_convolution(native_imdry, gain_flags):
+
+    def impl(native_imdry, gain_flags):
+
+        jhj = native_imdry.jhj
+        jhr = native_imdry.jhr
+
+        kernel_width = 41
+        kernel = np.exp(-0.5 * np.linspace(-5, 5, kernel_width)**2)
+        kernel /= kernel.sum()
+        kernel_spill = (kernel_width - 1) // 2
+
+        n_ti, n_fi, n_ant, n_dir, n_corr = jhj.shape
+
+        if kernel_width > n_ti:
+            raise ValueError(
+                "Kernel wider than signal. This is not supported."
+            )
+
+        jhj_tmp = np.zeros_like(jhj)
+        jhr_tmp = np.zeros_like(jhr)
+
+        for ti in range(n_ti):
+            for fi in range(n_fi):
+                for a in range(n_ant):
+                    for d in range(n_dir):
+
+                        if gain_flags[ti, fi, a, d] == 1:
+                            continue
+
+                        for c in range(n_corr):
+
+                            for ki in range(-kernel_spill, kernel_spill + 1):
+
+                                idx = ti + ki
+
+                                if idx < 0:
+                                    idx = -idx
+                                elif idx >= n_ti:
+                                    idx = n_ti - (idx - n_ti) - 2
+
+                                if gain_flags[idx, fi, a, d] == 1:
+                                    continue
+
+                                jhj_tmp[ti, fi, a, d, c] += kernel[ki + kernel_spill] * jhj[idx, fi, a, d, c]
+                                jhr_tmp[ti, fi, a, d, c] += kernel[ki + kernel_spill] * jhr[idx, fi, a, d, c]
+
+        jhj[:] = jhj_tmp
+        jhr[:] = jhr_tmp
 
     return impl
