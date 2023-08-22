@@ -85,8 +85,64 @@ def cli():
         default=[None],
         help="Frequency range to plot."
     )
+    parser.add_argument(
+        "--merge-scans",
+        action="store_true",
+        help="Controls whether or not scans are merged before plotting."
+    )
+    parser.add_argument(
+        "--merge-spws",
+        action="store_true",
+        help="Controls whether or not scans are merged before plotting."
+    )
 
     return parser.parse_args()
+
+
+def to_plot_dict(xdsl, merge_scans=False, merge_spws=False):
+
+    if merge_scans and merge_spws:
+        merged_xds = xarray.combine_by_coords(xdsl, combine_attrs="drop")
+        return {("SCAN-ALL", "SPW-ALL"): merged_xds}
+    elif merge_scans:
+        ddids = {xds.attrs.get("DATA_DESC_ID", "ALL") for xds in xdsl}
+
+        merge_dict = {
+            ("SCAN-ALL", f"SPW-{ddid}"): [
+                xds for xds in xdsl if xds.attrs.get("DATA_DESC_ID", "ALL")==ddid
+            ]
+            for ddid in ddids
+        }
+
+        merge_dict = {
+            k: xarray.combine_by_coords(v, combine_attrs="drop")
+            for k, v in merge_dict.items()
+        }
+
+        return merge_dict
+
+    elif merge_spws:
+        sids = {xds.attrs.get("SCAN_NUMBER", "ALL") for xds in xdsl}
+
+        merge_dict = {
+            (f"SCAN-{sid}", "SPW-ALL"): [
+                xds for xds in xdsl if xds.attrs.get("SCAN_NUMBER", "ALL")==sid
+            ]
+            for sid in sids
+        }
+
+        merge_dict = {
+            k: xarray.combine_by_coords(v, combine_attrs="drop")
+            for k, v in merge_dict.items()
+        }
+
+        return merge_dict
+
+    else:
+        return {
+            (f"SCAN-{xds.SCAN_NUMBER}", f"SPW-{xds.DATA_DESC_ID}"): xds
+            for xds in xdsl
+        }
 
 
 def plot():
@@ -94,9 +150,10 @@ def plot():
     args = cli()
 
     # Path to gain location.
-    gain_path = "::".join(args.input_path.full_path.rsplit("/", 1))
+    gain_path = DaskMSStore("::".join(args.input_path.url.rsplit("/", 1)))
+
     # Name of gain to be plotted.
-    gain_name = args.input_path.full_path.rsplit("/", 1)[1]
+    gain_name = gain_path.table
 
     xdsl = xds_from_zarr(gain_path)
 
@@ -106,77 +163,85 @@ def plot():
     # Combine all the datasets into a single dataset for simplicity.
     # TODO: This currently precludes plotting per scan/spw and doesn't
     # work for overlapping spws.
-    xds = xarray.combine_by_coords(xdsl, combine_attrs="drop").compute()
+    xdsd = to_plot_dict(xdsl, args.merge_scans, args.merge_spws)
 
-    if args.freq_range or args.time_range:
-        time_ax, freq_ax = xds[args.plot_var].dims[:2]
-        xds = xds.sel(
-            {
-                time_ax: slice(*args.time_range),
-                freq_ax: slice(*args.freq_range)
-            }
-        )
+    for k, xds in xdsd.items():
 
-    dims = xds[args.plot_var].dims  # Dimensions of plot quantity.
-    assert all(map(lambda x: x in dims, args.iter_axes)), (
-        f"Some or all of {args.iter_axes} are not present on {args.plot_var}."
-    )
+        xds = xds.compute()
 
-    # Grab the required transform from the dict.
-    transform = TRANSFORMS[args.transform]
-
-    # NOTE: This mututates the data variables in place.
-    data = xds[args.plot_var].values
-    flags = xds[args.flag_var].values
-    data[np.where(flags)] = np.nan  # Set flagged values to nan (not plotted).
-    xds = xds.drop_vars(args.flag_var)  # No more use for flags.
-
-    # Construct list of lists containing axes over which we iterate i.e.
-    # produce a plot per combination of these values.
-    iter_axes = [xds[x].values.tolist() for x in args.iter_axes]
-
-    for ia in product(*iter_axes):
-
-        sel = {ax: val for ax, val in zip(args.iter_axes, ia)}
-
-        xda = xds.sel(sel)[args.plot_var]
-
-        fig, ax = plt.subplots(figsize=(7, 10))
-
-        for i in range(xda.sizes[args.agg_axis]):
-            pxda = xda.isel({args.agg_axis: i})
-
-            ax.plot(
-                pxda[args.xaxis].values,
-                transform(pxda.values),
-                "k",
-                linewidth=0.1
+        if args.freq_range or args.time_range:
+            time_ax, freq_ax = xds[args.plot_var].dims[:2]
+            xds = xds.sel(
+                {
+                    time_ax: slice(*args.time_range),
+                    freq_ax: slice(*args.freq_range)
+                }
             )
 
-        mxda = xda.mean(args.agg_axis)
-
-        ax.plot(
-            mxda[args.xaxis].values,
-            transform(mxda.values),
-            "r",
-            label="mean"
+        dims = xds[args.plot_var].dims  # Dimensions of plot quantity.
+        assert all(map(lambda x: x in dims, args.iter_axes)), (
+            f"Some or all of {args.iter_axes} are not present on "
+            f"{args.plot_var}."
         )
 
-        ax.title.set_text(f"{sel}")
-        ax.set_xlabel(f"{args.xaxis}")
-        if args.transform:
-            ax.set_ylabel(f"{args.transform}({ia[-1]})")
-        else:
-            ax.set_ylabel(f"{ia[-1]}")
-        ax.legend()
+        # Grab the required transform from the dict.
+        transform = TRANSFORMS[args.transform]
 
-        fig_name = "-".join(map(str, chain.from_iterable(sel.items())))
+        # NOTE: This mututates the data variables in place.
+        data = xds[args.plot_var].values
+        flags = xds[args.flag_var].values
+        data[np.where(flags)] = np.nan  # Set flagged values to nan (not plotted).
+        xds = xds.drop_vars(args.flag_var)  # No more use for flags.
 
-        subdir_name = f"{gain_name}-{args.plot_var}-{args.transform}"
-        args.output_path.makedirs(subdir_name, exist_ok=True)
+        # Construct list of lists containing axes over which we iterate i.e.
+        # produce a plot per combination of these values.
+        iter_axes = [xds[x].values.tolist() for x in args.iter_axes]
 
-        fig.savefig(
-            f"{args.output_path.full_path}/{subdir_name}/{fig_name}.png",
-            bbox_inches='tight'
-        )
-        plt.close()
+        for ia in product(*iter_axes):
+
+            sel = {ax: val for ax, val in zip(args.iter_axes, ia)}
+
+            xda = xds.sel(sel)[args.plot_var]
+
+            fig, ax = plt.subplots(figsize=(7, 10))
+
+            for i in range(xda.sizes[args.agg_axis]):
+                pxda = xda.isel({args.agg_axis: i})
+
+                ax.plot(
+                    pxda[args.xaxis].values,
+                    transform(pxda.values),
+                    "k",
+                    linewidth=0.1
+                )
+
+            mxda = xda.mean(args.agg_axis)
+
+            ax.plot(
+                mxda[args.xaxis].values,
+                transform(mxda.values),
+                "r",
+                label="mean"
+            )
+
+            ax.title.set_text(f"{sel}")
+            ax.set_xlabel(f"{args.xaxis}")
+            if args.transform:
+                ax.set_ylabel(f"{args.transform}({ia[-1]})")
+            else:
+                ax.set_ylabel(f"{ia[-1]}")
+            ax.legend()
+
+            fig_name = "-".join(map(str, chain.from_iterable(sel.items())))
+
+            root_subdir = f"{gain_name}-{args.plot_var}-{args.transform}"
+            leaf_subdir = "-".join(k)
+            subdir_path = f"{root_subdir}/{leaf_subdir}" 
+
+            args.output_path.makedirs(subdir_path, exist_ok=True)
+
+            fig.savefig(
+                f"{args.output_path.full_path}/{subdir_path}/{fig_name}.png",
+                bbox_inches='tight'
+            )
+            plt.close()
