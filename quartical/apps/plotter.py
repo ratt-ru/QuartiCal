@@ -116,7 +116,8 @@ def to_plot_dict(xdsl, merge_scans=False, merge_spws=False):
 
         merge_dict = {
             ("SCAN-ALL", f"SPW-{ddid}"): [
-                xds for xds in xdsl if xds.attrs.get("DATA_DESC_ID", "ALL")==ddid
+                xds for xds in xdsl
+                if xds.attrs.get("DATA_DESC_ID", "ALL") == ddid
             ]
             for ddid in ddids
         }
@@ -133,7 +134,8 @@ def to_plot_dict(xdsl, merge_scans=False, merge_spws=False):
 
         merge_dict = {
             (f"SCAN-{sid}", "SPW-ALL"): [
-                xds for xds in xdsl if xds.attrs.get("SCAN_NUMBER", "ALL")==sid
+                xds for xds in xdsl
+                if xds.attrs.get("SCAN_NUMBER", "ALL") == sid
             ]
             for sid in sids
         }
@@ -223,7 +225,7 @@ def _plot(k, xds, args):
 
         root_subdir = f"{xds.NAME}-{args.plot_var}-{args.transform}"
         leaf_subdir = "-".join(k)
-        subdir_path = f"{root_subdir}/{leaf_subdir}" 
+        subdir_path = f"{root_subdir}/{leaf_subdir}"
 
         args.output_path.makedirs(subdir_path, exist_ok=True)
 
