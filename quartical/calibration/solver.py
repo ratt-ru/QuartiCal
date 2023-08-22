@@ -21,6 +21,7 @@ meta_args_nt = namedtuple(
         "dd_term",
         "pinned_directions",
         "solve_per",
+        "smoothing_kernel_width"
     )
 )
 
@@ -216,7 +217,8 @@ def solver_wrapper(
             solver_opts.reference_antenna,
             term.direction_dependent,
             term.pinned_directions,
-            term.solve_per
+            term.solve_per,
+            term.smoothing_kernel_width
         )
 
         jhj, conv_iter, conv_perc = term.solver(

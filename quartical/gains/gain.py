@@ -89,6 +89,7 @@ class Gain:
         self.pinned_directions = term_opts.pinned_directions
         self.time_interval = term_opts.time_interval
         self.freq_interval = term_opts.freq_interval
+        self.smoothing_kernel_width = term_opts.smoothing_kernel_width
         self.respect_scan_boundaries = term_opts.respect_scan_boundaries
         self.initial_estimate = term_opts.initial_estimate
         self.load_from = term_opts.load_from

@@ -129,7 +129,12 @@ def nb_diag_complex_solver_impl(
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
 
-            apply_convolution(native_imdry, active_gain_flags)
+            if meta_inputs.smoothing_kernel_width:
+                apply_convolution(
+                    native_imdry,
+                    active_gain_flags,
+                    meta_inputs.smoothing_kernel_width
+                )
 
             if not max_iter:  # Non-solvable term, we just want jhj.
                 conv_perc = 0  # Didn't converge.
@@ -675,19 +680,18 @@ def nb_reference_gains_impl(chain_inputs, meta_inputs, mode):
     return impl
 
 
-def apply_convolution(native_imdry, gain_flags):
+def apply_convolution(native_imdry, gain_flags, kernel_width):
     raise NotImplementedError
 
 
 @overload(apply_convolution, jit_options=JIT_OPTIONS)
-def nb_apply_convolution(native_imdry, gain_flags):
+def nb_apply_convolution(native_imdry, gain_flags, kernel_width):
 
-    def impl(native_imdry, gain_flags):
+    def impl(native_imdry, gain_flags, kernel_width):
 
         jhj = native_imdry.jhj
         jhr = native_imdry.jhr
 
-        kernel_width = 41
         kernel = np.exp(-0.5 * np.linspace(-5, 5, kernel_width)**2)
         kernel /= kernel.sum()
         kernel_spill = (kernel_width - 1) // 2

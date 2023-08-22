@@ -56,6 +56,15 @@ gain:
       an integer number of channels, or a value with a unit (e.g. '128MHz').
       0 means use full frequency axis.
 
+  smoothing_kernel_width:
+    dtype: int
+    default: 0
+    info:
+      Determines the number of samples over which each smooth gain estimate
+      is computed. Temporary argument until such time as an analytic kernel
+      with proper time and frquency length scales is implemented. Only works
+      for complex and diag_complex solvers.
+
   load_from:
     dtype: Optional[str]
     info:
