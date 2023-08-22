@@ -186,13 +186,15 @@ def _plot(k, xds, args):
     # produce a plot per combination of these values.
     iter_axes = [xds[x].values.tolist() for x in args.iter_axes]
 
+    fig, ax = plt.subplots(figsize=(7, 10))
+
     for ia in product(*iter_axes):
 
         sel = {ax: val for ax, val in zip(args.iter_axes, ia)}
 
         xda = xds.sel(sel)[args.plot_var]
 
-        fig, ax = plt.subplots(figsize=(7, 10))
+        ax.clear()
 
         for i in range(xda.sizes[args.agg_axis]):
             pxda = xda.isel({args.agg_axis: i})
@@ -233,7 +235,8 @@ def _plot(k, xds, args):
             f"{args.output_path.full_path}/{subdir_path}/{fig_name}.png",
             bbox_inches='tight'
         )
-        plt.close()
+
+    plt.close()
 
 
 def plot():
