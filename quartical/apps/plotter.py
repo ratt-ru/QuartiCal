@@ -186,7 +186,7 @@ def _plot(k, xds, args):
     # produce a plot per combination of these values.
     iter_axes = [xds[x].values.tolist() for x in args.iter_axes]
 
-    fig, ax = plt.subplots(figsize=(7, 10))
+    fig, ax = plt.subplots()
 
     for ia in product(*iter_axes):
 
@@ -232,8 +232,7 @@ def _plot(k, xds, args):
         args.output_path.makedirs(subdir_path, exist_ok=True)
 
         fig.savefig(
-            f"{args.output_path.full_path}/{subdir_path}/{fig_name}.png",
-            bbox_inches='tight'
+            f"{args.output_path.full_path}/{subdir_path}/{fig_name}.png"
         )
 
     plt.close()
