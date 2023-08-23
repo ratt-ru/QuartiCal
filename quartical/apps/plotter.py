@@ -1,7 +1,9 @@
 import argparse
+import math
 import xarray
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import ticker
 from itertools import product, chain
 from daskms.experimental.zarr import xds_from_zarr
 from daskms.fsspec_store import DaskMSStore
@@ -15,6 +17,49 @@ TRANSFORMS = {
     "real": np.real,
     "imag": np.imag
 }
+
+
+class CustomFormatter(ticker.ScalarFormatter):
+
+    def __init__(self, *args, precision=None, **kwargs):
+
+        super().__init__(*args, *kwargs)
+
+        self.precision = precision
+
+    def _set_format(self):
+        # set the format string to format all the ticklabels
+        if len(self.locs) < 2:
+            # Temporarily augment the locations with the axis end points.
+            _locs = [*self.locs, *self.axis.get_view_interval()]
+        else:
+            _locs = self.locs
+        locs = (np.asarray(_locs) - self.offset) / 10. ** self.orderOfMagnitude
+        loc_range = np.ptp(locs)
+        # Curvilinear coordinates can yield two identical points.
+        if loc_range == 0:
+            loc_range = np.max(np.abs(locs))
+        # Both points might be zero.
+        if loc_range == 0:
+            loc_range = 1
+        if len(self.locs) < 2:
+            # We needed the end points only for the loc_range calculation.
+            locs = locs[:-2]
+        loc_range_oom = int(math.floor(math.log10(loc_range)))
+        # first estimate:
+        sigfigs = max(0, 3 - loc_range_oom)
+        # refined estimate:
+        thresh = 1e-3 * 10 ** loc_range_oom
+        while sigfigs >= 0:
+            if np.abs(locs - np.round(locs, decimals=sigfigs)).max() < thresh:
+                sigfigs -= 1
+            else:
+                break
+        sigfigs += 1
+        sigfigs = self.precision or sigfigs
+        self.format = f'%{sigfigs + 3}.{sigfigs}f'
+        if self._usetex or self._useMathText:
+            self.format = r'$\mathdefault{%s}$' % self.format
 
 
 def cli():
@@ -222,6 +267,11 @@ def _plot(k, xds, args):
         ax.set_xlabel(f"{args.xaxis}")
         ax.set_ylabel(f"{args.transform}({ia[-1]})")
 
+        formatter = CustomFormatter(precision=2)
+        formatter.set_scientific(True)
+        formatter.set_powerlimits((0, 0))
+        ax.yaxis.set_major_formatter(formatter)
+        ax.yaxis.set_major_locator(ticker.LinearLocator(numticks=5))
         ax.legend()
 
         fig_name = "-".join(map(str, chain.from_iterable(sel.items())))
