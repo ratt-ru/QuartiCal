@@ -217,13 +217,11 @@ def _plot(k, xds, args):
             label="mean"
         )
 
-        ax.title.set_text(" | ".join([f"{k}: {v}" for k, v in sel.items()]))
+        ax.title.set_text("\n".join([f"{k}: {v}" for k, v in sel.items()]))
         ax.title.set_fontsize("medium")
         ax.set_xlabel(f"{args.xaxis}")
-        if args.transform:
-            ax.set_ylabel(f"{args.transform}({ia[-1]})")
-        else:
-            ax.set_ylabel(f"{ia[-1]}")
+        ax.set_ylabel(f"{args.transform}({ia[-1]})")
+
         ax.legend()
 
         fig_name = "-".join(map(str, chain.from_iterable(sel.items())))
