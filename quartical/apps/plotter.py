@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from itertools import product, chain
 from daskms.experimental.zarr import xds_from_zarr
 from daskms.fsspec_store import DaskMSStore
-from concurrent.futures import ProcessPoolExecutor, wait
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 TRANSFORMS = {
@@ -109,7 +109,9 @@ def cli():
 def to_plot_dict(xdsl, merge_scans=False, merge_spws=False):
 
     if merge_scans and merge_spws:
-        merged_xds = xarray.combine_by_coords(xdsl, combine_attrs="drop")
+        merged_xds = xarray.combine_by_coords(
+            xdsl, combine_attrs="drop_conflicts"
+        )
         return {("SCAN-ALL", "SPW-ALL"): merged_xds}
     elif merge_scans:
         ddids = {xds.attrs.get("DATA_DESC_ID", "ALL") for xds in xdsl}
@@ -123,7 +125,7 @@ def to_plot_dict(xdsl, merge_scans=False, merge_spws=False):
         }
 
         merge_dict = {
-            k: xarray.combine_by_coords(v, combine_attrs="drop")
+            k: xarray.combine_by_coords(v, combine_attrs="drop_conflicts")
             for k, v in merge_dict.items()
         }
 
@@ -141,7 +143,7 @@ def to_plot_dict(xdsl, merge_scans=False, merge_spws=False):
         }
 
         merge_dict = {
-            k: xarray.combine_by_coords(v, combine_attrs="drop")
+            k: xarray.combine_by_coords(v, combine_attrs="drop_conflicts")
             for k, v in merge_dict.items()
         }
 
@@ -186,7 +188,7 @@ def _plot(k, xds, args):
     # produce a plot per combination of these values.
     iter_axes = [xds[x].values.tolist() for x in args.iter_axes]
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(4, 3))
 
     for ia in product(*iter_axes):
 
@@ -215,7 +217,8 @@ def _plot(k, xds, args):
             label="mean"
         )
 
-        ax.title.set_text(f"{sel}")
+        ax.title.set_text(" | ".join([f"{k}: {v}" for k, v in sel.items()]))
+        ax.title.set_fontsize("medium")
         ax.set_xlabel(f"{args.xaxis}")
         if args.transform:
             ax.set_ylabel(f"{args.transform}({ia[-1]})")
@@ -232,7 +235,8 @@ def _plot(k, xds, args):
         args.output_path.makedirs(subdir_path, exist_ok=True)
 
         fig.savefig(
-            f"{args.output_path.full_path}/{subdir_path}/{fig_name}.png"
+            f"{args.output_path.full_path}/{subdir_path}/{fig_name}.png",
+            bbox_inches="tight"  # SLOW, but slightly unavoidable.
         )
 
     plt.close()
@@ -254,4 +258,10 @@ def plot():
     xdsd = to_plot_dict(xdsl, args.merge_scans, args.merge_spws)
 
     with ProcessPoolExecutor(max_workers=args.nworker) as ppe:
-        wait([ppe.submit(_plot, k, xds, args) for k, xds in xdsd.items()])
+        futures = [ppe.submit(_plot, k, xds, args) for k, xds in xdsd.items()]
+
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as exc:
+                print(f"Exception raised in process pool: {exc}")
