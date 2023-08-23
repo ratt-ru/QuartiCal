@@ -272,7 +272,7 @@ def _plot(k, xds, args):
         formatter.set_powerlimits((0, 0))
         ax.yaxis.set_major_formatter(formatter)
         ax.yaxis.set_major_locator(ticker.LinearLocator(numticks=5))
-        ax.legend()
+        # ax.legend()
 
         fig_name = "-".join(map(str, chain.from_iterable(sel.items())))
 
