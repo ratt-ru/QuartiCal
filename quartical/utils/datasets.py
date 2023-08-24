@@ -15,6 +15,7 @@ def group_by_attr(xdsl, attr, default="?"):
 
 def _recursive_group_by_attr(partition_dict, attrs):
 
+    attrs = attrs.copy()
     attr = attrs.pop(0)
 
     for k, v in partition_dict.items():
@@ -27,7 +28,6 @@ def _recursive_group_by_attr(partition_dict, attrs):
 def recursive_group_by_attr(xdsl, keys):
 
     keys = keys.copy()  # Don't destroy input keys.
-
     group_dict = group_by_attr(xdsl, keys.pop(0))
 
     if keys:
