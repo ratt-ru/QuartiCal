@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 
 
 def group_by_attr(xdsl, attr, default="?"):
@@ -15,22 +16,21 @@ def group_by_attr(xdsl, attr, default="?"):
 
 def _recursive_group_by_attr(partition_dict, attrs):
 
-    attrs = attrs.copy()
-    attr = attrs.pop(0)
-
     for k, v in partition_dict.items():
-        partition_dict[k] = group_by_attr(v, attr)
+        partition_dict[k] = group_by_attr(v, attrs[0])
 
-        if attrs:
-            _recursive_group_by_attr(partition_dict[k], attrs)
+        if len(attrs[1:]):
+            _recursive_group_by_attr(partition_dict[k], attrs[1:])
 
 
 def recursive_group_by_attr(xdsl, keys):
 
-    keys = keys.copy()  # Don't destroy input keys.
-    group_dict = group_by_attr(xdsl, keys.pop(0))
+    if not isinstance(keys, Iterable):
+        keys = [keys]
 
-    if keys:
-        _recursive_group_by_attr(group_dict, keys)
+    group_dict = group_by_attr(xdsl, keys[0])
+
+    if len(keys[1:]):
+        _recursive_group_by_attr(group_dict, keys[1:])
 
     return group_dict
