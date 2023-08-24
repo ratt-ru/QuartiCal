@@ -164,7 +164,7 @@ def to_plot_dict(xdsl, iter_attrs):
     }
 
 
-def _plot(k, xds, args):
+def _plot(group, xds, args):
 
     xds = xds.compute(scheduler="single-threaded")
 
@@ -240,7 +240,7 @@ def _plot(k, xds, args):
         fig_name = "-".join(map(str, chain.from_iterable(sel.items())))
 
         root_subdir = f"{xds.NAME}-{args.plot_var}-{args.transform}"
-        leaf_subdir = "-".join(k)
+        leaf_subdir = "-".join(group)
         subdir_path = f"{root_subdir}/{leaf_subdir}"
 
         args.output_path.makedirs(subdir_path, exist_ok=True)
