@@ -8,6 +8,8 @@ from itertools import product, chain
 from daskms.experimental.zarr import xds_from_zarr
 from daskms.fsspec_store import DaskMSStore
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from quartical.utils.collections import flatten
+from quartical.utils.datasets import recursive_group_by_attr
 
 
 TRANSFORMS = {
@@ -105,6 +107,17 @@ def cli():
         help="Transform to apply to data before plotting."
     )
     parser.add_argument(
+        "--iter-attrs",
+        type=str,
+        nargs="+",
+        default=["FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"],
+        help=(
+            "Attributes (datasets) over which to iterate. Omission will "
+            "result in concatenation in the omitted axis i.e. omit "
+            "SCAN_NUMBER to to include all scans in a single plot."
+        )
+    )
+    parser.add_argument(
         "--iter-axes",
         type=str,
         nargs="+",
@@ -132,16 +145,6 @@ def cli():
         help="Frequency range to plot."
     )
     parser.add_argument(
-        "--merge-scans",
-        action="store_true",
-        help="Controls whether or not scans are merged before plotting."
-    )
-    parser.add_argument(
-        "--merge-spws",
-        action="store_true",
-        help="Controls whether or not scans are merged before plotting."
-    )
-    parser.add_argument(
         "--nworker",
         type=int,
         default=1,
@@ -151,54 +154,14 @@ def cli():
     return parser.parse_args()
 
 
-def to_plot_dict(xdsl, merge_scans=False, merge_spws=False):
+def to_plot_dict(xdsl, iter_attrs):
 
-    if merge_scans and merge_spws:
-        merged_xds = xarray.combine_by_coords(
-            xdsl, combine_attrs="drop_conflicts"
-        )
-        return {("SCAN-ALL", "SPW-ALL"): merged_xds}
-    elif merge_scans:
-        ddids = {xds.attrs.get("DATA_DESC_ID", "ALL") for xds in xdsl}
+    grouped = recursive_group_by_attr(xdsl, iter_attrs)
 
-        merge_dict = {
-            ("SCAN-ALL", f"SPW-{ddid}"): [
-                xds for xds in xdsl
-                if xds.attrs.get("DATA_DESC_ID", "ALL") == ddid
-            ]
-            for ddid in ddids
-        }
-
-        merge_dict = {
-            k: xarray.combine_by_coords(v, combine_attrs="drop_conflicts")
-            for k, v in merge_dict.items()
-        }
-
-        return merge_dict
-
-    elif merge_spws:
-        sids = {xds.attrs.get("SCAN_NUMBER", "ALL") for xds in xdsl}
-
-        merge_dict = {
-            (f"SCAN-{sid}", "SPW-ALL"): [
-                xds for xds in xdsl
-                if xds.attrs.get("SCAN_NUMBER", "ALL") == sid
-            ]
-            for sid in sids
-        }
-
-        merge_dict = {
-            k: xarray.combine_by_coords(v, combine_attrs="drop_conflicts")
-            for k, v in merge_dict.items()
-        }
-
-        return merge_dict
-
-    else:
-        return {
-            (f"SCAN-{xds.SCAN_NUMBER}", f"SPW-{xds.DATA_DESC_ID}"): xds
-            for xds in xdsl
-        }
+    return {
+        k: xarray.combine_by_coords(v, combine_attrs="drop_conflicts")
+        for k, v in flatten(grouped).items()
+    }
 
 
 def _plot(k, xds, args):
@@ -303,7 +266,7 @@ def plot():
     xdsl = [xds[[args.plot_var, args.flag_var]] for xds in xdsl]
 
     # Partitioned dictionary of xarray.Datasets.
-    xdsd = to_plot_dict(xdsl, args.merge_scans, args.merge_spws)
+    xdsd = to_plot_dict(xdsl, args.iter_attrs)
 
     with ProcessPoolExecutor(max_workers=args.nworker) as ppe:
         futures = [ppe.submit(_plot, k, xds, args) for k, xds in xdsd.items()]
