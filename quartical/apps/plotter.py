@@ -172,7 +172,13 @@ def cli():
             "colourmaps."
         )
     )
-
+    parser.add_argument(
+        "--fig-size",
+        type=float,
+        nargs=2,
+        default=[5, 5],
+        help="Figure size in inches. Expects two values, width and height."
+    )
     return parser.parse_args()
 
 
@@ -236,7 +242,7 @@ def _plot(group, xds, args):
         n_colour = 2
         colours = ["k", "r"]
 
-    fig, ax = plt.subplots(figsize=(5, 5))
+    fig, ax = plt.subplots(figsize=args.fig_size)
 
     for ia in product(*iter_axes_itr):
 
