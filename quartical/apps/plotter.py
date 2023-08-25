@@ -163,6 +163,15 @@ def cli():
         default=1,
         help="Number of processes to use while plotting."
     )
+    parser.add_argument(
+        "--colourmap",
+        type=str,
+        default="plasma",
+        help=(
+            "Colourmap to use with --colourize-axis. Supports all matplotlib "
+            "colourmaps."
+        )
+    )
 
     return parser.parse_args()
 
@@ -221,7 +230,8 @@ def _plot(group, xds, args):
 
     if args.colourize_axis:
         n_colour = xds.sizes[args.colourize_axis]
-        colours = [cm.plasma(i / n_colour) for i in range(n_colour)]
+        colourmap = cm.get_cmap(args.colourmap)
+        colours = [colourmap(i / n_colour) for i in range(n_colour)]
     else:
         n_colour = 2
         colours = ["k", "r"]
