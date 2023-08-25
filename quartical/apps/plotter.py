@@ -1,9 +1,11 @@
 import argparse
 import math
+import warnings
 import xarray
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import ticker
+import matplotlib.cm as cm
 from itertools import product, chain
 from daskms.experimental.zarr import xds_from_zarr
 from daskms.fsspec_store import DaskMSStore
@@ -122,13 +124,25 @@ def cli():
         type=str,
         nargs="+",
         default=["antenna", "direction", "correlation"],
-        help="Axes over which to iterate when generating plots."
+        help=(
+            "Axes over which to iterate when generating plots i.e. produce a "
+            "plot per unique combination of the specified axes."
+        )
     )
     parser.add_argument(
-        "--agg-axis",
+        "--mean-axis",
         type=str,
-        default="gain_freq",
-        help="Axis over which take the average when plotting."
+        default=None,
+        help=(
+            "If set, will plot a heavier line to indicate the mean of the "
+            "plotted quantity along this axis."
+        )
+    )
+    parser.add_argument(
+        "--colourize-axis",
+        type=str,
+        default=None,
+        help="Axis to colour by."
     )
     parser.add_argument(
         "--time-range",
@@ -194,11 +208,24 @@ def _plot(group, xds, args):
 
     # Construct list of lists containing axes over which we iterate i.e.
     # produce a plot per combination of these values.
-    iter_axes = [xds[x].values.tolist() for x in args.iter_axes]
+    iter_axes_itr = [xds[x].values.tolist() for x in args.iter_axes]
 
-    fig, ax = plt.subplots(figsize=(4, 3))
+    # Figure out axes included in a single plot.
+    excluded_dims = {*args.iter_axes, args.xaxis}
+    agg_axes = [d for d in dims if d not in excluded_dims]
+    agg_axes_itr = [range(xds.sizes[x]) for x in agg_axes]
 
-    for ia in product(*iter_axes):
+    # Figure out axes included in a single plot after taking the mean.
+    excluded_dims = {*args.iter_axes, args.xaxis, args.mean_axis}
+    mean_agg_axes = [d for d in dims if d not in excluded_dims]
+    mean_agg_axes_itr = [range(xds.sizes[x]) for x in mean_agg_axes]
+
+    n_colour = xds.sizes.get[args.colourize_axis]
+    colours = [cm.viridis(i / n_colour) for i in range(n_colour)]
+
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    for ia in product(*iter_axes_itr):
 
         sel = {ax: val for ax, val in zip(args.iter_axes, ia)}
 
@@ -206,24 +233,32 @@ def _plot(group, xds, args):
 
         ax.clear()
 
-        for i in range(xda.sizes[args.agg_axis]):
-            pxda = xda.isel({args.agg_axis: i})
+        for aa in product(*agg_axes_itr):
+
+            subsel = {ax: val for ax, val in zip(agg_axes, aa)}
+            pxda = xda.isel(subsel)
 
             ax.plot(
                 pxda[args.xaxis].values,
                 transform(pxda.values),
-                "k",
+                color=colours[subsel.get(args.colourize_axis, 0)],
                 linewidth=0.1
             )
 
-        mxda = xda.mean(args.agg_axis)
+        if args.mean_axis:
 
-        ax.plot(
-            mxda[args.xaxis].values,
-            transform(mxda.values),
-            "r",
-            label="mean"
-        )
+            mxda = xda.mean(args.mean_axis)
+
+            for ma in product(*mean_agg_axes_itr):
+
+                subsel = {ax: val for ax, val in zip(mean_agg_axes, ma)}
+                pxda = mxda.isel(subsel)
+
+                ax.plot(
+                    pxda[args.xaxis].values,
+                    transform(pxda.values),
+                    color=colours[subsel.get(args.colourize_axis, -1)]
+                )
 
         ax.title.set_text("\n".join([f"{k}: {v}" for k, v in sel.items()]))
         ax.title.set_fontsize("medium")
@@ -235,7 +270,6 @@ def _plot(group, xds, args):
         formatter.set_powerlimits((0, 0))
         ax.yaxis.set_major_formatter(formatter)
         ax.yaxis.set_major_locator(ticker.LinearLocator(numticks=5))
-        # ax.legend()
 
         fig_name = "-".join(map(str, chain.from_iterable(sel.items())))
 
@@ -267,6 +301,8 @@ def plot():
 
     # Partitioned dictionary of xarray.Datasets.
     xdsd = to_plot_dict(xdsl, args.iter_attrs)
+
+    [_plot(k, xds, args) for k, xds in xdsd.items()]
 
     with ProcessPoolExecutor(max_workers=args.nworker) as ppe:
         futures = [ppe.submit(_plot, k, xds, args) for k, xds in xdsd.items()]
