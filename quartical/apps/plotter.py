@@ -1,6 +1,5 @@
 import argparse
 import math
-import warnings
 import xarray
 import numpy as np
 import matplotlib.pyplot as plt
@@ -220,8 +219,12 @@ def _plot(group, xds, args):
     mean_agg_axes = [d for d in dims if d not in excluded_dims]
     mean_agg_axes_itr = [range(xds.sizes[x]) for x in mean_agg_axes]
 
-    n_colour = xds.sizes.get[args.colourize_axis]
-    colours = [cm.viridis(i / n_colour) for i in range(n_colour)]
+    if args.colourize_axis:
+        n_colour = xds.sizes[args.colourize_axis]
+        colours = [cm.plasma(i / n_colour) for i in range(n_colour)]
+    else:
+        n_colour = 2
+        colours = ["k", "r"]
 
     fig, ax = plt.subplots(figsize=(5, 5))
 
@@ -257,7 +260,7 @@ def _plot(group, xds, args):
                 ax.plot(
                     pxda[args.xaxis].values,
                     transform(pxda.values),
-                    color=colours[subsel.get(args.colourize_axis, -1)]
+                    color=colours[subsel.get(args.colourize_axis, 1)]
                 )
 
         ax.title.set_text("\n".join([f"{k}: {v}" for k, v in sel.items()]))
@@ -291,6 +294,10 @@ def plot():
 
     args = cli()
 
+    non_colourizable_axes = {*args.iter_axes, args.mean_axis, args.xaxis}
+    if args.colourize_axis and args.colourize_axis in non_colourizable_axes:
+        raise ValueError(f"Cannot colourize using axis {args.colourize_axis}.")
+
     # Path to gain location.
     gain_path = DaskMSStore("::".join(args.input_path.url.rsplit("/", 1)))
 
@@ -301,8 +308,6 @@ def plot():
 
     # Partitioned dictionary of xarray.Datasets.
     xdsd = to_plot_dict(xdsl, args.iter_attrs)
-
-    [_plot(k, xds, args) for k, xds in xdsd.items()]
 
     with ProcessPoolExecutor(max_workers=args.nworker) as ppe:
         futures = [ppe.submit(_plot, k, xds, args) for k, xds in xdsd.items()]
