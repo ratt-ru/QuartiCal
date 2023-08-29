@@ -42,6 +42,7 @@ colorama = "^0.4.6"
 stimela = "2.0rc4"
 ducc0 = "^0.31.0"
 sympy = "^1.12"
+matplotlib = "^3.5.1"
 
 [tool.poetry.extras]
 degrid = ["ducc0", "sympy"]
@@ -52,7 +53,7 @@ goquartical-config = 'quartical.config.parser:create_user_config'
 goquartical-backup = 'quartical.apps.backup:backup'
 goquartical-restore = 'quartical.apps.backup:restore'
 goquartical-summary = 'quartical.apps.summary:summary'
-
+goquartical-plot = 'quartical.apps.plotter:plot'
 
 [build-system]
 requires = ["poetry-core"]
