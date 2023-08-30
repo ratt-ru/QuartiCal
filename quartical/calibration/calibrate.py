@@ -253,6 +253,18 @@ def make_visibility_output(
 
     itr = enumerate(zip(data_xds_list, mapping_xds_list))
 
+    if output_opts.subtract_directions:
+        n_dir = data_xds_list[0].dims['dir']  # Should be the same on all xdss.
+        requested = set(output_opts.subtract_directions)
+        valid = set(range(n_dir))
+        invalid = requested - valid
+        if invalid:
+            raise ValueError(
+                f"User has specified output.subtract_directions as "
+                f"{requested} but the following directions are not present "
+                f"in the model: {invalid}."
+            )
+
     for xds_ind, (data_xds, mapping_xds) in itr:
         data_col = data_xds.DATA.data
         model_col = data_xds.MODEL_DATA.data
