@@ -1,5 +1,6 @@
 import argparse
 from math import prod, ceil
+from quartical.data_handling.selection import filter_xds_list
 from daskms import xds_from_storage_ms, xds_to_storage_table
 from daskms.experimental.zarr import xds_to_zarr, xds_from_zarr
 from daskms.fsspec_store import DaskMSStore
@@ -10,8 +11,9 @@ import dask
 def backup():
     parser = argparse.ArgumentParser(
         description='Backup any Measurement Set column to zarr. Backups will '
-                    'be labelled the passed in label (defaults to datetime), '
-                    'the Measurement Set name and the column name.'
+                    'be labelled using a combination of the passed in label '
+                    '(defaults to datetime), the Measurement Set name and '
+                    'the column name.'
     )
 
     parser.add_argument(
@@ -34,9 +36,11 @@ def backup():
         help='Name of column to be backed up.'
     )
     parser.add_argument(
-        'label',
+        '--label',
         type=str,
-        help='A label for the backup. Default to datetime.'
+        help='An explicit label to include in the backup name. Defaults to '
+             'datetime at which the backup was created. Full name will be '
+             'given by [label]-[msname]-[column].bkp.qc.'
     )
     parser.add_argument(
         '--nthread',
@@ -45,7 +49,7 @@ def backup():
         help='Number of threads to use.'
     )
     parser.add_argument(
-        '--fieldid',
+        '--field-id',
         type=int,
         help='Field ID to back up.'
     )
@@ -55,7 +59,7 @@ def backup():
     ms_name = args.ms_path.full_path.rsplit("/", 1)[1]
     column_name = args.column_name
 
-    if args.label is not None:
+    if args.label:
         label = args.label
     else:
         label = time.strftime("%Y%m%d-%H%M%S")
@@ -68,14 +72,8 @@ def backup():
         group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),
     )
 
-    xdso = []
-    if args.fieldid is not None:
-        for ds in data_xds_list:
-            if ds.FIELD_ID == args.fieldid:
-                # data_xds_list.remove(ds)  # this fails with reindexing error
-                xdso.append(ds)
-    else:
-        xdso = data_xds_list
+    # Use existing functionality. TODO: Improve and expose DDID selection.
+    xdso = filter_xds_list(data_xds_list, args.field_id)
 
     # Compute appropriate chunks (256MB by default) to keep zarr happy.
     chunks = [chunk_by_size(xds[column_name]) for xds in xdso]
@@ -89,14 +87,8 @@ def backup():
         chunks=chunks
     )
 
-    xdso = []
-    if args.fieldid is not None:
-        for ds in data_xds_list:
-            if ds.FIELD_ID == args.fieldid:
-                # data_xds_list.remove(ds)
-                xdso.append(ds)
-    else:
-        xdso = data_xds_list
+    # Use existing functionality. TODO: Improve and expose DDID selection.
+    xdso = filter_xds_list(data_xds_list, args.field_id)
 
     bkp_xds_list = xds_to_zarr(
         xdso,
