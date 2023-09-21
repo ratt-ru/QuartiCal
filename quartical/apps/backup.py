@@ -67,7 +67,7 @@ def backup():
     # This call exists purely to get the relevant shape and dtype info.
     data_xds_list = xds_from_storage_ms(
         args.ms_path,
-        columns=column_name,
+        columns=(column_name, "ROWID"),
         index_cols=("TIME",),
         group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),
     )
@@ -81,7 +81,7 @@ def backup():
     # Repeat of above call but now with correct chunking information.
     data_xds_list = xds_from_storage_ms(
         args.ms_path,
-        columns=column_name,
+        columns=(column_name, "ROWID"),
         index_cols=("TIME",),
         group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),
         chunks=chunks

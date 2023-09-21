@@ -8,6 +8,7 @@ from daskms.experimental.fragments import (
     xds_from_table_fragment,
     xds_to_table_fragment
 )
+from daskms.experimental.utils import rechunk_by_size
 from dask.graph_manipulation import clone
 from loguru import logger
 from quartical.weights.weights import initialize_weights
@@ -300,6 +301,12 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
         warnings.simplefilter("ignore")
 
         if output_opts.fragment_path:
+
+            xds_list = [
+                rechunk_by_size(xds, {'corr'}, only_when_needed=True)
+                for xds in xds_list
+            ]
+
             write_xds_list = xds_to_table_fragment(
                 xds_list,
                 output_opts.fragment_path,
