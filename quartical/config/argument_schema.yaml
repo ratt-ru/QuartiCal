@@ -193,6 +193,15 @@ output:
       Name of directory in which QuartiCal logging outputs will be stored.
       s3 is not currently supported for these outputs.
 
+  fragment_path:
+    dtype: Optional[str]
+    info:
+      If set, instead of mutating the input by e.g. writing flags, instead
+      writes a fragment to this location. A fragment is a zarr backed data
+      format that is read and dynamically combined with any parent datasets.
+      This allows QuartiCal to operate in an entirely read-only fashion.
+      This option is experimental.
+
   log_to_terminal:
     default: true
     dtype: bool
