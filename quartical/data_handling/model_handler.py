@@ -212,7 +212,7 @@ def assign_identity_model(data_xds_list):
         recipe: A modified Recipe object consistent with this case.
     """
 
-    ingredients = Ingredients({"__IDENT__"}, set())
+    ingredients = Ingredients({"__IDENT__"}, set(), set())
     instructions = {0: ["__IDENT__"]}
 
     recipe = IdentityRecipe(ingredients, instructions)

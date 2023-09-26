@@ -60,7 +60,7 @@ def transcribe_legacy_recipe(user_recipe):
         logger.warning(
             "input_model.recipe was not supplied. Assuming identity model."
         )
-        return IdentityRecipe(Ingredients(set(), set()), dict())
+        return IdentityRecipe(Ingredients(set(), set(), set()), dict())
 
     model_columns = set()
     sky_models = set()
