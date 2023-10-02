@@ -136,8 +136,18 @@ def restore():
 
     zarr_xds_list = xds_from_zarr(f"{zarr_root}::{zarr_name}")
 
+    ms_xds_list = xds_from_storage_ms(args.ms_path,
+                                      index_cols=("TIME",),
+                                      group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),)
+
+    for i, (ds, dsr) in enumerate(ms_xds_list, zarr_xds_list):
+        data_array = getattr(dsr, args.column_name)
+        ms_xds_list[i] = ds.assign(**{
+            args.column_name : (data_array.dims, data_array.data)
+        })
+
     restored_xds_list = xds_to_storage_table(
-        zarr_xds_list,
+        ms_xds_list,
         args.ms_path,
         columns=(args.column_name,),
         rechunk=True
