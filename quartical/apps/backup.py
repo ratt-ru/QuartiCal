@@ -136,14 +136,19 @@ def restore():
 
     zarr_xds_list = xds_from_zarr(f"{zarr_root}::{zarr_name}")
 
+    # this will fail if the column does not exist but if we allow all columns
+    # we need to select out the relevant dims for rechunking below
     ms_xds_list = xds_from_storage_ms(args.ms_path,
+                                      columns=(args.column_name,),
                                       index_cols=("TIME",),
                                       group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),)
 
     for i, (ds, dsr) in enumerate(zip(ms_xds_list, zarr_xds_list)):
+        dsr = dsr.chunk(ds.chunks)
         data_array = getattr(dsr, args.column_name)
         ms_xds_list[i] = ds.assign(**{
-            args.column_name : (data_array.dims, data_array.data)
+            args.column_name : (data_array.dims,
+                                data_array.data)
         })
 
     restored_xds_list = xds_to_storage_table(
