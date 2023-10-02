@@ -140,7 +140,7 @@ def restore():
                                       index_cols=("TIME",),
                                       group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),)
 
-    for i, (ds, dsr) in enumerate(ms_xds_list, zarr_xds_list):
+    for i, (ds, dsr) in enumerate(zip(ms_xds_list, zarr_xds_list)):
         data_array = getattr(dsr, args.column_name)
         ms_xds_list[i] = ds.assign(**{
             args.column_name : (data_array.dims, data_array.data)
