@@ -311,6 +311,8 @@ def bsmooth(merged_xds, target_xds):
         merged_xds.gain_freq.data, None,
         out_time, None,
         out_freq, None,
+        da.arange(nant, chunks=1), 'p',
+        da.arange(ncorr, chunks=1), 'c',
         combine_by_time, None,
         dtype=merged_xds.gains.dtype,
         align_arrays=False,

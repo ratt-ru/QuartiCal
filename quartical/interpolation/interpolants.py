@@ -411,6 +411,8 @@ def smooth_ampphase(gains,
                     fi,
                     to,
                     fo,
+                    ant,
+                    corr,
                     combine_by_time=True,
                     niter=5,
                     nu0=2.0,
@@ -419,6 +421,7 @@ def smooth_ampphase(gains,
     from ducc0.fft import good_size
     if not combine_by_time:
         raise NotImplementedError
+
     # weighted sum over time axis
     ntimei, nchani, nanti, ndiri, ncorri = gains.shape
     ntimeo = to.size
@@ -444,85 +447,88 @@ def smooth_ampphase(gains,
     print(wgt[mask].max(), wgt[mask].min())
     gain[mask] = gain[mask]/wgt[mask]
 
-    # set up correlated field model (hardcoding hypers for now)
-    npix_f = good_size(int(nchani*padding))
-    pospace_large = ift.RGSpace([npix_f])
-    pospace_small = ift.RGSpace([nchani])
-    spfreq_amp = ift.RGSpace(npix_f)
-    spfreq_phase = ift.RGSpace(npix_f)
+    with ift.random.Context(int(f'{ant[0]}{corr[0]}')):
 
-    # amplitude model
-    cfmakera = ift.CorrelatedFieldMaker('amplitude')
-    cfmakera.add_fluctuations(spfreq_amp, (0.1, 1e-2), None, None, (-3, 1),
-                             'f')
-    cfmakera.set_amplitude_total_offset(0., (1e-2, 1e-6))
-    cf_amp = cfmakera.finalize()
+        # set up correlated field model (hardcoding hypers for now)
+        npix_f = good_size(int(nchani*padding))
+        pospace_large = ift.RGSpace([npix_f])
+        pospace_small = ift.RGSpace([nchani])
+        spfreq_amp = ift.RGSpace(npix_f)
+        spfreq_phase = ift.RGSpace(npix_f)
 
-    normalized_amp = cfmakera.get_normalized_amplitudes()
-    pspec_freq_amp = normalized_amp[0]**2
+        # amplitude model
+        cfmakera = ift.CorrelatedFieldMaker('amplitude')
+        cfmakera.add_fluctuations(spfreq_amp, (0.1, 1e-2), None, None, (-3, 1),
+                                'f')
+        cfmakera.set_amplitude_total_offset(0., (1e-2, 1e-6))
+        cf_amp = cfmakera.finalize()
 
-    # phase model
-    cfmakerp = ift.CorrelatedFieldMaker('phase')
-    cfmakerp.add_fluctuations(spfreq_phase, (0.1, 1e-2), None, None, (-3, 1),
-                             'f')
-    cfmakerp.set_amplitude_total_offset(0., (1e-2, 1e-6))
-    cf_phase = cfmakerp.finalize()
+        normalized_amp = cfmakera.get_normalized_amplitudes()
+        pspec_freq_amp = normalized_amp[0]**2
 
-    normalized_phase = cfmakerp.get_normalized_amplitudes()
-    pspec_freq_phase = normalized_phase[0]**2
+        # phase model
+        cfmakerp = ift.CorrelatedFieldMaker('phase')
+        cfmakerp.add_fluctuations(spfreq_phase, (0.1, 1e-2), None, None, (-3, 1),
+                                'f')
+        cfmakerp.set_amplitude_total_offset(0., (1e-2, 1e-6))
+        cf_phase = cfmakerp.finalize()
 
-    TF = ift.SliceOperator(cf_amp.target, pospace_small.shape)
+        normalized_phase = cfmakerp.get_normalized_amplitudes()
+        pspec_freq_phase = normalized_phase[0]**2
 
-    signal = TF @ ift.exp(cf_amp.real + 1j*cf_phase.real)
+        TF = ift.SliceOperator(cf_amp.target, pospace_small.shape)
 
-    cf_amp_small = TF @ cf_amp
-    cf_phase_small = TF @ cf_phase
+        signal = TF @ ift.exp(cf_amp.real + 1j*cf_phase.real)
 
-    tmp = ift.makeField(signal.target, ~mask)
-    # TODO - this should include averaging
-    R = ift.MaskOperator(tmp)
-    dspace = R.target
-    data = ift.makeField(dspace, gain[mask])
-    signal_response = R(signal)
+        cf_amp_small = TF @ cf_amp
+        cf_phase_small = TF @ cf_phase
 
-    # Minimization parameters
-    n_samples = 3
-    n_iterations = 5
-    ic_sampling = ift.AbsDeltaEnergyController(name='Sampling', deltaE=0.01, iteration_limit=50)
-    ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.01, iteration_limit=15)
-    minimizer = ift.NewtonCG(ic_newton, enable_logging=True)
+        tmp = ift.makeField(signal.target, ~mask)
+        # TODO - this should include averaging
+        R = ift.MaskOperator(tmp)
+        dspace = R.target
+        data = ift.makeField(dspace, gain[mask])
+        signal_response = R(signal)
 
-    # Set up likelihood energy and information Hamiltonian
-    W = wgt[mask]
-    assert (W > 0).all()
-    covinv = ift.makeField(dspace, W)
-    Ninv = ift.DiagonalOperator(covinv, sampling_dtype=complex)
-    inp = (ift.Adder(data, neg=True) @ signal_response)  # required to compute the resid for VariableCovGaussianEnergy
-    BC = ift.ContractionOperator(dspace, None).adjoint   # broadcast scalar over everything (None)
-    weightop = ift.DiagonalOperator(ift.makeField(dspace, W))
-    scalarop = ift.GammaOperator(BC.domain, mean=2.0, var=2).ducktape('icov_scalar')
-    icovop = weightop @ BC @ scalarop.real
-    inp = inp.ducktape_left('resid') + icovop.ducktape_left('icov')
-    likelihood_energy = ift.VariableCovarianceGaussianEnergy(R.target, 'resid', 'icov',
-                                                                data.dtype) @ inp
+        # Minimization parameters
+        n_samples = 3
+        n_iterations = 5
+        ic_sampling = ift.AbsDeltaEnergyController(name='Sampling', deltaE=0.01, iteration_limit=50)
+        ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.01, iteration_limit=15)
+        minimizer = ift.NewtonCG(ic_newton, enable_logging=True)
 
-    samples = ift.optimize_kl(likelihood_energy,
-                              n_iterations,
-                              n_samples,
-                              minimizer,
-                              ic_sampling,
-                              None)  # for GeoVI
+        # Set up likelihood energy and information Hamiltonian
+        W = wgt[mask]
+        assert (W > 0).all()
+        covinv = ift.makeField(dspace, W)
+        Ninv = ift.DiagonalOperator(covinv, sampling_dtype=complex)
+        inp = (ift.Adder(data, neg=True) @ signal_response)  # required to compute the resid for VariableCovGaussianEnergy
+        BC = ift.ContractionOperator(dspace, None).adjoint   # broadcast scalar over everything (None)
+        weightop = ift.DiagonalOperator(ift.makeField(dspace, W))
+        scalarop = ift.GammaOperator(BC.domain, mean=2.0, var=2).ducktape('icov_scalar')
+        icovop = weightop @ BC @ scalarop.real
+        inp = inp.ducktape_left('resid') + icovop.ducktape_left('icov')
+        likelihood_energy = ift.VariableCovarianceGaussianEnergy(R.target, 'resid', 'icov',
+                                                                    data.dtype) @ inp
 
-    # get the mean
-    signal_mean = samples.average(signal.force).val
 
-    # interpolate to output frequencies
-    amp = np.interp(fo, fi, np.abs(signal_mean))
-    phase = np.interp(fo, fi, np.angle(signal_mean))
-    signal_mean = amp*np.exp(1j*phase)
+        samples = ift.optimize_kl(likelihood_energy,
+                                n_iterations,
+                                n_samples,
+                                minimizer,
+                                ic_sampling,
+                                None)  # for GeoVI
 
-    # broadcast to output times
-    signal_mean = np.tile(signal_mean[None, :], (to.size, 1))
+        # get the mean
+        signal_mean = samples.average(signal.force).val
+
+        # interpolate to output frequencies
+        amp = np.interp(fo, fi, np.abs(signal_mean))
+        phase = np.interp(fo, fi, np.angle(signal_mean))
+        signal_mean = amp*np.exp(1j*phase)
+
+        # broadcast to output times
+        signal_mean = np.tile(signal_mean[None, :], (to.size, 1))
 
     # broadcast to expected output shape
     return signal_mean[:, :, None, None, None]
