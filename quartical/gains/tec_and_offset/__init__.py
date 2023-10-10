@@ -135,8 +135,8 @@ class TecAndOffset(ParameterizedGain):
                 fsel_data = ref_data[:, fsel]
                 valid_ant = fsel_data.any(axis=(1, 2))
                 ##in inverse frequency domain
-                invfreq = 1./chan_freq 
-                
+                invfreq = 1./chan_freq
+
                 ##factor for rescaling frequency
                 ffactor = 1 #1e8
                 invfreq *= ffactor
@@ -161,12 +161,13 @@ class TecAndOffset(ParameterizedGain):
                     raise ValueError("Unsupported number of correlations.")
 
                 tec_est = np.zeros((n_ant, n_param_tec), dtype=np.float64)
-                fft_arr = np.zeros((n_ant, n, n_param_tec), dtype=fsel_data.dtype)
 
-                for p in range(n_ant): 
+                for p in range(n_ant):
                     for k in range(n_param_tec):
-                        vis_finufft = finufft.nufft1d3(invfreq, fsel_data[p, :, k], fft_freq, eps=1e-11, isign=-1)
-                        fft_arr[p, :, k] = vis_finufft
+                        vis_finufft = finufft.nufft1d3(invfreq,
+                                                       fsel_data[p, :, k],
+                                                       fft_freq,
+                                                       eps=1e-11, isign=-1)
                         fft_data_pk = np.abs(vis_finufft)
                         tec_est[p, k] = fft_freq[np.argmax(fft_data_pk)]
 
