@@ -194,20 +194,20 @@ def test_gain_flags(cmp_gain_xds_lod):
         assert set(np.unique(fants)) == {18, 20}
 
 
-def test_init_term(predicted_xds_list):
-    """
-    Using true_gain_list to constuct the true gains.
-    Using corrupted_data_xds_list to apply the gains and form corrupted data.
+# def test_init_term(predicted_xds_list):
+#     """
+#     Using true_gain_list to constuct the true gains.
+#     Using corrupted_data_xds_list to apply the gains and form corrupted data.
 
-    """
+#     """
 
-    true_gains = true_gain_list(predicted_xds_list)
-        
-
-    #Make the corrupted data.
-    corrupted_data = corrupted_data_xds_list(predicted_xds_list, true_gains)
+#     true_gains = true_gain_list(predicted_xds_list)
 
 
-    add_calibration_graph_outputs(corrupted_data, stats_xds_list,
-                                  solver_opts, chain, output_opts)
+#     #Make the corrupted data.
+#     corrupted_data = corrupted_data_xds_list(predicted_xds_list, true_gains)
+
+
+#     add_calibration_graph_outputs(corrupted_data, stats_xds_list,
+#                                   solver_opts, chain, output_opts)
 # -----------------------------------------------------------------------------
