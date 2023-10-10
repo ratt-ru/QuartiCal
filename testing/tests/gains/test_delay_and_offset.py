@@ -189,9 +189,4 @@ def test_gain_flags(cmp_gain_xds_lod):
         assert set(np.unique(fants)) == {18, 20}
 
 
-def test_init_term():
-    
-
-    
-    return NotImplementedError
 # -----------------------------------------------------------------------------
