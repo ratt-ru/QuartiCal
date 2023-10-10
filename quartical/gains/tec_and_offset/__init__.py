@@ -109,6 +109,8 @@ class TecAndOffset(ParameterizedGain):
 
             ref_data = np.zeros((n_ant, n_chan, n_corr), dtype=np.complex128)
             counts = np.zeros((n_ant, n_chan), dtype=int)
+            # shouldn't we accumulate ref_data.conj() when ant1==refant
+            # and just vis when ant2==refant?
             np.add.at(
                 ref_data,
                 ant_map,
