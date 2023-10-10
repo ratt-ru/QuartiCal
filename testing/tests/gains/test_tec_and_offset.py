@@ -4,6 +4,7 @@ import numpy as np
 import dask.array as da
 from quartical.calibration.calibrate import add_calibration_graph
 from testing.utils.gains import apply_gains, reference_gains
+import ipdb
 
 
 @pytest.fixture(scope="module")
@@ -15,13 +16,14 @@ def opts(base_opts, select_corr):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [100]
+    _opts.solver.iter_recipe = [0]
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
     _opts.solver.threads = 2
     _opts.G.type = "tec_and_offset"
     _opts.G.freq_interval = 0
+    _opts.G.initial_estimate = True
 
     return _opts
 
@@ -81,7 +83,7 @@ def true_gain_list(predicted_xds_list):
 
         offset = np.log(cf_min/cf_max)/(cf_max - cf_min)
         coeff = 2 * np.pi * (1/chan_freq[None, :, None, None, None] + offset)
-        phase = tec*coeff + offsets
+        phase = tec*coeff #+ offsets
         gains = amp*da.exp(1j*phase)
 
         gain_list.append(gains)
@@ -175,6 +177,7 @@ def test_gains(cmp_gain_xds_lod, true_gain_list):
         # To ensure the missing antenna handling doesn't render this test
         # useless, check that we have non-zero entries first.
         assert np.any(solved_gain), "All gains are zero!"
+        import ipdb; ipdb.set_trace()
         np.testing.assert_array_almost_equal(true_gain, solved_gain)
 
 
@@ -191,4 +194,20 @@ def test_gain_flags(cmp_gain_xds_lod):
         assert set(np.unique(fants)) == {18, 20}
 
 
+def test_init_term(predicted_xds_list):
+    """
+    Using true_gain_list to constuct the true gains.
+    Using corrupted_data_xds_list to apply the gains and form corrupted data.
+
+    """
+
+    true_gains = true_gain_list(predicted_xds_list)
+        
+
+    #Make the corrupted data.
+    corrupted_data = corrupted_data_xds_list(predicted_xds_list, true_gains)
+
+
+    add_calibration_graph_outputs(corrupted_data, stats_xds_list,
+                                  solver_opts, chain, output_opts)
 # -----------------------------------------------------------------------------

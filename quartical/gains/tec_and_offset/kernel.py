@@ -24,6 +24,7 @@ from quartical.gains.general.inversion import (invert_factory,
                                                inversion_buffer_factory)
 
 
+
 def get_identity_params(corr_mode):
 
     if corr_mode.literal_value in (2, 4):
