@@ -20,7 +20,7 @@ def opts(base_opts, select_corr):
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
     _opts.solver.threads = 2
-    _opts.G.type = "tec"
+    _opts.G.type = "tec_and_offset"
     _opts.G.freq_interval = 0
     _opts.G.solve_per = "antenna"
 
@@ -135,10 +135,10 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
 @pytest.fixture(scope="module")
 def add_calibration_graph_outputs(corrupted_data_xds_list, stats_xds_list,
-                                  solver_opts, chain_opts, output_opts):
+                                  solver_opts, chain, output_opts):
     # Overload this fixture as we need to use the corrupted xdss.
     return add_calibration_graph(corrupted_data_xds_list, stats_xds_list,
-                                 solver_opts, chain_opts, output_opts)
+                                 solver_opts, chain, output_opts)
 
 
 # -----------------------------------------------------------------------------

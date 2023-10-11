@@ -23,6 +23,7 @@ def opts(base_opts, select_corr):
     _opts.G.type = "delay"
     _opts.G.freq_interval = 0
     _opts.G.solve_per = "antenna"
+    _opts.G.initial_estimate = True
 
     return _opts
 
@@ -50,28 +51,31 @@ def true_values(predicted_xds_list):
         n_corr = xds.dims["corr"]
 
         chan_freq = xds.CHAN_FREQ.data
-        bw = chan_freq[-1] - chan_freq[0]
-
-        single_wrap_delay = 1/bw
+        chan_width = chan_freq[1] - chan_freq[0]
+        band_centre = (chan_freq[0] + chan_freq[-1]) / 2
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
-        delays = da.random.normal(size=(n_time, 1, n_ant, n_dir, n_corr),
-                                  loc=0,
-                                  scale=single_wrap_delay/5)
-        delays[:, :, 0] = 0  # Make reference antenna zero for simplicity.
-        amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
-                      chunks=chunking)
+        delays = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-1/(2*chan_width),
+            high=1/(2*chan_width)
+        )
+        delays[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
+
+        amp = da.ones(
+            (n_time, n_chan, n_ant, n_dir, n_corr),
+            chunks=chunking
+        )
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
-            delays *= da.array([1, 0, 0, 1])
             amp *= da.array([1, 0, 0, 1])
 
-        phase = (2*np.pi*delays*chan_freq[None, :, None, None, None])
+        origin_chan_freq = chan_freq - band_centre
+        phase = 2*np.pi*delays*origin_chan_freq[None, :, None, None, None]
         gains = amp*da.exp(1j*phase)
 
-        delay_list.append(delays)
         gain_list.append(gains)
 
     return gain_list, delay_list
@@ -131,10 +135,10 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
 @pytest.fixture(scope="module")
 def add_calibration_graph_outputs(corrupted_data_xds_list, stats_xds_list,
-                                  solver_opts, chain_opts, output_opts):
+                                  solver_opts, chain, output_opts):
     # Overload this fixture as we need to use the corrupted xdss.
     return add_calibration_graph(corrupted_data_xds_list, stats_xds_list,
-                                 solver_opts, chain_opts, output_opts)
+                                 solver_opts, chain, output_opts)
 
 
 # -----------------------------------------------------------------------------
@@ -177,13 +181,9 @@ def test_delays(cmp_gain_xds_lod, true_delay_list):
         # Pull out the delay values - this is a little confusing as the output
         # parameters are not ordered in the same way as a true values.
         if n_corr == 4:
-            solved_delay = solved_delay[..., (1, 3)]
             true_delay = true_delay[..., (0, 3)]
         elif n_corr == 2:
-            solved_delay = solved_delay[..., (1, 3)]
             true_delay = true_delay[..., (0, 1)]
-        else:
-            solved_delay = solved_delay[..., 1:]
 
         solved_delay -= solved_delay[:, :, :1]
 
