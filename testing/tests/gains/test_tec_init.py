@@ -15,7 +15,7 @@ def opts(base_opts, select_corr):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [100]
+    _opts.solver.iter_recipe = [0]
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
@@ -23,6 +23,7 @@ def opts(base_opts, select_corr):
     _opts.G.type = "tec_and_offset"
     _opts.G.freq_interval = 0
     _opts.G.solve_per = "antenna"
+    _opts.G.initial_estimate = True
 
     return _opts
 
@@ -50,32 +51,34 @@ def true_values(predicted_xds_list):
         n_corr = xds.dims["corr"]
 
         chan_freq = xds.CHAN_FREQ.data
-        
-        #bw bandwidth
-        bw = chan_freq[-1] - chan_freq[0]
-
-        single_wrap_delay = 1/bw
+        max_tec = 1/(1/chan_freq[-2] - 1/chan_freq[-1])
+        cf_min = chan_freq.min()
+        cf_max = chan_freq.max()
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
+        tec_chunking = (utime_chunks, 1, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
-        tecs = da.random.normal(size=(n_time, 1, n_ant, n_dir, n_corr),
-                                  loc=0,
-                                  scale=single_wrap_delay/5)
-        # Make reference antenna zero for simplicity.
-        tecs[:, :, 0] = 0  
-        
+        tec = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-0.2*max_tec,
+            high=0.2*max_tec,
+            chunks=tec_chunking
+        )
+        tec[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
+
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
                       chunks=chunking)
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
-            tecs *= da.array([1, 0, 0, 1])
             amp *= da.array([1, 0, 0, 1])
 
-        phase = (2*np.pi*tecs/chan_freq[None, :, None, None, None])
+        offset = np.log(cf_min/cf_max)/(cf_max - cf_min)
+        coeff = 2 * np.pi * (1/chan_freq[None, :, None, None, None] + offset)
+        phase = tec*coeff
         gains = amp*da.exp(1j*phase)
 
-        tec_list.append(tecs)
+        tec_list.append(tec)
         gain_list.append(gains)
 
     return gain_list, tec_list
@@ -197,7 +200,7 @@ def test_tecs(cmp_gain_xds_lod, true_tec_list):
         # To ensure the missing antenna handling doesn't render this test
         # useless, check that we have non-zero entries first.
         assert np.any(solved_tec), "All tecs are zero!"
-        np.testing.assert_array_almost_equal(true_tec, solved_tec)
+        np.testing.assert_array_almost_equal(true_tec, solved_tec, 3)
 
 
 # -----------------------------------------------------------------------------

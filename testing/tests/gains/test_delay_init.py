@@ -76,6 +76,7 @@ def true_values(predicted_xds_list):
         phase = 2*np.pi*delays*origin_chan_freq[None, :, None, None, None]
         gains = amp*da.exp(1j*phase)
 
+        delay_list.append(delays)
         gain_list.append(gains)
 
     return gain_list, delay_list
