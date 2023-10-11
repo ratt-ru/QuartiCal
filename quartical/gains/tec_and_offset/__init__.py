@@ -1,4 +1,5 @@
 import numpy as np
+import finufft
 from collections import namedtuple
 from quartical.gains.conversion import no_op, trig_to_angle
 from quartical.gains.parameterized_gain import ParameterizedGain
@@ -10,7 +11,6 @@ from quartical.gains.general.flagging import (
     apply_gain_flags_to_gains,
     apply_param_flags_to_params
 )
-import finufft
 
 # Overload the default measurement set inputs to include the frequencies.
 ms_inputs = namedtuple(
@@ -131,7 +131,8 @@ class TecAndOffset(ParameterizedGain):
                 fsel = np.where(f_map == uf)[0]
                 sel_n_chan = fsel.size
 
-                ###fsel_data = visibilities corresponding to the fsel frequencies
+                # fsel_data = visibilities corresponding to the fsel
+                # frequencies
                 fsel_data = ref_data[:, fsel]
                 valid_ant = fsel_data.any(axis=(1, 2))
                 ##in inverse frequency domain
@@ -141,16 +142,17 @@ class TecAndOffset(ParameterizedGain):
                 ffactor = 1 #1e8
                 invfreq *= ffactor
 
-                #delta_freq is the smallest difference between the frequency values
+                # delta_freq is the smallest difference between the frequency
+                # values
                 delta_freq = invfreq[-2] - invfreq[-1]
-                max_tec = 2 * np.pi/ (delta_freq)
-                super_res = 10
-                nyq_freq = 1./(2*(invfreq.max()-invfreq.min()))
+                max_tec = 2 * np.pi / delta_freq
+                super_res = 100
+                nyq_freq = 1./(2*(invfreq.max() - invfreq.min()))
                 lim0 = 0.5 * max_tec
 
-                ##choosing resolution
-                n = int(super_res * max_tec/ nyq_freq)
-                #domain to pick tec_est from
+                # choosing resolution
+                n = int(super_res * max_tec / nyq_freq)
+                # domain to pick tec_est from
                 fft_freq = np.linspace(-lim0, lim0, n)
 
                 if n_corr == 1:
@@ -161,11 +163,19 @@ class TecAndOffset(ParameterizedGain):
                     raise ValueError("Unsupported number of correlations.")
 
                 tec_est = np.zeros((n_ant, n_param_tec), dtype=np.float64)
-                fft_arr = np.zeros((n_ant, n, n_param_tec), dtype=fsel_data.dtype)
+                fft_arr = np.zeros(
+                    (n_ant, n, n_param_tec), dtype=fsel_data.dtype
+                )
 
                 for p in range(n_ant): 
                     for k in range(n_param_tec):
-                        vis_finufft = finufft.nufft1d3(invfreq, fsel_data[p, :, k], fft_freq, eps=1e-11, isign=-1)
+                        vis_finufft = finufft.nufft1d3(
+                            2 * np.pi * invfreq,
+                            fsel_data[p, :, k],
+                            fft_freq,
+                            eps=1e-6,
+                            isign=-1
+                        )
                         fft_arr[p, :, k] = vis_finufft
                         fft_data_pk = np.abs(vis_finufft)
                         tec_est[p, k] = fft_freq[np.argmax(fft_data_pk)]

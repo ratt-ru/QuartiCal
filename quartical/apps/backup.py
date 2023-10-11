@@ -1,5 +1,6 @@
 import argparse
 from math import prod, ceil
+from quartical.data_handling.selection import filter_xds_list
 from daskms import xds_from_storage_ms, xds_to_storage_table
 from daskms.experimental.zarr import xds_to_zarr, xds_from_zarr
 from daskms.fsspec_store import DaskMSStore
@@ -10,8 +11,9 @@ import dask
 def backup():
     parser = argparse.ArgumentParser(
         description='Backup any Measurement Set column to zarr. Backups will '
-                    'be labelled automatically using the current datetime, '
-                    'the Measurement Set name and the column name.'
+                    'be labelled using a combination of the passed in label '
+                    '(defaults to datetime), the Measurement Set name and '
+                    'the column name.'
     )
 
     parser.add_argument(
@@ -34,10 +36,22 @@ def backup():
         help='Name of column to be backed up.'
     )
     parser.add_argument(
+        '--label',
+        type=str,
+        help='An explicit label to include in the backup name. Defaults to '
+             'datetime at which the backup was created. Full name will be '
+             'given by [label]-[msname]-[column].bkp.qc.'
+    )
+    parser.add_argument(
         '--nthread',
         type=int,
         default=1,
         help='Number of threads to use.'
+    )
+    parser.add_argument(
+        '--field-id',
+        type=int,
+        help='Field ID to back up.'
     )
 
     args = parser.parse_args()
@@ -45,7 +59,10 @@ def backup():
     ms_name = args.ms_path.full_path.rsplit("/", 1)[1]
     column_name = args.column_name
 
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    if args.label:
+        label = args.label
+    else:
+        label = time.strftime("%Y%m%d-%H%M%S")
 
     # This call exists purely to get the relevant shape and dtype info.
     data_xds_list = xds_from_storage_ms(
@@ -55,8 +72,11 @@ def backup():
         group_cols=("FIELD_ID", "DATA_DESC_ID", "SCAN_NUMBER"),
     )
 
+    # Use existing functionality. TODO: Improve and expose DDID selection.
+    xdso = filter_xds_list(data_xds_list, args.field_id)
+
     # Compute appropriate chunks (256MB by default) to keep zarr happy.
-    chunks = [chunk_by_size(xds[column_name]) for xds in data_xds_list]
+    chunks = [chunk_by_size(xds[column_name]) for xds in xdso]
 
     # Repeat of above call but now with correct chunking information.
     data_xds_list = xds_from_storage_ms(
@@ -67,9 +87,12 @@ def backup():
         chunks=chunks
     )
 
+    # Use existing functionality. TODO: Improve and expose DDID selection.
+    xdso = filter_xds_list(data_xds_list, args.field_id)
+
     bkp_xds_list = xds_to_zarr(
-        data_xds_list,
-        f"{args.zarr_dir.url}::{timestamp}-{ms_name}-{column_name}.bkp.qc",
+        xdso,
+        f"{args.zarr_dir.url}::{label}-{ms_name}-{column_name}.bkp.qc",
     )
 
     dask.compute(bkp_xds_list, num_workers=args.nthread)
