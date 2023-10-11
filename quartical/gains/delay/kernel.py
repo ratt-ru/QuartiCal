@@ -222,17 +222,11 @@ def nb_delay_solver_impl(
                 meta_inputs
             )
 
-<<<<<<< HEAD
-        active_params[..., 1::2] /= min_freq  # Undo scaling for SI units.
-        np.save("/home/russeeawon/testing/testing_tecest_quartical/jhj_delay.npy", native_imdry.jhj)
-        return native_imdry.jhj, term_conv_info(loop_idx + 1, conv_perc)
-=======
         # Undo rescaling so that quantities are in native units.
         active_params[:] /= mid_freq
         native_imdry.jhj[:] *= mid_freq ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
->>>>>>> origin/main
 
     return impl
 
