@@ -41,6 +41,7 @@ omegaconf = "^2.3.0"
 colorama = "^0.4.6"
 stimela = "2.0rc4"
 finufft = "^2.1.0"
+matplotlib = "^3.5.1"
 
 [tool.poetry.scripts]
 goquartical = 'quartical.executor:execute'
@@ -48,7 +49,7 @@ goquartical-config = 'quartical.config.parser:create_user_config'
 goquartical-backup = 'quartical.apps.backup:backup'
 goquartical-restore = 'quartical.apps.backup:restore'
 goquartical-summary = 'quartical.apps.summary:summary'
-
+goquartical-plot = 'quartical.apps.plotter:plot'
 
 [build-system]
 requires = ["poetry-core"]
