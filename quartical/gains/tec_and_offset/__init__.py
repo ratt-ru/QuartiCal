@@ -167,19 +167,17 @@ class TecAndOffset(ParameterizedGain):
                     (n_ant, n, n_param_tec), dtype=fsel_data.dtype
                 )
 
-                for p in range(n_ant): 
-                    for k in range(n_param_tec):
-                        vis_finufft = finufft.nufft1d3(
-                            2 * np.pi * invfreq,
-                            fsel_data[p, :, k],
-                            fft_freq,
-                            eps=1e-6,
-                            isign=-1
-                        )
-                        fft_arr[p, :, k] = vis_finufft
-                        fft_data_pk = np.abs(vis_finufft)
-                        tec_est[p, k] = fft_freq[np.argmax(fft_data_pk)]
-
+                for k in range(n_param_tec):
+                    vis_finufft = finufft.nufft1d3(
+                        2 * np.pi * invfreq,
+                        fsel_data[:, :, k],
+                        fft_freq,
+                        eps=1e-6,
+                        isign=-1
+                    )
+                    fft_arr[:, :, k] = vis_finufft
+                    fft_data_pk = np.abs(vis_finufft)
+                    tec_est[:, k] = fft_freq[np.argmax(fft_data_pk, axis=1)]
 
                 tec_est[~valid_ant, :] = 0
 
