@@ -135,6 +135,7 @@ def restore():
     zarr_root, zarr_name = args.zarr_path.url.rsplit("/", 1)
 
     zarr_xds_list = xds_from_zarr(f"{zarr_root}::{zarr_name}")
+    backup_column_name = list(zarr_xds_list[0].data_vars.keys()).pop()
 
     # this will fail if the column does not exist but if we allow all columns
     # we need to select out the relevant dims for rechunking below
@@ -145,7 +146,7 @@ def restore():
 
     for i, (ds, dsr) in enumerate(zip(ms_xds_list, zarr_xds_list)):
         dsr = dsr.chunk(ds.chunks)
-        data_array = getattr(dsr, args.column_name)
+        data_array = getattr(dsr, backup_column_name)
         ms_xds_list[i] = ds.assign(**{
             args.column_name : (data_array.dims,
                                 data_array.data)
