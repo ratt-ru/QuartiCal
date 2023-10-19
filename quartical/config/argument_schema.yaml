@@ -335,6 +335,15 @@ mad_flags:
       X_bl > max_deviation*X will be flagged. Set to zero to disable flagging
       on this statistic.
 
+  use_off_diagonals:
+    dtype: bool
+    default: False
+    info:
+      Controls whether or not the mad flagger will be run on the off-diagonal
+      elements of the residual. This is disabled by default as the residual
+      will tend to contain structure in the absence of a polarised model and
+      adequate leakage calibration.
+
 solver:
   terms:
     dtype: List[str]
