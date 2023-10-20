@@ -89,6 +89,10 @@ def read_xds_list(model_columns, ms_opts):
     if ms_opts.weight_column not in known_weight_cols:
         schema[ms_opts.weight_column] = {'dims': ('chan', 'corr')}
 
+    known_data_cols = ("DATA", "CORRECTED_DATA")
+    if ms_opts.data_column not in known_data_cols:
+        schema[ms_opts.data_column] = {'dims': ('chan', 'corr')}
+
     try:
         data_xds_list = xds_from_storage_ms(
             ms_opts.path,
