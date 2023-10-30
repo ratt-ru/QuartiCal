@@ -14,6 +14,15 @@ GAIN_MSG = (
     "'G.type=complex' or 'B.direction_dependent=True'."
 )
 
+ADVANCED_MODEL_MSG = (
+    "This section can be safely ignored if 'input_model.advanced_recipe' is "
+    "not enabled. If enabled, 'input_model.recipe' will behave like "
+    "'solver.terms' i.e. each component will generate a new config section "
+    "with an appropriate name e.g. setting 'input_model.recipe=COMP0' "
+    "will create a configuration section called COMP0 which supports all "
+    "the options listed here. These can be set using e.g. 'COMP0.type=column'."
+)
+
 HELP_MSG = (
     "For full help, use 'goquartical help'. For help with a specific "
     "section, use e.g. 'goquartical help='[section1, section2]''. Help is "
@@ -43,6 +52,10 @@ def print_help(HelpConfig, section_names=None):
 
         if section_name == "gain":
             txt = textwrap.fill(GAIN_MSG, width=columns)
+            help_message += f"{Fore.GREEN}{txt:-^{columns}}\n"
+
+        if section_name == "model_component":
+            txt = textwrap.fill(ADVANCED_MODEL_MSG, width=columns)
             help_message += f"{Fore.GREEN}{txt:-^{columns}}\n"
 
         for key, value in section.__helpstr__().items():
@@ -79,8 +92,16 @@ def help():
     if len(sys.argv) != 1 and not help_arg:
         return
 
-    # Include a generic gain term in the help config.
-    additional_config = [oc.from_dotlist(["solver.terms=['gain']"])]
+    # Include a generic gain term and model component in the help config.
+    additional_config = [
+        oc.from_dotlist(
+            [
+                "input_model.recipe=model_component",
+                "input_model.advanced_recipe=True",
+                "solver.terms=['gain']"
+            ]
+        )
+    ]
     HelpConfig = finalize_structure(additional_config)
 
     if len(sys.argv) == 1 or help_arg == "help":

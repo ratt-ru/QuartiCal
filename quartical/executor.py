@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from contextlib import ExitStack
+import os
 import sys
 from loguru import logger
 import dask
@@ -44,6 +45,7 @@ def _execute(exitstack):
     output_opts = opts.output
     mad_flag_opts = opts.mad_flags
     dask_opts = opts.dask
+    model_components = internal.get_component_dict(opts)
     chain = internal.gains_to_chain(opts)  # Special handling.
 
     # Init the logging proxy - an object which helps us ensure that logging
@@ -60,7 +62,15 @@ def _execute(exitstack):
     # Now that we know where to put the log, log the final config state.
     parser.log_final_config(opts, config_files)
 
-    model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
+    # TODO: Deprecate legacy models.
+    if model_opts.advanced_recipe:
+        model_vis_recipe = preprocess.transcribe_recipe(
+            model_opts.recipe, model_components
+        )
+    else:
+        model_vis_recipe = preprocess.transcribe_legacy_recipe(
+            model_opts.recipe
+        )
 
     if dask_opts.scheduler == "distributed":
 
@@ -68,9 +78,14 @@ def _execute(exitstack):
         # distributed enviroment. This *may* be dangerous. Monitor.
         dask.config.set({"distributed.worker.daemon": False})
 
-        if dask_opts.address:
-            logger.info("Initializing distributed client.")
-            client = exitstack.enter_context(Client(dask_opts.address))
+        address = dask_opts.address or os.environ.get("DASK_SCHEDULER_ADDRESS")
+
+        if address:
+            logger.info(
+                f"Initializing distributed client using scheduler address: "
+                f"{address}"
+            )
+            client = exitstack.enter_context(Client(address))
         else:
             logger.info("Initializing distributed client using LocalCluster.")
             cluster = LocalCluster(
