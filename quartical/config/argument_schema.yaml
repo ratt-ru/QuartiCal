@@ -119,6 +119,22 @@ input_model:
       given by the dE tagged clusters in LSM1. Leaving this value unset
       (the default) will use an identity model.
 
+  advanced_recipe:
+    dtype: bool
+    default: false
+    info:
+      Enable advanced recipe specification for use with degridder/more
+      complicated modes of model construction.
+
+  threads:
+    dtype: int
+    default: 1
+    info:
+      Controls the number of threads used internally by the various predict
+      methods. This should typically be set to the same value as
+      solver.threads if solver.threads is in use. Currently only supported
+      for degridding.
+
   beam:
     dtype: Optional[str]
     info:
@@ -176,6 +192,15 @@ output:
     info:
       Name of directory in which QuartiCal logging outputs will be stored.
       s3 is not currently supported for these outputs.
+
+  fragment_path:
+    dtype: Optional[str]
+    info:
+      If set, instead of mutating the input by e.g. writing flags, instead
+      writes a fragment to this location. A fragment is a zarr backed data
+      format that is read and dynamically combined with any parent datasets.
+      This allows QuartiCal to operate in an entirely read-only fashion.
+      This option is experimental.
 
   log_to_terminal:
     default: true
@@ -288,26 +313,36 @@ mad_flags:
       Multiplicative factor which determines whether or not a chi-squared
       value is considered to deviate significantly from the median of a
       given baseline. Values greater than MAD_bl*threshold_bl will be
-      flagged.
+      flagged. Set to zero to disable flagging on this statistic.
 
   threshold_global:
     dtype: float
-    default: 5
+    default: 10
     info:
       Multiplicative factor which determines whether or not a chi-squared
       value is considered to deviate significantly from the median of a
       given data chunk. Values greater than MAD*threshold_global will be
-      flagged.
+      flagged. Set to zero to disable flagging on this statistic.
 
   max_deviation:
     dtype: float
-    default: 5
+    default: 0
     info:
       Multiplicative factor which determines whether or not the MAD estimate
       on a given baseline is considered to deviate too much from the global
       MAD estimate. If the MAD estimate over all baselines is X, and the MAD
       estimate on a specific baseline is X_bl, baselines for which
-      X_bl > max_deviation*X will be flagged.
+      X_bl > max_deviation*X will be flagged. Set to zero to disable flagging
+      on this statistic.
+
+  use_off_diagonals:
+    dtype: bool
+    default: False
+    info:
+      Controls whether or not the mad flagger will be run on the off-diagonal
+      elements of the residual. This is disabled by default as the residual
+      will tend to contain structure in the absence of a polarised model and
+      adequate leakage calibration.
 
 solver:
   terms:

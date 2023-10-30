@@ -35,9 +35,30 @@ def linear2d_interpolate_gains(source_xds, target_xds):
     if i_f_dim > 1:
         interp_axes[i_f_axis] = target_xds[t_f_axis].data
 
-    target_xda = source_xds.params.interp(
+    # NOTE: The below is the path of least resistance but may not be the most
+    # efficient method for this mixed-mode interpolation - it may be possible
+    # to do better using multiple RegularGridInterpoator objects.
+
+    # Interpolate using linear interpolation, filling points outside the
+    # domain with NaNs.
+    in_domain_xda = source_xds.params.interp(
         interp_axes,
+        kwargs={"fill_value": np.nan}
+    )
+
+    # Interpolate using nearest-neighbour interpolation, extrapolating points
+    # outside the domain.
+    out_domain_xda = source_xds.params.interp(
+        interp_axes,
+        method="nearest",
         kwargs={"fill_value": "extrapolate"}
+    )
+
+    # Combine the linear and nearest neighbour interpolation done above i.e.
+    # use use linear interpolation inside the domain and nearest-neighbour
+    # interpolation anywhere extrapolation was required.
+    target_xda = in_domain_xda.where(
+        da.isfinite(in_domain_xda), out_domain_xda
     )
 
     if i_t_dim == 1:
