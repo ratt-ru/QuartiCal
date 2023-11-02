@@ -438,7 +438,7 @@ dask:
 
   scheduler:
     default: threads
-    choices: ["threads", "single-threaded", "distributed"]
+    choices: ["processes", "threads", "single-threaded", "distributed"]
     info:
       Which dask scheduler to use. The default, threads, is the most
       appropriate for non-cluster use.

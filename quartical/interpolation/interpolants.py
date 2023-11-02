@@ -434,43 +434,54 @@ def smooth_ampphase(gains,
                     fo,
                     ant,
                     corr,
-                    combine_by_time=True,
+                    combine_by_time=False,
                     niter=5,
                     nu0=2.0,
                     padding=1.2):
+    '''
+    Use MGVI in nifty to smooth amplitudes and phases.
+    Here to and fo are the locations where we want to recosntruct the field
+    whereas ti and fi are the locations where we have data.
+    '''
     import nifty8 as ift
     from ducc0.fft import good_size
-    if not combine_by_time:
-        raise NotImplementedError
 
     # weighted sum over time axis
     ntimei, nchani, nanti, ndiri, ncorri = gains.shape
     ntimeo = to.size
     nfreqo = fo.size
-    assert nanti == 1
+    assert ti.size == ntimei
+    assert fi.size == nchani
+    assert nanti == 1  # chunked to 1
     assert ndiri == 1
-    assert ncorri == 1
-    gains = gains.squeeze()
-    jhj = jhj.squeeze().real
-    gain = np.zeros((nchani), dtype=gains.dtype)
-    wgt = np.zeros((nchani), dtype=jhj.dtype)
-    flags = flags.squeeze().astype(bool)
+    assert ncorri == 1  # chunked to 1
+    gains = gains[:, :, 0, 0, 0]
+    jhj = jhj[:, :, 0, 0, 0].real
+    flags = flags[:, :, 0, 0].astype(bool)
     jhj[flags] = 0.0
-    for t in range(ntimei):
-        gain += jhj[t].squeeze() * gains[t].squeeze()
-        wgt += jhj[t].squeeze()
-    # normalise by sum of weights
-    mask = wgt > 0
-    if not mask.any():
-        return np.ones((ntimeo, nfreqo, nanti, ndiri, ncorri),
-                       dtype=gains.dtype)
+    if combine_by_time:
+        # keep time axis
+        gain = gains[0:1]
+        wgt = jhj[0:1]
+        for t in range(1, ntimei):
+            gain[0:1] += jhj[t:t+1] * gains[t:t+1]
+            wgt[0:1] += jhj[t:t+1]
+        # normalise by sum of weights
+        mask = wgt > 0
+        gain[mask] = gain[mask]/wgt[mask]
+        raise NotImplementedError
+    else:
+        gain = gains
+        wgt = jhj
 
-    print(wgt[mask].max(), wgt[mask].min())
-    gain[mask] = gain[mask]/wgt[mask]
-
-    with ift.random.Context(int(f'{ant[0]}{corr[0]}')):
-
+    ntsmooth = gain.shape[0]
+    output_gains = np.ones((ntimeo, nfreqo), dtype=gains.dtype)
+    for t in range(ntsmooth):
+        mask = wgt[t] > 0
+        if not mask.any():
+            continue
         # set up correlated field model (hardcoding hypers for now)
+        # redo for each t so that each reduction is randomly initialised
         npix_f = good_size(int(nchani*padding))
         pospace_large = ift.RGSpace([npix_f])
         pospace_small = ift.RGSpace([nchani])
@@ -505,21 +516,21 @@ def smooth_ampphase(gains,
         cf_phase_small = TF @ cf_phase
 
         tmp = ift.makeField(signal.target, ~mask)
-        # TODO - this should include averaging
+        # TODO - this should include down-sampling
         R = ift.MaskOperator(tmp)
         dspace = R.target
-        data = ift.makeField(dspace, gain[mask])
+        data = ift.makeField(dspace, gain[t, mask])
         signal_response = R(signal)
 
         # Minimization parameters
         n_samples = 3
         n_iterations = 5
-        ic_sampling = ift.AbsDeltaEnergyController(name='Sampling', deltaE=0.01, iteration_limit=50)
-        ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.01, iteration_limit=15)
+        ic_sampling = ift.AbsDeltaEnergyController(deltaE=0.01, iteration_limit=50)
+        ic_newton = ift.AbsDeltaEnergyController(deltaE=0.01, iteration_limit=15)
         minimizer = ift.NewtonCG(ic_newton, enable_logging=True)
 
         # Set up likelihood energy and information Hamiltonian
-        W = wgt[mask]
+        W = wgt[t, mask]
         assert (W > 0).all()
         covinv = ift.makeField(dspace, W)
         Ninv = ift.DiagonalOperator(covinv, sampling_dtype=complex)
@@ -532,7 +543,6 @@ def smooth_ampphase(gains,
         likelihood_energy = ift.VariableCovarianceGaussianEnergy(R.target, 'resid', 'icov',
                                                                     data.dtype) @ inp
 
-
         samples = ift.optimize_kl(likelihood_energy,
                                 n_iterations,
                                 n_samples,
@@ -544,12 +554,18 @@ def smooth_ampphase(gains,
         signal_mean = samples.average(signal.force).val
 
         # interpolate to output frequencies
+        # TODO - incorporate in response
         amp = np.interp(fo, fi, np.abs(signal_mean))
         phase = np.interp(fo, fi, np.angle(signal_mean))
         signal_mean = amp*np.exp(1j*phase)
 
-        # broadcast to output times
-        signal_mean = np.tile(signal_mean[None, :], (to.size, 1))
+        if combine_by_time:
+            # broadcast to output times
+            output_gains = np.tile(signal_mean[None, :], (to.size, 1))
+        else:
+            output_gains[t] = signal_mean
 
     # broadcast to expected output shape
-    return signal_mean[:, :, None, None, None]
+    return output_gains[:, :, None, None, None]
+
+
