@@ -16,7 +16,7 @@ from quartical.interpolation.interpolants import (
 from quartical.gains.datasets import write_gain_datasets
 
 
-def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
+def load_and_interpolate_gains(gain_xds_lod, chain, output_directory, dask_opts):
     """Load and interpolate gains in accordance with the chain.
 
     Given the gain datasets which are to be applied/solved for, determine
@@ -133,7 +133,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
         # that makes testing painful.
 
         interpolated_xds_list = compute_and_reload(
-            temp_directory, interpolated_xds_list
+            temp_directory, interpolated_xds_list, dask_opts
         )
 
         logger.success(f"Successfully loaded/interpolated {term_name}.")
@@ -256,7 +256,7 @@ def reindex_and_rechunk(interpolated_xds, reference_xds):
     return interpolated_xds
 
 
-def compute_and_reload(directory, gain_xds_list):
+def compute_and_reload(directory, gain_xds_list, dask_opts):
     """Reread gains datasets to be consistent with the reference datasets."""
 
     gain_xds_lod = [{xds.NAME: xds} for xds in gain_xds_list]
@@ -264,7 +264,11 @@ def compute_and_reload(directory, gain_xds_list):
     writes = write_gain_datasets(gain_xds_lod, directory)
     # NOTE: Need to set compute calls up using dask config mechansim to ensure
     # correct resource usage is observed.
-    da.compute(writes)
+    da.compute(writes,
+               num_workers=dask_opts.threads,
+               optimize_graph=True,
+               scheduler=dask_opts.scheduler,
+               chunksize=1)
 
     # NOTE: This avoids mutating the inputs i.e. avoids side-effects.
     # TODO: Is this computationally expensive?

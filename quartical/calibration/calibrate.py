@@ -114,7 +114,8 @@ def add_calibration_graph(
     stats_xds_list,
     solver_opts,
     chain,
-    output_opts
+    output_opts,
+    dask_opts
 ):
     """Given data graph and options, adds the steps necessary for calibration.
 
@@ -159,7 +160,8 @@ def add_calibration_graph(
     gain_xds_lod = load_and_interpolate_gains(
         gain_xds_lod,
         chain,
-        output_opts.gain_directory
+        output_opts.gain_directory,
+        dask_opts
     )
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.

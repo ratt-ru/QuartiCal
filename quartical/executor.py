@@ -129,7 +129,8 @@ def _execute(exitstack):
         parangle_xds_list,
         model_vis_recipe,
         ms_opts.path,
-        model_opts
+        model_opts,
+        dask_opts
     )
 
     stats_xds_list = make_stats_xds_list(data_xds_list)
