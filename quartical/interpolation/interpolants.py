@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
 from loguru import logger  # noqa
+import logging
+import nifty8 as ift
+from nifty8.logger import logger
+from ducc0.fft import good_size
 import dask.array as da
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator as RGI
 from numba import njit
 from quartical.utils.numba import JIT_OPTIONS
+from pathlib import Path
 
 
 def linear2d_interpolate_gains(source_xds, target_xds):
@@ -434,7 +439,8 @@ def smooth_ampphase(gains,
                     fo,
                     ant,
                     corr,
-                    combine_by_time=False,
+                    combine_by_time,
+                    output_directory,
                     niter=5,
                     nu0=2.0,
                     padding=1.2):
@@ -443,8 +449,16 @@ def smooth_ampphase(gains,
     Here to and fo are the locations where we want to recosntruct the field
     whereas ti and fi are the locations where we have data.
     '''
-    import nifty8 as ift
-    from ducc0.fft import good_size
+    # remove all logger handles and set only a file handler
+    for handler in logger.handlers:
+        logger.removeHandler(handler)
+    logdir = f'{output_directory}/nifty_report_{ant}_{corr}'
+    path = Path(logdir)
+    path.mkdir(parents=True, exist_ok=True)
+    fh = logging.FileHandler(f'{logdir}/output.log', mode='w')
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
 
     # weighted sum over time axis
     ntimei, nchani, nanti, ndiri, ncorri = gains.shape
@@ -475,6 +489,8 @@ def smooth_ampphase(gains,
         wgt = jhj
 
     ntsmooth = gain.shape[0]
+    # TODO - generalise to cover cases for which 1 < ntsmooth < ntimeo
+    broadcast = ntsmooth == 1
     output_gains = np.ones((ntimeo, nfreqo), dtype=gains.dtype)
     for t in range(ntsmooth):
         mask = wgt[t] > 0
@@ -559,12 +575,12 @@ def smooth_ampphase(gains,
         phase = np.interp(fo, fi, np.angle(signal_mean))
         signal_mean = amp*np.exp(1j*phase)
 
-        if combine_by_time:
-            # broadcast to output times
+        if broadcast:
             output_gains = np.tile(signal_mean[None, :], (to.size, 1))
         else:
             output_gains[t] = signal_mean
-
+    fh.flush()
+    fh.close()
     # broadcast to expected output shape
     return output_gains[:, :, None, None, None]
 

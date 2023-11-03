@@ -98,7 +98,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
             ntime, nchan, nant, ndir, ncorr = merged_xds.gains.shape
             if ndir > 1:
                 raise ValueError("Smoothing only supported for direction independent gains")
-            interpolated_xds_list = bsmooth(merged_xds, term_xds_list,
+            interpolated_xds_list = bsmooth(merged_xds, term_xds_list, output_directory,
                                             combine_by_time=False)
         else:
             # Create a converter object to handle moving between native and
@@ -286,7 +286,8 @@ def compute_and_reload(directory, gain_xds_list):
     return gain_xds_list
 
 
-def bsmooth(merged_xds, target_xds, combine_by_time=False):
+def bsmooth(merged_xds, target_xds, output_directory,
+            combine_by_time=False):
     out_time = []
     out_freq =[]
     for ds in target_xds:
@@ -314,6 +315,7 @@ def bsmooth(merged_xds, target_xds, combine_by_time=False):
         da.arange(nant, chunks=1), 'p',
         da.arange(ncorr, chunks=1), 'c',
         combine_by_time, None,
+        output_directory, None,
         dtype=merged_xds.gains.dtype,
         align_arrays=False,
         adjust_chunks={'t': ntimeo, 'f': nfreqo},
