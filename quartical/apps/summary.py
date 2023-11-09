@@ -116,25 +116,32 @@ def field_info(path):
 
     field_xds = xds_from_storage_table(path + "::FIELD")[0]
 
-    ids = [i for i in field_xds.SOURCE_ID.values]
+    field_ids = list(range(field_xds.dims['row']))
+    source_ids = [i for i in field_xds.SOURCE_ID.values]
     names = [n for n in field_xds.NAME.values]
     phase_dirs = [pd for pd in field_xds.PHASE_DIR.values]
     ref_dirs = [rd for rd in field_xds.REFERENCE_DIR.values]
     delay_dirs = [dd for dd in field_xds.REFERENCE_DIR.values]
 
     msg = "Field summary:\n"
-    msg += "    {:<4} {:<16} {:<16} {:<16} {:<16}\n".format("ID", "NAME",
-                                                            "PHASE_DIR",
-                                                            "REF_DIR",
-                                                            "DELAY_DIR")
+    msg += "    {:<10} {:<10} {:<16} {:<16} {:<16} {:<16}\n".format(
+        "FIELD_ID",
+        "SOURCE_ID",
+        "NAME",
+        "PHASE_DIR",
+        "REF_DIR",
+        "DELAY_DIR"
+    )
 
-    zipper = zip(ids, names, phase_dirs, ref_dirs, delay_dirs)
+    zipper = zip(
+        field_ids, source_ids, names, phase_dirs, ref_dirs, delay_dirs
+    )
 
     for vals in zipper:
-        msg += f"    {vals[0]:<4} {vals[1]:<16} " \
-               f"{'{:.4f} {:.4f}'.format(*vals[2][0]):<16} " \
+        msg += f"    {vals[0]:<10} {vals[1]:<10} {vals[2]:<16} " \
                f"{'{:.4f} {:.4f}'.format(*vals[3][0]):<16} " \
-               f"{'{:.4f} {:.4f}'.format(*vals[4][0]):<16}\n"
+               f"{'{:.4f} {:.4f}'.format(*vals[4][0]):<16} " \
+               f"{'{:.4f} {:.4f}'.format(*vals[5][0]):<16}\n"
 
     logger.info(msg)
 
