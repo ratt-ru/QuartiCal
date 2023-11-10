@@ -9,7 +9,6 @@ from quartical.calibration.constructor import construct_solver
 from quartical.gains.datasets import (make_gain_xds_lod,
                                       make_net_xds_lod,
                                       populate_net_xds_list)
-from quartical.interpolation.interpolate import load_and_interpolate_gains
 from quartical.gains.baseline import (compute_baseline_corrections,
                                       apply_baseline_corrections)
 from loguru import logger  # noqa
@@ -114,6 +113,7 @@ def add_calibration_graph(
     stats_xds_list,
     solver_opts,
     chain,
+    gain_xds_lod,
     output_opts,
     dask_opts
 ):
@@ -145,24 +145,9 @@ def add_calibration_graph(
             "indicate user error."
         )
 
-    # Create a list of dicts of xarray.Dataset objects which will describe the
-    # gains per data xarray.Dataset.
-    gain_xds_lod = make_gain_xds_lod(data_xds_list, chain)
-
     # Create a list of datasets containing mappings. TODO: Is this the best
     # place to do this?
     mapping_xds_list = make_mapping_datasets(data_xds_list, chain)
-
-    # If there are gains to be loaded from disk, this will load an interpolate
-    # them to be consistent with this calibration run. TODO: This needs to
-    # be substantially improved to handle term specific behaviour/utilize
-    # mappings.
-    gain_xds_lod = load_and_interpolate_gains(
-        gain_xds_lod,
-        chain,
-        output_opts.gain_directory,
-        dask_opts
-    )
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
     gain_xds_lod, data_xds_list, stats_xds_list = construct_solver(

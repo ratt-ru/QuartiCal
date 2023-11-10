@@ -417,6 +417,13 @@ solver:
       Specify as the integer index of the antenna - antenna names are not
       currently supported.
 
+  bypass:
+    dtype: bool
+    default: false
+    info:
+      Disable executing the solver graph (eg. if only gain interpolation is
+      required).
+
 dask:
   threads:
     dtype: Optional[int]

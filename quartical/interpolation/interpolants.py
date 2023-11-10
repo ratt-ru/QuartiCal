@@ -10,6 +10,7 @@ from scipy.interpolate import RegularGridInterpolator as RGI
 from numba import njit
 from quartical.utils.numba import JIT_OPTIONS
 from pathlib import Path
+import warnings
 
 
 def linear2d_interpolate_gains(source_xds, target_xds):
@@ -452,7 +453,11 @@ def smooth_ampphase(gains,
     # remove all logger handles and set only a file handler
     for handler in logger.handlers:
         logger.removeHandler(handler)
-    logdir = f'{output_directory}/nifty_report_{ant}_{corr}'
+    if isinstance(ant, np.ndarray):
+        ant=ant[0]
+    if isinstance(corr, np.ndarray):
+        corr=corr[0]
+    logdir = f'{output_directory}/nifty_reports/antenna{ant}_corr{corr}'
     path = Path(logdir)
     path.mkdir(parents=True, exist_ok=True)
     fh = logging.FileHandler(f'{logdir}/output.log', mode='w')
@@ -461,11 +466,11 @@ def smooth_ampphase(gains,
     logger.addHandler(fh)
 
     # weighted sum over time axis
-    ntimei, nchani, nanti, ndiri, ncorri = gains.shape
+    ntimei, nfreqi, nanti, ndiri, ncorri = gains.shape
     ntimeo = to.size
     nfreqo = fo.size
     assert ti.size == ntimei
-    assert fi.size == nchani
+    assert fi.size == nfreqi
     assert nanti == 1  # chunked to 1
     assert ndiri == 1
     assert ncorri == 1  # chunked to 1
@@ -474,6 +479,7 @@ def smooth_ampphase(gains,
     flags = flags[:, :, 0, 0].astype(bool)
     jhj[flags] = 0.0
     if combine_by_time:
+        # TODO - detrend before combining?
         # keep time axis
         gain = gains[0:1]
         wgt = jhj[0:1]
@@ -483,24 +489,21 @@ def smooth_ampphase(gains,
         # normalise by sum of weights
         mask = wgt > 0
         gain[mask] = gain[mask]/wgt[mask]
-        raise NotImplementedError
     else:
         gain = gains
         wgt = jhj
 
     ntsmooth = gain.shape[0]
-    # TODO - generalise to cover cases for which 1 < ntsmooth < ntimeo
-    broadcast = ntsmooth == 1
-    output_gains = np.ones((ntimeo, nfreqo), dtype=gains.dtype)
+    output_gains = np.ones((ntsmooth, nfreqi), dtype=gains.dtype)
     for t in range(ntsmooth):
         mask = wgt[t] > 0
         if not mask.any():
             continue
         # set up correlated field model (hardcoding hypers for now)
         # redo for each t so that each reduction is randomly initialised
-        npix_f = good_size(int(nchani*padding))
+        npix_f = good_size(int(nfreqi*padding))
         pospace_large = ift.RGSpace([npix_f])
-        pospace_small = ift.RGSpace([nchani])
+        pospace_small = ift.RGSpace([nfreqi])
         spfreq_amp = ift.RGSpace(npix_f)
         spfreq_phase = ift.RGSpace(npix_f)
 
@@ -532,7 +535,8 @@ def smooth_ampphase(gains,
         cf_phase_small = TF @ cf_phase
 
         tmp = ift.makeField(signal.target, ~mask)
-        # TODO - this should include down-sampling
+        # TODO - this should include down-sampling then we can skip the
+        # frequency interpolation below
         R = ift.MaskOperator(tmp)
         dspace = R.target
         data = ift.makeField(dspace, gain[t, mask])
@@ -559,26 +563,49 @@ def smooth_ampphase(gains,
         likelihood_energy = ift.VariableCovarianceGaussianEnergy(R.target, 'resid', 'icov',
                                                                     data.dtype) @ inp
 
-        samples = ift.optimize_kl(likelihood_energy,
-                                n_iterations,
-                                n_samples,
-                                minimizer,
-                                ic_sampling,
-                                None)  # for GeoVI
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            samples = ift.optimize_kl(likelihood_energy,
+                                    n_iterations,
+                                    n_samples,
+                                    minimizer,
+                                    ic_sampling,
+                                    None)  # for GeoVI
 
         # get the mean
         signal_mean = samples.average(signal.force).val
 
-        # interpolate to output frequencies
-        # TODO - incorporate in response
-        amp = np.interp(fo, fi, np.abs(signal_mean))
-        phase = np.interp(fo, fi, np.angle(signal_mean))
-        signal_mean = amp*np.exp(1j*phase)
-
-        if broadcast:
+        if ntsmooth == 1:
+            # if there is only a single gain to smooth interpolate
+            # to output frequencies and broadcast across time
+            amp = np.interp(fo, fi, np.abs(signal_mean))
+            phase = np.interp(fo, fi, np.angle(signal_mean))
+            # remove slope and offset
+            theta = np.polyfit(fo, phase, 1)
+            phase -= np.polyval(theta, fo)
+            signal_mean = amp*np.exp(1j*phase)
             output_gains = np.tile(signal_mean[None, :], (to.size, 1))
         else:
-            output_gains[t] = signal_mean
+            # otherwise we keep the detrended gains at resolution of the input
+            # and interpolate afterwards
+            amp = np.abs(signal_mean)
+            phase = np.angle(signal_mean)
+            # remove slope and offset
+            theta = np.polyfit(fi, phase, 1)
+            phase -= np.polyval(theta, fi)
+            output_gains[t] = amp*np.exp(1j*phase)
+
+    # 2D interpolation in this case
+    # TODO - fill_value=None will extrapolate with linear function but not
+    # sure this is what we want. Is constant edge exptrapolation possible?
+    if ntsmooth > 1:
+        ampo = RGI((ti, fi), np.abs(output_gains),
+                   bounds_error=False, fill_value=None, method='linear')
+        phaseo = RGI((ti, fi), np.angle(output_gains),
+                     bounds_error=False, fill_value=None, method='linear')
+        tt, ff = np.meshgrid(to, fo, indexing='ij')
+        output_gains = ampo((tt, ff)) * np.exp(1j*phaseo((tt, ff)))
+
     fh.flush()
     fh.close()
     # broadcast to expected output shape

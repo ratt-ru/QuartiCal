@@ -19,10 +19,13 @@ from quartical.statistics.statistics import make_stats_xds_list
 from quartical.statistics.logging import log_summary_stats
 from quartical.flagging.flagging import finalise_flags, add_mad_graph
 from quartical.scheduling import install_plugin
-from quartical.gains.datasets import write_gain_datasets
+from quartical.gains.datasets import (write_gain_datasets,
+                                      make_gain_xds_lod,
+                                      make_net_xds_lod,
+                                      populate_net_xds_list)
 from quartical.gains.baseline import write_baseline_datasets
 from quartical.utils.dask import compute_context
-
+from quartical.interpolation.interpolate import load_and_interpolate_gains
 
 @logger.catch(onerror=lambda _: sys.exit(1))
 def execute():
@@ -129,11 +132,65 @@ def _execute(exitstack):
         parangle_xds_list,
         model_vis_recipe,
         ms_opts.path,
-        model_opts,
-        dask_opts
+        model_opts
     )
 
     stats_xds_list = make_stats_xds_list(data_xds_list)
+
+    # Create a list of dicts of xarray.Dataset objects which will describe the
+    # gains per data xarray.Dataset.
+    gain_xds_lod = make_gain_xds_lod(data_xds_list, chain)
+
+    # If there are gains to be loaded from disk, this will load an interpolate
+    # them to be consistent with this calibration run. TODO: This needs to
+    # be substantially improved to handle term specific behaviour/utilize
+    # mappings.
+    gain_xds_lod = load_and_interpolate_gains(
+        gain_xds_lod,
+        chain,
+        output_opts.gain_directory,
+        dask_opts
+    )
+
+    # if no solving is required then only write out gain datasets.
+    if solver_opts.bypass:
+        logger.warning("Bypassing solver!")
+
+        if output_opts.net_gains:
+            # Construct an effective gain per data_xds. This is always at the full
+            # time and frequency resolution of the data. Triggers an early compute.
+            net_xds_lod = make_net_xds_lod(
+                data_xds_list,
+                chain,
+                output_opts
+            )
+
+            net_xds_lod = populate_net_xds_list(
+                net_xds_lod,
+                gain_xds_lod,
+                mapping_xds_list,
+                output_opts
+            )
+        else:
+            net_xds_lod = []
+
+
+        gain_writes = write_gain_datasets(gain_xds_lod,
+                                          output_opts.gain_directory,
+                                          net_xds_lod)
+
+        with compute_context(dask_opts, output_opts, time_str):
+
+            dask.compute(
+                gain_writes,
+                num_workers=dask_opts.threads,
+                optimize_graph=True,
+                scheduler=dask_opts.scheduler
+            )
+
+        if dask_opts.scheduler == "distributed":
+            client.close()  # Close this client, hopefully gracefully.
+        return
 
     # Adds the dask graph describing the calibration of the data. TODO:
     # This call has excess functionality now. Split out mapping and outputs.
@@ -142,7 +199,9 @@ def _execute(exitstack):
         stats_xds_list,
         solver_opts,
         chain,
-        output_opts
+        gain_xds_lod,
+        output_opts,
+        dask_opts
     )
 
     (gain_xds_lod,

@@ -264,8 +264,18 @@ def compute_and_reload(directory, gain_xds_list, dask_opts):
     writes = write_gain_datasets(gain_xds_lod, directory)
     # NOTE: Need to set compute calls up using dask config mechansim to ensure
     # correct resource usage is observed.
+    # import ipdb; ipdb.set_trace()
+    # from dask import visualize
+    # name = gain_xds_list[0].NAME
+    # visualize(writes[0:2], filename=f'/home/bester/projects/ESO137/writes_graph_{name}.pdf',
+    #                    optimize_graph=False, engine='cytoscape')
+
+    if dask_opts.scheduler=='distributed':
+        nworkers = dask_opts.workers
+    else:
+        nworkers = dask_opts.threads
     da.compute(writes,
-               num_workers=dask_opts.threads,
+               num_workers=nworkers,
                optimize_graph=True,
                scheduler=dask_opts.scheduler,
                chunksize=1)
