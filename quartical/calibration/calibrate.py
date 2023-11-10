@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
-from quartical.calibration.mapping import make_mapping_datasets
 from quartical.gains.general.generics import (compute_residual,
                                               compute_corrected_residual,
                                               compute_corrected_weights)
@@ -113,6 +112,7 @@ def add_calibration_graph(
     stats_xds_list,
     solver_opts,
     chain,
+    mapping_xds_list,
     gain_xds_lod,
     output_opts,
     dask_opts
@@ -144,10 +144,6 @@ def add_calibration_graph(
             "has term.direction_dependent enabled. This is supported but may "
             "indicate user error."
         )
-
-    # Create a list of datasets containing mappings. TODO: Is this the best
-    # place to do this?
-    mapping_xds_list = make_mapping_datasets(data_xds_list, chain)
 
     # Poplulate the gain xarray.Datasets with solutions and convergence info.
     gain_xds_lod, data_xds_list, stats_xds_list = construct_solver(

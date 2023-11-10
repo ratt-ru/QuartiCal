@@ -26,6 +26,7 @@ from quartical.gains.datasets import (write_gain_datasets,
 from quartical.gains.baseline import write_baseline_datasets
 from quartical.utils.dask import compute_context
 from quartical.interpolation.interpolate import load_and_interpolate_gains
+from quartical.calibration.mapping import make_mapping_datasets
 
 @logger.catch(onerror=lambda _: sys.exit(1))
 def execute():
@@ -137,6 +138,10 @@ def _execute(exitstack):
 
     stats_xds_list = make_stats_xds_list(data_xds_list)
 
+    # Create a list of datasets containing mappings. TODO: Is this the best
+    # place to do this?
+    mapping_xds_list = make_mapping_datasets(data_xds_list, chain)
+
     # Create a list of dicts of xarray.Dataset objects which will describe the
     # gains per data xarray.Dataset.
     gain_xds_lod = make_gain_xds_lod(data_xds_list, chain)
@@ -155,6 +160,35 @@ def _execute(exitstack):
     # if no solving is required then only write out gain datasets.
     if solver_opts.bypass:
         logger.warning("Bypassing solver!")
+        import numpy as np
+        import dask.array as da
+        # hack to add gain_flags and convert params to gains
+        for i, (xdsd, mxds, dxds) in enumerate(zip(gain_xds_lod,
+                                                    mapping_xds_list,
+                                                    data_xds_list)):
+            for key, xds in xdsd.items():
+                nt = xds.gain_time.size
+                nf = xds.gain_freq.size
+                nant = xds.antenna.size
+                ndir = xds.direction.size
+                ncorr = xds.correlation.size
+                name = xds.NAME
+                gain_flags = da.zeros((nt, nf, nant, ndir),
+                                      chunks=tuple(xds.GAIN_SPEC)[0:-1],
+                                      dtype=np.int8)
+                xds['gain_flags'] = (xds.GAIN_AXES[0:-1], gain_flags)
+                if xds.TYPE == 'delay':
+                    from quartical.gains.delay.kernel import delay_params_to_gains
+                    params = xds.params.values
+                    gains = np.zeros((nt, nf, nant, ndir, ncorr), np.complex128)
+                    param_freq_map = getattr(mxds, f'{name}_param_freq_map').values
+                    delay_params_to_gains(params,
+                                          gains,
+                                          dxds.CHAN_FREQ.values,
+                                          param_freq_map)
+                    gains = da.from_array(gains,
+                                          chunks=tuple(xds.GAIN_SPEC))
+                    xds['gains'] = (xds.GAIN_AXES, gains)
 
         if output_opts.net_gains:
             # Construct an effective gain per data_xds. This is always at the full
@@ -199,6 +233,7 @@ def _execute(exitstack):
         stats_xds_list,
         solver_opts,
         chain,
+        mapping_xds_list,
         gain_xds_lod,
         output_opts,
         dask_opts
