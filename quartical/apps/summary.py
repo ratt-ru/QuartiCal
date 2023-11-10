@@ -99,7 +99,7 @@ def feed_info(path):
     for i, arrs in enumerate(zipper):
         for vals in zip(*arrs):
             msg += f"    {i:<4} {vals[0]:<8} {' '.join(vals[1]):<8} " \
-                   f"{'{:.4f} {:.4f}'.format(*vals[2]):<16}\n"
+                   f"{' '.join([f'{x:.4f}' for x in vals[2]]):<16}\n"
 
     logger.info(msg)
 
