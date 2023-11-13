@@ -93,19 +93,23 @@ def read_xds_list(model_columns, ms_opts):
     if ms_opts.data_column not in known_data_cols:
         schema[ms_opts.data_column] = {'dims': ('chan', 'corr')}
 
-    try:
-        data_xds_list = xds_from_storage_ms(
-            ms_opts.path,
-            columns=columns,
-            index_cols=("TIME",),
-            group_cols=ms_opts.group_by,
-            chunks=chunking_per_data_xds,
-            table_schema=["MS", {**schema}]
+    data_xds_list = xds_from_storage_ms(
+        ms_opts.path,
+        columns=columns,
+        index_cols=("TIME",),
+        group_cols=ms_opts.group_by,
+        chunks=chunking_per_data_xds,
+        table_schema=["MS", {**schema}]
+    )
+
+    missing_columns = set().union(
+        *[set(columns) - set(xds.data_vars.keys()) for xds in data_xds_list]
+    )
+
+    if missing_columns:
+        raise ValueError(
+            f"Invalid/missing column specified as input: {missing_columns}."
         )
-    except RuntimeError as e:
-        raise RuntimeError(
-            f"Invalid/missing column specified. Underlying error: {e}."
-        ) from e
 
     spw_xds_list = xds_from_storage_table(
         ms_opts.path + "::SPECTRAL_WINDOW",
