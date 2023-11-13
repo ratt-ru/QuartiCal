@@ -2,7 +2,7 @@
 from loguru import logger  # noqa
 import logging
 import jax.numpy as jnp
-logging.getLogger("jax._src.lib.xla_bridge").addFilter(logging.Filter("No GPU/TPU found, falling back to CPU."))
+logging.getLogger("jax._src.xla_bridge").addFilter(logging.Filter("No GPU/TPU found, falling back to CPU."))
 import nifty8 as ift
 from nifty8.logger import logger
 from ducc0.fft import good_size
@@ -577,24 +577,26 @@ def smooth_ampphase(gains,
         # get the mean
         signal_mean = samples.average(signal.force).val
 
+        amp = np.abs(signal_mean)
+        phase = np.angle(signal_mean)
+        # remove slope and offset excluding flagged points
+        # since the edges could be extrapolated
+        msk = wgt[t] > 0
+        theta = np.polyfit(fi[msk], phase[msk], 1)
+        print('1')
+        phase -= np.polyval(theta, fi)
+
         if ntsmooth == 1:
             # if there is only a single gain to smooth interpolate
             # to output frequencies and broadcast across time
-            amp = np.interp(fo, fi, np.abs(signal_mean))
-            phase = np.interp(fo, fi, np.angle(signal_mean))
-            # remove slope and offset
-            theta = np.polyfit(fo, phase, 1)
-            phase -= np.polyval(theta, fo)
+            amp = np.interp(fo, fi, amp)
+            phase = np.interp(fo, fi, phase)
             signal_mean = amp*np.exp(1j*phase)
+            print('2')
             output_gains = np.tile(signal_mean[None, :], (to.size, 1))
         else:
             # otherwise we keep the detrended gains at resolution of the input
             # and interpolate afterwards
-            amp = np.abs(signal_mean)
-            phase = np.angle(signal_mean)
-            # remove slope and offset
-            theta = np.polyfit(fi, phase, 1)
-            phase -= np.polyval(theta, fi)
             output_gains[t] = amp*np.exp(1j*phase)
 
     # 2D interpolation in this case
@@ -611,6 +613,7 @@ def smooth_ampphase(gains,
     fh.flush()
     fh.close()
     # broadcast to expected output shape
+    print('3')
     return output_gains[:, :, None, None, None]
 
 

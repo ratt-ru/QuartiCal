@@ -266,7 +266,9 @@ def compute_and_reload(directory, gain_xds_list, dask_opts):
     # correct resource usage is observed.
     # import ipdb; ipdb.set_trace()
     # from dask import visualize
-    # name = gain_xds_list[0].NAME
+    name = gain_xds_list[0].NAME
+    if name == 'B':
+        import ipdb; ipdb.set_trace()
     # visualize(writes[0:2], filename=f'/home/bester/projects/ESO137/writes_graph_{name}.pdf',
     #                    optimize_graph=False, engine='cytoscape')
 
