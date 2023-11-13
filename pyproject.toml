@@ -43,7 +43,7 @@ stimela = {git = "https://github.com/caracal-pipeline/stimela", branch = "FIASCO
 ducc0 = "^0.31.0"
 sympy = "^1.12"
 matplotlib = "^3.5.1"
-nifty8 = {git = "https://gitlab.mpcdf.mpg.de/ift/nifty.git", branch = "NIFTy_8", extras = ["re"]}
+nifty8 = {git = "https://gitlab.mpcdf.mpg.de/ift/nifty.git", branch = "NIFTy_8"}
 
 [tool.poetry.extras]
 degrid = ["ducc0", "sympy"]

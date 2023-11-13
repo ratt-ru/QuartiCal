@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 from loguru import logger  # noqa
 import logging
-import jax.numpy as jnp
-logging.getLogger("jax._src.xla_bridge").addFilter(logging.Filter("No GPU/TPU found, falling back to CPU."))
+# suppress the annoying jax logging if installed
+try:
+    import jax.numpy as jnp
+    logging.getLogger("jax._src.xla_bridge").addFilter(
+        logging.Filter("No GPU/TPU found, falling back to CPU."))
+except Exception as e:
+    pass
 import nifty8 as ift
 from nifty8.logger import logger
 from ducc0.fft import good_size
