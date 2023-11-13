@@ -266,9 +266,9 @@ def compute_and_reload(directory, gain_xds_list, dask_opts):
     # correct resource usage is observed.
     # import ipdb; ipdb.set_trace()
     # from dask import visualize
-    name = gain_xds_list[0].NAME
-    if name == 'B':
-        import ipdb; ipdb.set_trace()
+    # name = gain_xds_list[0].NAME
+    # if name == 'B':
+    #     import ipdb; ipdb.set_trace()
     # visualize(writes[0:2], filename=f'/home/bester/projects/ESO137/writes_graph_{name}.pdf',
     #                    optimize_graph=False, engine='cytoscape')
 
@@ -317,7 +317,7 @@ def bsmooth(merged_xds, target_xds, output_directory,
 
     # we also want to chunk by correlation since they can be smoothed separately
     merged_xds = merged_xds.chunk({"correlation": 1})
-
+    # import ipdb; ipdb.set_trace()
     from quartical.interpolation.interpolants import smooth_ampphase
     smoothed_gains = da.blockwise(
         smooth_ampphase, 'tfpdc',
@@ -344,7 +344,8 @@ def bsmooth(merged_xds, target_xds, output_directory,
         _, idx0, idx1 = np.intersect1d(t, out_time,
                                        assume_unique=True,
                                        return_indices=True)
-        ds['gains'] = (ds.GAIN_AXES, smoothed_gains[idx1])
+        target_xds[i] = ds.assign({'gains': (ds.GAIN_AXES, smoothed_gains[idx1])})
+        # ds['gains'] = (ds.GAIN_AXES, smoothed_gains[idx1])
 
     target_xds = [ds.chunk({"correlation": ncorr}) for ds in target_xds]
 

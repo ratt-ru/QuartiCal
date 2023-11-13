@@ -496,7 +496,7 @@ def smooth_ampphase(gains,
         wgt = jhj
 
     ntsmooth = gain.shape[0]
-    output_gains = np.ones((ntsmooth, nfreqi), dtype=gains.dtype)
+    smooth_gains = np.ones((ntsmooth, nfreqi), dtype=gains.dtype)
     for t in range(ntsmooth):
         mask = wgt[t] > 0
         if not mask.any():
@@ -583,37 +583,31 @@ def smooth_ampphase(gains,
         # since the edges could be extrapolated
         msk = wgt[t] > 0
         theta = np.polyfit(fi[msk], phase[msk], 1)
-        print('1')
         phase -= np.polyval(theta, fi)
 
-        if ntsmooth == 1:
-            # if there is only a single gain to smooth interpolate
-            # to output frequencies and broadcast across time
-            amp = np.interp(fo, fi, amp)
-            phase = np.interp(fo, fi, phase)
-            signal_mean = amp*np.exp(1j*phase)
-            print('2')
-            output_gains = np.tile(signal_mean[None, :], (to.size, 1))
-        else:
-            # otherwise we keep the detrended gains at resolution of the input
-            # and interpolate afterwards
-            output_gains[t] = amp*np.exp(1j*phase)
+        smooth_gains[t] = amp*np.exp(1j*phase)
 
     # 2D interpolation in this case
     # TODO - fill_value=None will extrapolate with linear function but not
     # sure this is what we want. Is constant edge exptrapolation possible?
     if ntsmooth > 1:
-        ampo = RGI((ti, fi), np.abs(output_gains),
+        ampo = RGI((ti, fi), np.abs(smooth_gains),
                    bounds_error=False, fill_value=None, method='linear')
-        phaseo = RGI((ti, fi), np.angle(output_gains),
+        phaseo = RGI((ti, fi), np.angle(smooth_gains),
                      bounds_error=False, fill_value=None, method='linear')
         tt, ff = np.meshgrid(to, fo, indexing='ij')
         output_gains = ampo((tt, ff)) * np.exp(1j*phaseo((tt, ff)))
+    else:
+        amp = np.abs(smooth_gains[0])
+        amp = np.interp(fo, fi, amp)
+        phase = np.angle(smooth_gains[0])
+        phase = np.interp(fo, fi, phase)
+        signal_mean = amp*np.exp(1j*phase)
+        output_gains = np.tile(signal_mean[None, :], (to.size, 1))
 
     fh.flush()
     fh.close()
     # broadcast to expected output shape
-    print('3')
     return output_gains[:, :, None, None, None]
 
 

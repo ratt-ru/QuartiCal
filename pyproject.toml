@@ -25,7 +25,7 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.9"
 tbump = "^6.10.0"
 columnar = "^1.4.1"
 "ruamel.yaml" = "^0.17.26"
