@@ -106,6 +106,11 @@ def read_xds_list(model_columns, ms_opts):
             chunks=chunking_per_data_xds,
             table_schema=["MS", {**schema}]
         )
+    except RuntimeError as e:
+        raise RuntimeError(
+            f"Invalid/missing column specified. Underlying error: {e}."
+        ) from e
+
 
     spw_xds_list = xds_from_table_fragment(
         ms_opts.path + "::SPECTRAL_WINDOW",
