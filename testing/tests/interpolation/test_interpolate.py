@@ -112,6 +112,9 @@ def opts(base_opts, interp_mode, interp_method, tmp_path_factory):
     _opts.G.load_from = str(tmp_path_factory.mktemp("loads.qc")) + "/G"
     _opts.G.interp_method = interp_method
     _opts.G.interp_mode = interp_mode
+    _opts.dask.threads = 8
+    _opts.dask.workers = 1
+    _opts.dask.scheduler = 'threads'
 
     return _opts
 
@@ -181,7 +184,8 @@ def interpolated_xds_lod(
     return load_and_interpolate_gains(
         gain_xds_lod,
         chain,
-        opts.output.gain_directory
+        opts.output.gain_directory,
+        opts.dask
     )
 
 

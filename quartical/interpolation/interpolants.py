@@ -502,9 +502,19 @@ def smooth_ampphase(gains,
 
     ntsmooth = gain.shape[0]
     smooth_gains = np.ones((ntsmooth, nfreqi), dtype=gains.dtype)
-    for t in range(ntsmooth):
+    t = 0
+    while t < ntsmooth:
         mask = wgt[t] > 0
         if not mask.any():
+            # drop time slot to avoid interpolating to it
+            # only do this if there is more than one time to smooth
+            # otherwise there is no array to return
+            if ntsmooth > 1:
+                idx = list(np.arange(ntsmooth))
+                idx.pop(t)
+                smooth_gains = smooth_gains[idx]
+                ntsmooth -= 1
+            # do not increment t
             continue
         # set up correlated field model (hardcoding hypers for now)
         # redo for each t so that each reduction is randomly initialised
@@ -591,6 +601,7 @@ def smooth_ampphase(gains,
         phase -= np.polyval(theta, fi)
 
         smooth_gains[t] = amp*np.exp(1j*phase)
+        t += 1
 
     # 2D interpolation in this case
     # TODO - fill_value=None will extrapolate with linear function but not
