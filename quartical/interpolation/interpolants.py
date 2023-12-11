@@ -560,10 +560,10 @@ def smooth_ampphase(gains,
         signal_response = R(signal)
 
         # Minimization parameters
-        n_samples = 3
-        n_iterations = 5
-        ic_sampling = ift.AbsDeltaEnergyController(deltaE=0.01, iteration_limit=50)
-        ic_newton = ift.AbsDeltaEnergyController(deltaE=0.01, iteration_limit=15)
+        n_samples = 10
+        n_iterations = 10
+        ic_sampling = ift.AbsDeltaEnergyController(deltaE=0.005, iteration_limit=150)
+        ic_newton = ift.AbsDeltaEnergyController(deltaE=0.005, iteration_limit=25)
         minimizer = ift.NewtonCG(ic_newton, enable_logging=True)
 
         # Set up likelihood energy and information Hamiltonian
