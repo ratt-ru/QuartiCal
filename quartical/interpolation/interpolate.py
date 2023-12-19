@@ -93,8 +93,8 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory, dask_opts)
         merged_xds = merged_xds.chunk({**merged_xds.dims, "antenna": 1})
 
         if term.interp_method == "1dsmooth":
-            if merged_xds.TYPE != "diag_complex":
-                raise ValueError("Smoothing only supported for diag_complex type")
+            if merged_xds.TYPE not in ["diag_complex", "complex"]:
+                raise ValueError(f"Smoothing not suported for term type {merged_xds.TYPE}")
             ntime, nchan, nant, ndir, ncorr = merged_xds.gains.shape
             if ndir > 1:
                 raise ValueError("Smoothing only supported for direction independent gains")
