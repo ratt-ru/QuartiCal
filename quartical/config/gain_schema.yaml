@@ -90,3 +90,9 @@ gain:
     info: Controls whether or not a term will be populated with an initial
           estimiate where applicable. Currently only supported for delay
           terms.
+
+  detrend:
+    dtype: bool
+    default: true
+    info: Whether to detrend phases after smoothing.
+          Only applicable when using interp_method 1dsmooth.

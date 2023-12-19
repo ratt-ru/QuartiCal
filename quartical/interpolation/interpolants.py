@@ -449,8 +449,7 @@ def smooth_ampphase(gains,
                     corr,
                     combine_by_time,
                     output_directory,
-                    niter=5,
-                    nu0=2.0,
+                    detrend=True,
                     padding=1.2):
     '''
     Use MGVI in nifty to smooth amplitudes and phases.
@@ -596,9 +595,10 @@ def smooth_ampphase(gains,
         phase = np.angle(signal_mean)
         # remove slope and offset excluding flagged points
         # since the edges could be extrapolated
-        msk = wgt[t] > 0
-        theta = np.polyfit(fi[msk], phase[msk], 1)
-        phase -= np.polyval(theta, fi)
+        if detrend:
+            msk = wgt[t] > 0
+            theta = np.polyfit(fi[msk], phase[msk], 1)
+            phase -= np.polyval(theta, fi)
 
         smooth_gains[t] = amp*np.exp(1j*phase)
         t += 1
