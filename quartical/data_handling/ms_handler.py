@@ -30,7 +30,7 @@ def read_xds_list(model_columns, ms_opts):
 
     antenna_xds = xds_from_storage_table(ms_opts.path + "::ANTENNA")[0]
 
-    n_ant = antenna_xds.dims["row"]
+    n_ant = antenna_xds.sizes["row"]
 
     logger.info("Antenna table indicates {} antennas were present for this "
                 "observation.", n_ant)
@@ -139,7 +139,7 @@ def read_xds_list(model_columns, ms_opts):
     for xds_ind, xds in enumerate(data_xds_list):
         # Add coordinates to the xarray datasets.
         _xds = xds.assign_coords({"corr": corr_types,
-                                  "chan": np.arange(xds.dims["chan"]),
+                                  "chan": np.arange(xds.sizes["chan"]),
                                   "ant": ant_names})
 
         # Add the actual channel frequecies to the xds - this is in preparation
@@ -236,7 +236,7 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
             xds = xds.isel(corr=u_corr_ind)
 
         # If the xds has fewer correlations than the measurement set, reindex.
-        if xds.dims["corr"] < ms_n_corr:
+        if xds.sizes["corr"] < ms_n_corr:
             xds = xds.reindex(corr=corr_types, fill_value=0)
 
             # Do some special handling on the flag column if we reindexed -
@@ -409,7 +409,7 @@ def postprocess_xds_list(data_xds_list, parangle_xds_list, output_opts):
             data with postprocessing operations applied.
     """
 
-    n_corr = {xds.dims["corr"] for xds in data_xds_list}.pop()
+    n_corr = {xds.sizes["corr"] for xds in data_xds_list}.pop()
 
     if output_opts.apply_p_jones_inv:
         # NOTE: Applying parallactic angle when there are fewer than four
