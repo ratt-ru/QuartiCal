@@ -51,7 +51,7 @@ def construct_solver(
         weight_col = data_xds.WEIGHT.data
         flag_col = data_xds.FLAG.data
         gain_terms = gain_xds_lod[xds_ind]
-        corr_mode = data_xds.dims["corr"]
+        corr_mode = data_xds.sizes["corr"]
 
         block_id_arr = get_block_id_arr(data_col)
         aux_block_info = {
@@ -77,7 +77,7 @@ def construct_solver(
             blocker.add_input(
                 v.name,
                 v.data,
-                ("row",) if v.dims == ("time",) else v.dims
+                ("row",) if set(v.dims) == {"time"} else v.dims
             )
 
         blocker.add_input(
@@ -272,8 +272,8 @@ def expand_specs(gain_terms):
     # represents frequency chunks and the inner-most list contains the
     # specs per term. Might be possible to do this with arrays instead.
 
-    n_t_chunks = set(xds.dims["time_chunk"] for xds in gain_terms.values())
-    n_f_chunks = set(xds.dims["freq_chunk"] for xds in gain_terms.values())
+    n_t_chunks = set(xds.sizes["time_chunk"] for xds in gain_terms.values())
+    n_f_chunks = set(xds.sizes["freq_chunk"] for xds in gain_terms.values())
 
     assert len(n_t_chunks) == 1, "Chunking in time is inconsistent."
     assert len(n_f_chunks) == 1, "Chunking in freq is inconsistent."

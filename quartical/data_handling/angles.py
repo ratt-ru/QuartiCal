@@ -75,7 +75,7 @@ def make_parangle_xds_list(ms_path, data_xds_list):
             coords={
                 "utime": np.arange(sum(xds.UTIME_CHUNKS)),
                 "ant": xds.ant,
-                "receptor": np.arange(feedtab.dims['receptors'])
+                "receptor": np.arange(feedtab.sizes['receptors'])
             },
             attrs={
                 "FEED_TYPE": feed_type,
