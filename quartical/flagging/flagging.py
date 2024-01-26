@@ -145,7 +145,7 @@ def add_mad_graph(data_xds_list, mad_opts):
         flag_col = xds.FLAG.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
-        n_ant = xds.dims["ant"]
+        n_ant = xds.sizes["ant"]
         n_bl_w_autos = (n_ant * (n_ant - 1))/2 + n_ant
         n_t_chunk, n_f_chunk, _ = residuals.numblocks
 

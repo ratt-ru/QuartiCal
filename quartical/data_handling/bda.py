@@ -64,7 +64,7 @@ def process_bda_input(data_xds_list, spw_xds_list, weight_column):
                          "WEIGHT_SPECTRUM for BDA data.")
 
     # Figure out the highest frequency resolution and its DDID.
-    spw_dims = {i: xds.dims["chan"] for i, xds in enumerate(spw_xds_list)}
+    spw_dims = {i: xds.sizes["chan"] for i, xds in enumerate(spw_xds_list)}
     max_nchan_ddid = max(spw_dims, key=spw_dims.get)
     max_nchan = spw_dims[max_nchan_ddid]
 
@@ -72,7 +72,7 @@ def process_bda_input(data_xds_list, spw_xds_list, weight_column):
 
     for xds in data_xds_list:
 
-        upsample_factor = max_nchan//xds.dims["chan"]
+        upsample_factor = max_nchan//xds.sizes["chan"]
 
         weight_col = xds.WEIGHT_SPECTRUM.data
 
@@ -83,7 +83,7 @@ def process_bda_input(data_xds_list, spw_xds_list, weight_column):
                                  weight_col/upsample_factor)})
 
         # Create a selection which will upsample the frequency axis.
-        selection = np.repeat(np.arange(xds.dims["chan"]), upsample_factor)
+        selection = np.repeat(np.arange(xds.sizes["chan"]), upsample_factor)
 
         bda_xds = bda_xds.sel({"chan": selection})
 
@@ -101,7 +101,7 @@ def process_bda_input(data_xds_list, spw_xds_list, weight_column):
     bda_xds_list = [xarray.concat(xdss, dim="row")
                     for xdss in xds_merge_list]
 
-    bda_xds_list = [xds.chunk({"row": xds.dims["row"]})
+    bda_xds_list = [xds.chunk({"row": xds.sizes["row"]})
                     for xds in bda_xds_list]
 
     # This should guarantee monotonicity in time (not baseline).
@@ -223,10 +223,10 @@ def process_bda_output(xds_list, ref_xds_list, output_cols):
 
                 chan_ind = dims.index('chan')
 
-                nchan = xds.dims['chan']
-                ref_nchan = ref_xds.dims['chan']
+                nchan = xds.sizes['chan']
+                ref_nchan = ref_xds.sizes['chan']
 
-                shape[chan_ind: chan_ind + 1] = [ref_xds.dims['chan'], -1]
+                shape[chan_ind: chan_ind + 1] = [ref_xds.sizes['chan'], -1]
 
                 data = data.reshape(shape)
 
