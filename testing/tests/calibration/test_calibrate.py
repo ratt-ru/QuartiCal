@@ -24,7 +24,7 @@ def opts(base_opts, time_chunk, freq_chunk, time_int, freq_int):
 @pytest.fixture(scope="module")
 def expected_t_ints(single_xds, chain):
 
-    n_row = single_xds.dims["row"]
+    n_row = single_xds.sizes["row"]
     t_ints = [term.time_interval or n_row for term in chain]
 
     expected_t_ints = []
@@ -62,7 +62,7 @@ def expected_t_ints(single_xds, chain):
 @pytest.fixture(scope="module")
 def expected_f_ints(single_xds, chain):
 
-    n_chan = single_xds.dims["chan"]
+    n_chan = single_xds.sizes["chan"]
     f_ints = [term.freq_interval or n_chan for term in chain]
 
     expected_f_ints = []
@@ -109,7 +109,7 @@ def test_data_coords(single_xds, term_xds_dict):
     data_coords = ["ant", "dir", "corr"]
     gain_coords = ["antenna", "direction", "correlation"]
 
-    assert all(single_xds.dims[dc] == gxds.dims[gc]
+    assert all(single_xds.sizes[dc] == gxds.sizes[gc]
                for gxds in term_xds_dict.values()
                for dc, gc in zip(data_coords, gain_coords))
 
@@ -118,7 +118,7 @@ def test_data_coords(single_xds, term_xds_dict):
 def test_t_chunking(single_xds, term_xds_dict):
     """Check that time chunking of the gain xds list is correct."""
 
-    assert all(len(single_xds.UTIME_CHUNKS) == gxds.dims["time_chunk"]
+    assert all(len(single_xds.UTIME_CHUNKS) == gxds.sizes["time_chunk"]
                for gxds in term_xds_dict.values())
 
 
@@ -126,7 +126,7 @@ def test_t_chunking(single_xds, term_xds_dict):
 def test_f_chunking(single_xds, term_xds_dict):
     """Check that frequency chunking of the gain xds list is correct."""
 
-    assert all(len(single_xds.chunks["chan"]) == gxds.dims["freq_chunk"]
+    assert all(len(single_xds.chunks["chan"]) == gxds.sizes["freq_chunk"]
                for gxds in term_xds_dict.values())
 
 
@@ -134,7 +134,7 @@ def test_f_chunking(single_xds, term_xds_dict):
 def test_t_ints(term_xds_dict, expected_t_ints):
     """Check that the time intervals are correct."""
 
-    assert all(int(sum(eti)) == gxds.dims["gain_time"]
+    assert all(int(sum(eti)) == gxds.sizes["gain_time"]
                for eti, gxds in zip(expected_t_ints, term_xds_dict.values()))
 
 
@@ -142,7 +142,7 @@ def test_t_ints(term_xds_dict, expected_t_ints):
 def test_f_ints(term_xds_dict, expected_f_ints):
     """Check that the frequency intervals are correct."""
 
-    assert all(int(sum(efi)) == gxds.dims["gain_freq"]
+    assert all(int(sum(efi)) == gxds.sizes["gain_freq"]
                for efi, gxds in zip(expected_f_ints, term_xds_dict.values()))
 
 
@@ -163,7 +163,7 @@ def test_chunk_spec(single_xds, term_xds_dict, expected_t_ints,
     """Check that the chunking specs are correct."""
 
     n_row, n_chan, n_ant, n_dir, n_corr = \
-        [single_xds.dims[d] for d in ["row", "chan", "ant", "dir", "corr"]]
+        [single_xds.sizes[d] for d in ["row", "chan", "ant", "dir", "corr"]]
 
     specs = [tuple([tuple(tic), tuple(fic), (n_ant,), (n_dir,), (n_corr,)])
              for tic, fic in zip(expected_t_ints, expected_f_ints)]
