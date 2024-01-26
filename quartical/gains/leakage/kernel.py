@@ -200,6 +200,8 @@ def nb_finalize_update(
     corr_mode
 ):
 
+    coerce_literal(nb_finalize_update, ["corr_mode"])
+
     set_identity = factories.set_identity_factory(corr_mode)
 
     def impl(
