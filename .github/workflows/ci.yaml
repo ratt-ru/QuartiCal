@@ -98,7 +98,7 @@ jobs:
 
       # Run the test cases
       - name: Testing Step
-        run: poetry run pytest -v testing/tests/gains/amplitude/test_amplitude.py
+        run: poetry run pytest -v testing/tests/gains/test_amplitude.py
 
   deploy:
     needs: [test]
