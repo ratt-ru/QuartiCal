@@ -46,6 +46,9 @@ jobs:
       - name: Retouch
         run: find $GITHUB_WORKSPACE -type f -name "*.py" -exec touch -t 01010000 {} +
 
+      - name: List
+        run: ls -lrt $GITHUB_WORKSPACE/QuartiCal/quartical/gains/complex
+      
       # Upgrade pip and setuptools
       - name: Upgrade pip and setuptools
         run: python -m pip install -U pip setuptools
@@ -62,6 +65,9 @@ jobs:
           key: numba-cache-${{ matrix.python-version }}-${{ steps.numba-key.outputs.timestamp }}
           restore-keys: numba-cache-${{ matrix.python-version }}-
           path: ${{ env.NUMBA_CACHE_DIR }}
+
+      - name: list cache
+        run: ls -lrt ${{ env.NUMBA_CACHE_DIR }}
 
       - name: List the measures directory
         run: curl ftp://ftp.astron.nl/outgoing/Measures/ > measures_dir.txt
