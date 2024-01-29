@@ -96,8 +96,11 @@ class AutoRestrictor(SchedulerPlugin):
         # Create a unique token for each set of partition roots. TODO: This is
         # very strict. What about nodes with very similar roots? Tokenization
         # may be overkill too.
-        root_tokens = {tokenize(*sorted(v)): v for v in part_roots.values()}
-
+        root_tokens = {
+            tokenize(
+                *sorted(v, key=lambda x: str(x))
+            ): v for v in part_roots.values()
+        }
         hash_map = defaultdict(set)
         group_offset = 0
 
@@ -129,7 +132,9 @@ class AutoRestrictor(SchedulerPlugin):
             pdn = part_dependents[pn]
 
             if pdp:
-                groups = hash_map[tokenize(*sorted(part_roots[pn]))]
+                groups = hash_map[
+                    tokenize(*sorted(part_roots[pn],  key=lambda x: str(x)))
+                ]
             else:  # Special case - no dependencies.
                 groups = {group_offset}
                 group_offset += 1
