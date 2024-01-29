@@ -44,7 +44,7 @@ jobs:
           fetch-depth: 1
 
       - name: Retouch
-        run: find QuartiCal -type f -name "*.py" -exec touch -t 01010000 {} +
+        run: find $GITHUB_WORKSPACE -type f -name "*.py" -exec touch -t 01010000 {} +
 
       # Upgrade pip and setuptools
       - name: Upgrade pip and setuptools
