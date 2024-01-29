@@ -81,7 +81,8 @@ def help():
 
     # Include a generic gain term in the help config.
     additional_config = [oc.from_dotlist(["solver.terms=['gain']"])]
-    HelpConfig = finalize_structure(additional_config)
+    help_class = finalize_structure(additional_config)
+    HelpConfig = help_class()
 
     if len(sys.argv) == 1 or help_arg == "help":
         print_help(HelpConfig)

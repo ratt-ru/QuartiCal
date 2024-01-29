@@ -225,6 +225,8 @@ def nb_compute_jhj_jhr(
     corr_mode
 ):
 
+    coerce_literal(nb_compute_jhj_jhr, ["corr_mode"])
+
     # We want to dispatch based on this field so we need its type.
     row_weights_idx = ms_inputs.fields.index('ROW_WEIGHTS')
     row_weights_type = ms_inputs[row_weights_idx]
@@ -453,6 +455,8 @@ def compute_update(native_imdry, corr_mode):
 @overload(compute_update, jit_options=PARALLEL_JIT_OPTIONS)
 def nb_compute_update(native_imdry, corr_mode):
 
+    coerce_literal(nb_compute_update, ["corr_mode"])
+
     # We want to dispatch based on this field so we need its type.
     jhj = native_imdry[native_imdry.fields.index('jhj')]
 
@@ -508,6 +512,8 @@ def nb_finalize_update(
     loop_idx,
     corr_mode
 ):
+
+    coerce_literal(nb_finalize_update, ["corr_mode"])
 
     set_identity = factories.set_identity_factory(corr_mode)
     param_to_gain = param_to_gain_factory(corr_mode)
