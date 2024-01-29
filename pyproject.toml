@@ -39,7 +39,7 @@ requests = "^2.31.0"
 pytest = "^7.3.1"
 omegaconf = "^2.3.0"
 colorama = "^0.4.6"
-stimela = "2.0rc4"
+stimela = "2.0rc8"
 matplotlib = "^3.5.1"
 
 [tool.poetry.scripts]

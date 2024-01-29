@@ -2413,13 +2413,13 @@ files = [
 
 [[package]]
 name = "stimela"
-version = "2.0rc4"
+version = "2.0rc8"
 description = "Framework for system agnostic pipelines for radio interferometry arrays"
 optional = false
 python-versions = ">=3.7,<4.0"
 files = [
-    {file = "stimela-2.0rc4-py3-none-any.whl", hash = "sha256:9f067ca53d744a0fc3e0b79f9a9c0e6b544e5d9c39e5f4972874bf5049f64319"},
-    {file = "stimela-2.0rc4.tar.gz", hash = "sha256:920b49a7c8bf4923244c1505c011fc4135989a5c9bcf287ca3bc22619d46fb42"},
+    {file = "stimela-2.0rc8-py3-none-any.whl", hash = "sha256:a027936505dfc571892b10c5087a13c88184d45c716521ac1e626e97fcc102c5"},
+    {file = "stimela-2.0rc8.tar.gz", hash = "sha256:cfb9996f207520f21fc33ec96d3eecc3b80985a8306f2343c341cebb5ddc59f9"},
 ]
 
 [package.dependencies]
@@ -2884,4 +2884,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "b6d6a0cf311e3c6339f9637a6a1ec2a11bf4491a9ae419df91760c57efe7c19e"
+content-hash = "6b99ff08b22224b484f182a1dcc4d9ebf6a074969c4d663f4635ddff88e4678b"
