@@ -47,7 +47,7 @@ jobs:
         run: find $GITHUB_WORKSPACE -type f -name "*.py" -exec touch -t 01010000 {} +
 
       - name: List
-        run: ls -lrt $GITHUB_WORKSPACE/QuartiCal/quartical/gains/complex
+        run: ls -lrt $GITHUB_WORKSPACE/quartical/gains/complex
       
       # Upgrade pip and setuptools
       - name: Upgrade pip and setuptools
