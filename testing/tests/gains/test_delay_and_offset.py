@@ -40,13 +40,13 @@ def true_gain_list(predicted_xds_list):
 
     for xds in predicted_xds_list:
 
-        n_ant = xds.dims["ant"]
+        n_ant = xds.sizes["ant"]
         utime_chunks = xds.UTIME_CHUNKS
         n_time = sum(utime_chunks)
         chan_chunks = xds.chunks["chan"]
-        n_chan = xds.dims["chan"]
-        n_dir = xds.dims["dir"]
-        n_corr = xds.dims["corr"]
+        n_chan = xds.sizes["chan"]
+        n_dir = xds.sizes["dir"]
+        n_corr = xds.sizes["corr"]
 
         chan_freq = xds.CHAN_FREQ.data
         chan_width = chan_freq[1] - chan_freq[0]
@@ -94,7 +94,7 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
     for xds, gains in zip(predicted_xds_list, true_gain_list):
 
-        n_corr = xds.dims["corr"]
+        n_corr = xds.sizes["corr"]
 
         ant1 = xds.ANTENNA1.data
         ant2 = xds.ANTENNA2.data
