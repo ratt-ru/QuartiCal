@@ -44,6 +44,8 @@ ducc0 = "^0.31.0"
 sympy = "^1.12"
 nifty8 = {git = "https://gitlab.mpcdf.mpg.de/ift/nifty.git", branch = "NIFTy_8"}
 
+[tool.poetry.extras]
+degrid = ["ducc0", "sympy"]
 
 [tool.poetry.scripts]
 goquartical = 'quartical.executor:execute'
