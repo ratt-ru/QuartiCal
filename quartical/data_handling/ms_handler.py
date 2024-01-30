@@ -97,7 +97,7 @@ def read_xds_list(model_columns, ms_opts):
     if ms_opts.data_column not in known_data_cols:
         schema[ms_opts.data_column] = {'dims': ('chan', 'corr')}
 
-    data_xds_list = xds_from_storage_ms(
+    data_xds_list = xds_from_ms_fragment(
         ms_opts.path,
         columns=columns,
         index_cols=("TIME",),
