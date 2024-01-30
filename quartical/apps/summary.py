@@ -119,11 +119,7 @@ def field_info(path):
 
     field_xds = xds_from_table_fragment(path + "::FIELD")[0]
 
-<<<<<<< HEAD
-    field_ids = list(range(field_xds.dims['row']))
-=======
     field_ids = list(range(field_xds.sizes['row']))
->>>>>>> main
     source_ids = [i for i in field_xds.SOURCE_ID.values]
     names = [n for n in field_xds.NAME.values]
     phase_dirs = [pd for pd in field_xds.PHASE_DIR.values]
