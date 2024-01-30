@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "quartical"
-version = "0.2.0"
+version = "0.2.1"
 description = "Fast and flexible calibration suite for radio interferometer data."
 repository = "https://github.com/ratt-ru/QuartiCal"
 documentation = "https://quartical.readthedocs.io"
@@ -13,7 +13,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Topic :: Scientific/Engineering :: Astronomy"
@@ -25,24 +24,22 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.8"
-tbump = "^6.10.0"
-columnar = "^1.4.1"
-"ruamel.yaml" = "^0.17.26"
-dask = {extras = ["diagnostics"], version = "^2023.1.0"}
-distributed = "^2023.1.0"
-dask-ms = {git = "https://github.com/ratt-ru/dask-ms.git", extras = ["s3", "xarray", "zarr"]}
-codex-africanus = {extras = ["dask", "scipy", "astropy", "python-casacore"], version = "^0.3.4"}
-astro-tigger-lsm = "^1.7.2"
-loguru = "^0.7.0"
-requests = "^2.31.0"
-pytest = "^7.3.1"
-omegaconf = "^2.3.0"
-colorama = "^0.4.6"
-stimela = {git = "https://github.com/caracal-pipeline/stimela", branch = "FIASCO3-hlb"}
-ducc0 = "^0.31.0"
-sympy = "^1.12"
-matplotlib = "^3.5.1"
+python = "^3.9"
+astro-tigger-lsm = ">=1.7.2, <=1.7.3"
+codex-africanus = {extras = ["dask", "scipy", "astropy", "python-casacore"], version = ">=0.3.4, <=0.3.4"}
+colorama = ">=0.4.6, <=0.4.6"
+columnar = ">=1.4.1, <=1.4.1"
+dask = {extras = ["diagnostics"], version = ">=2023.5.0, <=2023.12.1"}
+dask-ms = {extras = ["s3", "xarray", "zarr"], version = ">=0.2.16, <=0.2.18"}
+distributed = ">=2023.5.0, <=2023.12.1"
+loguru = ">=0.7.0, <=0.7.2"
+matplotlib = ">=3.5.1, <=3.8.2"
+omegaconf = ">=2.3.0, <=2.3.0"
+pytest = ">=7.3.1, <=7.4.4"
+requests = ">=2.31.0, <=2.31.0"
+"ruamel.yaml" = ">=0.17.26, <=0.17.40"
+stimela = "2.0rc8"
+tbump = ">=6.10.0, <=6.11.0"
 
 [tool.poetry.extras]
 degrid = ["ducc0", "sympy"]

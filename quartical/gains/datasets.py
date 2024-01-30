@@ -192,7 +192,7 @@ def populate_net_xds_list(
 
             net_xds = net_gains[net_name]
 
-            net_shape = tuple(net_xds.dims[d] for d in net_xds.GAIN_AXES)
+            net_shape = tuple(net_xds.sizes[d] for d in net_xds.GAIN_AXES)
 
             corr_mode = net_shape[-1]
 
@@ -401,7 +401,7 @@ def scaffold_from_data_xds(data_xds, gain_obj):
 
     freq_chunks = gain_obj.make_freq_chunks(freq_map)
 
-    n_dir = data_xds.dims["dir"]
+    n_dir = data_xds.sizes["dir"]
 
     dir_map = gain_obj.make_dir_map(
         n_dir,
@@ -418,8 +418,8 @@ def scaffold_from_data_xds(data_xds, gain_obj):
     id_attrs = {f: data_xds.attrs[f] for f, _ in partition_schema}
 
     # TODO: Move this the the gain object?
-    n_corr = data_xds.dims["corr"]
-    n_ant = data_xds.dims["ant"]
+    n_corr = data_xds.sizes["corr"]
+    n_ant = data_xds.sizes["ant"]
     chunk_spec = gain_spec_tup(
         time_chunks,
         freq_chunks,

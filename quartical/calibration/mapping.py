@@ -63,7 +63,7 @@ def make_mapping_datasets(data_xds_list, chain):
                 freq_interval
             )
 
-            n_dir = data_xds.dims["dir"]
+            n_dir = data_xds.sizes["dir"]
 
             dir_map = gain_obj.make_dir_map(
                 n_dir,
