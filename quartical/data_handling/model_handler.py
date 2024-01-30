@@ -92,7 +92,7 @@ def add_model_graph(
     # which require them. P Jones is applied to predicted components
     # internally, so we only need to consider model columns for now.
 
-    n_corr = {xds.dims["corr"] for xds in data_xds_list}.pop()
+    n_corr = {xds.sizes["corr"] for xds in data_xds_list}.pop()
 
     if model_opts.apply_p_jones:
         # NOTE: Applying parallactic angle when there are fewer than four
@@ -219,9 +219,9 @@ def assign_identity_model(data_xds_list):
 
     model_dims = [
         (
-            xds.dims['row'],
-            xds.dims['chan'],
-            xds.dims['corr']
+            xds.sizes['row'],
+            xds.sizes['chan'],
+            xds.sizes['corr']
         )
         for xds in data_xds_list
     ]

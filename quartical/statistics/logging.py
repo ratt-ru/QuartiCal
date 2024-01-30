@@ -78,8 +78,8 @@ def log_summary_stats(stats_xds_list):
 
     for sxds_group in sxds_groups:
 
-        max_nt_chunk = max([sxds.dims["t_chunk"] for sxds in sxds_group])
-        max_nf_chunk = max([sxds.dims["f_chunk"] for sxds in sxds_group])
+        max_nt_chunk = max([sxds.sizes["t_chunk"] for sxds in sxds_group])
+        max_nf_chunk = max([sxds.sizes["f_chunk"] for sxds in sxds_group])
 
         ids = [f"T{t}F{f}" for t in range(max_nt_chunk)
                            for f in range(max_nf_chunk)]  # noqa

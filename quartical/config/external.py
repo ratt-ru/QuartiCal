@@ -1,5 +1,5 @@
 import re
-from dataclasses import make_dataclass
+from dataclasses import make_dataclass, field
 from omegaconf import OmegaConf as oc
 from typing import Dict, Any
 from scabha.cargo import Parameter
@@ -37,8 +37,11 @@ def finalize_structure(additional_config):
     FinalConfig = make_dataclass(
         "FinalConfig",
         [
-            *[(m, ModelComponent, ModelComponent()) for m in models],
-            *[(t, Gain, Gain()) for t in terms]
+            *[
+                (m, ModelComponent, field(default_factory=ModelComponent))
+                for m in models
+            ],
+            *[(t, Gain, field(default_factory=Gain)) for t in terms]
         ],
         bases=(BaseConfig,)
     )

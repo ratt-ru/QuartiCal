@@ -119,7 +119,11 @@ def field_info(path):
 
     field_xds = xds_from_table_fragment(path + "::FIELD")[0]
 
+<<<<<<< HEAD
     field_ids = list(range(field_xds.dims['row']))
+=======
+    field_ids = list(range(field_xds.sizes['row']))
+>>>>>>> main
     source_ids = [i for i in field_xds.SOURCE_ID.values]
     names = [n for n in field_xds.NAME.values]
     phase_dirs = [pd for pd in field_xds.PHASE_DIR.values]
@@ -199,7 +203,7 @@ def spw_info(path):
         chunks={"row": 1, "chan": -1}
     )
 
-    n_chan_per_spw = [xds.dims["chan"] for xds in spw_xds_list]
+    n_chan_per_spw = [xds.sizes["chan"] for xds in spw_xds_list]
 
     bw_per_spw = [xds.TOTAL_BANDWIDTH.values.item() for xds in spw_xds_list]
 
@@ -244,9 +248,9 @@ def pointing_info(path):
 
 def dimension_summary(xds_list):
 
-    rows_per_xds = [xds.dims["row"] for xds in xds_list]
-    chan_per_xds = [xds.dims["chan"] for xds in xds_list]
-    corr_per_xds = [xds.dims["corr"] for xds in xds_list]
+    rows_per_xds = [xds.sizes["row"] for xds in xds_list]
+    chan_per_xds = [xds.sizes["chan"] for xds in xds_list]
+    corr_per_xds = [xds.sizes["corr"] for xds in xds_list]
 
     utime_per_xds = [np.unique(xds.TIME.values).size for xds in xds_list]
 

@@ -216,10 +216,16 @@ def _plot(group, xds, args):
 
     # NOTE: This mututates the data variables in place.
     data = xds[args.plot_var].values
+<<<<<<< HEAD
     # flags = xds[args.flag_var].values
     # data[np.where(flags)] = np.nan  # Set flagged values to nan (not plotted).
     # xds['flagged_data'] = np.where(flags, data, np.nan)
     # xds = xds.drop_vars(args.flag_var)  # No more use for flags.
+=======
+    flags = xds[args.flag_var].values
+    data[np.where(flags)] = np.nan  # Set flagged values to nan (not plotted).
+    xds = xds.drop_vars(args.flag_var)  # No more use for flags.
+>>>>>>> main
 
     # Construct list of lists containing axes over which we iterate i.e.
     # produce a plot per combination of these values.
@@ -245,7 +251,10 @@ def _plot(group, xds, args):
 
     fig, ax = plt.subplots(figsize=args.fig_size)
 
+<<<<<<< HEAD
     # import ipdb; ipdb.set_trace()
+=======
+>>>>>>> main
     for ia in product(*iter_axes_itr):
 
         sel = {ax: val for ax, val in zip(args.iter_axes, ia)}
@@ -302,7 +311,10 @@ def _plot(group, xds, args):
 
         fig.savefig(
             f"{args.output_path.full_path}/{subdir_path}/{fig_name}.png",
+<<<<<<< HEAD
             dpi=250,
+=======
+>>>>>>> main
             bbox_inches="tight"  # SLOW, but slightly unavoidable.
         )
 
@@ -323,8 +335,12 @@ def plot():
     xdsl = xds_from_zarr(gain_path)
 
     # Select only the necessary fields for plotting on each dataset.
+<<<<<<< HEAD
     # xdsl = [xds[[args.plot_var, args.flag_var]] for xds in xdsl]
     xdsl = [xds[[args.plot_var]] for xds in xdsl]
+=======
+    xdsl = [xds[[args.plot_var, args.flag_var]] for xds in xdsl]
+>>>>>>> main
 
     # Partitioned dictionary of xarray.Datasets.
     xdsd = to_plot_dict(xdsl, args.iter_attrs)

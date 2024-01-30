@@ -90,7 +90,7 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory, dask_opts)
             )
 
         # Remove time/chan chunking and rechunk by antenna.
-        merged_xds = merged_xds.chunk({**merged_xds.dims, "antenna": 1})
+        merged_xds = merged_xds.chunk({**merged_xds.sizes, "antenna": 1})
 
         if term.interp_method == "1dsmooth":
             if merged_xds.TYPE not in ["diag_complex", "complex"]:
@@ -230,11 +230,11 @@ def reindex_and_rechunk(interpolated_xds, reference_xds):
 
     # If we are loading a term with a differing number of correlations,
     # this should handle selecting them out/padding them in.
-    if interpolated_xds.dims[axis] < reference_xds.dims[axis]:
+    if interpolated_xds.sizes[axis] < reference_xds.sizes[axis]:
         interpolated_xds = interpolated_xds.reindex(
             {"correlation": reference_xds[axis]}, fill_value=0
         )
-    elif interpolated_xds.dims[axis] > reference_xds.dims[axis]:
+    elif interpolated_xds.sizes[axis] > reference_xds.sizes[axis]:
         interpolated_xds = interpolated_xds.sel(
             {"correlation": reference_xds[axis]}
         )
@@ -249,7 +249,7 @@ def reindex_and_rechunk(interpolated_xds, reference_xds):
         {
             t_t_axis: t_chunks,
             t_f_axis: f_chunks,
-            "antenna": interpolated_xds.dims["antenna"]
+            "antenna": interpolated_xds.sizes["antenna"]
         }
     )
 
