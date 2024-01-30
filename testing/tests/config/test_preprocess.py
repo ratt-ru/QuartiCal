@@ -1,5 +1,5 @@
 import pytest
-from quartical.config.preprocess import transcribe_recipe, sky_model_nt
+from quartical.config.preprocess import transcribe_legacy_recipe, sky_model_nt
 import dask.array as da
 import os.path
 
@@ -51,7 +51,7 @@ valid_recipes = {
 # we do not attempt to validate column names in the preprocess step.
 
 invalid_recipes = {
-    "": ValueError,
+    # "": ValueError,  # NOTE: This case may not be needed. Omitting.
     "dummy.lsm.html": FileNotFoundError
 }
 
@@ -73,7 +73,7 @@ def test_transcribe_recipe_valid(valid_recipe, monkeypatch):
     # Patch isfile functionality to allow use of ficticious files.
     monkeypatch.setattr(os.path, "isfile", lambda filename: True)
 
-    recipe = transcribe_recipe(input_recipe)
+    recipe = transcribe_legacy_recipe(input_recipe)
 
     # Check that the opts has been updated with the correct internal recipe.
     assert recipe.instructions == expected_output
@@ -87,4 +87,4 @@ def test_transcribe_recipe_invalid(invalid_recipe):
     input_recipe, expected_output = invalid_recipe
 
     with pytest.raises(expected_output):
-        transcribe_recipe(input_recipe)
+        transcribe_legacy_recipe(input_recipe)

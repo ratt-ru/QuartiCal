@@ -112,6 +112,11 @@ def __input_model_post_init__(self):
     self.__validate_element_choices__()
 
 
+def __model_component_post_init__(self):
+    self.__validate_choices__()
+    self.__validate_element_choices__()
+
+
 def __output_post_init__(self):
 
     self.__validate_choices__()
@@ -182,6 +187,7 @@ def __gain_post_init__(self):
 POST_INIT_MAP = {
     "input_ms": __input_ms_post_init__,
     "input_model": __input_model_post_init__,
+    "model_component": __model_component_post_init__,
     "output": __output_post_init__,
     "mad_flags": __mad_flags_post_init__,
     "solver": __solver_post_init__,
