@@ -43,7 +43,6 @@ def finalize_structure(additional_config):
             ],
             *[(t, Gain, field(default_factory=Gain)) for t in terms]
         ],
-        [(t, Gain, field(default_factory=Gain)) for t in terms],
         bases=(BaseConfig,)
     )
 
