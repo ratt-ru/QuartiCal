@@ -43,7 +43,7 @@ jobs:
         with:
           fetch-depth: 0  # Full fetch required to restore times.
 
-      - name: Retouch
+      - name: Restore repo times
         uses: chetan/git-restore-mtime-action@v2
 
       # Upgrade pip and setuptools
