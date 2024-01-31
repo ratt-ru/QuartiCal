@@ -43,6 +43,11 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Echo workspace
+        run: |
+        echo $GITHUB_WORKSPACE
+        ls $GITHUB_WORKSPACE
+
       - name: Retouch
         run: |
           cd $GITHUB_WORKSPACE
