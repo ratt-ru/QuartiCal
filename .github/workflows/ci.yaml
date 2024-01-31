@@ -41,7 +41,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v3
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Echo workspace
         run: |
@@ -53,7 +53,9 @@ jobs:
           cd $GITHUB_WORKSPACE
           ls -lrt
           git ls-tree -r --name-only HEAD | while read filename; do
-            echo "${filename}"
+            unixtime=$(git log -1 --format="%at" -- "${filename}")
+            touchtime=$(date -d @$unixtime +'%Y%m%d%H%M.%S')
+            touch -t ${touchtime} "${filename}"
           done
           ls -lrt
 
