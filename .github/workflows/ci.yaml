@@ -20,8 +20,8 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-22.04]
-        python-version: ["3.8"]
+        os: [ubuntu-20.04, ubuntu-22.04]
+        python-version: ["3.9", "3.10"]
 
     steps:
       - name: Set up Python ${{ matrix.python-version }}
@@ -41,33 +41,11 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0
-
-      - name: Echo workspace
-        run: |
-          echo $GITHUB_WORKSPACE
-          ls $GITHUB_WORKSPACE
+          fetch-depth: 0  # Full fetch required to restore times.
 
       - name: Retouch
         uses: chetan/git-restore-mtime-action@v2
 
-      # - name: Retouch
-      #   run: |
-      #     cd $GITHUB_WORKSPACE
-      #     ls -lrt
-      #     git ls-tree -r --name-only HEAD | while read filename; do
-      #       unixtime=$(git log -1 --format="%at" -- "${filename}")
-      #       touchtime=$(date -d @$unixtime +'%Y%m%d%H%M.%S')
-      #       touch -t ${touchtime} "${filename}"
-      #     done
-      #     ls -lrt
-
-      # - name: Retouch
-      #   run: find $GITHUB_WORKSPACE -type f -name "*.py" -exec touch -t 01010000 {} +
-
-      - name: List
-        run: ls -lrt $GITHUB_WORKSPACE/quartical/gains/complex
-      
       # Upgrade pip and setuptools
       - name: Upgrade pip and setuptools
         run: python -m pip install -U pip setuptools
@@ -84,9 +62,6 @@ jobs:
           key: numba-cache-${{ matrix.python-version }}-${{ steps.numba-key.outputs.timestamp }}
           restore-keys: numba-cache-${{ matrix.python-version }}-
           path: ${{ env.NUMBA_CACHE_DIR }}
-
-      - name: list cache
-        run: ls -lrt ${{ env.NUMBA_CACHE_DIR }}
 
       - name: List the measures directory
         run: curl ftp://ftp.astron.nl/outgoing/Measures/ > measures_dir.txt
@@ -117,7 +92,7 @@ jobs:
 
       # Run the test cases
       - name: Testing Step
-        run: poetry run pytest -v testing/tests/gains/test_amplitude.py
+        run: poetry run pytest -v testing/tests
 
   deploy:
     needs: [test]
