@@ -36,13 +36,49 @@ def add_model_graph(
     # Generates a predicition scheme (graph) per-xds. If no predict is
     # required, it is a list of empty dictionaries.
 
-    if model_vis_recipe.ingredients.sky_models:
-        predict_schemes = predict(data_xds_list,
-                                  model_vis_recipe,
-                                  ms_path,
-                                  model_opts)
-    else:
-        predict_schemes = [{}]*len(data_xds_list)
+    # TODO: Add handling for mds inputs. This will need to read the model
+    # and figure out the relevant steps to take.
+
+    predict_required = bool(model_vis_recipe.ingredients.sky_models)
+    degrid_required = bool(model_vis_recipe.ingredients.degrid_models)
+
+    # TODO: Ensure that things work correctly when we have a mixture of the
+    # below.
+
+    predict_schemes = [{}]*len(data_xds_list)
+
+    if predict_required:
+        rime_schemes = predict(
+            data_xds_list,
+            model_vis_recipe,
+            ms_path,
+            model_opts
+        )
+        predict_schemes = [
+            {**ps, **rs} for ps, rs in zip(predict_schemes, rime_schemes)
+        ]
+
+    if degrid_required:
+
+        try:
+            from quartical.data_handling.degridder import degrid
+        except ImportError:
+            raise ImportError(
+                "QuartiCal was unable to import the degrid module. This may "
+                "indicate that QuartiCal was installed without the necessary "
+                "extras. Please try 'pip install quartical[degrid]'. If the "
+                "error persists, please raise an issue."
+            )
+
+        degrid_schemes = degrid(
+            data_xds_list,
+            model_vis_recipe,
+            ms_path,
+            model_opts
+        )
+        predict_schemes = [
+            {**ps, **ds} for ps, ds in zip(predict_schemes, degrid_schemes)
+        ]
 
     # Special case: in the event that we have an IdentityRecipe, modify the
     # datasets and model appropriately.
@@ -176,7 +212,7 @@ def assign_identity_model(data_xds_list):
         recipe: A modified Recipe object consistent with this case.
     """
 
-    ingredients = Ingredients({"__IDENT__"}, set())
+    ingredients = Ingredients({"__IDENT__"}, set(), set())
     instructions = {0: ["__IDENT__"]}
 
     recipe = IdentityRecipe(ingredients, instructions)

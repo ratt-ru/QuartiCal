@@ -27,8 +27,8 @@ if base_schema is None:
     class _GainSchema(object):
         gain: Dict[str, Parameter]
 
-    # The gain section is loaded explicitly, since we need to form up multiple
-    # instances.
+    # The gain and model sections are loaded explicitly, since we need to form
+    # up multiple instances.
     gain_schema = oc.merge(
         oc.structured(_GainSchema),
         oc.load(f"{dirname}/gain_schema.yaml")
@@ -41,4 +41,22 @@ if base_schema is None:
         "Gain",
         bases=(BaseConfigSection,),
         post_init=POST_INIT_MAP['gain']
+    )
+
+    @dataclass
+    class _ModelComponentSchema(object):
+        model_component: Dict[str, Parameter]
+
+    model_component_schema = oc.merge(
+        oc.structured(_ModelComponentSchema),
+        oc.load(f"{dirname}/model_component_schema.yaml")
+    )
+    model_component_schema = model_component_schema.model_component
+
+    # Create model dataclass.
+    ModelComponent = schema_utils.schema_to_dataclass(
+        model_component_schema,
+        "ModelComponent",
+        bases=(BaseConfigSection,),
+        post_init=POST_INIT_MAP['model_component']
     )

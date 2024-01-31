@@ -1,5 +1,15 @@
 from daskms.fsspec_store import DaskMSStore
 from quartical.gains import TERM_TYPES
+from quartical.config import ModelComponent
+
+
+def get_component_dict(opts):
+
+    return {
+        k: getattr(opts, k)
+        for k in opts.__dataclass_fields__.keys()
+        if isinstance(getattr(opts, k), ModelComponent)
+    }
 
 
 def gains_to_chain(opts):

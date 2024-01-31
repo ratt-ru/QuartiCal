@@ -24,7 +24,7 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 astro-tigger-lsm = ">=1.7.2, <=1.7.3"
 codex-africanus = {extras = ["dask", "scipy", "astropy", "python-casacore"], version = ">=0.3.4, <=0.3.4"}
 colorama = ">=0.4.6, <=0.4.6"
@@ -40,6 +40,12 @@ requests = ">=2.31.0, <=2.31.0"
 "ruamel.yaml" = ">=0.17.26, <=0.17.40"
 stimela = "2.0rc8"
 tbump = ">=6.10.0, <=6.11.0"
+ducc0 = "^0.31.0"
+sympy = "^1.12"
+nifty8 = {git = "https://gitlab.mpcdf.mpg.de/ift/nifty.git", branch = "NIFTy_8"}
+
+[tool.poetry.extras]
+degrid = ["ducc0", "sympy"]
 
 [tool.poetry.scripts]
 goquartical = 'quartical.executor:execute'

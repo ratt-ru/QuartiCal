@@ -34,3 +34,7 @@ class DiagComplex(Complex):
     def __init__(self, term_name, term_opts):
 
         super().__init__(term_name, term_opts)
+
+        # needed for smoothing
+        if 'jhj' not in self.interpolation_targets:
+            self.interpolation_targets.append('jhj')

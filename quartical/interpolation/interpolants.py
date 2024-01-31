@@ -1,10 +1,23 @@
 # -*- coding: utf-8 -*-
 from loguru import logger  # noqa
+import logging
+# suppress the annoying jax logging if installed
+try:
+    import jax.numpy as jnp
+    logging.getLogger("jax._src.xla_bridge").addFilter(
+        logging.Filter("No GPU/TPU found, falling back to CPU."))
+except Exception as e:
+    pass
+import nifty8 as ift
+from nifty8.logger import logger
+from ducc0.fft import good_size
 import dask.array as da
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator as RGI
 from numba import njit
 from quartical.utils.numba import JIT_OPTIONS
+from pathlib import Path
+import warnings
 
 
 def linear2d_interpolate_gains(source_xds, target_xds):
@@ -423,3 +436,194 @@ def interpolate_missing(input_xda, mode="normal"):
     )
 
     return input_xda.copy(data=interp)
+
+
+def smooth_ampphase(gains,
+                    jhj,
+                    flags,
+                    ti,
+                    fi,
+                    to,
+                    fo,
+                    ant,
+                    corr,
+                    combine_by_time,
+                    output_directory,
+                    detrend=True,
+                    padding=1.2):
+    '''
+    Use MGVI in nifty to smooth amplitudes and phases.
+    Here to and fo are the locations where we want to recosntruct the field
+    whereas ti and fi are the locations where we have data.
+    '''
+    # remove all NIFTy logger handles and set only a file handler
+    for handler in logger.handlers:
+        logger.removeHandler(handler)
+    if isinstance(ant, np.ndarray):
+        ant=ant[0]
+    if isinstance(corr, np.ndarray):
+        corr=corr[0]
+    logdir = f'{output_directory}/nifty_reports/antenna{ant}_corr{corr}'
+    path = Path(logdir)
+    path.mkdir(parents=True, exist_ok=True)
+    fh = logging.FileHandler(f'{logdir}/output.log', mode='w')
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+
+    # weighted sum over time axis
+    ntimei, nfreqi, nanti, ndiri, ncorri = gains.shape
+    ntimeo = to.size
+    nfreqo = fo.size
+    assert ti.size == ntimei
+    assert fi.size == nfreqi
+    assert nanti == 1  # chunked to 1
+    assert ndiri == 1
+    assert ncorri == 1  # chunked to 1
+    gains = gains[:, :, 0, 0, 0]
+    jhj = jhj[:, :, 0, 0, 0].real
+    flags = flags[:, :, 0, 0].astype(bool)
+    jhj[flags] = 0.0
+    if combine_by_time:
+        # TODO - detrend before combining?
+        # keep time axis
+        gain = gains[0:1]
+        wgt = jhj[0:1]
+        for t in range(1, ntimei):
+            gain[0:1] += jhj[t:t+1] * gains[t:t+1]
+            wgt[0:1] += jhj[t:t+1]
+        # normalise by sum of weights
+        mask = wgt > 0
+        gain[mask] = gain[mask]/wgt[mask]
+    else:
+        gain = gains
+        wgt = jhj
+
+    ntsmooth = gain.shape[0]
+    smooth_gains = np.ones((ntsmooth, nfreqi), dtype=gains.dtype)
+    t = 0
+    while t < ntsmooth:
+        mask = wgt[t] > 0
+        if not mask.any():
+            # drop time slot to avoid interpolating to it
+            # only do this if there is more than one time to smooth
+            # otherwise there is no array to return
+            if ntsmooth > 1:
+                idx = list(np.arange(ntsmooth))
+                idx.pop(t)
+                smooth_gains = smooth_gains[idx]
+                ntsmooth -= 1
+            # do not increment t
+            continue
+        # set up correlated field model (hardcoding hypers for now)
+        # redo for each t so that each reduction is randomly initialised
+        npix_f = good_size(int(nfreqi*padding))
+        pospace_large = ift.RGSpace([npix_f])
+        pospace_small = ift.RGSpace([nfreqi])
+        spfreq_amp = ift.RGSpace(npix_f)
+        spfreq_phase = ift.RGSpace(npix_f)
+
+        # amplitude model
+        cfmakera = ift.CorrelatedFieldMaker('amplitude')
+        cfmakera.add_fluctuations(spfreq_amp, (0.1, 1e-2), None, None, (-3, 1),
+                                'f')
+        cfmakera.set_amplitude_total_offset(0., (1e-2, 1e-6))
+        cf_amp = cfmakera.finalize()
+
+        normalized_amp = cfmakera.get_normalized_amplitudes()
+        pspec_freq_amp = normalized_amp[0]**2
+
+        # phase model
+        cfmakerp = ift.CorrelatedFieldMaker('phase')
+        cfmakerp.add_fluctuations(spfreq_phase, (0.1, 1e-2), None, None, (-3, 1),
+                                'f')
+        cfmakerp.set_amplitude_total_offset(0., (1e-2, 1e-6))
+        cf_phase = cfmakerp.finalize()
+
+        normalized_phase = cfmakerp.get_normalized_amplitudes()
+        pspec_freq_phase = normalized_phase[0]**2
+
+        TF = ift.SliceOperator(cf_amp.target, pospace_small.shape)
+
+        signal = TF @ ift.exp(cf_amp.real + 1j*cf_phase.real)
+
+        cf_amp_small = TF @ cf_amp
+        cf_phase_small = TF @ cf_phase
+
+        tmp = ift.makeField(signal.target, ~mask)
+        # TODO - this should include down-sampling then we can skip the
+        # frequency interpolation below
+        R = ift.MaskOperator(tmp)
+        dspace = R.target
+        data = ift.makeField(dspace, gain[t, mask])
+        signal_response = R(signal)
+
+        # Minimization parameters
+        n_samples = 10
+        n_iterations = 10
+        ic_sampling = ift.AbsDeltaEnergyController(deltaE=0.005, iteration_limit=150)
+        ic_newton = ift.AbsDeltaEnergyController(deltaE=0.005, iteration_limit=25)
+        minimizer = ift.NewtonCG(ic_newton, enable_logging=True)
+
+        # Set up likelihood energy and information Hamiltonian
+        W = wgt[t, mask]
+        assert (W > 0).all()
+        covinv = ift.makeField(dspace, W)
+        Ninv = ift.DiagonalOperator(covinv, sampling_dtype=complex)
+        inp = (ift.Adder(data, neg=True) @ signal_response)  # required to compute the resid for VariableCovGaussianEnergy
+        BC = ift.ContractionOperator(dspace, None).adjoint   # broadcast scalar over everything (None)
+        weightop = ift.DiagonalOperator(ift.makeField(dspace, W))
+        scalarop = ift.GammaOperator(BC.domain, mean=2.0, var=2).ducktape('icov_scalar')
+        icovop = weightop @ BC @ scalarop.real
+        inp = inp.ducktape_left('resid') + icovop.ducktape_left('icov')
+        likelihood_energy = ift.VariableCovarianceGaussianEnergy(R.target, 'resid', 'icov',
+                                                                    data.dtype) @ inp
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            samples = ift.optimize_kl(likelihood_energy,
+                                    n_iterations,
+                                    n_samples,
+                                    minimizer,
+                                    ic_sampling,
+                                    None)  # for GeoVI
+
+        # get the mean
+        signal_mean = samples.average(signal.force).val
+
+        amp = np.abs(signal_mean)
+        phase = np.angle(signal_mean)
+        # remove slope and offset excluding flagged points
+        # since the edges could be extrapolated
+        if detrend:
+            msk = wgt[t] > 0
+            theta = np.polyfit(fi[msk], phase[msk], 1)
+            phase -= np.polyval(theta, fi)
+
+        smooth_gains[t] = amp*np.exp(1j*phase)
+        t += 1
+
+    # 2D interpolation in this case
+    # TODO - fill_value=None will extrapolate with linear function but not
+    # sure this is what we want. Is constant edge exptrapolation possible?
+    if ntsmooth > 1:
+        ampo = RGI((ti, fi), np.abs(smooth_gains),
+                   bounds_error=False, fill_value=None, method='linear')
+        phaseo = RGI((ti, fi), np.angle(smooth_gains),
+                     bounds_error=False, fill_value=None, method='linear')
+        tt, ff = np.meshgrid(to, fo, indexing='ij')
+        output_gains = ampo((tt, ff)) * np.exp(1j*phaseo((tt, ff)))
+    else:
+        amp = np.abs(smooth_gains[0])
+        amp = np.interp(fo, fi, amp)
+        phase = np.angle(smooth_gains[0])
+        phase = np.interp(fo, fi, phase)
+        signal_mean = amp*np.exp(1j*phase)
+        output_gains = np.tile(signal_mean[None, :], (to.size, 1))
+
+    fh.flush()
+    fh.close()
+    # broadcast to expected output shape
+    return output_gains[:, :, None, None, None]
+
+

@@ -1,5 +1,5 @@
 import pytest
-from quartical.config.preprocess import transcribe_recipe
+from quartical.config.preprocess import transcribe_legacy_recipe
 from quartical.config.internal import gains_to_chain
 
 
@@ -40,4 +40,4 @@ def chain(opts):
 
 @pytest.fixture(scope="module")
 def recipe(model_opts):
-    return transcribe_recipe(model_opts.recipe)
+    return transcribe_legacy_recipe(model_opts.recipe)
