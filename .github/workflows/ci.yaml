@@ -45,8 +45,8 @@ jobs:
 
       - name: Echo workspace
         run: |
-        echo $GITHUB_WORKSPACE
-        ls $GITHUB_WORKSPACE
+          echo $GITHUB_WORKSPACE
+          ls $GITHUB_WORKSPACE
 
       - name: Retouch
         run: |
