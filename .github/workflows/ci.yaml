@@ -51,12 +51,13 @@ jobs:
       - name: Retouch
         run: |
           cd $GITHUB_WORKSPACE
-          ls
+          ls -lrt
           git ls-tree -r --name-only HEAD | while read filename; do
             unixtime=$(git log -1 --format="%at" -- "${filename}")
             touchtime=$(date -d @$unixtime +'%Y%m%d%H%M.%S')
             touch -t ${touchtime} "${filename}"
           done
+          ls -lrt
 
       # - name: Retouch
       #   run: find $GITHUB_WORKSPACE -type f -name "*.py" -exec touch -t 01010000 {} +
