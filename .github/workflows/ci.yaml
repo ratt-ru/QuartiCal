@@ -15,6 +15,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     continue-on-error: true
 
+    env:
+      NUMBA_CACHE_DIR: /tmp/numba-cache
+
     strategy:
       matrix:
         os: [ubuntu-20.04, ubuntu-22.04]
@@ -38,7 +41,27 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v3
         with:
-          fetch-depth: 1
+          fetch-depth: 0  # Full fetch required to restore times.
+
+      - name: Restore repo times
+        uses: chetan/git-restore-mtime-action@v2
+
+      # Upgrade pip and setuptools
+      - name: Upgrade pip and setuptools
+        run: python -m pip install -U pip setuptools
+
+      - name: Create Key and Numba Cache Directory
+        id: numba-key
+        run: |
+          mkdir -p ${{ env.NUMBA_CACHE_DIR }}
+          echo "timestamp=$(/bin/date -u '+%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Cache Numba Kernels
+        uses: actions/cache@v3
+        with:
+          key: numba-cache-${{ matrix.python-version }}-${{ steps.numba-key.outputs.timestamp }}
+          restore-keys: numba-cache-${{ matrix.python-version }}-
+          path: ${{ env.NUMBA_CACHE_DIR }}
 
       - name: List the measures directory
         run: curl ftp://ftp.astron.nl/outgoing/Measures/ > measures_dir.txt
