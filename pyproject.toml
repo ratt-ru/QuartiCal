@@ -24,7 +24,7 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.9, <3.13"
+python = ">=3.9, <3.12"
 astro-tigger-lsm = ">=1.7.2, <=1.7.3"
 codex-africanus = {extras = ["dask", "scipy", "astropy", "python-casacore"], version = ">=0.3.5, <=0.3.5"}
 colorama = ">=0.4.6, <=0.4.6"
