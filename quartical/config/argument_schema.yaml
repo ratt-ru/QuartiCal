@@ -417,3 +417,9 @@ dask:
     info:
       Which dask scheduler to use. The default, threads, is the most
       appropriate for non-cluster use.
+  
+  scheduler_plugin:
+    dtype: bool
+    default: true
+    info:
+      Enable or disable the dask scheduler plugin.
