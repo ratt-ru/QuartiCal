@@ -25,8 +25,8 @@ def linear2d_interpolate_gains(source_xds, target_xds):
         i_t_axis, i_f_axis = source_xds.GAIN_AXES[:2]
         t_t_axis, t_f_axis = target_xds.GAIN_AXES[:2]
 
-    i_t_dim = source_xds.dims[i_t_axis]
-    i_f_dim = source_xds.dims[i_f_axis]
+    i_t_dim = source_xds.sizes[i_t_axis]
+    i_f_dim = source_xds.sizes[i_f_axis]
 
     interp_axes = {}
 
@@ -35,9 +35,30 @@ def linear2d_interpolate_gains(source_xds, target_xds):
     if i_f_dim > 1:
         interp_axes[i_f_axis] = target_xds[t_f_axis].data
 
-    target_xda = source_xds.params.interp(
+    # NOTE: The below is the path of least resistance but may not be the most
+    # efficient method for this mixed-mode interpolation - it may be possible
+    # to do better using multiple RegularGridInterpoator objects.
+
+    # Interpolate using linear interpolation, filling points outside the
+    # domain with NaNs.
+    in_domain_xda = source_xds.params.interp(
         interp_axes,
+        kwargs={"fill_value": np.nan}
+    )
+
+    # Interpolate using nearest-neighbour interpolation, extrapolating points
+    # outside the domain.
+    out_domain_xda = source_xds.params.interp(
+        interp_axes,
+        method="nearest",
         kwargs={"fill_value": "extrapolate"}
+    )
+
+    # Combine the linear and nearest neighbour interpolation done above i.e.
+    # use use linear interpolation inside the domain and nearest-neighbour
+    # interpolation anywhere extrapolation was required.
+    target_xda = in_domain_xda.where(
+        da.isfinite(in_domain_xda), out_domain_xda
     )
 
     if i_t_dim == 1:
@@ -103,12 +124,12 @@ def spline2d_interpolate_gains(source_xds, target_xds):
         i_t_axis, i_f_axis = source_xds.GAIN_AXES[:2]
         t_t_axis, t_f_axis = target_xds.GAIN_AXES[:2]
 
-    if source_xds.dims[i_t_axis] < 4 or source_xds.dims[i_f_axis] < 4:
+    if source_xds.sizes[i_t_axis] < 4 or source_xds.sizes[i_f_axis] < 4:
         raise ValueError(
             f"Cubic spline interpolation requires at least four "
             f"values along an axis. After concatenation, the "
             f"(time, freq) dimensions of the interpolating dataset were "
-            f"{(source_xds.dims[i_t_axis], source_xds.dims[i_f_axis])}."
+            f"{(source_xds.sizes[i_t_axis], source_xds.sizes[i_f_axis])}."
         )
 
     interp_arr = da.blockwise(
@@ -120,8 +141,8 @@ def spline2d_interpolate_gains(source_xds, target_xds):
         target_xds[t_f_axis].values, None,
         dtype=np.float64,
         adjust_chunks={
-            "t": target_xds.dims[t_t_axis],
-            "f": target_xds.dims[t_f_axis]
+            "t": target_xds.sizes[t_t_axis],
+            "f": target_xds.sizes[t_f_axis]
         }
     )
 

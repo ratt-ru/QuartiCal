@@ -134,7 +134,7 @@ def add_calibration_graph(
     """
 
     # TODO: Does this check belong here or elsewhere?
-    have_dd_model = any(xds.dims['dir'] > 1 for xds in data_xds_list)
+    have_dd_model = any(xds.sizes['dir'] > 1 for xds in data_xds_list)
     have_dd_chain = any(term.direction_dependent for term in chain)
 
     if have_dd_model and not have_dd_chain:
@@ -253,6 +253,18 @@ def make_visibility_output(
 
     itr = enumerate(zip(data_xds_list, mapping_xds_list))
 
+    if output_opts.subtract_directions:
+        n_dir = data_xds_list[0].sizes['dir']  # Should be the same over xdss.
+        requested = set(output_opts.subtract_directions)
+        valid = set(range(n_dir))
+        invalid = requested - valid
+        if invalid:
+            raise ValueError(
+                f"User has specified output.subtract_directions as "
+                f"{requested} but the following directions are not present "
+                f"in the model: {invalid}."
+            )
+
     for xds_ind, (data_xds, mapping_xds) in itr:
         data_col = data_xds.DATA.data
         model_col = data_xds.MODEL_DATA.data
@@ -271,7 +283,7 @@ def make_visibility_output(
             [mapping_xds.get(f"{k}_dir_map").data for k in gain_terms.keys()]
         )
 
-        corr_mode = data_xds.dims["corr"]
+        corr_mode = data_xds.sizes["corr"]
 
         is_bda = hasattr(data_xds, "ROW_MAP")  # We are dealing with BDA.
         row_map = data_xds.ROW_MAP.data if is_bda else None

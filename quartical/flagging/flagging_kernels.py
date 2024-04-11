@@ -99,6 +99,7 @@ def compute_mad_flags(
     gbl_threshold,
     bl_threshold,
     max_deviation,
+    corr_sel,
     n_ant
 ):
 
@@ -110,11 +111,11 @@ def compute_mad_flags(
 
     scale_factor = 1.4826
 
-    bl_threshold2 = bl_threshold ** 2
-    gbl_threshold2 = gbl_threshold ** 2
-    max_deviation2 = max_deviation ** 2
+    bl_threshold2 = bl_threshold ** 2 or np.inf
+    gbl_threshold2 = gbl_threshold ** 2 or np.inf
+    max_deviation2 = max_deviation ** 2 or np.inf
 
-    for corr in range(n_corr):
+    for corr in corr_sel:
 
         gbl_mad_real = gbl_mad_and_med_real[0, 0, corr, 0] * scale_factor
         gbl_med_real = gbl_mad_and_med_real[0, 0, corr, 1]
