@@ -184,9 +184,9 @@ class TecAndOffset(ParameterizedGain):
 
                 # path00 = "/home/russeeawon/testing/lofar_ms_1gc_solve/"
                 # path00 = "/home/russeeawon/testing/lofar_ms_1gc_solve_solint1/"
-                # path00 = "/home/russeeawon/testing/thesis_figures/expt1/"
+                path00 = "/home/russeeawon/testing/thesis_figures/expt1/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt2/"
-                path00 = "/home/russeeawon/testing/thesis_figures/expt3/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt3/"
 
 
                 # path01 = "1gc_solve_inparts/"
