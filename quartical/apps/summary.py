@@ -99,7 +99,7 @@ def feed_info(path):
     for i, arrs in enumerate(zipper):
         for vals in zip(*arrs):
             msg += f"    {i:<4} {vals[0]:<8} {' '.join(vals[1]):<8} " \
-                   f"{'{:.4f} {:.4f}'.format(*vals[2]):<16}\n"
+                   f"{' '.join([f'{x:.4f}' for x in vals[2]]):<16}\n"
 
     logger.info(msg)
 
@@ -116,25 +116,32 @@ def field_info(path):
 
     field_xds = xds_from_storage_table(path + "::FIELD")[0]
 
-    ids = [i for i in field_xds.SOURCE_ID.values]
+    field_ids = list(range(field_xds.sizes['row']))
+    source_ids = [i for i in field_xds.SOURCE_ID.values]
     names = [n for n in field_xds.NAME.values]
     phase_dirs = [pd for pd in field_xds.PHASE_DIR.values]
     ref_dirs = [rd for rd in field_xds.REFERENCE_DIR.values]
     delay_dirs = [dd for dd in field_xds.REFERENCE_DIR.values]
 
     msg = "Field summary:\n"
-    msg += "    {:<4} {:<16} {:<16} {:<16} {:<16}\n".format("ID", "NAME",
-                                                            "PHASE_DIR",
-                                                            "REF_DIR",
-                                                            "DELAY_DIR")
+    msg += "    {:<10} {:<10} {:<16} {:<16} {:<16} {:<16}\n".format(
+        "FIELD_ID",
+        "SOURCE_ID",
+        "NAME",
+        "PHASE_DIR",
+        "REF_DIR",
+        "DELAY_DIR"
+    )
 
-    zipper = zip(ids, names, phase_dirs, ref_dirs, delay_dirs)
+    zipper = zip(
+        field_ids, source_ids, names, phase_dirs, ref_dirs, delay_dirs
+    )
 
     for vals in zipper:
-        msg += f"    {vals[0]:<4} {vals[1]:<16} " \
-               f"{'{:.4f} {:.4f}'.format(*vals[2][0]):<16} " \
+        msg += f"    {vals[0]:<10} {vals[1]:<10} {vals[2]:<16} " \
                f"{'{:.4f} {:.4f}'.format(*vals[3][0]):<16} " \
-               f"{'{:.4f} {:.4f}'.format(*vals[4][0]):<16}\n"
+               f"{'{:.4f} {:.4f}'.format(*vals[4][0]):<16} " \
+               f"{'{:.4f} {:.4f}'.format(*vals[5][0]):<16}\n"
 
     logger.info(msg)
 
@@ -189,7 +196,7 @@ def spw_info(path):
         chunks={"row": 1, "chan": -1}
     )
 
-    n_chan_per_spw = [xds.dims["chan"] for xds in spw_xds_list]
+    n_chan_per_spw = [xds.sizes["chan"] for xds in spw_xds_list]
 
     bw_per_spw = [xds.TOTAL_BANDWIDTH.values.item() for xds in spw_xds_list]
 
@@ -234,9 +241,9 @@ def pointing_info(path):
 
 def dimension_summary(xds_list):
 
-    rows_per_xds = [xds.dims["row"] for xds in xds_list]
-    chan_per_xds = [xds.dims["chan"] for xds in xds_list]
-    corr_per_xds = [xds.dims["corr"] for xds in xds_list]
+    rows_per_xds = [xds.sizes["row"] for xds in xds_list]
+    chan_per_xds = [xds.sizes["chan"] for xds in xds_list]
+    corr_per_xds = [xds.sizes["corr"] for xds in xds_list]
 
     utime_per_xds = [np.unique(xds.TIME.values).size for xds in xds_list]
 
