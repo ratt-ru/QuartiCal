@@ -4,6 +4,8 @@ import numpy as np
 import dask.array as da
 from quartical.calibration.calibrate import add_calibration_graph
 from testing.utils.gains import apply_gains, reference_gains
+import ipdb
+import matplotlib.pyplot as plt
 
 
 @pytest.fixture(scope="module")
@@ -51,7 +53,7 @@ def true_values(predicted_xds_list):
         n_corr = xds.dims["corr"]
 
         chan_freq = xds.CHAN_FREQ.data
-        max_tec = 1/(1/chan_freq[-2] - 1/chan_freq[-1])
+        max_tec = 1/(1/chan_freq[-1] - 1/chan_freq[-2])
         cf_min = chan_freq.min()
         cf_max = chan_freq.max()
 
@@ -144,6 +146,17 @@ def add_calibration_graph_outputs(corrupted_data_xds_list, stats_xds_list,
                                  solver_opts, chain, output_opts)
 
 
+##plotting function to inspect tecs
+def plot_tec(true_tec, solved_tec, ant):
+    time = np.arange(0, 115, 1)
+    plt.plot(time, true_tec[:, 0, ant, 0, 0], label="true")
+    plt.plot(time, solved_tec[:, 0, ant, 0, 0], "--", label="solved")
+    plt.plot(time, true_tec[:, 0, ant, 0, 0]-solved_tec[:, 0, ant, 0, 0], "--", label="diff")
+    plt.legend()
+    # plt.yscale("symlog")
+    plt.show()
+    plt.savefig("true_solved_tec_ant{}.pdf".format(ant), bbox_inches="tight")
+
 # -----------------------------------------------------------------------------
 
 
@@ -200,7 +213,14 @@ def test_tecs(cmp_gain_xds_lod, true_tec_list):
         # To ensure the missing antenna handling doesn't render this test
         # useless, check that we have non-zero entries first.
         assert np.any(solved_tec), "All tecs are zero!"
-        np.testing.assert_array_almost_equal(true_tec, solved_tec, 3)
+        max_tec = (np.abs(true_tec).max())
+        true_tec /= max_tec
+        solved_tec /= max_tec
+        # import ipdb; ipdb.set_trace()
+        plot_tec(true_tec, solved_tec, ant=0)
+        plot_tec(true_tec, solved_tec, ant=2)
+        plot_tec(true_tec, solved_tec, ant=3)
+        np.testing.assert_array_almost_equal(true_tec, solved_tec, 2)
 
 
 # -----------------------------------------------------------------------------

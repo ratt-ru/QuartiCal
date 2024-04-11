@@ -146,7 +146,7 @@ class TecAndOffset(ParameterizedGain):
                 # values
                 delta_freq = invfreq[-2] - invfreq[-1]
                 max_tec = 2 * np.pi / delta_freq
-                super_res = 100
+                super_res = 1 #100
                 nyq_freq = 1./(2*(invfreq.max() - invfreq.min()))
                 lim0 = 0.5 * max_tec
 
@@ -179,7 +179,27 @@ class TecAndOffset(ParameterizedGain):
                     fft_data_pk = np.abs(vis_finufft)
                     tec_est[:, k] = fft_freq[np.argmax(fft_data_pk, axis=1)]
 
+
                 tec_est[~valid_ant, :] = 0
+
+                # path00 = "/home/russeeawon/testing/lofar_ms_1gc_solve/"
+                # path00 = "/home/russeeawon/testing/lofar_ms_1gc_solve_solint1/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt1/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt2/"
+                path00 = "/home/russeeawon/testing/thesis_figures/expt3/"
+
+
+                # path01 = "1gc_solve_inparts/"
+                # path01 = "1gc_solve_gtkb_parts/"
+                # path01 = "1gc_solve_gtb/"
+                # path01 = "1gc_solve_inparts/"
+                path01 = ""
+
+                path0 = path00+path01
+                np.save(path0+"tecest.npy", tec_est)
+                np.save(path0+"tec_fftarr.npy", fft_arr)
+                np.save(path0+"tec_fft_freq.npy", fft_freq)
+
 
                 for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
                     if p == ref_ant:
@@ -190,6 +210,7 @@ class TecAndOffset(ParameterizedGain):
                         params[t, uf, p, 0, 1] = tec_est[p, 0]
                         if n_corr > 1:
                             params[t, uf, p, 0, 3] = tec_est[p, 1]
+            
 
         # Convert the parameters into gains.
         tec_and_offset_params_to_gains(
