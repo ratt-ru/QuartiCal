@@ -38,7 +38,7 @@ omegaconf = ">=2.3.0, <=2.3.0"
 pytest = ">=7.3.1, <=7.4.4"
 requests = ">=2.31.0, <=2.31.0"
 "ruamel.yaml" = ">=0.17.26, <=0.17.40"
-stimela = { git = "https://github.com/caracal-pipeline/stimela.git" , branch = "issue-275" }
+stimela = { git = "https://github.com/caracal-pipeline/stimela.git"}
 tbump = ">=6.10.0, <=6.11.0"
 
 [tool.poetry.scripts]
