@@ -7,7 +7,7 @@ from dask.order import ndependencies
 
 
 def install_plugin(dask_scheduler=None, **kwargs):
-    dask_scheduler.add_plugin(AutoRestrictor(**kwargs), idempotent=True)
+    dask_scheduler.add_plugin(ScatterSolvers(**kwargs), idempotent=True)
 
 
 def unravel_deps(hlg_deps, name, unravelled_deps=None):
@@ -221,3 +221,49 @@ def graph_metrics(dependencies, dependents, total_dependencies):
             if not num_needed[child]:
                 current_append(child)
     return result
+
+
+class ScatterSolvers(SchedulerPlugin):
+
+    def update_graph(self, scheduler, dsk=None, keys=None, restrictions=None,
+                     **kw):
+        """Processes dependencies to assign tasks to specific workers."""
+
+        workers = list(scheduler.workers.keys())
+        n_worker = len(workers)
+
+        tasks = scheduler.tasks
+        dependencies = kw["dependencies"]
+        dependents = reverse_dict(dependencies)
+
+        solver_tasks = [
+            k for k in dependencies.keys() if k[0].startswith('solver_wrapper')
+        ]
+
+        solver_task_groups = []
+
+        for st in solver_tasks:
+
+            solver_dependencies = unravel_deps(dependencies, st)
+            solver_dependendents = unravel_deps(dependents, st)
+
+            solver_task_groups.append(
+                {st} | solver_dependencies | solver_dependendents
+            )
+
+        worker_loads = {wkr: 0 for wkr in workers}
+
+        for task_group in solver_task_groups:
+
+            assignee = min(worker_loads, key=worker_loads.get)
+            worker_loads[assignee] += len(task_group)
+
+            for task_name in task_group:
+                try:
+                    task = tasks[task_name]
+                except KeyError:  # Keys may not have an assosciated task.
+                    continue
+                if task.worker_restrictions is None:
+                    task.worker_restrictions = set()
+                task.worker_restrictions |= {assignee}
+                task.loose_restrictions = False
