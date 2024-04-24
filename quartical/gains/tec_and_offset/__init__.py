@@ -144,16 +144,15 @@ class TecAndOffset(ParameterizedGain):
 
                 # delta_freq is the smallest difference between the frequency
                 # values
-                delta_freq = invfreq[-2] - invfreq[-1]
+                delta_freq = invfreq[-2] - invfreq[-1] #frequency resolution
                 max_tec = 2 * np.pi / delta_freq
-                super_res = 1 #100
-                nyq_freq = 1./(2*(invfreq.max() - invfreq.min()))
-                lim0 = 0.5 * max_tec
+                nyq_rate = 1./(2*(invfreq.max() - invfreq.min()))
+                sr = max_tec #sampling_rate
 
                 # choosing resolution
-                n = int(super_res * max_tec / nyq_freq)
+                n = int(max_tec/ nyq_rate)
                 # domain to pick tec_est from
-                fft_freq = np.linspace(-lim0, lim0, n)
+                fft_freq = np.linspace(0.5*-sr, 0.5*sr, n)
 
                 if n_corr == 1:
                     n_param_tec = 1
