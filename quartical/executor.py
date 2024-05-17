@@ -187,6 +187,3 @@ def _execute(exitstack):
     logger.success("{:.2f} seconds taken to execute graph.", time.time() - t0)
 
     log_summary_stats(stats_xds_list)
-
-    if dask_opts.scheduler == "distributed":
-        client.close()  # Close this client, hopefully gracefully.
