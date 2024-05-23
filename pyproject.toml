@@ -26,11 +26,11 @@ include = [
 [tool.poetry.dependencies]
 python = ">=3.9, <3.12"
 astro-tigger-lsm = ">=1.7.2, <=1.7.3"
-codex-africanus = {extras = ["dask", "scipy", "astropy", "python-casacore"], version = ">=0.3.6, <=0.3.6"}
+codex-africanus = {extras = ["dask", "scipy", "astropy", "python-casacore"], version = "^0.3.7"}
 colorama = ">=0.4.6, <=0.4.6"
 columnar = ">=1.4.1, <=1.4.1"
 dask = {extras = ["diagnostics"], version = ">=2023.5.0, <=2024.4.2"}
-dask-ms = {extras = ["s3", "xarray", "zarr"], version = ">=0.2.20, <=0.2.20"}
+dask-ms = {extras = ["s3", "xarray", "zarr"], version = "^0.2.20"}
 distributed = ">=2023.5.0, <=2024.4.2"
 loguru = ">=0.7.0, <=0.7.2"
 matplotlib = ">=3.5.1, <=3.8.2"
