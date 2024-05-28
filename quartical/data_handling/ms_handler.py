@@ -344,8 +344,6 @@ def preprocess_xds_list(xds_list, ms_opts):
         # Anywhere we have a broken datapoint, zero it. These points will
         # be flagged below. TODO: This can be optimized.
 
-        data_col = da.where(da.isfinite(data_col), data_col, 0)
-
         weight_col = initialize_weights(xds,
                                         data_col,
                                         ms_opts.weight_column,
