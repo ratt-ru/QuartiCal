@@ -94,7 +94,9 @@ def _execute(exitstack):
         # POV, run_on_scheduler is a debugging function.
         # `dask-scheduler --preload install_plugin.py` is the standard but
         # less convenient pattern.
-        client.run_on_scheduler(install_plugin)
+        if dask_opts.scheduler_plugin:
+            client.run_on_scheduler(install_plugin)
+            logger.info("Enabling scheduler plugin.")
 
         client.wait_for_workers(dask_opts.workers)
 
