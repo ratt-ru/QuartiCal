@@ -11,6 +11,8 @@ from quartical.gains.general.flagging import (
     apply_gain_flags_to_gains,
     apply_param_flags_to_params
 )
+from quartical.gains.general.generics import compute_corrected_residual
+
 
 # Overload the default measurement set inputs to include the frequencies.
 ms_inputs = namedtuple(
@@ -136,56 +138,131 @@ class TecAndOffset(ParameterizedGain):
                 fsel_data = ref_data[:, fsel]
                 valid_ant = fsel_data.any(axis=(1, 2))
                 ##in inverse frequency domain
-                invfreq = 1./chan_freq 
+                invfreq = 1./chan_freq
+
+                if n_corr == 1:
+                    n_param = 1
+                elif n_corr in (2, 4):
+                    n_param = 2
+                else:
+                    raise ValueError("Unsupported number of correlations.")
+
+
+                #Obtain the delay-related peak
+                nk = int(np.ceil(2 ** 15 / sel_n_chan)) * sel_n_chan
+                fft_datak = np.abs(
+                    np.fft.fft(fsel_data, n=nk, axis=1)
+                )
+                fft_datak = np.fft.fftshift(fft_datak, axes=1)
+
+                delta_freqk = chan_freq[1] - chan_freq[0]
+                fft_freqk = np.fft.fftfreq(nk, delta_freqk)
+                fft_freqk = np.fft.fftshift(fft_freqk)
+
+                delay_est = np.zeros((n_ant, n_param), dtype=np.float64)
+
+                delay_est_ind_00 = np.argmax(fft_datak[..., 0], axis=1)
+                delay_est_00 = fft_freqk[delay_est_ind_00]
+                delay_est_00[~valid_ant] = 0
+                delay_est[:, 0] = delay_est_00
+
+                if n_corr > 1:
+                    delay_est_ind_11 = np.argmax(fft_datak[..., -1], axis=1)
+                    delay_est_11 = fft_freqk[delay_est_ind_11]
+                    delay_est_11[~valid_ant] = 0
+                    delay_est[:, 1] = delay_est_11
                 
+
+                #Obtain the tec-related peak
                 ##factor for rescaling frequency
                 ffactor = 1 #1e8
                 invfreq *= ffactor
 
                 # delta_freq is the smallest difference between the frequency
                 # values
-                delta_freq = invfreq[-2] - invfreq[-1] #frequency resolution
-                max_tec = 2 * np.pi / delta_freq
+                delta_freqt = invfreq[-2] - invfreq[-1] #frequency resolution
+                max_tec = 2 * np.pi / delta_freqt
                 nyq_rate = 1./(2*(invfreq.max() - invfreq.min()))
                 sr = max_tec #sampling_rate
 
                 # choosing resolution
-                n = int(max_tec/ nyq_rate)
+                nt = int(max_tec/ nyq_rate)
                 # domain to pick tec_est from
-                fft_freq = np.linspace(0.5*-sr, 0.5*sr, n)
+                fft_freqt = np.linspace(0.5*-sr, 0.5*sr, nt)
 
-                if n_corr == 1:
-                    n_param_tec = 1
-                elif n_corr in (2, 4):
-                    n_param_tec = 2
-                else:
-                    raise ValueError("Unsupported number of correlations.")
 
-                tec_est = np.zeros((n_ant, n_param_tec), dtype=np.float64)
-                fft_arr = np.zeros(
-                    (n_ant, n, n_param_tec), dtype=fsel_data.dtype
+                tec_est = np.zeros((n_ant, n_param), dtype=np.float64)
+                fft_datat = np.zeros(
+                    (n_ant, nt, n_param), dtype=fsel_data.dtype
                 )
 
-                for k in range(n_param_tec):
+                for k in range(n_param):
                     vis_finufft = finufft.nufft1d3(
                         2 * np.pi * invfreq,
                         fsel_data[:, :, k],
-                        fft_freq,
+                        fft_freqt,
                         eps=1e-6,
                         isign=-1
                     )
-                    fft_arr[:, :, k] = vis_finufft
+                    fft_datat[:, :, k] = vis_finufft
                     fft_data_pk = np.abs(vis_finufft)
-                    tec_est[:, k] = fft_freq[np.argmax(fft_data_pk, axis=1)]
-
+                    tec_est[:, k] = fft_freqt[np.argmax(fft_data_pk, axis=1)]
 
                 tec_est[~valid_ant, :] = 0
 
+                #Checking for the dominant and sub-dominant peaks
+                for p in range(n_ant):
+                    for k in range(n_param):
+                        if delay_est[p, k] > tec_est[p, k]:
+                            param_est0 = delay_est[p, k]
+                            param_est1 = tec_est[p, k]
+                        elif delay_est[p, k] < tec_est[p, k]:
+                            param_est0 = tec_est[p, k]
+                            param_est1 = delay_est[p, k]
+
+
+                import ipdb; ipdb.set_trace()
+
+                for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
+                    if p == ref_ant:
+                        print(param_est0.shape)
+                        print(params.shape)
+                        params[t, uf, q, 0, 1] = -param_est0[q, 0]
+                        if n_corr > 1:
+                            params[t, uf, q, 0, 3] = -param_est0[q, 1]
+                    elif q == ref_ant:
+                        params[t, uf, p, 0, 1] = param_est0[p, 0]
+                        if n_corr > 1:
+                            params[t, uf, p, 0, 3] = param_est0[p, 1]
+
+                ##Question - where do I apply the above params before moving to the\
+                #next set of params?
+
+                #First, write the gains to a tuple
+                #Compute corrected_residual
+                # gains = 
+
+            
+                for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
+                    if p == ref_ant:
+                        params[t, uf, q, 0, 1] = -param_est1[q, 0]
+                        if n_corr > 1:
+                            params[t, uf, q, 0, 3] = -param_est1[q, 1]
+                    elif q == ref_ant:
+                        params[t, uf, p, 0, 1] = param_est1[p, 0]
+                        if n_corr > 1:
+                            params[t, uf, p, 0, 3] = param_est1[p, 1]
+                            
+
+
+
+
                 # path00 = "/home/russeeawon/testing/lofar_ms_1gc_solve/"
                 # path00 = "/home/russeeawon/testing/lofar_ms_1gc_solve_solint1/"
-                path00 = "/home/russeeawon/testing/thesis_figures/expt1/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt1/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt2/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt3/"
+                path00 = "/home/russeeawon/testing/thesis_figures/expt4/"
 
 
                 # path01 = "1gc_solve_inparts/"
@@ -195,20 +272,15 @@ class TecAndOffset(ParameterizedGain):
                 path01 = ""
 
                 path0 = path00+path01
+                np.save(path0+"delayest.npy", delay_est)
+                np.save(path0+"delay_fftarr.npy", fft_datak)
+                np.save(path0+"delay_fft_freq.npy", fft_freqk)
+
                 np.save(path0+"tecest.npy", tec_est)
-                np.save(path0+"tec_fftarr.npy", fft_arr)
-                np.save(path0+"tec_fft_freq.npy", fft_freq)
+                np.save(path0+"tec_fftarr.npy", fft_datat)
+                np.save(path0+"tec_fft_freq.npy", fft_freqt)
+                
 
-
-                for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
-                    if p == ref_ant:
-                        params[t, uf, q, 0, 1] = -tec_est[q, 0]
-                        if n_corr > 1:
-                            params[t, uf, q, 0, 3] = -tec_est[q, 1]
-                    elif q == ref_ant:
-                        params[t, uf, p, 0, 1] = tec_est[p, 0]
-                        if n_corr > 1:
-                            params[t, uf, p, 0, 3] = tec_est[p, 1]
             
 
         # Convert the parameters into gains.
