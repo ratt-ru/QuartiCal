@@ -225,10 +225,13 @@ class TecAndOffset(ParameterizedGain):
 
                 for p in range(n_ant):
                     for k in range(n_param):
-                        if delay_est[p, k] > tec_est[p, k]:
+                        if np.max(fft_datak[p, :, k], axis=1) > np.max(fft_datat[p, :, k], axis=1):
                             param_est[p, k] = delay_est[p, k]
-                        elif delay_est[p, k] < tec_est[p, k]:
+                        elif np.max(fft_datak[p, :, k], axis=1) < np.max(fft_datat[p, :, k], axis=1):
                             param_est[p, k] = tec_est[p, k]
+                        else:
+                            #Maybe both peaks are equal.
+                            param_est[p, k] = delay_est[p, k]
 
                 
                 # path00 = "/home/russeeawon/testing/lofar_ms_1gc_solve/"
