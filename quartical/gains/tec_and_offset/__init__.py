@@ -225,9 +225,9 @@ class TecAndOffset(ParameterizedGain):
 
                 for p in range(n_ant):
                     for k in range(n_param):
-                        if np.max(fft_datak[p, :, k], axis=1) > np.max(fft_datat[p, :, k], axis=1):
+                        if np.max(fft_datak[p, :, k]) > np.max(fft_datat[p, :, k]):
                             param_est[p, k] = delay_est[p, k]
-                        elif np.max(fft_datak[p, :, k], axis=1) < np.max(fft_datat[p, :, k], axis=1):
+                        elif np.max(fft_datak[p, :, k]) < np.max(fft_datat[p, :, k]):
                             param_est[p, k] = tec_est[p, k]
                         else:
                             #Maybe both peaks are equal.
