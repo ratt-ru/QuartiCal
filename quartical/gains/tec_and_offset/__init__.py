@@ -222,16 +222,19 @@ class TecAndOffset(ParameterizedGain):
                 # Consider a single array consisting of a mix of "only" dominant \
                 # peaks solved by each solver.
                 param_est = np.zeros((n_ant, n_param))
+                sel_ant = np.zeros((n_ant))
 
                 for p in range(n_ant):
                     for k in range(n_param):
-                        if np.max(fft_datak[p, :, k]) > np.max(fft_datat[p, :, k]):
-                            param_est[p, k] = delay_est[p, k]
-                        elif np.max(fft_datak[p, :, k]) < np.max(fft_datat[p, :, k]):
-                            param_est[p, k] = tec_est[p, k]
-                        else:
-                            #Maybe both peaks are equal.
-                            param_est[p, k] = delay_est[p, k]
+                        if p != ref_ant:
+                            #if dominant peak is associated with delay K, assign 1.
+                            if np.max(fft_datak[p, :, k]) >= np.max(fft_datat[p, :, k]):
+                                param_est[p, k] = delay_est[p, k]
+                                sel_ant[p] = 1
+                            elif np.max(fft_datak[p, :, k]) < np.max(fft_datat[p, :, k]):
+                                param_est[p, k] = tec_est[p, k]
+                            else:
+                                raise ValueError("Unsupported functionality.")
 
                 
                 # path00 = "/home/russeeawon/testing/lofar_ms_1gc_solve/"
@@ -257,6 +260,8 @@ class TecAndOffset(ParameterizedGain):
                 np.save(path0+"tecest.npy", tec_est)
                 np.save(path0+"tec_fftarr.npy", fft_datat)
                 np.save(path0+"tec_fft_freq.npy", fft_freqt)
+
+                np.save(path0+"sel_ant.npy", sel_ant)
 
 
             for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
