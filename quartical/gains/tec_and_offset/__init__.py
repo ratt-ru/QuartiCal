@@ -233,7 +233,7 @@ class TecAndOffset(ParameterizedGain):
                                 sel_ant[p] = 1
                             elif np.max(fft_datak[p, :, k]) < np.max(fft_datat[p, :, k]):
                                 param_est[p, k] = tec_est[p, k]
-                            elif np.allclose(np.max(fft_datak[p, :, k]), np.max(fft_datat[p, :, k]), atol=1e-8)
+                            elif np.allclose(np.max(fft_datak[p, :, k]), np.max(fft_datat[p, :, k]), atol=1e-8):
                                 param_est[p, k] = delay_est[p, k]
                                 sel_ant[p] = 2
                             else:
