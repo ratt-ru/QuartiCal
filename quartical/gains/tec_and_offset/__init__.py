@@ -228,7 +228,7 @@ class TecAndOffset(ParameterizedGain):
                     for k in range(n_param):
                         if p != ref_ant:
                             #if dominant peak is associated with delay K, assign 1.
-                            if np.max(fft_datak[p, :, k]) >= np.max(fft_datat[p, :, k]):
+                            if np.max(fft_datak[p, :, k]) > np.max(fft_datat[p, :, k]):
                                 param_est[p, k] = delay_est[p, k]
                                 sel_ant[p] = 1
                             elif np.max(fft_datak[p, :, k]) < np.max(fft_datat[p, :, k]):
@@ -245,8 +245,11 @@ class TecAndOffset(ParameterizedGain):
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt1/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt2/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt3/"
-                path00 = "/home/russeeawon/testing/thesis_figures/expt4a/"
-                # path00 = "/home/russeeawon/testing/thesis_figures/expt4b/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt4a/"
+                path00 = "/home/russeeawon/testing/thesis_figures/expt4b/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt5a/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt5b/"
+
 
 
                 # path01 = "1gc_solve_inparts/"
