@@ -249,7 +249,10 @@ class TecAndOffset(ParameterizedGain):
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt4a/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt4b/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt5a/"
-                path00 = "/home/russeeawon/testing/thesis_figures/expt5b/"
+                path00 = "/home/russeeawon/testing/thesis_figures/expt6a/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt6b/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt7a/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt7b/"
 
 
 
