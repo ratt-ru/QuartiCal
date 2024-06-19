@@ -234,6 +234,7 @@ class TecAndOffset(ParameterizedGain):
                             elif np.max(fft_datak[p, :, k]) < np.max(fft_datat[p, :, k]):
                                 param_est[p, k] = tec_est[p, k]
                             elif np.allclose(np.max(fft_datak[p, :, k]), np.max(fft_datat[p, :, k]), atol=1e-8):
+                                #default to delay peaks if similar
                                 param_est[p, k] = delay_est[p, k]
                                 sel_ant[p] = 2
                             else:
@@ -246,9 +247,9 @@ class TecAndOffset(ParameterizedGain):
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt2/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt3/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt4a/"
-                path00 = "/home/russeeawon/testing/thesis_figures/expt4b/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt4b/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt5a/"
-                # path00 = "/home/russeeawon/testing/thesis_figures/expt5b/"
+                path00 = "/home/russeeawon/testing/thesis_figures/expt5b/"
 
 
 
