@@ -230,14 +230,23 @@ class TecAndOffset(ParameterizedGain):
                         if p != ref_ant:
                             #if dominant peak is associated with delay K, assign 1.
                             if np.max(fft_datak[p, :, k]) > np.max(fft_datat[p, :, k]):
-                                param_est[p, k] = delay_est[p, k]
-                                sel_ant[p] = 1
+                                #In the case, the delay has been corrected, the param to be
+                                #estimated next is tec.
+                                if np.allclose(delay_est[p, k], 0., atol=1e-8):
+                                    param_est[p, k] = tec_est[p, k]
+                                else:
+                                    param_est[p, k] = delay_est[p, k]
+                                    sel_ant[p] = 1
                             elif np.max(fft_datak[p, :, k]) < np.max(fft_datat[p, :, k]):
-                                param_est[p, k] = tec_est[p, k]
-                            elif np.allclose(np.max(fft_datak[p, :, k]), np.max(fft_datat[p, :, k]), atol=1e-8):
-                                #default to delay peaks if similar
-                                param_est[p, k] = delay_est[p, k]
-                                sel_ant[p] = 2
+                                if np.allclose(tec_est[p, k], 0., atol=1e-8):
+                                    param_est[p, k] = delay_est[p, k]
+                                    sel_ant[p] = 1
+                                else:
+                                    param_est[p, k] = tec_est[p, k]
+                            # elif np.allclose(np.max(fft_datak[p, :, k]), np.max(fft_datat[p, :, k]), atol=1e-8):
+                            #     #default to delay peaks if similar
+                            #     param_est[p, k] = delay_est[p, k]
+                            #     sel_ant[p] = 2
                             else:
                                 raise ValueError("Unsupported functionality.")
 
