@@ -159,10 +159,10 @@ class TecAndOffset(ParameterizedGain):
 
                 #Obtain the delay-related peak
                 nk = int(np.ceil(2 ** 15 / sel_n_chan)) * sel_n_chan
-                fft_datak = np.abs(
-                    np.fft.fft(fsel_data, n=nk, axis=1)
-                )
-                fft_datak = np.fft.fftshift(fft_datak, axes=1)
+                # fft_datak = np.abs(
+                #     np.fft.fft(fsel_data, n=nk, axis=1)
+                # )
+                # fft_datak = np.fft.fftshift(fft_datak, axes=1)
 
                 delta_freqk = chan_freq[1] - chan_freq[0]
                 fft_freqk = np.fft.fftfreq(nk, delta_freqk)
@@ -170,16 +170,34 @@ class TecAndOffset(ParameterizedGain):
 
                 delay_est = np.zeros((n_ant, n_param), dtype=np.float64)
 
-                delay_est_ind_00 = np.argmax(fft_datak[..., 0], axis=1)
-                delay_est_00 = fft_freqk[delay_est_ind_00]
-                delay_est_00[~valid_ant] = 0
-                delay_est[:, 0] = delay_est_00
+                # delay_est_ind_00 = np.argmax(fft_datak[..., 0], axis=1)
+                # delay_est_00 = fft_freqk[delay_est_ind_00]
+                # delay_est_00[~valid_ant] = 0
+                # delay_est[:, 0] = delay_est_00
 
-                if n_corr > 1:
-                    delay_est_ind_11 = np.argmax(fft_datak[..., -1], axis=1)
-                    delay_est_11 = fft_freqk[delay_est_ind_11]
-                    delay_est_11[~valid_ant] = 0
-                    delay_est[:, 1] = delay_est_11
+                # if n_corr > 1:
+                #     delay_est_ind_11 = np.argmax(fft_datak[..., -1], axis=1)
+                #     delay_est_11 = fft_freqk[delay_est_ind_11]
+                #     delay_est_11[~valid_ant] = 0
+                #     delay_est[:, 1] = delay_est_11
+
+
+                #Let me try using the nufft for the delay estimation as well
+                fft_datak = np.zeros((n_ant, nt, n_param), dtype=fsel_data.dtype)
+
+                for k in range(n_param):
+                    vis_finufft = finufft.nufft1d3(
+                        2 * np.pi * freq,
+                        fsel_data[:, :, k],
+                        fft_freqk,
+                        eps=1e-6,
+                        isign=-1
+                    )
+                    fft_datak[:, :, k] = vis_finufft
+                    fft_data_pk = np.abs(vis_finufft)
+                    delay_est[:, k] = fft_freqk[np.argmax(fft_data_pk, axis=1)]
+
+                delay_est[~valid_ant, :] = 0
                 
 
                 #Obtain the tec-related peak
@@ -232,13 +250,13 @@ class TecAndOffset(ParameterizedGain):
                             if np.max(fft_datak[p, :, k]) > np.max(fft_datat[p, :, k]):
                                 #In the case, the delay has been corrected, the param to be
                                 #estimated next is tec.
-                                if np.allclose(delay_est[p, k], 0., atol=1e-8):
+                                if np.allclose(delay_est[p, k], 0., atol=1e-10):
                                     param_est[p, k] = tec_est[p, k]
                                 else:
                                     param_est[p, k] = delay_est[p, k]
                                     sel_ant[p] = 1
                             elif np.max(fft_datak[p, :, k]) < np.max(fft_datat[p, :, k]):
-                                if np.allclose(tec_est[p, k], 0., atol=1e-8):
+                                if np.allclose(tec_est[p, k], 0., atol=1e-10):
                                     param_est[p, k] = delay_est[p, k]
                                     sel_ant[p] = 1
                                 else:
