@@ -70,6 +70,7 @@ class TecAndOffset(ParameterizedGain):
         tec_and_offset_params_to_gains(
             params,
             gains,
+            np.zeros((gains.shape[2])),
             ms_kwargs["CHAN_FREQ"],
             term_kwargs[f"{self.name}_param_freq_map"],
         )
@@ -243,13 +244,10 @@ class TecAndOffset(ParameterizedGain):
                 
                 # path00 = "/home/russeeawon/testing/lofar_ms_1gc_solve/"
                 # path00 = "/home/russeeawon/testing/lofar_ms_1gc_solve_solint1/"
-                # path00 = "/home/russeeawon/testing/thesis_figures/expt1/"
-                # path00 = "/home/russeeawon/testing/thesis_figures/expt2/"
-                # path00 = "/home/russeeawon/testing/thesis_figures/expt3/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt4a/"
-                # path00 = "/home/russeeawon/testing/thesis_figures/expt4b/"
+                path00 = "/home/russeeawon/testing/thesis_figures/expt4b/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt5a/"
-                path00 = "/home/russeeawon/testing/thesis_figures/expt6a/"
+                # path00 = "/home/russeeawon/testing/thesis_figures/expt6a/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt6b/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt7a/"
                 # path00 = "/home/russeeawon/testing/thesis_figures/expt7b/"
@@ -289,6 +287,7 @@ class TecAndOffset(ParameterizedGain):
         tec_and_offset_params_to_gains(
             params,
             gains,
+            sel_ant,
             ms_kwargs["CHAN_FREQ"],
             term_kwargs[f"{self.name}_param_freq_map"],
         )
