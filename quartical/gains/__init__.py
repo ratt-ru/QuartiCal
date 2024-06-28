@@ -8,6 +8,7 @@ from quartical.gains.rotation import Rotation
 from quartical.gains.rotation_measure import RotationMeasure
 from quartical.gains.crosshand_phase import CrosshandPhase
 from quartical.gains.leakage import Leakage
+from quartical.gains.delay_and_tec import DelayAndTec
 
 
 TERM_TYPES = {
@@ -21,5 +22,6 @@ TERM_TYPES = {
     "rotation": Rotation,
     "rotation_measure": RotationMeasure,
     "crosshand_phase": CrosshandPhase,
-    "leakage": Leakage
+    "leakage": Leakage,
+    "delay_and_tec": DelayAndTec
 }
