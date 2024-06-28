@@ -8,6 +8,7 @@ gain:
       - amplitude
       - delay
       - delay_and_offset
+      - delay_and_tec
       - phase
       - tec_and_offset
       - rotation_measure
