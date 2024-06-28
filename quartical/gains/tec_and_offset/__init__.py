@@ -158,7 +158,14 @@ class TecAndOffset(ParameterizedGain):
 
 
                 #Obtain the delay-related peak
-                nk = int(np.ceil(2 ** 15 / sel_n_chan)) * sel_n_chan
+
+                #Obtain the delay-related peak
+                max_delay = 1/(chan_freq[1] - chan_freq[0])
+                nyq_rate0 = max_delay/2
+                
+                nk = int(max_delay/ nyq_rate0)
+
+                # nk = int(np.ceil(2 ** 15 / sel_n_chan)) * sel_n_chan
                 # fft_datak = np.abs(
                 #     np.fft.fft(fsel_data, n=nk, axis=1)
                 # )
@@ -183,11 +190,11 @@ class TecAndOffset(ParameterizedGain):
 
 
                 #Let me try using the nufft for the delay estimation as well
-                fft_datak = np.zeros((n_ant, nt, n_param), dtype=fsel_data.dtype)
+                fft_datak = np.zeros((n_ant, nk, n_param), dtype=fsel_data.dtype)
 
                 for k in range(n_param):
                     vis_finufft = finufft.nufft1d3(
-                        2 * np.pi * freq,
+                        2 * np.pi * chan_freq,
                         fsel_data[:, :, k],
                         fft_freqk,
                         eps=1e-6,
