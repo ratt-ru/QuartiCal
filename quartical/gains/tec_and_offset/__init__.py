@@ -158,20 +158,24 @@ class TecAndOffset(ParameterizedGain):
 
 
                 #Obtain the delay-related peak
-
-                #Obtain the delay-related peak
-                max_delay = 1/(chan_freq[1] - chan_freq[0])
-                nyq_rate0 = max_delay/2
+                delta_freqk = chan_freq[1] - chan_freq[0]
+                #Maximum reconstructable delay (in time)
+                max_delay = (2*np.pi)/delta_freqk
+                nyq_rate0 = 1./(2*(chan_freq.max() - chan_freq.min()))
                 
-                nk = int(max_delay/ nyq_rate0)
+                nk = int(max_delay/nyq_rate0)
+                print(nk, "this is nk")
 
                 # nk = int(np.ceil(2 ** 15 / sel_n_chan)) * sel_n_chan
+                # nk = int(np.ceil(2 ** 20 / sel_n_chan)) * sel_n_chan
+
+                print(nk, "this is nk")
+
                 # fft_datak = np.abs(
                 #     np.fft.fft(fsel_data, n=nk, axis=1)
                 # )
                 # fft_datak = np.fft.fftshift(fft_datak, axes=1)
 
-                delta_freqk = chan_freq[1] - chan_freq[0]
                 fft_freqk = np.fft.fftfreq(nk, delta_freqk)
                 fft_freqk = np.fft.fftshift(fft_freqk)
 
@@ -221,6 +225,8 @@ class TecAndOffset(ParameterizedGain):
 
                 # choosing resolution
                 nt = int(max_tec/ nyq_rate)
+                print(nt, "this is nt")
+
                 # domain to pick tec_est from
                 fft_freqt = np.linspace(0.5*-sr, 0.5*sr, nt)
 
