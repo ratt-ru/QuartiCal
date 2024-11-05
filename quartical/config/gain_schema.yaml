@@ -14,6 +14,7 @@ gain:
       - rotation_measure
       - rotation
       - crosshand_phase
+      - crosshand_phase_null_v
       - leakage
     info:
       Type of gain to solve for.
