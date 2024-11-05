@@ -81,16 +81,13 @@ def nb_null_v_crosshand_phase_solver_impl(
     ):
 
         gains = chain_inputs.gains
-        inverse_gain_list = List()
+        gain_flags = chain_inputs.gain_flags
 
+        inverse_gains = List()
         for gain_term in gains:
-            inverse_gain_list.append(np.empty_like(gain_term))
-        invert_gains(gains, inverse_gain_list, corr_mode)
+            inverse_gains.append(np.empty_like(gain_term))
+        invert_gains(gains, inverse_gains, corr_mode)
 
-        gains = inverse_gain_list  # Gains are now the gain inverses.
-        gain_flags = chain_inputs.gain_flags  # Reverse order.
-
-        # Active term in reversed gain list.
         active_term = meta_inputs.active_term
         max_iter = meta_inputs.iters
         solve_per = meta_inputs.solve_per
@@ -136,6 +133,7 @@ def nb_null_v_crosshand_phase_solver_impl(
         for loop_idx in range(max_iter or 1):
 
             compute_jhj_jhr(
+                inverse_gains,
                 ms_inputs,
                 mapping_inputs,
                 chain_inputs,
@@ -165,6 +163,10 @@ def nb_null_v_crosshand_phase_solver_impl(
                 loop_idx,
                 corr_mode
             )
+
+            # The parameters/gains are correct but we are solving for the
+            # inverse so we update the inverse term here.
+            inverse_gains[active_term][:] = active_gain.conj()
 
             # Check for gain convergence. Produced as a side effect of
             # flagging. The converged percentage is based on unflagged
@@ -213,6 +215,7 @@ def nb_null_v_crosshand_phase_solver_impl(
 
 
 def compute_jhj_jhr(
+    inverse_gains,
     ms_inputs,
     mapping_inputs,
     chain_inputs,
@@ -226,6 +229,7 @@ def compute_jhj_jhr(
 
 @overload(compute_jhj_jhr, jit_options=PARALLEL_JIT_OPTIONS)
 def nb_compute_jhj_jhr(
+    inverse_gains,
     ms_inputs,
     mapping_inputs,
     chain_inputs,
@@ -257,6 +261,7 @@ def nb_compute_jhj_jhr(
     compute_jhwj_jhwr_elem = compute_jhwj_jhwr_elem_factory(corr_mode)
 
     def impl(
+        inverse_gains,
         ms_inputs,
         mapping_inputs,
         chain_inputs,
@@ -265,8 +270,6 @@ def nb_compute_jhj_jhr(
         extents,
         corr_mode
     ):
-
-        active_term = meta_inputs.active_term
 
         data = ms_inputs.DATA
         model = ms_inputs.MODEL_DATA
@@ -277,11 +280,15 @@ def nb_compute_jhj_jhr(
         row_map = ms_inputs.ROW_MAP
         row_weights = ms_inputs.ROW_WEIGHTS
 
-        time_maps = mapping_inputs.time_maps
-        freq_maps = mapping_inputs.freq_maps
-        dir_maps = mapping_inputs.dir_maps
+        # Reverse all the (invernse) gains and mappings.
+        time_maps = mapping_inputs.time_maps[::-1]
+        freq_maps = mapping_inputs.freq_maps[::-1]
+        dir_maps = mapping_inputs.dir_maps[::-1]
 
-        gains = chain_inputs.gains
+        gains = inverse_gains[::-1]
+
+        # Active term in the REVERSED chain.
+        active_term = len(gains) - meta_inputs.active_term - 1
 
         jhj = upsampled_imdry.jhj
         jhr = upsampled_imdry.jhr
@@ -356,13 +363,13 @@ def nb_compute_jhj_jhr(
 
                     # Apply row weights in the BDA case, otherwise a no-op.
                     imul_rweight(weights[row, f], w, row_weights, row_ind)
-                    iunpack(r_pq, data[row, f])
 
                     lop_pq_arr[:] = 0
                     rop_pq_arr[:] = 0
                     lop_qp_arr[:] = 0
                     rop_qp_arr[:] = 0
                     v_pq[:] = 0
+                    r_pq[:] = 0
 
                     for d in range(n_dir):
 
@@ -381,7 +388,7 @@ def nb_compute_jhj_jhr(
                             iunpack(gains_p[gi], gain[a1_m, d_m])
                             iunpack(gains_q[gi], gain[a2_m, d_m])
 
-                        m = model[row, f, d]
+                        m = data[row, f]
                         iunpack(rop_qp, m)
                         iunpackct(rop_pq, rop_qp)
 
@@ -421,14 +428,11 @@ def nb_compute_jhj_jhr(
                         v1_imul_v2ct(v_pqd, rop_pq, v_pqd)
                         iadd(v_pq, v_pqd)
 
-                    absv1_idiv_absv2(v_pq, r_pq, norm_factors)
-                    imul(r_pq, norm_factors)
                     isub(r_pq, v_pq)
 
                     for d in range(n_gdir):
 
                         iunpack(wr_pq, r_pq)
-                        imul(wr_pq, w)
                         iunpackct(wr_qp, wr_pq)
 
                         lop_pq_d = lop_pq_arr[d]
@@ -567,7 +571,8 @@ def nb_finalize_update(
                             p[:] = 0
                             set_identity(g)
                         else:
-                            p += upd
+                            # NOTE: Halving the update absolutely required.
+                            p -= 0.5*upd  # Flip sign for non-inverse solution.
                             param_to_gain(p, g)
 
     return impl
@@ -596,16 +601,17 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     if corr_mode.literal_value == 4:
         def impl(lop, rop, w, normf, gain, res, jhr, jhj):
 
-            # Compute normalization factor.
-            v1_imul_v2(lop, rop, normf)
-            iabsdivsq(normf)
-            imul(res, normf)  # Apply normalization factor to r.
+            _, r_1, r_2, _ = unpack(res)  # NOTE: XX, XY, YX, YY
+            v_res = -0.5j * r_1 + 0.5j * r_2
+
+            res[0] = 0
+            res[1] = 0.5j * v_res
+            res[2] = -0.5j * v_res
+            res[3] = 0
 
             # Accumulate an element of jhwr.
             v1_imul_v2(res, rop, res)
             v1_imul_v2(lop, res, res)
-
-            # Accumulate an element of jhwj.
 
             r_0, _, _, _ = unpack(res)  # NOTE: XX, XY, YX, YY
 
@@ -617,32 +623,18 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             jhr[0] += upd_00
 
-            w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
-            n_0, n_1, n_2, n_3 = unpack(normf)
-
-            # Apply normalisation factors by scaling w.
-            w_0 = n_0 * w_0
-            w_1 = n_1 * w_1
-            w_2 = n_2 * w_2
-            w_3 = n_3 * w_3
-
             lop_00, lop_01, _, _ = unpack(lop)
             rop_00, _, rop_01, _ = unpack(rop)  # "Transpose"
 
-            jh_00 = lop_00 * rop_00
             jh_01 = lop_00 * rop_01
             jh_02 = lop_01 * rop_00
-            jh_03 = lop_01 * rop_01
 
-            j_00 = jh_00.conjugate()
-            j_01 = jh_01.conjugate()
-            j_02 = jh_02.conjugate()
-            j_03 = jh_03.conjugate()
+            jh_v = 0.5j * jh_01 - 0.5j * jh_02
+            j_v = jh_v.conjugate()
 
-            jhwj_00 = jh_00*w_0*j_00 + jh_01*w_1*j_01 + \
-                      jh_02*w_2*j_02 + jh_03*w_3*j_03  # noqa
+            jhj_v = jh_v * j_v
 
-            jhj[0, 0] += jhwj_00.real
+            jhj[0, 0] += jhj_v.real
 
     else:
         raise ValueError("Crosshand phase can only be solved for with four "

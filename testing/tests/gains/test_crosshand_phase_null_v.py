@@ -125,10 +125,12 @@ def add_calibration_graph_outputs(corrupted_data_xds_list, stats_xds_list,
 
 # -----------------------------------------------------------------------------
 
-def test_residual_magnitude(cmp_post_solve_data_xds_list):
-    # Magnitude of the residuals should tend to zero.
+def test_stokes_v_magnitude(cmp_post_solve_data_xds_list):
+    # Magnitude of stokes V in the corrected data should tend to zero.
     for xds in cmp_post_solve_data_xds_list:
-        np.testing.assert_array_almost_equal(np.abs(xds._RESIDUAL.data), 0)
+        corr_data = xds._CORRECTED_DATA.data
+        res_v = -0.5j*corr_data[...,1] + 0.5j*corr_data[..., 2]
+        np.testing.assert_array_almost_equal(np.abs(res_v), 0)
 
 
 def test_solver_flags(cmp_post_solve_data_xds_list):
