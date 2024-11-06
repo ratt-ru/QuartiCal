@@ -1,7 +1,8 @@
 input_ms:
   path:
     required: true
-    dtype: str
+    dtype: URI
+    writable: true
     info:
       Path to input measurement set.
 
@@ -164,7 +165,10 @@ input_model:
 output:
   gain_directory:
     default: gains.qc
-    dtype: str
+    dtype: URI
+    writable: true
+    must_exist: false
+    write_parent_dir: true
     info:
       Name of directory in which QuartiCal gain outputs will be stored.
       Accepts both local and s3 paths. QuartiCal will always produce gain
@@ -172,7 +176,9 @@ output:
 
   log_directory:
     default: logs.qc
-    dtype: str
+    dtype: Directory
+    writable: true
+    must_exist: false
     info:
       Name of directory in which QuartiCal logging outputs will be stored.
       s3 is not currently supported for these outputs.
