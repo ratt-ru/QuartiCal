@@ -174,7 +174,7 @@ class ParameterizedGain(Gain):
     def make_param_names(cls, correlations):
         raise NotImplementedError
 
-    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs, meta=None):
         """Initialise the gains (and parameters)."""
 
         (_, _, gain_shape, param_shape) = term_spec
