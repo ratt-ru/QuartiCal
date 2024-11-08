@@ -2,10 +2,6 @@ from copy import deepcopy
 import pytest
 import numpy as np
 import dask.array as da
-from quartical.data_handling.angles import (
-    make_parangle_xds_list,
-    apply_parangles
-)
 from quartical.calibration.calibrate import add_calibration_graph
 from testing.utils.gains import apply_gains
 
