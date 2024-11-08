@@ -39,6 +39,11 @@ class ParallacticAngle(ParameterizedGain):
         super().__init__(term_name, term_opts)
 
     @classmethod
+    def _make_freq_map(cls, chan_freqs, chan_widths, freq_interval):
+        # Overload gain mapping construction - we evaluate it in every channel.
+        return np.arange(chan_freqs.size, dtype=np.int32)
+
+    @classmethod
     def make_param_names(cls, correlations):
         return ["parallactic_angle"]
 
