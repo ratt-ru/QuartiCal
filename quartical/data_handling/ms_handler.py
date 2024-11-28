@@ -237,7 +237,8 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
 
         # If the xds has fewer correlations than the measurement set, reindex.
         if xds.sizes["corr"] < ms_n_corr:
-            xds = xds.reindex(corr=corr_types, fill_value=0)
+            # Note that we have to remove chunks from the reindexed axis.
+            xds = xds.reindex(corr=corr_types, fill_value=0).chunk({"corr": -1})
 
             # Do some special handling on the flag column if we reindexed -
             # we need a value dependent fill value.
