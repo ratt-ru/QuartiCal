@@ -194,7 +194,7 @@ def to_plot_dict(xdsl, iter_attrs):
 
 def _plot(group, xds, args):
     # get rid of question marks
-    qstrip = lambda x: x.replace('?', '')
+    qstrip = lambda x: x.replace('?', 'N/A')
     group = tuple(map(qstrip, group))
 
     xds = xds.compute(scheduler="single-threaded")
