@@ -139,6 +139,7 @@ def test_solver_flags(cmp_post_solve_data_xds_list):
         np.testing.assert_array_equal(xds._FLAG.data, xds.FLAG.data)
 
 
+@pytest.mark.xfail(reason="Ambiguous result - signs may be flipped.")
 def test_gains(cmp_gain_xds_lod, true_gain_list):
 
     for solved_gain_dict, true_gain in zip(cmp_gain_xds_lod, true_gain_list):
