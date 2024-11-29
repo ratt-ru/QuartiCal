@@ -207,6 +207,23 @@ numpy = ">=1.10"
 scipy = ">=1.7"
 
 [[package]]
+name = "astlib"
+version = "0.12.0"
+description = "A set of python modules for producing simple plots, statistics, common calculations, coordinate conversions, and manipulating FITS images with World Coordinate System (WCS) information"
+optional = false
+python-versions = "*"
+files = [
+    {file = "astLib-0.12.0-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:ff04b8435be1f114cf251d51683a65aee311a161af7adb7a0dc51b22da2d28c5"},
+    {file = "astLib-0.12.0.tar.gz", hash = "sha256:c189dc08a52408ac7c1266778f702283d1ad33a6e96539293322b1515c9e4d23"},
+]
+
+[package.dependencies]
+astropy = ">=3.2"
+matplotlib = ">=3.0"
+numpy = ">=1.10"
+scipy = ">=1.7"
+
+[[package]]
 name = "astro-kittens"
 version = "1.4.6"
 description = "Collection of Python utility functions for purr, tigger, meqtrees and others"
@@ -219,6 +236,24 @@ files = [
 [package.dependencies]
 astropy = "*"
 configparser = "*"
+
+[[package]]
+name = "astro-pyxis"
+version = "1.7.6"
+description = "Python Extensions for astronomical Interferometry Scripting"
+optional = false
+python-versions = ">=3.0.0"
+files = [
+    {file = "astro-pyxis-1.7.6.tar.gz", hash = "sha256:93879884b89f95708e9e59adcd3c3ddd695b51d7d29cdce37ea1876fca93b57d"},
+]
+
+[package.dependencies]
+astropy = ">=3.0"
+future = "*"
+matplotlib = "*"
+numpy = ">=1.16"
+python_casacore = "*"
+scipy = "*"
 
 [[package]]
 name = "astro-tigger-lsm"
@@ -239,6 +274,27 @@ future = "*"
 numpy = "*"
 python-casacore = "*"
 scipy = "*"
+
+[[package]]
+name = "astro-tigger-lsm"
+version = "1.7.4"
+description = "Python libraries and command-line tools for manipulating Tigger LSMs"
+optional = false
+python-versions = "<4.0,>=3.8"
+files = [
+    {file = "astro_tigger_lsm-1.7.4-py3-none-any.whl", hash = "sha256:ddc2fa8b15b1ccac493d2ee48ef08d42cfbbb8c8447781e502d922848881cd43"},
+    {file = "astro_tigger_lsm-1.7.4.tar.gz", hash = "sha256:73212f77203121952f33d674e4158dc4cef2b1f2414031d1654957a4214e59d0"},
+]
+
+[package.dependencies]
+astlib = {version = ">=0.12.0", markers = "python_version >= \"3.12\""}
+astro-kittens = ">=1.4.6,<2.0.0"
+astropy = {version = ">=6.1.0", markers = "python_version >= \"3.12\""}
+future = "*"
+meqtrees-cattery = ">=1.7.9,<2.0.0"
+numpy = {version = ">=2.0.0", markers = "python_version >= \"3.12\""}
+python-casacore = "*"
+scipy = {version = ">=1.13.0", markers = "python_version >= \"3.12\""}
 
 [[package]]
 name = "astropy"
@@ -1178,6 +1234,16 @@ files = [
 ]
 
 [[package]]
+name = "kittens"
+version = "0.1.2"
+description = "A means of sending friendly images of kittens to a target."
+optional = false
+python-versions = "*"
+files = [
+    {file = "kittens-0.1.2.tar.gz", hash = "sha256:648f3b6a14e3eddf994e9a3f4247646aa8e56831d77395fc5cb81cf2fcc6e0a7"},
+]
+
+[[package]]
 name = "kiwisolver"
 version = "1.4.7"
 description = "A fast implementation of the Cassowary constraint solver"
@@ -1526,6 +1592,26 @@ files = [
     {file = "mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8"},
     {file = "mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba"},
 ]
+
+[[package]]
+name = "meqtrees-cattery"
+version = "1.7.9"
+description = "MeqTrees-based frameworks for simulation and calibration of radio interferometers"
+optional = false
+python-versions = ">=3.0.0"
+files = [
+    {file = "meqtrees_cattery-1.7.9.tar.gz", hash = "sha256:393a1a4a57093cf06830545f2859c5315885899267a0ae9fc7316dd8c4640bcf"},
+]
+
+[package.dependencies]
+astro_kittens = "*"
+astro_pyxis = "*"
+astropy = ">=3.0.0"
+numpy = ">=1.16"
+purr = "*"
+python_casacore = "*"
+scipy = "*"
+six = "*"
 
 [[package]]
 name = "msgpack"
@@ -1926,9 +2012,9 @@ files = [
 
 [package.dependencies]
 numpy = [
+    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
     {version = ">=1.22.4", markers = "python_version < \"3.11\""},
     {version = ">=1.23.2", markers = "python_version == \"3.11\""},
-    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -2218,6 +2304,23 @@ files = [
 
 [package.extras]
 test = ["enum34", "ipaddress", "mock", "pywin32", "wmi"]
+
+[[package]]
+name = "purr"
+version = "1.5.3"
+description = "Data reduction logging tool, Useful for remembering reductions"
+optional = false
+python-versions = ">=3.0.0"
+files = [
+    {file = "purr-1.5.3.tar.gz", hash = "sha256:c22608aaf94f8e5b381aa779c817daeb186a506b1147bcdb2e2a238d722b4fa0"},
+]
+
+[package.dependencies]
+astropy = "*"
+future = "*"
+kittens = "*"
+pillow = "*"
+scipy = "*"
 
 [[package]]
 name = "pydantic"
