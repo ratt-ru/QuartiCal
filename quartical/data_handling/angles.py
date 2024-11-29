@@ -21,9 +21,9 @@ _thread_local = threading.local()
 
 def assign_parangle_data(ms_path, data_xds_list):
 
-    anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
-    feedtab = xds_from_storage_table(ms_path + "::FEED")[0]
-    fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
+    anttab = xds_from_table_fragment(ms_path + "::ANTENNA")[0]
+    feedtab = xds_from_table_fragment(ms_path + "::FEED")[0]
+    fieldtab = xds_from_table_fragment(ms_path + "::FIELD")[0]
 
     # We do the following eagerly to reduce graph complexity.
     feeds = feedtab.POLARIZATION_TYPE.values
