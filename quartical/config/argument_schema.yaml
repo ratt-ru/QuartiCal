@@ -120,6 +120,22 @@ input_model:
       given by the dE tagged clusters in LSM1. Leaving this value unset
       (the default) will use an identity model.
 
+  advanced_recipe:
+    dtype: bool
+    default: false
+    info:
+      Enable advanced recipe specification for use with degridder/more
+      complicated modes of model construction.
+
+  threads:
+    dtype: int
+    default: 1
+    info:
+      Controls the number of threads used internally by the various predict
+      methods. This should typically be set to the same value as
+      solver.threads if solver.threads is in use. Currently only supported
+      for degridding.
+
   beam:
     dtype: Optional[str]
     info:
@@ -182,6 +198,15 @@ output:
     info:
       Name of directory in which QuartiCal logging outputs will be stored.
       s3 is not currently supported for these outputs.
+
+  fragment_path:
+    dtype: Optional[str]
+    info:
+      If set, instead of mutating the input by e.g. writing flags, instead
+      writes a fragment to this location. A fragment is a zarr backed data
+      format that is read and dynamically combined with any parent datasets.
+      This allows QuartiCal to operate in an entirely read-only fashion.
+      This option is experimental.
 
   log_to_terminal:
     default: true

@@ -2,7 +2,7 @@ import numpy as np
 import casacore.measures
 import casacore.quanta as pq
 
-from daskms import xds_from_storage_table
+from daskms.experimental.fragments import xds_from_table_fragment
 import dask.array as da
 import threading
 from dask.graph_manipulation import clone
@@ -21,9 +21,9 @@ _thread_local = threading.local()
 
 def assign_parangle_data(ms_path, data_xds_list):
 
-    anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
-    feedtab = xds_from_storage_table(ms_path + "::FEED")[0]
-    fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
+    anttab = xds_from_table_fragment(ms_path + "::ANTENNA")[0]
+    feedtab = xds_from_table_fragment(ms_path + "::FEED")[0]
+    fieldtab = xds_from_table_fragment(ms_path + "::FIELD")[0]
 
     # We do the following eagerly to reduce graph complexity.
     feeds = feedtab.POLARIZATION_TYPE.values
@@ -64,9 +64,9 @@ def make_parangle_xds_list(ms_path, data_xds_list):
 
     # This may need to be more sophisticated. TODO: Can we guarantee that
     # these only ever have one element?
-    anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
-    feedtab = xds_from_storage_table(ms_path + "::FEED")[0]
-    fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
+    anttab = xds_from_table_fragment(ms_path + "::ANTENNA")[0]
+    feedtab = xds_from_table_fragment(ms_path + "::FEED")[0]
+    fieldtab = xds_from_table_fragment(ms_path + "::FIELD")[0]
 
     # We do this eagerly to make life easier.
     feeds = feedtab.POLARIZATION_TYPE.values

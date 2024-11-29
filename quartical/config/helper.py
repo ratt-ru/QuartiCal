@@ -79,8 +79,15 @@ def help():
     if len(sys.argv) != 1 and not help_arg:
         return
 
-    # Include a generic gain term in the help config.
-    additional_config = [oc.from_dotlist(["solver.terms=['gain']"])]
+    # Include a generic gain term and model component in the help config.
+    additional_config = [
+        oc.from_dotlist(
+            [
+                "input_model.advanced_recipe=model_component",
+                "solver.terms=['gain']"
+            ]
+        )
+    ]
     help_class = finalize_structure(additional_config)
     HelpConfig = help_class()
 

@@ -2,7 +2,7 @@ from dataclasses import make_dataclass, field
 from omegaconf import OmegaConf as oc
 from typing import Dict, Any
 from scabha.cargo import Parameter
-from quartical.config import Gain, BaseConfig, gain_schema
+from quartical.config import Gain, ModelComponent, BaseConfig, gain_schema
 
 
 def finalize_structure(additional_config):
@@ -17,6 +17,21 @@ def finalize_structure(additional_config):
 
     # Use the default terms if no alternative is specified.
     terms = terms or BaseConfig.solver.terms
+
+    recipe = None
+    models = []  # No components by default.
+
+    # Get last specified version of input_model.recipe.
+    for cfg in additional_config[::-1]:
+        advanced_recipe = oc.select(cfg, "input_model.advanced_recipe")
+        recipe = oc.select(cfg, "input_model.recipe")
+        if recipe is not None and advanced_recipe:
+            ingredients = re.split(r'([\+~:])', recipe)
+            ingredients = [
+                i for i in ingredients if not bool(re.search(r'([\+~:])', i))
+            ]
+            models = list(dict.fromkeys(i.split("@")[0] for i in ingredients))
+            break
 
     FinalConfig = make_dataclass(
         "FinalConfig",

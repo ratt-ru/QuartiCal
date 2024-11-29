@@ -2,9 +2,12 @@
 import warnings
 import dask.array as da
 import numpy as np
-from daskms import (xds_from_storage_ms,
-                    xds_from_storage_table,
-                    xds_to_storage_table)
+from daskms import xds_to_storage_table
+from daskms.experimental.fragments import (
+    xds_from_ms_fragment,
+    xds_from_table_fragment,
+    xds_to_table_fragment
+)
 from dask.graph_manipulation import clone
 from loguru import logger
 from quartical.weights.weights import initialize_weights
@@ -35,7 +38,7 @@ def read_xds_list(model_columns, ms_opts):
         data_xds_list: A list of appropriately chunked xarray datasets.
     """
 
-    antenna_xds = xds_from_storage_table(ms_opts.path + "::ANTENNA")[0]
+    antenna_xds = xds_from_table_fragment(ms_opts.path + "::ANTENNA")[0]
 
     n_ant = antenna_xds.sizes["row"]
 
@@ -43,7 +46,7 @@ def read_xds_list(model_columns, ms_opts):
                 "observation.", n_ant)
 
     # Determine the number/type of correlations present in the measurement set.
-    pol_xds = xds_from_storage_table(ms_opts.path + "::POLARIZATION")[0]
+    pol_xds = xds_from_table_fragment(ms_opts.path + "::POLARIZATION")[0]
 
     try:
         corr_types = [CORR_TYPES[ct] for ct in pol_xds.CORR_TYPE.values[0]]
@@ -63,7 +66,7 @@ def read_xds_list(model_columns, ms_opts):
     # probably need to be done on a per xds basis. Can probably be accomplished
     # by merging the field xds grouped by DDID into data grouped by DDID.
 
-    field_xds = xds_from_storage_table(ms_opts.path + "::FIELD")[0]
+    field_xds = xds_from_table_fragment(ms_opts.path + "::FIELD")[0]
     phase_dir = np.squeeze(field_xds.PHASE_DIR.values)
     field_names = field_xds.NAME.values
 
@@ -100,7 +103,7 @@ def read_xds_list(model_columns, ms_opts):
     if ms_opts.data_column not in known_data_cols:
         schema[ms_opts.data_column] = {'dims': ('chan', 'corr')}
 
-    data_xds_list = xds_from_storage_ms(
+    data_xds_list = xds_from_ms_fragment(
         ms_opts.path,
         columns=columns,
         index_cols=("TIME",),
@@ -118,7 +121,7 @@ def read_xds_list(model_columns, ms_opts):
             f"Invalid/missing column specified as input: {missing_columns}."
         )
 
-    spw_xds_list = xds_from_storage_table(
+    spw_xds_list = xds_from_table_fragment(
         ms_opts.path + "::SPECTRAL_WINDOW",
         group_cols=["__row__"],
         columns=["CHAN_FREQ", "CHAN_WIDTH"],
@@ -228,7 +231,7 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
     if not (output_opts.products or output_opts.flags):
         return [None] * len(xds_list)  # Write nothing to the MS.
 
-    pol_xds = xds_from_storage_table(ms_path + "::POLARIZATION")[0]
+    pol_xds = xds_from_table_fragment(ms_path + "::POLARIZATION")[0]
     corr_types = [CORR_TYPES[ct] for ct in pol_xds.CORR_TYPE.values[0]]
     ms_n_corr = len(corr_types)
 
@@ -315,12 +318,23 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
 
     with warnings.catch_warnings():  # We anticipate spurious warnings.
         warnings.simplefilter("ignore")
-        write_xds_list = xds_to_storage_table(
-            xds_list,
-            ms_path,
-            columns=output_cols,
-            rechunk=True  # Needed to ensure zarr chunks map correctly to disk.
-        )
+
+        if output_opts.fragment_path:
+            write_xds_list = xds_to_table_fragment(
+                xds_list,
+                output_opts.fragment_path,
+                ms_path,
+                columns=output_cols,
+                rechunk=True  # Ensure zarr chunks map correctly to disk.
+            )
+
+        else:
+            write_xds_list = xds_to_storage_table(
+                xds_list,
+                ms_path,
+                columns=output_cols,
+                rechunk=True  # Ensure zarr chunks map correctly to disk.
+            )
 
     return write_xds_list
 

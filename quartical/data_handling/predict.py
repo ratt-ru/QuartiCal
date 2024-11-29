@@ -7,7 +7,8 @@ import dask.array as da
 import dask
 from xarray import DataArray, Dataset
 from dask.graph_manipulation import clone
-from daskms import xds_from_storage_table
+from daskms.experimental.fragments import xds_from_table_fragment
+
 from loguru import logger
 import numpy as np
 import Tigger
@@ -310,21 +311,24 @@ def get_support_tables(ms_path):
              "SPECTRAL_WINDOW", "POLARIZATION", "FEED")}
 
     # All rows at once
-    lazy_tables = {"ANTENNA": xds_from_storage_table(n["ANTENNA"]),
-                   "FEED": xds_from_storage_table(n["FEED"])}
+    lazy_tables = {"ANTENNA": xds_from_table_fragment(n["ANTENNA"]),
+                   "FEED": xds_from_table_fragment(n["FEED"])}
 
     compute_tables = {
         # NOTE: Even though this has a fixed shape, I have ammended it to
         # also group by row. This just makes life fractionally easier.
-        "DATA_DESCRIPTION": xds_from_storage_table(n["DATA_DESCRIPTION"],
-                                                   group_cols="__row__"),
+        "DATA_DESCRIPTION": xds_from_table_fragment(
+            n["DATA_DESCRIPTION"], group_cols="__row__"
+        ),
         # Variably shaped, need a dataset per row
         "FIELD":
-            xds_from_storage_table(n["FIELD"], group_cols="__row__"),
+            xds_from_table_fragment(n["FIELD"], group_cols="__row__"),
         "SPECTRAL_WINDOW":
-            xds_from_storage_table(n["SPECTRAL_WINDOW"], group_cols="__row__"),
+            xds_from_table_fragment(
+                n["SPECTRAL_WINDOW"], group_cols="__row__"
+            ),
         "POLARIZATION":
-            xds_from_storage_table(n["POLARIZATION"], group_cols="__row__"),
+            xds_from_table_fragment(n["POLARIZATION"], group_cols="__row__"),
     }
 
     lazy_tables.update(dask.compute(compute_tables)[0])

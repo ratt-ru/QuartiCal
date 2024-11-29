@@ -46,6 +46,7 @@ def _execute(exitstack):
     output_opts = opts.output
     mad_flag_opts = opts.mad_flags
     dask_opts = opts.dask
+    model_components = internal.get_component_dict(opts)
     chain = internal.gains_to_chain(opts)  # Special handling.
 
     # Init the logging proxy - an object which helps us ensure that logging
@@ -62,7 +63,15 @@ def _execute(exitstack):
     # Now that we know where to put the log, log the final config state.
     parser.log_final_config(opts, config_files)
 
-    model_vis_recipe = preprocess.transcribe_recipe(model_opts.recipe)
+    # TODO: Deprecate legacy models.
+    if model_opts.advanced_recipe:
+        model_vis_recipe = preprocess.transcribe_recipe(
+            model_opts.recipe, model_components
+        )
+    else:
+        model_vis_recipe = preprocess.transcribe_legacy_recipe(
+            model_opts.recipe
+        )
 
     if dask_opts.scheduler == "distributed":
 
