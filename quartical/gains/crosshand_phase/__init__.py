@@ -5,6 +5,9 @@ from quartical.gains.crosshand_phase.kernel import (
     crosshand_phase_solver,
     crosshand_params_to_gains
 )
+from quartical.gains.crosshand_phase.null_v_kernel import (
+    null_v_crosshand_phase_solver
+)
 from quartical.gains.general.flagging import (
     apply_gain_flags_to_gains,
     apply_param_flags_to_params
@@ -39,7 +42,7 @@ class CrosshandPhase(ParameterizedGain):
 
         return [f"crosshand_phase_{c}" for c in param_corr]
 
-    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs, meta=None):
         """Initialise the gains (and parameters)."""
 
         gains, gain_flags, params, param_flags = super().init_term(
@@ -54,3 +57,8 @@ class CrosshandPhase(ParameterizedGain):
         apply_gain_flags_to_gains(gain_flags, gains)
 
         return gains, gain_flags, params, param_flags
+
+
+class CrosshandPhaseNullV(CrosshandPhase):
+
+    solver = staticmethod(null_v_crosshand_phase_solver)

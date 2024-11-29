@@ -19,6 +19,46 @@ import quartical.gains.general.factories as factories
 _thread_local = threading.local()
 
 
+def assign_parangle_data(ms_path, data_xds_list):
+
+    anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
+    feedtab = xds_from_storage_table(ms_path + "::FEED")[0]
+    fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
+
+    # We do the following eagerly to reduce graph complexity.
+    feeds = feedtab.POLARIZATION_TYPE.values
+    unique_feeds = np.unique(feeds)
+
+    if np.all([feed in "XxYy" for feed in unique_feeds]):
+        feed_type = "linear"
+    elif np.all([feed in "LlRr" for feed in unique_feeds]):
+        feed_type = "circular"
+    else:
+        raise ValueError("Unsupported feed type/configuration.")
+
+    phase_dirs = fieldtab.PHASE_DIR.values
+
+    updated_data_xds_list = []
+    for xds in data_xds_list:
+        xds = xds.assign(
+            {
+                "RECEPTOR_ANGLE": (
+                    ("ant", "feed"), clone(feedtab.RECEPTOR_ANGLE.data)
+                ),
+                "POSITION": (
+                    ("ant", "xyz"),
+                    clone(anttab.POSITION.data)
+                )
+            }
+        )
+        xds.attrs["FEED_TYPE"] = feed_type
+        xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[xds.FIELD_ID, 0])
+
+        updated_data_xds_list.append(xds)
+
+    return updated_data_xds_list
+
+
 def make_parangle_xds_list(ms_path, data_xds_list):
     """Create a list of xarray.Datasets containing the parallactic angles."""
 
@@ -75,7 +115,7 @@ def make_parangle_xds_list(ms_path, data_xds_list):
             coords={
                 "utime": np.arange(sum(xds.UTIME_CHUNKS)),
                 "ant": xds.ant,
-                "receptor": np.arange(2)
+                "receptor": np.arange(feedtab.sizes['receptors'])
             },
             attrs={
                 "FEED_TYPE": feed_type,
@@ -266,7 +306,7 @@ def nb_apply_parangle_rot(data_col, parangles, utime_ind, ant1_col, ant2_col,
     v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
     v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
     valloc = factories.valloc_factory(corr_mode)
-    rotmat = rotation_factory(corr_mode, feed_type)
+    rotmat = factories.rotation_factory(corr_mode, feed_type)
 
     def impl(data_col, parangles, utime_ind, ant1_col, ant2_col,
              corr_mode, feed_type):
@@ -299,43 +339,3 @@ def nb_apply_parangle_rot(data_col, parangles, utime_ind, ant1_col, ant2_col,
         return data_col
 
     return impl
-
-
-def rotation_factory(corr_mode, feed_type):
-
-    if feed_type.literal_value == "circular":
-        if corr_mode.literal_value == 4:
-            def impl(rot0, rot1, out):
-                out[0] = np.exp(-1j*rot0)
-                out[1] = 0
-                out[2] = 0
-                out[3] = np.exp(1j*rot1)
-        elif corr_mode.literal_value == 2:  # TODO: Is this sensible?
-            def impl(rot0, rot1, out):
-                out[0] = np.exp(-1j*rot0)
-                out[1] = np.exp(1j*rot1)
-        elif corr_mode.literal_value == 1:  # TODO: Is this sensible?
-            def impl(rot0, rot1, out):
-                out[0] = np.exp(-1j*rot0)
-        else:
-            raise ValueError("Unsupported number of correlations.")
-    elif feed_type.literal_value == "linear":
-        if corr_mode.literal_value == 4:
-            def impl(rot0, rot1, out):
-                out[0] = np.cos(rot0)
-                out[1] = np.sin(rot0)
-                out[2] = -np.sin(rot1)
-                out[3] = np.cos(rot1)
-        elif corr_mode.literal_value == 2:  # TODO: Is this sensible?
-            def impl(rot0, rot1, out):
-                out[0] = np.cos(rot0)
-                out[1] = np.cos(rot1)
-        elif corr_mode.literal_value == 1:  # TODO: Is this sensible?
-            def impl(rot0, rot1, out):
-                out[0] = np.cos(rot0)
-        else:
-            raise ValueError("Unsupported number of correlations.")
-    else:
-        raise ValueError("Unsupported feed type.")
-
-    return factories.qcjit(impl)

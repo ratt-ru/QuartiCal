@@ -7,7 +7,7 @@ from testing.utils.gains import apply_gains, reference_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr, solve_per):
+def opts(base_opts, select_corr):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -20,8 +20,8 @@ def opts(base_opts, select_corr, solve_per):
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
     _opts.solver.threads = 2
-    _opts.G.type = "phase"
-    _opts.G.solve_per = solve_per
+    _opts.G.type = "delay_and_tec"
+    _opts.G.freq_interval = 0
 
     return _opts
 
@@ -33,7 +33,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list, solve_per):
+def true_gain_list(predicted_xds_list):
 
     gain_list = []
 
@@ -47,25 +47,48 @@ def true_gain_list(predicted_xds_list, solve_per):
         n_dir = xds.sizes["dir"]
         n_corr = xds.sizes["corr"]
 
-        chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
+        chan_freq = xds.CHAN_FREQ.data
+        chan_width = chan_freq[1] - chan_freq[0]
+        cf_min = chan_freq.min()
+        cf_max = chan_freq.max()
+        band_centre = (cf_min + cf_max) / 2
 
-        bound = np.pi
+        max_tec = 1/(1/chan_freq[-1] - 1/chan_freq[-2])
+
+        chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
+        tec_chunking = (utime_chunks, 1, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
+        tec = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-0.05*max_tec,
+            high=0.05*max_tec,
+            chunks=tec_chunking
+        )
+        tec[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
+
+        delays = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-1/(2*chan_width),
+            high=1/(2*chan_width)
+        )
+        delays *= 0.2  # Remove once we have initial enstimates.
+        delays[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
+
         amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
                       chunks=chunking)
-        phase = da.random.uniform(size=(n_time, n_chan, n_ant, n_dir, n_corr),
-                                  high=bound,
-                                  low=-bound,
-                                  chunks=chunking)
 
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
 
-        gains = amp*da.exp(1j*phase)
+        tec_offset = np.log(cf_min/cf_max)/(cf_max - cf_min)
+        tec_coeff = \
+            2 * np.pi * (1/chan_freq[None, :, None, None, None] + tec_offset)
+        delay_coeff = \
+            2*np.pi*(chan_freq[None, :, None, None, None] - band_centre)
 
-        if solve_per == "array":
-            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
+        phase = tec*tec_coeff + delays*delay_coeff 
+        gains = amp*da.exp(1j*phase)
 
         gain_list.append(gains)
 
@@ -172,5 +195,6 @@ def test_gain_flags(cmp_gain_xds_lod):
         # We know that these antennas are missing in the test data. No other
         # antennas should have flags.
         assert set(np.unique(fants)) == {18, 20}
+
 
 # -----------------------------------------------------------------------------

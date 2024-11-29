@@ -1,7 +1,8 @@
 input_ms:
   path:
     required: true
-    dtype: str
+    dtype: URI
+    writable: true
     info:
       Path to input measurement set.
 
@@ -180,7 +181,10 @@ input_model:
 output:
   gain_directory:
     default: gains.qc
-    dtype: str
+    dtype: URI
+    writable: true
+    must_exist: false
+    write_parent_dir: true
     info:
       Name of directory in which QuartiCal gain outputs will be stored.
       Accepts both local and s3 paths. QuartiCal will always produce gain
@@ -188,7 +192,9 @@ output:
 
   log_directory:
     default: logs.qc
-    dtype: str
+    dtype: Directory
+    writable: true
+    must_exist: false
     info:
       Name of directory in which QuartiCal logging outputs will be stored.
       s3 is not currently supported for these outputs.
@@ -313,26 +319,36 @@ mad_flags:
       Multiplicative factor which determines whether or not a chi-squared
       value is considered to deviate significantly from the median of a
       given baseline. Values greater than MAD_bl*threshold_bl will be
-      flagged.
+      flagged. Set to zero to disable flagging on this statistic.
 
   threshold_global:
     dtype: float
-    default: 5
+    default: 10
     info:
       Multiplicative factor which determines whether or not a chi-squared
       value is considered to deviate significantly from the median of a
       given data chunk. Values greater than MAD*threshold_global will be
-      flagged.
+      flagged. Set to zero to disable flagging on this statistic.
 
   max_deviation:
     dtype: float
-    default: 5
+    default: 0
     info:
       Multiplicative factor which determines whether or not the MAD estimate
       on a given baseline is considered to deviate too much from the global
       MAD estimate. If the MAD estimate over all baselines is X, and the MAD
       estimate on a specific baseline is X_bl, baselines for which
-      X_bl > max_deviation*X will be flagged.
+      X_bl > max_deviation*X will be flagged. Set to zero to disable flagging
+      on this statistic.
+
+  use_off_diagonals:
+    dtype: bool
+    default: False
+    info:
+      Controls whether or not the mad flagger will be run on the off-diagonal
+      elements of the residual. This is disabled by default as the residual
+      will tend to contain structure in the absence of a polarised model and
+      adequate leakage calibration.
 
 solver:
   terms:
@@ -432,3 +448,9 @@ dask:
     info:
       Which dask scheduler to use. The default, threads, is the most
       appropriate for non-cluster use.
+  
+  scheduler_plugin:
+    dtype: bool
+    default: true
+    info:
+      Enable or disable the dask scheduler plugin.

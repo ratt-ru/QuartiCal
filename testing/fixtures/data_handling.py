@@ -2,7 +2,8 @@ import pytest
 from quartical.data_handling.ms_handler import (read_xds_list,
                                                 preprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
-from quartical.data_handling.angles import make_parangle_xds_list
+from quartical.data_handling.angles import (make_parangle_xds_list,
+                                            assign_parangle_data)
 from quartical.statistics.statistics import make_stats_xds_list
 
 
@@ -23,7 +24,8 @@ def ref_xds_list(read_xds_list_output):
 
 @pytest.fixture(scope="module")
 def preprocessed_xds_list(raw_xds_list, ms_opts):
-    return preprocess_xds_list(raw_xds_list, ms_opts)
+    xdsl = preprocess_xds_list(raw_xds_list, ms_opts)
+    return assign_parangle_data(ms_opts.path, xdsl)
 
 
 @pytest.fixture(scope="module")

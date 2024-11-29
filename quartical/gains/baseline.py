@@ -37,7 +37,7 @@ def compute_baseline_corrections(
         weight_col = data_xds._WEIGHT.data  # The weights exiting the solver.
         ant1_col = data_xds.ANTENNA1.data
         ant2_col = data_xds.ANTENNA2.data
-        corr_mode = data_xds.dims["corr"]
+        corr_mode = data_xds.sizes["corr"]
 
         time_maps = tuple(
             [mapping_xds.get(f"{k}_time_map").data for k in gain_dict.keys()]
@@ -63,7 +63,7 @@ def compute_baseline_corrections(
             req_args.extend([fm, ("gain_freq",)])
             req_args.extend([dm, ("direction",)])
 
-        n_ant = data_xds.dims["ant"]
+        n_ant = data_xds.sizes["ant"]
         n_bla = int((n_ant*(n_ant - 1))/2 + n_ant)
 
         bl_corr = da.blockwise(

@@ -3,7 +3,7 @@ from collections import defaultdict
 from distributed import SchedulerPlugin
 from dask.core import reverse_dict
 from dask.base import tokenize
-from dask.order import graph_metrics, ndependencies
+from dask.order import ndependencies
 
 
 def install_plugin(dask_scheduler=None, **kwargs):
@@ -96,8 +96,11 @@ class AutoRestrictor(SchedulerPlugin):
         # Create a unique token for each set of partition roots. TODO: This is
         # very strict. What about nodes with very similar roots? Tokenization
         # may be overkill too.
-        root_tokens = {tokenize(*sorted(v)): v for v in part_roots.values()}
-
+        root_tokens = {
+            tokenize(
+                *sorted(v, key=lambda x: str(x))
+            ): v for v in part_roots.values()
+        }
         hash_map = defaultdict(set)
         group_offset = 0
 
@@ -129,7 +132,9 @@ class AutoRestrictor(SchedulerPlugin):
             pdn = part_dependents[pn]
 
             if pdp:
-                groups = hash_map[tokenize(*sorted(part_roots[pn]))]
+                groups = hash_map[
+                    tokenize(*sorted(part_roots[pn],  key=lambda x: str(x)))
+                ]
             else:  # Special case - no dependencies.
                 groups = {group_offset}
                 group_offset += 1
@@ -153,3 +158,66 @@ class AutoRestrictor(SchedulerPlugin):
                     task.worker_restrictions = set()
                 task.worker_restrictions |= {assignee}
                 task.loose_restrictions = False
+
+
+# NOTE: The graph metrics function has been copied directly from
+# dask/order.py. This function was removed upstream but is currently
+# critical for the scheduler plugin. This is a temporary work around
+# while we consider revised strategies. Original version appears at:
+# https://github.com/dask/dask/blob/9f7d55705f0eb74a172f5fdc3690aa65fbe21762/dask/order.py
+def graph_metrics(dependencies, dependents, total_dependencies):
+    """Useful measures of a graph used by ``dask.order.order``"""
+
+    result = {}
+    num_needed = {k: len(v) for k, v in dependents.items() if v}
+    current = []
+    current_pop = current.pop
+    current_append = current.append
+    for key, deps in dependents.items():
+        if not deps:
+            val = total_dependencies[key]
+            result[key] = (1, val, val, 0, 0)
+            for child in dependencies[key]:
+                num_needed[child] -= 1
+                if not num_needed[child]:
+                    current_append(child)
+
+    while current:
+        key = current_pop()
+        parents = dependents[key]
+        if len(parents) == 1:
+            (parent,) = parents
+            (
+                total_dependents,
+                min_dependencies,
+                max_dependencies,
+                min_heights,
+                max_heights,
+            ) = result[parent]
+            result[key] = (
+                1 + total_dependents,
+                min_dependencies,
+                max_dependencies,
+                1 + min_heights,
+                1 + max_heights,
+            )
+        else:
+            (
+                total_dependents_,
+                min_dependencies_,
+                max_dependencies_,
+                min_heights_,
+                max_heights_,
+            ) = zip(*(result[parent] for parent in dependents[key]))
+            result[key] = (
+                1 + sum(total_dependents_),
+                min(min_dependencies_),
+                max(max_dependencies_),
+                1 + min(min_heights_),
+                1 + max(max_heights_),
+            )
+        for child in dependencies[key]:
+            num_needed[child] -= 1
+            if not num_needed[child]:
+                current_append(child)
+    return result

@@ -45,7 +45,9 @@ def log_chisq(pre, post, attrs, block_id=None):
     pre = pre.item()
     post = post.item()
 
-    if np.isfinite(pre) and np.isfinite(post):
+    if pre == 0:  # This may be zero in noise-free tests.
+        fractional_change = 0
+    elif np.isfinite(pre) and np.isfinite(post):
         fractional_change = (post - pre) / pre
     else:
         fractional_change = np.nan
@@ -78,8 +80,8 @@ def log_summary_stats(stats_xds_list):
 
     for sxds_group in sxds_groups:
 
-        max_nt_chunk = max([sxds.dims["t_chunk"] for sxds in sxds_group])
-        max_nf_chunk = max([sxds.dims["f_chunk"] for sxds in sxds_group])
+        max_nt_chunk = max([sxds.sizes["t_chunk"] for sxds in sxds_group])
+        max_nf_chunk = max([sxds.sizes["f_chunk"] for sxds in sxds_group])
 
         ids = [f"T{t}F{f}" for t in range(max_nt_chunk)
                            for f in range(max_nf_chunk)]  # noqa

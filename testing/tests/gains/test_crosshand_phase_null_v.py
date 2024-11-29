@@ -3,25 +3,26 @@ import pytest
 import numpy as np
 import dask.array as da
 from quartical.calibration.calibrate import add_calibration_graph
-from testing.utils.gains import apply_gains, reference_gains
+from testing.utils.gains import apply_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr, solve_per):
+def opts(base_opts):
 
     # Don't overwrite base config - instead create a copy and update.
 
     _opts = deepcopy(base_opts)
 
-    _opts.input_ms.select_corr = select_corr
+    _opts.input_ms.select_corr = [0, 1, 2, 3]
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [100]
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
     _opts.solver.threads = 2
-    _opts.G.type = "phase"
-    _opts.G.solve_per = solve_per
+    _opts.G.time_interval = 0
+    _opts.G.type = "crosshand_phase_null_v"
+    _opts.G.solve_per = "array"
 
     return _opts
 
@@ -33,7 +34,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list, solve_per):
+def true_gain_list(predicted_xds_list):
 
     gain_list = []
 
@@ -47,25 +48,23 @@ def true_gain_list(predicted_xds_list, solve_per):
         n_dir = xds.sizes["dir"]
         n_corr = xds.sizes["corr"]
 
-        chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
+        chunking = (len(utime_chunks), chan_chunks, n_ant, n_dir, n_corr)
 
         bound = np.pi
 
         da.random.seed(0)
-        amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
-                      chunks=chunking)
-        phase = da.random.uniform(size=(n_time, n_chan, n_ant, n_dir, n_corr),
+        amp = da.from_array(np.array([1, 0, 0, 1]))
+        phase = da.random.uniform(size=(1, n_chan, 1, n_dir, n_corr),
                                   high=bound,
                                   low=-bound,
                                   chunks=chunking)
+        phase[..., 1:] = 0  # Only introduce the phase on XX or RR.
 
-        if n_corr == 4:  # This solver only considers the diagonal elements.
-            amp *= da.array([1, 0, 0, 1])
+        gains = amp[None, None, None, None, :]*da.exp(1j*phase)
 
-        gains = amp*da.exp(1j*phase)
+        shape = (n_time, n_chan, n_ant, n_dir, n_corr)
 
-        if solve_per == "array":
-            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
+        gains = da.broadcast_to(gains[:, :, :1], shape)
 
         gain_list.append(gains)
 
@@ -89,6 +88,8 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
             time.map_blocks(lambda x: np.unique(x, return_inverse=True)[1])
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
+
+        model *= da.from_array([1, 0.1, 0.1, 1])
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
@@ -124,13 +125,12 @@ def add_calibration_graph_outputs(corrupted_data_xds_list, stats_xds_list,
 
 # -----------------------------------------------------------------------------
 
-def test_residual_magnitude(cmp_post_solve_data_xds_list):
-    # Magnitude of the residuals should tend to zero.
+def test_stokes_v_magnitude(cmp_post_solve_data_xds_list):
+    # Magnitude of stokes V in the corrected data should tend to zero.
     for xds in cmp_post_solve_data_xds_list:
-        residual = xds._RESIDUAL.data
-        if residual.shape[-1] == 4:
-            residual = residual[..., (0, 3)]  # Only check on-diagonal terms.
-        np.testing.assert_array_almost_equal(np.abs(residual), 0)
+        corr_data = xds._CORRECTED_DATA.data
+        res_v = -0.5j*corr_data[...,1] + 0.5j*corr_data[..., 2]
+        np.testing.assert_array_almost_equal(np.abs(res_v), 0)
 
 
 def test_solver_flags(cmp_post_solve_data_xds_list):
@@ -139,18 +139,14 @@ def test_solver_flags(cmp_post_solve_data_xds_list):
         np.testing.assert_array_equal(xds._FLAG.data, xds.FLAG.data)
 
 
+@pytest.mark.xfail(reason="Ambiguous result - signs may be flipped.")
 def test_gains(cmp_gain_xds_lod, true_gain_list):
 
     for solved_gain_dict, true_gain in zip(cmp_gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
         solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
                                                solved_gain_xds.gain_flags.data)
-        true_gain = true_gain.compute()  # TODO: This could be done elsewhere.
-
-        n_corr = true_gain.shape[-1]
-
-        solved_gain = reference_gains(solved_gain, n_corr)
-        true_gain = reference_gains(true_gain, n_corr)
+        true_gain = true_gain.compute().copy()  # Make mutable.
 
         true_gain[np.where(solved_flags)] = 0
         solved_gain[np.where(solved_flags)] = 0
@@ -158,7 +154,7 @@ def test_gains(cmp_gain_xds_lod, true_gain_list):
         # To ensure the missing antenna handling doesn't render this test
         # useless, check that we have non-zero entries first.
         assert np.any(solved_gain), "All gains are zero!"
-        np.testing.assert_array_almost_equal(true_gain, solved_gain)
+        np.testing.assert_array_almost_equal(true_gain[:1], solved_gain)
 
 
 def test_gain_flags(cmp_gain_xds_lod):

@@ -25,8 +25,8 @@ def linear2d_interpolate_gains(source_xds, target_xds):
         i_t_axis, i_f_axis = source_xds.GAIN_AXES[:2]
         t_t_axis, t_f_axis = target_xds.GAIN_AXES[:2]
 
-    i_t_dim = source_xds.dims[i_t_axis]
-    i_f_dim = source_xds.dims[i_f_axis]
+    i_t_dim = source_xds.sizes[i_t_axis]
+    i_f_dim = source_xds.sizes[i_f_axis]
 
     interp_axes = {}
 
@@ -124,12 +124,12 @@ def spline2d_interpolate_gains(source_xds, target_xds):
         i_t_axis, i_f_axis = source_xds.GAIN_AXES[:2]
         t_t_axis, t_f_axis = target_xds.GAIN_AXES[:2]
 
-    if source_xds.dims[i_t_axis] < 4 or source_xds.dims[i_f_axis] < 4:
+    if source_xds.sizes[i_t_axis] < 4 or source_xds.sizes[i_f_axis] < 4:
         raise ValueError(
             f"Cubic spline interpolation requires at least four "
             f"values along an axis. After concatenation, the "
             f"(time, freq) dimensions of the interpolating dataset were "
-            f"{(source_xds.dims[i_t_axis], source_xds.dims[i_f_axis])}."
+            f"{(source_xds.sizes[i_t_axis], source_xds.sizes[i_f_axis])}."
         )
 
     interp_arr = da.blockwise(
@@ -141,8 +141,8 @@ def spline2d_interpolate_gains(source_xds, target_xds):
         target_xds[t_f_axis].values, None,
         dtype=np.float64,
         adjust_chunks={
-            "t": target_xds.dims[t_t_axis],
-            "f": target_xds.dims[t_f_axis]
+            "t": target_xds.sizes[t_t_axis],
+            "f": target_xds.sizes[t_f_axis]
         }
     )
 

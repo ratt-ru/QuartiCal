@@ -123,6 +123,8 @@ def valid_median(arr):
 
 def add_mad_graph(data_xds_list, mad_opts):
 
+    diag_corrs = ['RR', 'LL', 'XX', 'YY']
+
     bl_thresh = mad_opts.threshold_bl
     gbl_thresh = mad_opts.threshold_global
     max_deviation = mad_opts.max_deviation
@@ -143,9 +145,16 @@ def add_mad_graph(data_xds_list, mad_opts):
         flag_col = xds.FLAG.data
         ant1_col = xds.ANTENNA1.data
         ant2_col = xds.ANTENNA2.data
-        n_ant = xds.dims["ant"]
+        n_ant = xds.sizes["ant"]
         n_bl_w_autos = (n_ant * (n_ant - 1))/2 + n_ant
         n_t_chunk, n_f_chunk, _ = residuals.numblocks
+
+        if mad_opts.use_off_diagonals:
+            corr_sel = tuple(np.arange(residuals.shape[-1]))
+        else:
+            corr_sel = tuple(
+                [i for i, c in enumerate(xds.corr.values) if c in diag_corrs]
+            )
 
         wres = da.blockwise(
             compute_whitened_residual, ("rowlike", "chan", "corr"),
@@ -228,6 +237,7 @@ def add_mad_graph(data_xds_list, mad_opts):
             gbl_thresh, None,
             bl_thresh, None,
             max_deviation, None,
+            corr_sel, None,
             n_ant, None,
             dtype=np.int8,
             align_arrays=False,

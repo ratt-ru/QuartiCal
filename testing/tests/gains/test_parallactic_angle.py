@@ -3,25 +3,28 @@ import pytest
 import numpy as np
 import dask.array as da
 from quartical.calibration.calibrate import add_calibration_graph
-from testing.utils.gains import apply_gains, reference_gains
+from testing.utils.gains import apply_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr, solve_per):
+def opts(base_opts):
 
     # Don't overwrite base config - instead create a copy and update.
 
     _opts = deepcopy(base_opts)
 
-    _opts.input_ms.select_corr = select_corr
+    _opts.input_ms.select_corr = [0, 1, 2, 3]
+    _opts.input_model.apply_p_jones = False
+    _opts.output.apply_p_jones_inv = False
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [100]
+    _opts.solver.iter_recipe = [0]
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
     _opts.solver.threads = 2
-    _opts.G.type = "phase"
-    _opts.G.solve_per = solve_per
+    _opts.G.freq_interval = 0
+    _opts.G.time_interval = 1
+    _opts.G.type = "parallactic_angle"
 
     return _opts
 
@@ -32,12 +35,17 @@ def raw_xds_list(read_xds_list_output):
     return read_xds_list_output[0][:1]
 
 
+@pytest.fixture(scope="module", params=["linear", "circular"])
+def feed_type(request):
+    return request.param
+
+
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list, solve_per):
+def true_gain_list(predicted_xds_list, parangle_xds_list, feed_type):
 
     gain_list = []
 
-    for xds in predicted_xds_list:
+    for xds, pxds in zip(predicted_xds_list, parangle_xds_list):
 
         n_ant = xds.sizes["ant"]
         utime_chunks = xds.UTIME_CHUNKS
@@ -47,25 +55,22 @@ def true_gain_list(predicted_xds_list, solve_per):
         n_dir = xds.sizes["dir"]
         n_corr = xds.sizes["corr"]
 
+        shape = (n_time, n_chan, n_ant, n_dir, n_corr)
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
-        bound = np.pi
+        gains = da.zeros(shape, chunks=chunking, dtype=np.complex128)
+        phase = pxds.PARALLACTIC_ANGLES.data[:, None, :, None, :]
 
-        da.random.seed(0)
-        amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
-                      chunks=chunking)
-        phase = da.random.uniform(size=(n_time, n_chan, n_ant, n_dir, n_corr),
-                                  high=bound,
-                                  low=-bound,
-                                  chunks=chunking)
-
-        if n_corr == 4:  # This solver only considers the diagonal elements.
-            amp *= da.array([1, 0, 0, 1])
-
-        gains = amp*da.exp(1j*phase)
-
-        if solve_per == "array":
-            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
+        if feed_type == "circular":
+            gains[..., 0] = da.exp(-1j*phase[..., 0])
+            gains[..., 3] = da.exp(1j*phase[..., 1])
+        elif feed_type == "linear":
+            gains[..., 0] = da.cos(phase[..., 0])
+            gains[..., 1] = da.sin(phase[..., 0])
+            gains[..., 2] = -da.sin(phase[..., 1])
+            gains[..., 3] = da.cos(phase[..., 1])
+        else:
+            raise ValueError(f"Unsupported feed type - {feed_type}.")
 
         gain_list.append(gains)
 
@@ -73,7 +78,7 @@ def true_gain_list(predicted_xds_list, solve_per):
 
 
 @pytest.fixture(scope="module")
-def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
+def corrupted_data_xds_list(predicted_xds_list, true_gain_list, feed_type):
 
     corrupted_data_xds_list = []
 
@@ -89,6 +94,8 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
             time.map_blocks(lambda x: np.unique(x, return_inverse=True)[1])
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
+
+        model *= da.from_array([1, 0.1, 0.1, 1])
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
@@ -109,6 +116,8 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
             }
         )
 
+        corrupted_xds.attrs["FEED_TYPE"] = feed_type  # Change feed type.
+
         corrupted_data_xds_list.append(corrupted_xds)
 
     return corrupted_data_xds_list
@@ -127,10 +136,7 @@ def add_calibration_graph_outputs(corrupted_data_xds_list, stats_xds_list,
 def test_residual_magnitude(cmp_post_solve_data_xds_list):
     # Magnitude of the residuals should tend to zero.
     for xds in cmp_post_solve_data_xds_list:
-        residual = xds._RESIDUAL.data
-        if residual.shape[-1] == 4:
-            residual = residual[..., (0, 3)]  # Only check on-diagonal terms.
-        np.testing.assert_array_almost_equal(np.abs(residual), 0)
+        np.testing.assert_array_almost_equal(np.abs(xds._RESIDUAL.data), 0)
 
 
 def test_solver_flags(cmp_post_solve_data_xds_list):
@@ -145,12 +151,7 @@ def test_gains(cmp_gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
         solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
                                                solved_gain_xds.gain_flags.data)
-        true_gain = true_gain.compute()  # TODO: This could be done elsewhere.
-
-        n_corr = true_gain.shape[-1]
-
-        solved_gain = reference_gains(solved_gain, n_corr)
-        true_gain = reference_gains(true_gain, n_corr)
+        true_gain = true_gain.compute().copy()  # Make mutable.
 
         true_gain[np.where(solved_flags)] = 0
         solved_gain[np.where(solved_flags)] = 0

@@ -88,7 +88,8 @@ def help():
             ]
         )
     ]
-    HelpConfig = finalize_structure(additional_config)
+    help_class = finalize_structure(additional_config)
+    HelpConfig = help_class()
 
     if len(sys.argv) == 1 or help_arg == "help":
         print_help(HelpConfig)
