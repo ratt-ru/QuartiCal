@@ -798,3 +798,43 @@ def a_kron_bt_factory(corr_mode):
         out[3, 3] = a11 * b11
 
     return qcjit(impl)
+
+
+def rotation_factory(corr_mode, feed_type):
+
+    if feed_type.literal_value == "circular":
+        if corr_mode.literal_value == 4:
+            def impl(rot0, rot1, out):
+                out[0] = np.exp(-1j*rot0)
+                out[1] = 0
+                out[2] = 0
+                out[3] = np.exp(1j*rot1)
+        elif corr_mode.literal_value == 2:  # TODO: Is this sensible?
+            def impl(rot0, rot1, out):
+                out[0] = np.exp(-1j*rot0)
+                out[1] = np.exp(1j*rot1)
+        elif corr_mode.literal_value == 1:  # TODO: Is this sensible?
+            def impl(rot0, rot1, out):
+                out[0] = np.exp(-1j*rot0)
+        else:
+            raise ValueError("Unsupported number of correlations.")
+    elif feed_type.literal_value == "linear":
+        if corr_mode.literal_value == 4:
+            def impl(rot0, rot1, out):
+                out[0] = np.cos(rot0)
+                out[1] = np.sin(rot0)
+                out[2] = -np.sin(rot1)
+                out[3] = np.cos(rot1)
+        elif corr_mode.literal_value == 2:  # TODO: Is this sensible?
+            def impl(rot0, rot1, out):
+                out[0] = np.cos(rot0)
+                out[1] = np.cos(rot1)
+        elif corr_mode.literal_value == 1:  # TODO: Is this sensible?
+            def impl(rot0, rot1, out):
+                out[0] = np.cos(rot0)
+        else:
+            raise ValueError("Unsupported number of correlations.")
+    else:
+        raise ValueError("Unsupported feed type.")
+
+    return qcjit(impl)

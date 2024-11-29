@@ -5,7 +5,7 @@ from collections import namedtuple
 
 
 term_spec_tup = namedtuple("term_spec_tup", "name type shape pshape")
-aux_info_fields = ("SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID")
+log_info_fields = ("SCAN_NUMBER", "FIELD_ID", "DATA_DESC_ID")
 
 
 def construct_solver(
@@ -54,9 +54,9 @@ def construct_solver(
         corr_mode = data_xds.sizes["corr"]
 
         block_id_arr = get_block_id_arr(data_col)
-        aux_block_info = {
-            k: data_xds.attrs.get(k, "?") for k in aux_info_fields
-        }
+        data_xds_meta = data_xds.attrs.copy()
+        for k in log_info_fields:
+            data_xds_meta[k] = data_xds_meta.get(k, "?")
 
         # Grab the number of input chunks - doing this on the data should be
         # safe.
@@ -87,7 +87,7 @@ def construct_solver(
         )
         blocker.add_input("term_spec_list", spec_list, ("row", "chan"))
         blocker.add_input("corr_mode", corr_mode)
-        blocker.add_input("aux_block_info", aux_block_info)
+        blocker.add_input("data_xds_meta", data_xds_meta)
         blocker.add_input("solver_opts", solver_opts)
         blocker.add_input("chain", chain)
 

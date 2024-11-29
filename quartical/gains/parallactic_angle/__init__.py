@@ -1,32 +1,35 @@
 import numpy as np
 from collections import namedtuple
-from quartical.gains.conversion import no_op
+from quartical.gains.conversion import trig_to_angle
 from quartical.gains.parameterized_gain import ParameterizedGain
-from quartical.gains.rotation_measure.kernel import (
-    rm_solver,
-    rm_params_to_gains
+from quartical.gains.parallactic_angle.kernel import (
+    parallactic_angle_params_to_gains
 )
 from quartical.gains.general.flagging import (
     apply_gain_flags_to_gains,
     apply_param_flags_to_params
 )
+from quartical.data_handling.angles import _make_parangles
 
-# Overload the default measurement set inputs to include the frequencies.
+# Overload the default measurement set inputs to include information required
+# to compute the parallactic angles.
 ms_inputs = namedtuple(
-    'ms_inputs', ParameterizedGain.ms_inputs._fields + ('CHAN_FREQ',)
+    'ms_inputs', 
+    ParameterizedGain.ms_inputs._fields + \
+        ('RECEPTOR_ANGLE', 'POSITION', 'TIME')
 )
 
+class ParallacticAngle(ParameterizedGain):
 
-class RotationMeasure(ParameterizedGain):
-
-    solver = staticmethod(rm_solver)
+    solver = None
     ms_inputs = ms_inputs
 
     native_to_converted = (
-        (1, (no_op,)),
+        (0, (np.cos,)),
+        (1, (np.sin,))
     )
     converted_to_native = (
-        (1, no_op),
+        (2, trig_to_angle),
     )
     converted_dtype = np.float64
     native_dtype = np.float64
@@ -42,34 +45,7 @@ class RotationMeasure(ParameterizedGain):
 
     @classmethod
     def make_param_names(cls, correlations):
-
-        return ["rotation_measure"]
-
-    @staticmethod
-    def make_f_maps(chan_freqs, chan_widths, f_int):
-        """Internals of the frequency interval mapper."""
-
-        n_chan = chan_freqs.size
-
-        # The leading dimension corresponds (gain, param). For unparameterised
-        # gains, the parameter mapping is irrelevant.
-        f_map_arr = np.zeros((2, n_chan,), dtype=np.int32)
-
-        if isinstance(f_int, float):
-            net_ivl = 0
-            bin_num = 0
-            for i, ivl in enumerate(chan_widths):
-                f_map_arr[1, i] = bin_num
-                net_ivl += ivl
-                if net_ivl >= f_int:
-                    net_ivl = 0
-                    bin_num += 1
-        else:
-            f_map_arr[1, :] = np.arange(n_chan)//f_int
-
-        f_map_arr[0, :] = np.arange(n_chan)
-
-        return f_map_arr
+        return ["parallactic_angle"]
 
     def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs, meta=None):
         """Initialise the gains (and parameters)."""
@@ -78,15 +54,22 @@ class RotationMeasure(ParameterizedGain):
             term_spec, ref_ant, ms_kwargs, term_kwargs
         )
 
-        chan_freq = ms_kwargs["CHAN_FREQ"]
-        lambda_sq = (299792458 / chan_freq) ** 2
+        params[...] = _make_parangles(
+            ms_kwargs["TIME"],
+            np.arange(gains.shape[2]),  # TODO: Just for determining n_ant.
+            ms_kwargs["POSITION"],
+            ms_kwargs["RECEPTOR_ANGLE"],
+            meta["FIELD_CENTRE"],
+            "J2000"  # NOTE: Currently hardcoded - will need to be exposed.
+        )[:, None, :, None, :1]  # Assume single value for parallactic angle.
 
         # Convert the parameters into gains.
-        rm_params_to_gains(
+        parallactic_angle_params_to_gains(
             params,
             gains,
-            lambda_sq,
             term_kwargs[f"{self.name}_param_freq_map"],
+            feed_type=meta["FEED_TYPE"],
+            corr_mode=gains.shape[-1]
         )
 
         # Apply flags to gains and parameters.

@@ -54,7 +54,7 @@ class DelayAndTec(ParameterizedGain):
 
         return [n.format(c) for c in param_corr for n in template]
 
-    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs, meta=None):
         """Initialise the gains (and parameters)."""
 
         gains, gain_flags, params, param_flags = super().init_term(

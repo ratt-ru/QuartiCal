@@ -15,6 +15,13 @@ from quartical.data_handling.bda import process_bda_input, process_bda_output
 from quartical.data_handling.selection import filter_xds_list
 from quartical.data_handling.angles import apply_parangles
 
+DASKMS_ATTRS = {
+    "__daskms_partition_schema__",
+    "SCAN_NUMBER",
+    "FIELD_ID",
+    "DATA_DESC_ID"
+}
+
 
 def read_xds_list(model_columns, ms_opts):
     """Reads a measurement set and generates a list of xarray data sets.
@@ -293,14 +300,18 @@ def write_xds_list(xds_list, ref_xds_list, ms_path, output_opts):
 
     logger.info("Outputs will be written to {}.", ", ".join(output_cols))
 
+    # Select only the output columns to simplify datasets.
+    xds_list = [xds[list(output_cols)] for xds in xds_list]
+
+    # Remove all coords bar ROWID so that they do not get written.
+    xds_list = [
+        xds.drop_vars(set(xds.coords.keys()) - {"ROWID"}, errors='ignore')
+        for xds in xds_list
+    ]
+
     # Remove attrs added by QuartiCal so that they do not get written.
     for xds in xds_list:
-        xds.attrs.pop("UTIME_CHUNKS", None)
-        xds.attrs.pop("FIELD_NAME", None)
-
-    # Remove coords added by QuartiCal so that they do not get written.
-    xds_list = [xds.drop_vars(["chan", "corr"], errors='ignore')
-                for xds in xds_list]
+        xds.attrs = {k: v for k, v in xds.attrs.items() if k in DASKMS_ATTRS}
 
     with warnings.catch_warnings():  # We anticipate spurious warnings.
         warnings.simplefilter("ignore")

@@ -54,7 +54,7 @@ def solver_wrapper(
     solver_opts,
     chain,
     block_id_arr,
-    aux_block_info,
+    data_xds_meta,
     corr_mode,
     **kwargs
 ):
@@ -108,11 +108,11 @@ def solver_wrapper(
         # Perform term specific setup e.g. init gains and params.
         if term.is_parameterized:
             gains, gain_flags, params, param_flags = term.init_term(
-                term_spec, ref_ant, ms_kwargs, term_kwargs
+                term_spec, ref_ant, ms_kwargs, term_kwargs, meta=data_xds_meta
             )
         else:
             gains, gain_flags = term.init_term(
-                term_spec, ref_ant, ms_kwargs, term_kwargs
+                term_spec, ref_ant, ms_kwargs, term_kwargs, meta=data_xds_meta
             )
             # Dummy arrays with standard dtypes - aids compilation.
             params = np.empty(term_pshape, dtype=np.float64)
@@ -190,6 +190,7 @@ def solver_wrapper(
     for ind, (term, iters) in enumerate(zip(cycle(chain), iter_recipe)):
 
         active_term = chain.index(term)
+        active_spec = term_spec_list[term_ind]
 
         ms_fields = term.ms_inputs._fields
         ms_inputs = term.ms_inputs(
@@ -219,13 +220,17 @@ def solver_wrapper(
             term.solve_per
         )
 
-        jhj, conv_iter, conv_perc = term.solver(
-            ms_inputs,
-            mapping_inputs,
-            chain_inputs,
-            meta_inputs,
-            corr_mode
-        )
+        if term.solver:
+            jhj, conv_iter, conv_perc = term.solver(
+                ms_inputs,
+                mapping_inputs,
+                chain_inputs,
+                meta_inputs,
+                corr_mode
+            )
+        else:
+            jhj = np.zeros(getattr(active_spec, "pshape", active_spec.shape))
+            conv_iter, conv_perc = 0, 1
 
         # If reweighting is enabled, do it when the epoch changes, except
         # for the final epoch - we don't reweight if we won't solve again.
@@ -269,7 +274,7 @@ def solver_wrapper(
         corr_mode
     )
 
-    log_chisq(presolve_chisq, postsolve_chisq, aux_block_info, block_id)
+    log_chisq(presolve_chisq, postsolve_chisq, data_xds_meta, block_id)
 
     results_dict["presolve_chisq"] = presolve_chisq
     results_dict["postsolve_chisq"] = postsolve_chisq

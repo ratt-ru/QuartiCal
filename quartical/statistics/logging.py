@@ -45,7 +45,9 @@ def log_chisq(pre, post, attrs, block_id=None):
     pre = pre.item()
     post = post.item()
 
-    if np.isfinite(pre) and np.isfinite(post):
+    if pre == 0:  # This may be zero in noise-free tests.
+        fractional_change = 0
+    elif np.isfinite(pre) and np.isfinite(post):
         fractional_change = (post - pre) / pre
     else:
         fractional_change = np.nan
