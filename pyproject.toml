@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "quartical"
-version = "0.2.3"
+version = "0.2.4"
 description = "Fast and flexible calibration suite for radio interferometer data."
 repository = "https://github.com/ratt-ru/QuartiCal"
 documentation = "https://quartical.readthedocs.io"
