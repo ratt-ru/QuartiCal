@@ -24,7 +24,7 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.10, <3.13"
+python = ">=3.10, <3.12"  # No 3.12 support until astro-tigger-lsm release.
 astro-tigger-lsm = ">=1.7.2, <=1.7.3"
 codex-africanus = {extras = ["dask", "scipy", "astropy", "python-casacore"], version = ">=0.4.1, <=0.4.1"}
 colorama = ">=0.4.6, <=0.4.6"
