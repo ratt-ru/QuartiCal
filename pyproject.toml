@@ -24,29 +24,6 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-<<<<<<< HEAD
-python = "^3.8"
-tbump = "^6.10.0"
-columnar = "^1.4.1"
-"ruamel.yaml" = "^0.17.26"
-dask = {extras = ["diagnostics"], version = "^2023.1.0"}
-distributed = "^2023.1.0"
-dask-ms = {git = "https://github.com/ratt-ru/dask-ms.git", extras = ["s3", "xarray", "zarr"]}
-codex-africanus = {extras = ["dask", "scipy", "astropy", "python-casacore"], version = "^0.3.4"}
-astro-tigger-lsm = "^1.7.2"
-loguru = "^0.7.0"
-requests = "^2.31.0"
-pytest = "^7.3.1"
-omegaconf = "^2.3.0"
-colorama = "^0.4.6"
-stimela = "2.0rc4"
-ducc0 = "^0.31.0"
-sympy = "^1.12"
-matplotlib = "^3.5.1"
-
-[tool.poetry.extras]
-degrid = ["ducc0", "sympy"]
-=======
 python = ">=3.10, <3.13"
 astro-tigger-lsm = [
     { version = ">=1.7.2, <=1.7.3", python = "<3.12" },
@@ -66,7 +43,6 @@ requests = ">=2.31.0, <=2.32.3"
 "ruamel.yaml" = ">=0.17.26, <=0.18.6"
 stimela = ">=2.0"
 tbump = ">=6.10.0, <=6.11.0"
->>>>>>> main
 
 [tool.poetry.scripts]
 goquartical = 'quartical.executor:execute'
