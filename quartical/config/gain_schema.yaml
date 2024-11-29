@@ -8,12 +8,15 @@ gain:
       - amplitude
       - delay
       - delay_and_offset
+      - delay_and_tec
       - phase
       - tec_and_offset
       - rotation_measure
       - rotation
       - crosshand_phase
+      - crosshand_phase_null_v
       - leakage
+      - parallactic_angle
     info:
       Type of gain to solve for.
 

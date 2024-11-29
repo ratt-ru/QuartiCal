@@ -18,6 +18,7 @@ def update_icovariance_impl(residuals, flags, etas, icovariance, mode):
 @overload(update_icovariance_impl, jit_options=JIT_OPTIONS)
 def nb_update_icovariance_impl(residuals, flags, etas, icovariance, mode):
 
+    coerce_literal(nb_update_icovariance_impl, ["mode"])
     update_covariance_inner = update_covariance_inner_factory(mode)
 
     def impl(residuals, flags, etas, icovariance, mode):
@@ -91,6 +92,7 @@ def update_etas_impl(residuals, flags, etas, icovariance, dof, mode):
 @overload(update_etas_impl, jit_options=JIT_OPTIONS)
 def nb_update_etas_impl(residuals, flags, etas, icovariance, dof, mode):
 
+    coerce_literal(nb_update_etas_impl, ["mode"])
     update_etas_inner = update_etas_inner_factory(mode)
 
     def impl(residuals, flags, etas, icovariance, dof, mode):

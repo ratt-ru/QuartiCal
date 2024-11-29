@@ -344,7 +344,7 @@ class Gain:
 
         return dir_map
 
-    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs):
+    def init_term(self, term_spec, ref_ant, ms_kwargs, term_kwargs, meta=None):
         """Initialise the gains (and parameters)."""
 
         (_, _, gain_shape, _) = term_spec
