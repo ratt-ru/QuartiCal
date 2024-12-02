@@ -22,12 +22,18 @@ _thread_local = threading.local()
 def assign_parangle_data(ms_path, data_xds_list):
 
     anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
-    feedtab = xds_from_storage_table(ms_path + "::FEED")[0]
+    feedtab_xdsl = xds_from_storage_table(
+        ms_path + "::FEED",
+        group_cols="__row__"
+    )
     fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
 
     # We do the following eagerly to reduce graph complexity.
-    feeds = feedtab.POLARIZATION_TYPE.values
-    unique_feeds = np.unique(feeds)
+    unique_feeds = {
+        pt
+        for xds in feedtab_xdsl
+        for pt in xds.POLARIZATION_TYPE.values.ravel()
+    }
 
     if np.all([feed in "XxYy" for feed in unique_feeds]):
         feed_type = "linear"
@@ -38,12 +44,17 @@ def assign_parangle_data(ms_path, data_xds_list):
 
     phase_dirs = fieldtab.PHASE_DIR.values
 
+    receptor_angles = da.concatenate(
+        [xds.RECEPTOR_ANGLE.data for xds in feedtab_xdsl],
+    )
+    receptor_angles = receptor_angles.rechunk((-1, -1))
+
     updated_data_xds_list = []
     for xds in data_xds_list:
         xds = xds.assign(
             {
                 "RECEPTOR_ANGLE": (
-                    ("ant", "feed"), clone(feedtab.RECEPTOR_ANGLE.data)
+                    ("ant", "feed"), clone(receptor_angles)
                 ),
                 "POSITION": (
                     ("ant", "xyz"),
