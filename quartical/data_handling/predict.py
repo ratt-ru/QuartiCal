@@ -57,6 +57,16 @@ def parse_sky_models(sky_models):
             logger.info(f"Setting the default reference frequency for "
                         f"{sky_model_name} to {fallback_freq0}.")
 
+        # Figure out the maximum number of spectral index components.
+        # TODO: Check whether the current approach is too brittle.
+        spectrums = [getattr(s, "spectrum", _empty_spectrum) for s in sources]
+        spis = [getattr(s, "spi", 0) for s in spectrums]
+
+        if any(map(lambda obj: isinstance(obj, list), spis)):
+            spi_components = max(len(s) for s in spis if isinstance(s, list))
+        else:
+            spi_components = 1
+
         for source in sources:
 
             tagged = any([source.getTag(tag) for tag in sky_model_tags])
@@ -77,12 +87,18 @@ def parse_sky_models(sky_models):
             # will error out. However, if the first source has a reference
             # frequency set, we will instead default to that.
 
+            # TODO: The following assumes that the spi is the same for all the
+            # stokes components - this may need to be more flexible.
+
             if (fallback_freq0 is None) or (fallback_freq0 == 0):
                 ref_freq = 1e9  # Non-zero default.
                 spi = [[0]*4]  # Flat spectrum.
             else:
                 ref_freq = getattr(spectrum, "freq0", fallback_freq0)
-                spi = [[getattr(spectrum, "spi", 0)]*4]
+                spi = getattr(spectrum, "spi", 0)
+                spi = [spi] if not isinstance(spi, list) else spi
+                spi.extend([0]*(spi_components - len(spi)))
+                spi = [[comp]*4 for comp in spi]
 
             if typecode == "gau":
                 emaj = source.shape.ex
@@ -433,6 +449,9 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
             extras["beam"] = beam
             extras["beam_lm_extents"] = lm_ext
             extras["beam_freq_map"] = freq_map
+
+        # TODO: This needs to be detected/configurable.
+        # extras["spi_base"] = "log10"
 
         model_vis = defaultdict(list)
 
