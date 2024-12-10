@@ -193,77 +193,6 @@ def solver_wrapper(
         active_term = chain.index(term)
         active_spec = term_spec_list[term_ind]
 
-        # At this point, we have tuples containing the per-term inputs to the
-        # solvers. However, this approach means that the length of the chain
-        # will have a serious effect on performance. Instead, we can consider
-        # the case where we collapse a chain of N terms into a chain of 3 terms:
-        # those to the left of the active term, those to the right, and the term
-        # itself. To do so, we need to evaluate the net gain for each of those
-        # components (if they exist?).
-
-        # TODO: Remove the need for the else cases by handling the special
-        # cases i.e. first term, last term, only term.
-
-        _, net_t_map = np.unique(ms_kwargs["TIME"], return_inverse=True)
-        net_t_map = net_t_map.astype(np.int32)
-        n_t = time_bin_tup[active_term].size
-        n_f = freq_map_tup[active_term].size
-        net_t_bins = np.arange(n_t, dtype=np.int32)
-        net_f_map = np.arange(n_f, dtype=np.int32)
-
-        n_a = max([s.shape[2] for s in term_spec_list])
-        n_d = max([s.shape[3] for s in term_spec_list])
-        n_c = max([s.shape[4] for s in term_spec_list])
-
-        l_terms = term_spec_list[:active_term] or None
-        r_terms = term_spec_list[active_term + 1:] or None
-
-        if l_terms:
-            n_l_d = max([s.shape[3] for s in l_terms])
-            l_dir_map = np.arange(n_l_d, dtype=np.int32)
-
-            l_gain = combine_gains(
-                gains_tup[:active_term],
-                time_bin_tup[:active_term],
-                freq_map_tup[:active_term],
-                dir_map_tup[:active_term],
-                (n_t, n_f, n_a, n_l_d, n_c),
-                n_c
-            )
-
-            l_flag = combine_flags(
-                gain_flags_tup[:active_term],
-                time_bin_tup[:active_term],
-                freq_map_tup[:active_term],
-                dir_map_tup[:active_term],
-                (n_t, n_f, n_a, n_l_d, n_c)
-            ).astype(np.int8)
-        else:
-            l_dir_map, l_gain, l_flag = (None,) * 3
-
-        if r_terms:
-            n_r_d = max([s.shape[3] for s in r_terms])
-            r_dir_map = np.arange(n_r_d, dtype=np.int32)
-
-            r_gain = combine_gains(
-                gains_tup[active_term + 1:],
-                time_bin_tup[active_term + 1:],
-                freq_map_tup[active_term + 1:],
-                dir_map_tup[active_term + 1:],
-                (n_t, n_f, n_a, n_r_d, n_c),
-                n_c
-            )
-
-            r_flag = combine_flags(
-                gain_flags_tup[active_term + 1:],
-                time_bin_tup[active_term + 1:],
-                freq_map_tup[active_term + 1:],
-                dir_map_tup[active_term + 1:],
-                (n_t, n_f, n_a, n_r_d, n_c)
-            ).astype(np.int8)
-        else:
-            r_dir_map, r_gain, r_flag = (None,) * 3
-
         ms_fields = term.ms_inputs._fields
         ms_inputs = term.ms_inputs(
             **{k: ms_kwargs.get(k, None) for k in ms_fields}
@@ -274,67 +203,30 @@ def solver_wrapper(
             **{k: mapping_kwargs.get(k, None) for k in mapping_fields}
         )
 
-        # Mangle the mappings for consistency with chain collapse.
-        # TODO: Make this the default.
-        tmp_mapping_kwargs = {
-            "time_bins": (net_t_bins, time_bin_tup[active_term], net_t_bins),
-            "time_maps": (net_t_map, time_map_tup[active_term], net_t_map),
-            "freq_maps": (net_f_map, freq_map_tup[active_term], net_f_map),
-            "dir_maps": (l_dir_map, dir_map_tup[active_term], r_dir_map),
-            "param_time_bins": (
-                net_t_bins, param_time_bin_tup[active_term], net_t_bins
-            ),
-            "param_time_maps": (
-                net_t_map, param_time_map_tup[active_term], net_t_map
-            ),
-            "param_freq_maps": (
-                net_f_map, param_freq_map_tup[active_term], net_f_map),
-        }
-
-        if len(chain) == 1:
-            sel = slice(1, 2)
-            collapsed_term = 0
-        elif active_term == 0:
-            sel = slice(1, None)
-            collapsed_term = 0
-        elif active_term == len(chain) - 1:
-            sel = slice(0, 2)
-            collapsed_term = 1
-
-        tmp_mapping_kwargs = {k: v[sel] for k, v in tmp_mapping_kwargs.items()}
-
-        mapping_fields = term.mapping_inputs._fields
-        mapping_inputs = term.mapping_inputs(
-            **{k: tmp_mapping_kwargs.get(k, None) for k in mapping_fields}
-        )
-
         chain_fields = term.chain_inputs._fields
         chain_inputs = term.chain_inputs(
             **{k: chain_kwargs.get(k, None) for k in chain_fields}
         )
 
-        # TODO: Make this the default.
+        solver_opts.collapse_chain = True  # TODO: Expose + default to this.
 
-        tmp_chain_kwargs = {
-            "gains": (l_gain, gains_tup[active_term], r_gain),
-            "gain_flags": (l_flag, gain_flags_tup[active_term], r_flag),
-            "params": (params_tup[active_term],) * 3,
-            "param_flags": (l_flag, param_flags_tup[active_term], r_flag)
-        }
+        if solver_opts.collapse_chain:
+            mapping_inputs, chain_inputs, collapsed_term = get_collapsed_inputs(
+                ms_kwargs,
+                mapping_kwargs,
+                chain_kwargs,
+                term_spec_list,
+                chain,
+                active_term
+            )
+        else:
+            collapsed_term = active_term
 
-        tmp_chain_kwargs = {k: v[sel] for k, v in tmp_chain_kwargs.items()}
-
-        chain_fields = term.chain_inputs._fields
-        chain_inputs = term.chain_inputs(
-            **{k: tmp_chain_kwargs.get(k, None) for k in chain_fields}
-        )
-
-        # TODO: The choice of active term needs to depend on the actual active
-        # term and the total chain length.
-
+        # NOTE: Collapsed term is either the active term or its equivalent in
+        # the collapsed chain. See get_collapsed_inputs.
         meta_inputs = meta_args_nt(
             iters,
-            collapsed_term, #active_term, # For now - assume length 3 chain.
+            collapsed_term,
             solver_opts.convergence_fraction,
             solver_opts.convergence_criteria,
             solver_opts.threads,
@@ -407,3 +299,149 @@ def solver_wrapper(
     gc.collect()
 
     return results_dict
+
+
+def get_collapsed_inputs(
+    ms_kwargs,
+    mapping_kwargs,
+    chain_kwargs,
+    term_spec_list,
+    chain,
+    active_term
+):
+
+    term = chain[active_term]
+
+    _, net_t_map = np.unique(ms_kwargs["TIME"], return_inverse=True)
+    net_t_map = net_t_map.astype(np.int32)
+    n_t = mapping_kwargs["time_bins"][active_term].size
+    n_f = mapping_kwargs["freq_maps"][active_term].size
+    net_t_bins = np.arange(n_t, dtype=np.int32)
+    net_f_map = np.arange(n_f, dtype=np.int32)
+
+    n_a = max([s.shape[2] for s in term_spec_list])
+    n_d = max([s.shape[3] for s in term_spec_list])
+    n_c = max([s.shape[4] for s in term_spec_list])
+
+    l_terms = term_spec_list[:active_term] or None
+    r_terms = term_spec_list[active_term + 1:] or None
+
+    # Determine how to slice collapsed inputs to produce the shortest chain
+    # possible. Special cases for length one chains, and the first and last
+    # element in a chain.
+    if len(chain) == 1:
+        sel = slice(1, 2)
+        collapsed_term = 0
+    elif active_term == 0:
+        sel = slice(1, None)
+        collapsed_term = 0
+    elif active_term == len(chain) - 1:
+        sel = slice(0, 2)
+        collapsed_term = 1
+    else:
+        sel = slice(0, None)
+        collapsed_term = 1
+
+    if l_terms:
+        n_l_d = max([s.shape[3] for s in l_terms])
+        l_dir_map = np.arange(n_l_d, dtype=np.int32)  # TODO: Wrong.
+
+        # TODO: Cache array to avoid allocation?
+        l_gain = combine_gains(
+            chain_kwargs["gains"][:active_term],
+            mapping_kwargs["time_bins"][:active_term],
+            mapping_kwargs["freq_maps"][:active_term],
+            mapping_kwargs["dir_maps"][:active_term],
+            (n_t, n_f, n_a, n_l_d, n_c),
+            n_c
+        )
+
+        # TODO: Add dtype option/alternative.
+        l_flag = combine_flags(
+            chain_kwargs["gain_flags"][:active_term],
+            mapping_kwargs["time_bins"][:active_term],
+            mapping_kwargs["freq_maps"][:active_term],
+            mapping_kwargs["dir_maps"][:active_term],
+            (n_t, n_f, n_a, n_l_d, n_c),
+        ).astype(np.int8)
+    else:
+        l_dir_map, l_gain, l_flag = (None,) * 3
+
+    if r_terms:
+        n_r_d = max([s.shape[3] for s in r_terms])
+        r_dir_map = np.arange(n_r_d, dtype=np.int32)  # TODO: Wrong.
+
+        r_gain = combine_gains(
+            chain_kwargs["gains"][active_term + 1:],
+            mapping_kwargs["time_bins"][active_term + 1:],
+            mapping_kwargs["freq_maps"][active_term + 1:],
+            mapping_kwargs["dir_maps"][active_term + 1:],
+            (n_t, n_f, n_a, n_r_d, n_c),
+            n_c
+        )
+
+        # TODO: Add dtype option/alternative.
+        r_flag = combine_flags(
+            chain_kwargs["gain_flags"][active_term + 1:],
+            mapping_kwargs["time_bins"][active_term + 1:],
+            mapping_kwargs["freq_maps"][active_term + 1:],
+            mapping_kwargs["dir_maps"][active_term + 1:],
+            (n_t, n_f, n_a, n_r_d, n_c)
+        ).astype(np.int8)
+    else:
+        r_dir_map, r_gain, r_flag = (None,) * 3
+
+    mapping_kwargs = {
+        "time_bins": (
+            net_t_bins, mapping_kwargs["time_bins"][active_term], net_t_bins
+        ),
+        "time_maps": (
+            net_t_map, mapping_kwargs["time_maps"][active_term], net_t_map
+        ),
+        "freq_maps": (
+            net_f_map, mapping_kwargs["freq_maps"][active_term], net_f_map
+        ),
+        "dir_maps": (
+            l_dir_map, mapping_kwargs["dir_maps"][active_term], r_dir_map
+        ),
+        "param_time_bins": (
+            net_t_bins,
+            mapping_kwargs["param_time_bins"][active_term],
+            net_t_bins
+        ),
+        "param_time_maps": (
+            net_t_map,
+            mapping_kwargs["param_time_maps"][active_term],
+            net_t_map
+        ),
+        "param_freq_maps": (
+            net_f_map,
+            mapping_kwargs["param_freq_maps"][active_term],
+            net_f_map
+        ),
+    }
+
+    mapping_kwargs = {k: v[sel] for k, v in mapping_kwargs.items()}
+
+    mapping_fields = term.mapping_inputs._fields
+    mapping_inputs = term.mapping_inputs(
+        **{k: mapping_kwargs.get(k, None) for k in mapping_fields}
+    )
+
+    chain_kwargs = {
+        "gains": (l_gain, chain_kwargs["gains"][active_term], r_gain),
+        "gain_flags": (l_flag, chain_kwargs["gain_flags"][active_term], r_flag),
+        "params": (chain_kwargs["params"][active_term],) * 3,
+        "param_flags": (
+            l_flag, chain_kwargs["param_flags"][active_term], r_flag
+        )
+    }
+
+    chain_kwargs = {k: v[sel] for k, v in chain_kwargs.items()}
+
+    chain_fields = term.chain_inputs._fields
+    chain_inputs = term.chain_inputs(
+        **{k: chain_kwargs.get(k, None) for k in chain_fields}
+    )
+
+    return mapping_inputs, chain_inputs, collapsed_term
