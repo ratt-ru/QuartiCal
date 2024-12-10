@@ -238,11 +238,8 @@ def solver_wrapper(
                 dir_map_tup[:active_term],
                 (n_t, n_f, n_a, n_l_d, n_c)
             ).astype(np.int8)
-        else: # TODO: Handle the None to avoid complexity.
-            l_gain = np.zeros((n_t, n_f, n_a, 1, n_c), dtype=np.complex128)
-            l_gain[..., (0, 3)] = 1
-            l_flag = np.zeros((n_t, n_f, n_a, 1), dtype=np.int8)
-            l_dir_map = np.zeros(n_d, dtype=np.int32)
+        else:
+            l_dir_map, l_gain, l_flag = (None,) * 3
 
         if r_terms:
             n_r_d = max([s.shape[3] for s in r_terms])
@@ -264,11 +261,8 @@ def solver_wrapper(
                 dir_map_tup[active_term + 1:],
                 (n_t, n_f, n_a, n_r_d, n_c)
             ).astype(np.int8)
-        else:  # TODO: Handle the None to avoid complexity.
-            r_gain = np.zeros((n_t, n_f, n_a, 1, n_c), dtype=np.complex128)
-            r_gain[..., (0, 3)] = 1
-            r_flag = np.zeros((n_t, n_f, n_a, 1), dtype=np.int8)
-            r_dir_map = np.zeros(n_d, dtype=np.int32)
+        else:
+            r_dir_map, r_gain, r_flag = (None,) * 3
 
         ms_fields = term.ms_inputs._fields
         ms_inputs = term.ms_inputs(
@@ -297,6 +291,18 @@ def solver_wrapper(
                 net_f_map, param_freq_map_tup[active_term], net_f_map),
         }
 
+        if len(chain) == 1:
+            sel = slice(1, 2)
+            collapsed_term = 0
+        elif active_term == 0:
+            sel = slice(1, None)
+            collapsed_term = 0
+        elif active_term == len(chain) - 1:
+            sel = slice(0, 2)
+            collapsed_term = 1
+
+        tmp_mapping_kwargs = {k: v[sel] for k, v in tmp_mapping_kwargs.items()}
+
         mapping_fields = term.mapping_inputs._fields
         mapping_inputs = term.mapping_inputs(
             **{k: tmp_mapping_kwargs.get(k, None) for k in mapping_fields}
@@ -316,6 +322,8 @@ def solver_wrapper(
             "param_flags": (l_flag, param_flags_tup[active_term], r_flag)
         }
 
+        tmp_chain_kwargs = {k: v[sel] for k, v in tmp_chain_kwargs.items()}
+
         chain_fields = term.chain_inputs._fields
         chain_inputs = term.chain_inputs(
             **{k: tmp_chain_kwargs.get(k, None) for k in chain_fields}
@@ -326,7 +334,7 @@ def solver_wrapper(
 
         meta_inputs = meta_args_nt(
             iters,
-            1, #active_term, # For now - assume length 3 chain.
+            collapsed_term, #active_term, # For now - assume length 3 chain.
             solver_opts.convergence_fraction,
             solver_opts.convergence_criteria,
             solver_opts.threads,
