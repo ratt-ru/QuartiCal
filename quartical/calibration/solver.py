@@ -4,6 +4,7 @@ import numpy as np
 from numba import set_num_threads
 from collections import namedtuple
 from itertools import cycle
+from quartical.gains.general.generics import combine_gains, combine_flags
 from quartical.weights.robust import robust_reweighting
 from quartical.statistics.stat_kernels import compute_mean_postsolve_chisq
 from quartical.statistics.logging import log_chisq
@@ -192,6 +193,83 @@ def solver_wrapper(
         active_term = chain.index(term)
         active_spec = term_spec_list[term_ind]
 
+        # At this point, we have tuples containing the per-term inputs to the
+        # solvers. However, this approach means that the length of the chain
+        # will have a serious effect on performance. Instead, we can consider
+        # the case where we collapse a chain of N terms into a chain of 3 terms:
+        # those to the left of the active term, those to the right, and the term
+        # itself. To do so, we need to evaluate the net gain for each of those
+        # components (if they exist?).
+
+        # TODO: Remove the need for the else cases by handling the special
+        # cases i.e. first term, last term, only term.
+
+        _, net_t_map = np.unique(ms_kwargs["TIME"], return_inverse=True)
+        net_t_map = net_t_map.astype(np.int32)
+        n_t = time_bin_tup[active_term].size
+        n_f = freq_map_tup[active_term].size
+        net_t_bins = np.arange(n_t, dtype=np.int32)
+        net_f_map = np.arange(n_f, dtype=np.int32)
+
+        n_a = max([s.shape[2] for s in term_spec_list])
+        n_d = max([s.shape[3] for s in term_spec_list])
+        n_c = max([s.shape[4] for s in term_spec_list])
+
+        l_terms = term_spec_list[:active_term] or None
+        r_terms = term_spec_list[active_term + 1:] or None
+
+        if l_terms:
+            n_l_d = max([s.shape[3] for s in l_terms])
+            l_dir_map = np.arange(n_l_d, dtype=np.int32)
+
+            l_gain = combine_gains(
+                gains_tup[:active_term],
+                time_bin_tup[:active_term],
+                freq_map_tup[:active_term],
+                dir_map_tup[:active_term],
+                (n_t, n_f, n_a, n_l_d, n_c),
+                n_c
+            )
+
+            l_flag = combine_flags(
+                gain_flags_tup[:active_term],
+                time_bin_tup[:active_term],
+                freq_map_tup[:active_term],
+                dir_map_tup[:active_term],
+                (n_t, n_f, n_a, n_l_d, n_c)
+            ).astype(np.int8)
+        else: # TODO: Handle the None to avoid complexity.
+            l_gain = np.zeros((n_t, n_f, n_a, 1, n_c), dtype=np.complex128)
+            l_gain[..., (0, 3)] = 1
+            l_flag = np.zeros((n_t, n_f, n_a, 1), dtype=np.int8)
+            l_dir_map = np.zeros(n_d, dtype=np.int32)
+
+        if r_terms:
+            n_r_d = max([s.shape[3] for s in r_terms])
+            r_dir_map = np.arange(n_r_d, dtype=np.int32)
+
+            r_gain = combine_gains(
+                gains_tup[active_term + 1:],
+                time_bin_tup[active_term + 1:],
+                freq_map_tup[active_term + 1:],
+                dir_map_tup[active_term + 1:],
+                (n_t, n_f, n_a, n_r_d, n_c),
+                n_c
+            )
+
+            r_flag = combine_flags(
+                gain_flags_tup[active_term + 1:],
+                time_bin_tup[active_term + 1:],
+                freq_map_tup[active_term + 1:],
+                dir_map_tup[active_term + 1:],
+                (n_t, n_f, n_a, n_r_d, n_c)
+            ).astype(np.int8)
+        else:  # TODO: Handle the None to avoid complexity.
+            r_gain = np.zeros((n_t, n_f, n_a, 1, n_c), dtype=np.complex128)
+            r_gain[..., (0, 3)] = 1
+            r_flag = np.zeros((n_t, n_f, n_a, 1), dtype=np.int8)
+            r_dir_map = np.zeros(n_d, dtype=np.int32)
+
         ms_fields = term.ms_inputs._fields
         ms_inputs = term.ms_inputs(
             **{k: ms_kwargs.get(k, None) for k in ms_fields}
@@ -202,14 +280,53 @@ def solver_wrapper(
             **{k: mapping_kwargs.get(k, None) for k in mapping_fields}
         )
 
+        # Mangle the mappings for consistency with chain collapse.
+        # TODO: Make this the default.
+        tmp_mapping_kwargs = {
+            "time_bins": (net_t_bins, time_bin_tup[active_term], net_t_bins),
+            "time_maps": (net_t_map, time_map_tup[active_term], net_t_map),
+            "freq_maps": (net_f_map, freq_map_tup[active_term], net_f_map),
+            "dir_maps": (l_dir_map, dir_map_tup[active_term], r_dir_map),
+            "param_time_bins": (
+                net_t_bins, param_time_bin_tup[active_term], net_t_bins
+            ),
+            "param_time_maps": (
+                net_t_map, param_time_map_tup[active_term], net_t_map
+            ),
+            "param_freq_maps": (
+                net_f_map, param_freq_map_tup[active_term], net_f_map),
+        }
+
+        mapping_fields = term.mapping_inputs._fields
+        mapping_inputs = term.mapping_inputs(
+            **{k: tmp_mapping_kwargs.get(k, None) for k in mapping_fields}
+        )
+
         chain_fields = term.chain_inputs._fields
         chain_inputs = term.chain_inputs(
             **{k: chain_kwargs.get(k, None) for k in chain_fields}
         )
 
+        # TODO: Make this the default.
+
+        tmp_chain_kwargs = {
+            "gains": (l_gain, gains_tup[active_term], r_gain),
+            "gain_flags": (l_flag, gain_flags_tup[active_term], r_flag),
+            "params": (params_tup[active_term],) * 3,
+            "param_flags": (l_flag, param_flags_tup[active_term], r_flag)
+        }
+
+        chain_fields = term.chain_inputs._fields
+        chain_inputs = term.chain_inputs(
+            **{k: tmp_chain_kwargs.get(k, None) for k in chain_fields}
+        )
+
+        # TODO: The choice of active term needs to depend on the actual active
+        # term and the total chain length.
+
         meta_inputs = meta_args_nt(
             iters,
-            active_term,
+            1, #active_term, # For now - assume length 3 chain.
             solver_opts.convergence_fraction,
             solver_opts.convergence_criteria,
             solver_opts.threads,
