@@ -208,8 +208,6 @@ def solver_wrapper(
             **{k: chain_kwargs.get(k, None) for k in chain_fields}
         )
 
-        solver_opts.collapse_chain = True  # TODO: Expose + default to this.
-
         if solver_opts.collapse_chain:
             mapping_inputs, chain_inputs, collapsed_term = get_collapsed_inputs(
                 ms_kwargs,
@@ -344,7 +342,8 @@ def get_collapsed_inputs(
 
     if l_terms:
         n_l_d = max([s.shape[3] for s in l_terms])
-        l_dir_map = np.zeros(n_d, dtype=np.int32) if n_l_d > 1 else np.arange(n_d, dtype=np.int32)  # TODO: Wrong.
+        dir_map_func = np.zeros if n_l_d > 1 else np.arange
+        l_dir_map = dir_map_func(n_d, dtype=np.int32)
 
         # TODO: Cache array to avoid allocation?
         l_gain = combine_gains(
@@ -369,7 +368,8 @@ def get_collapsed_inputs(
 
     if r_terms:
         n_r_d = max([s.shape[3] for s in r_terms])
-        r_dir_map = np.zeros(n_d, dtype=np.int32) if n_r_d > 1 else np.arange(n_d, dtype=np.int32)  # TODO: Wrong.
+        dir_map_func = np.zeros if n_r_d > 1 else np.arange
+        r_dir_map = dir_map_func(n_d, dtype=np.int32)
 
         r_gain = combine_gains(
             chain_kwargs["gains"][active_term + 1:],
