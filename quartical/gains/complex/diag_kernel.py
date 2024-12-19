@@ -74,6 +74,7 @@ def nb_diag_complex_solver_impl(
         active_term = meta_inputs.active_term
         max_iter = meta_inputs.iters
         solve_per = meta_inputs.solve_per
+        scalar = meta_inputs.scalar
         dd_term = meta_inputs.dd_term
         n_thread = meta_inputs.threads
 
@@ -128,6 +129,12 @@ def nb_diag_complex_solver_impl(
 
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
+
+            if scalar:
+                raise ValueError(
+                    "Scalar mode not (yet) supported for diag complex terms."
+                    "Please raise an issue if you require this functionality."
+                )
 
             if not max_iter:  # Non-solvable term, we just want jhj.
                 conv_perc = 0  # Didn't converge.
