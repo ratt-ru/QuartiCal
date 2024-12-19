@@ -28,9 +28,17 @@ gain:
       Determines whether this term should be solved per antenna (conventional)
       or over the entire array (doesn't vary with antenna).
 
+  scalar:
+    dtype: bool
+    default: false
+    info:
+      Determines whether the term is treated as scalar i.e. whether it is
+      solved for as a single effect over all correlations. This is only
+      supported for terms which would otherwise be diagonal.
+
   direction_dependent:
     dtype: bool
-    default: False
+    default: false
     info:
       Determines whether this term is treated as direction dependent.
 

@@ -9,7 +9,8 @@ from quartical.gains.general.generics import (native_intermediaries,
                                               upsampled_itermediaries,
                                               per_array_jhj_jhr,
                                               resample_solints,
-                                              downsample_jhj_jhr)
+                                              downsample_jhj_jhr,
+                                              scalar_jhj_jhr)
 from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
@@ -90,6 +91,7 @@ def nb_tec_and_offset_solver_impl(
         active_term = meta_inputs.active_term
         max_iter = meta_inputs.iters
         solve_per = meta_inputs.solve_per
+        scalar = meta_inputs.scalar
         dd_term = meta_inputs.dd_term
         n_thread = meta_inputs.threads
 
@@ -152,6 +154,9 @@ def nb_tec_and_offset_solver_impl(
 
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
+
+            if scalar:
+                scalar_jhj_jhr(native_imdry, 2)
 
             if not max_iter:  # Non-solvable term, we just want jhj.
                 conv_perc = 0  # Didn't converge.
