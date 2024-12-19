@@ -85,6 +85,7 @@ class Gain:
         self.name = term_name
         self.type = term_opts.type
         self.solve_per = term_opts.solve_per
+        self.scalar = term_opts.scalar
         self.direction_dependent = term_opts.direction_dependent
         self.pinned_directions = term_opts.pinned_directions
         self.time_interval = term_opts.time_interval
