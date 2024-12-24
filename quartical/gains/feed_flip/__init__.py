@@ -42,6 +42,6 @@ class FeedFlip(Gain):
                 "Feed flip unsupported for less than four correlations"
             )
 
-        gain_flags = np.zeros(gains.shape[:-1], dtype=bool)
+        gain_flags = np.zeros(gains.shape[:-1], dtype=np.int8)
 
         return gains, gain_flags
