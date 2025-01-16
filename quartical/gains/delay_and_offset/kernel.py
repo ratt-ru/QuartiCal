@@ -2,26 +2,34 @@
 import numpy as np
 from numba import prange, njit
 from numba.extending import overload
-from quartical.utils.numba import (coerce_literal,
-                                   JIT_OPTIONS,
-                                   PARALLEL_JIT_OPTIONS)
-from quartical.gains.general.generics import (native_intermediaries,
-                                              upsampled_itermediaries,
-                                              per_array_jhj_jhr,
-                                              resample_solints,
-                                              downsample_jhj_jhr)
-from quartical.gains.general.flagging import (flag_intermediaries,
-                                              update_gain_flags,
-                                              finalize_gain_flags,
-                                              apply_gain_flags_to_flag_col,
-                                              update_param_flags,
-                                              apply_gain_flags_to_gains,
-                                              apply_param_flags_to_params)
-from quartical.gains.general.convenience import (get_row,
-                                                 get_extents)
+from quartical.utils.numba import (
+    coerce_literal,
+    JIT_OPTIONS,
+    PARALLEL_JIT_OPTIONS
+)
+from quartical.gains.general.generics import (
+    native_intermediaries,
+    upsampled_itermediaries,
+    per_array_jhj_jhr,
+    resample_solints,
+    downsample_jhj_jhr,
+    scalar_jhj_jhr
+)
+from quartical.gains.general.flagging import (
+    flag_intermediaries,
+    update_gain_flags,
+    finalize_gain_flags,
+    apply_gain_flags_to_flag_col,
+    update_param_flags,
+    apply_gain_flags_to_gains,
+    apply_param_flags_to_params
+)
+from quartical.gains.general.convenience import get_row, get_extents
 import quartical.gains.general.factories as factories
-from quartical.gains.general.inversion import (invert_factory,
-                                               inversion_buffer_factory)
+from quartical.gains.general.inversion import (
+    invert_factory,
+    inversion_buffer_factory
+)
 
 
 def get_identity_params(corr_mode):
@@ -88,6 +96,7 @@ def nb_delay_and_offset_solver_impl(
         active_term = meta_inputs.active_term
         max_iter = meta_inputs.iters
         solve_per = meta_inputs.solve_per
+        scalar = meta_inputs.scalar
         dd_term = meta_inputs.dd_term
         n_thread = meta_inputs.threads
 
@@ -150,6 +159,9 @@ def nb_delay_and_offset_solver_impl(
 
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
+
+            if scalar and corr_mode != 1:
+                scalar_jhj_jhr(native_imdry, 2)
 
             if not max_iter:  # Non-solvable term, we just want jhj.
                 conv_perc = 0  # Didn't converge.

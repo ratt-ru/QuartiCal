@@ -706,6 +706,46 @@ def per_array_jhj_jhr(solver_imdry):
 
 
 @njit(**JIT_OPTIONS)
+def scalar_jhj_jhr(solver_imdry, values_per_correlation):
+    """This manipulates the entries of jhj and jhr to be scalar."""
+
+    jhj = solver_imdry.jhj
+    jhr = solver_imdry.jhr
+
+    vpc = values_per_correlation  # For brevity.
+
+    n_tint, n_fint, n_ant, n_dir, n_par, _ = jhj.shape
+
+    for t in range(n_tint):
+        for f in range(n_fint):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    jhr_sel = jhr[t, f, a, d]
+                    jhj_sel = jhj[t, f, a, d]
+
+                    # Sum bottom half into top half.
+                    for p in range(vpc, n_par):
+                        jhr_sel[p % vpc] += jhr_sel[p]
+
+                    # Sum right half into left half and zero.
+                    for p0 in range(n_par):
+                        for p1 in range(vpc, n_par):
+                            jhj_sel[p0, p1 % vpc] += jhj_sel[p0, p1]
+                            jhj_sel[p0, p1] = 0
+
+                    # Sum bottom half into top half and zero.
+                    for p0 in range(vpc, n_par):
+                        for p1 in range(vpc):
+                            jhj_sel[p0 % vpc, p1] += jhj_sel[p0, p1]
+                            jhj_sel[p0, p1] = 0
+
+                    # Repopluate zeroed values from scalar sum.
+                    jhr_sel[vpc:] = jhr_sel[:vpc]
+                    jhj_sel[vpc:, vpc:] = jhj_sel[:vpc, :vpc]
+
+
+@njit(**JIT_OPTIONS)
 def resample_solints(native_map, native_shape, n_thread):
 
     n_tint, n_fint = native_shape[:2]

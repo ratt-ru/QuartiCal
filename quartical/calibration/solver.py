@@ -19,6 +19,7 @@ meta_args_nt = namedtuple(
         "threads",
         "robust",
         "reference_antenna",
+        "scalar",
         "dd_term",
         "pinned_directions",
         "solve_per",
@@ -233,6 +234,7 @@ def solver_wrapper(
             solver_opts.threads,
             solver_opts.robust,
             solver_opts.reference_antenna,
+            term.scalar,
             term.direction_dependent,
             term.pinned_directions,
             term.solve_per

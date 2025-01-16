@@ -74,6 +74,7 @@ def nb_diag_complex_solver_impl(
         active_term = meta_inputs.active_term
         max_iter = meta_inputs.iters
         solve_per = meta_inputs.solve_per
+        scalar = meta_inputs.scalar
         dd_term = meta_inputs.dd_term
         n_thread = meta_inputs.threads
 
@@ -128,6 +129,9 @@ def nb_diag_complex_solver_impl(
 
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
+
+            if scalar and corr_mode != 1:
+                scalar_jhj_jhr(native_imdry)
 
             if not max_iter:  # Non-solvable term, we just want jhj.
                 conv_perc = 0  # Didn't converge.
@@ -677,3 +681,34 @@ def nb_reference_gains_impl(chain_inputs, meta_inputs, mode):
         apply_gain_flags_to_gains(gain_flags, gains)
 
     return impl
+
+
+@njit(**JIT_OPTIONS)
+def scalar_jhj_jhr(solver_imdry):
+    """This manipulates the entries of jhj and jhr to be scalar."""
+
+    # NOTE: This differes from the generic implmenentation in generics.py.
+
+    jhj = solver_imdry.jhj
+    jhr = solver_imdry.jhr
+
+    n_tint, n_fint, n_ant, n_dir, n_corr = jhj.shape
+
+    for t in range(n_tint):
+        for f in range(n_fint):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    jhr_sel = jhr[t, f, a, d]
+                    jhj_sel = jhj[t, f, a, d]
+
+                    # Sum to a single scalar element.
+                    for p in range(1, n_corr):
+                        jhr_sel[0] += jhr_sel[p]
+                        jhr_sel[p] = 0
+                        jhj_sel[0] += jhj_sel[p]
+                        jhj_sel[p] = 0
+
+                    # Repopluate appropriate zeroed values from scalar sum.
+                    jhr_sel[-1] = jhr_sel[0]
+                    jhj_sel[-1] = jhj_sel[0]
