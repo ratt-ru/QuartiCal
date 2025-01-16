@@ -7,7 +7,7 @@ from testing.utils.gains import apply_gains, reference_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr):
+def opts(base_opts, select_corr, scalar_mode):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -23,6 +23,7 @@ def opts(base_opts, select_corr):
     _opts.G.type = "delay_and_offset"
     _opts.G.freq_interval = 0
     _opts.G.initial_estimate = True
+    _opts.G.scalar = scalar_mode
 
     return _opts
 
@@ -34,7 +35,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list):
+def true_gain_list(predicted_xds_list, scalar_mode):
 
     gain_list = []
 
@@ -81,6 +82,9 @@ def true_gain_list(predicted_xds_list):
         origin_chan_freq = origin_chan_freq[None, :, None, None, None]
         phase = 2*np.pi*delays*origin_chan_freq + offsets
         gains = amp*da.exp(1j*phase)
+
+        if scalar_mode:
+            gains[..., -1] = gains[..., 0]
 
         gain_list.append(gains)
 

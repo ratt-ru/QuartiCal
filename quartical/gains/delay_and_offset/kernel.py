@@ -160,7 +160,7 @@ def nb_delay_and_offset_solver_impl(
             if solve_per == "array":
                 per_array_jhj_jhr(native_imdry)
 
-            if scalar:
+            if scalar and corr_mode != 1:
                 scalar_jhj_jhr(native_imdry, 2)
 
             if not max_iter:  # Non-solvable term, we just want jhj.
