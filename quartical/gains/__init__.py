@@ -10,6 +10,7 @@ from quartical.gains.crosshand_phase import CrosshandPhase, CrosshandPhaseNullV
 from quartical.gains.leakage import Leakage
 from quartical.gains.delay_and_tec import DelayAndTec
 from quartical.gains.parallactic_angle import ParallacticAngle
+from quartical.gains.feed_flip import FeedFlip
 
 
 TERM_TYPES = {
@@ -26,5 +27,6 @@ TERM_TYPES = {
     "crosshand_phase_null_v": CrosshandPhaseNullV,
     "leakage": Leakage,
     "delay_and_tec": DelayAndTec,
-    "parallactic_angle": ParallacticAngle
+    "parallactic_angle": ParallacticAngle,
+    "feed_flip": FeedFlip
 }
