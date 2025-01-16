@@ -208,6 +208,9 @@ def solver_wrapper(
             **{k: chain_kwargs.get(k, None) for k in chain_fields}
         )
 
+        # NOTE: This is newer code which is difficult to test in all cases.
+        # If users run in to issues, particularly with direction-dependent
+        # terms, this may well be the culprit.
         if solver_opts.collapse_chain:
             mapping_inputs, chain_inputs, collapsed_term = get_collapsed_inputs(
                 ms_kwargs,
@@ -343,7 +346,7 @@ def get_collapsed_inputs(
 
     if l_terms:
         n_l_d = max([s.shape[3] for s in l_terms])
-        dir_map_func = np.zeros if n_l_d > 1 else np.arange
+        dir_map_func = np.arange if n_l_d > 1 else np.zeros
         l_dir_map = dir_map_func(n_d, dtype=np.int32)
 
         # TODO: Cache array to avoid allocation?
@@ -369,7 +372,7 @@ def get_collapsed_inputs(
 
     if r_terms:
         n_r_d = max([s.shape[3] for s in r_terms])
-        dir_map_func = np.zeros if n_r_d > 1 else np.arange
+        dir_map_func = np.arange if n_r_d > 1 else np.zeros
         r_dir_map = dir_map_func(n_d, dtype=np.int32)
 
         r_gain = combine_gains(
