@@ -229,7 +229,8 @@ def solver_wrapper(
                 corr_mode
             )
         else:
-            jhj = np.zeros(getattr(active_spec, "pshape", active_spec.shape))
+            pshape, gshape = active_spec.pshape, active_spec.shape
+            jhj = np.zeros(pshape if term.is_parameterized else gshape)
             conv_iter, conv_perc = 0, 1
 
         # If reweighting is enabled, do it when the epoch changes, except
