@@ -52,7 +52,7 @@ def true_gain_list(predicted_xds_list):
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
-        bound = 750
+        bound = 1600
 
         da.random.seed(0)
         rm = da.random.uniform(
@@ -61,6 +61,7 @@ def true_gain_list(predicted_xds_list):
             high=bound
         )
         rm[:, :, 0, :] = 0  # Zero the reference antenna.
+        print(rm[0].compute())
         betas = rm * lambda_sq[None, :, None, None]
 
         gains = da.zeros((n_time, n_chan, n_ant, n_dir, n_corr),

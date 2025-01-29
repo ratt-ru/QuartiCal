@@ -155,20 +155,17 @@ class RotationMeasure(ParameterizedGain):
                 fsel_data = ref_data[:, fsel]
                 valid_ant = fsel_data.any(axis=(1, 2))
                 ##in inverse frequency domain
-                invfreq2 = 1 / (chan_freq ** 2)
+                invfreq2 = (lightspeed ** 2) / (chan_freq ** 2)
 
                 # delta_freq is the smallest difference between the frequency
                 # values
-                delta_freq = invfreq2[-2] - invfreq2[-1]
-                max_rm = 2 * np.pi / delta_freq
-                super_res = 1000 #100
-                nyq_freq = 1./(2*(invfreq2.max() - invfreq2.min()))
-                lim0 = 0.5 * max_rm
+                # NOTE: Maybe we should use the max diff i.e. the worst case.
+                # These is also my ongoing confusion with factos of 2 * np.pi.
+                delta_freq = (invfreq2[-2] - invfreq2[-1])
 
-                # choosing resolution
-                n = int(super_res * max_rm / nyq_freq)
-                # domain to pick tec_est from
-                fft_freq = np.linspace(-lim0, lim0, n)
+                # NOTE: This works on my test data but it is slightly hand wavy.
+                n = max(2 * n_chan, 1024)
+                fft_freq = np.fft.fftshift(np.fft.fftfreq(n, delta_freq))
 
                 if n_corr != 4:
                     raise ValueError(
@@ -189,13 +186,10 @@ class RotationMeasure(ParameterizedGain):
                     isign=-1
                 )
                 fft_arr[:, :, 0] = vis_finufft
-                fft_data_pk = np.abs(vis_finufft)
+                fft_data_pk = (vis_finufft * vis_finufft.conj()).real
                 rm_est[:, 0] = fft_freq[np.argmax(fft_data_pk, axis=1)]
 
                 rm_est[~valid_ant, :] = 0
-                # NOTE: Correct RM values as we assumed (c**2/nu**2) * RM i.e.
-                # the peak will be at c**2 * RM.
-                rm_est /= lightspeed ** 2
 
                 for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
                     if p == ref_ant:
