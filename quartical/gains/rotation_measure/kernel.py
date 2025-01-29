@@ -14,7 +14,9 @@ from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
                                               apply_gain_flags_to_flag_col,
-                                              update_param_flags)
+                                              update_param_flags,
+                                              apply_gain_flags_to_gains,
+                                              apply_param_flags_to_params)
 from quartical.gains.general.convenience import (get_row,
                                                  get_extents)
 import quartical.gains.general.factories as factories
@@ -198,6 +200,13 @@ def nb_rm_solver_impl(
             meta_inputs,
             flag_imdry,
             corr_mode
+        )
+
+        reference_params(
+            ms_inputs,
+            mapping_inputs,
+            chain_inputs,
+            meta_inputs,
         )
 
         # Call this one last time to ensure points flagged by finialize are
@@ -712,3 +721,43 @@ def rm_params_to_gains(
                     g[1] = -sin_beta
                     g[2] = sin_beta
                     g[3] = cos_beta
+
+
+@njit(**JIT_OPTIONS)
+def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
+
+    chan_freq = ms_inputs.CHAN_FREQ
+    lambda_sq = (299792458 / chan_freq) ** 2
+
+    active_term = meta_inputs.active_term
+    ref_ant = meta_inputs.reference_antenna
+
+    gains = chain_inputs.gains[active_term]
+    gain_flags = chain_inputs.gain_flags[active_term]
+    params = chain_inputs.params[active_term]
+    param_flags = chain_inputs.param_flags[active_term]
+
+    param_freq_map = mapping_inputs.param_freq_maps[active_term]
+
+    n_ti, n_fi, n_ant, n_dir, n_param = params.shape
+
+    ref_params = params[:, :, ref_ant: ref_ant + 1, :, :].copy()
+
+    for t in range(n_ti):
+        for f in range(n_fi):
+            for a in range(n_ant):
+                for d in range(n_dir):
+
+                    p = params[t, f, a, d]
+                    rp = ref_params[t, f, 0, d]
+
+                    if param_flags[t, f, a, d] == 1:
+                        continue
+                    else:
+                        p -= rp
+
+    rm_params_to_gains(params, gains, lambda_sq, param_freq_map)
+
+    # Referencing may move flagged gains/params from identity.
+    apply_param_flags_to_params(param_flags, params, 0)
+    apply_gain_flags_to_gains(gain_flags, gains)
