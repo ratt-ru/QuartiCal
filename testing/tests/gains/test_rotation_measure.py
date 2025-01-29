@@ -7,7 +7,7 @@ from testing.utils.gains import apply_gains
 
 
 @pytest.fixture(scope="module")
-def opts(base_opts, solve_per):
+def opts(base_opts):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -15,14 +15,14 @@ def opts(base_opts, solve_per):
 
     _opts.input_ms.select_corr = [0, 1, 2, 3]
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [100]
+    _opts.solver.iter_recipe = [0]
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
     _opts.solver.threads = 2
     _opts.G.type = "rotation_measure"
     _opts.G.freq_interval = 0
-    _opts.G.solve_per = solve_per
+    _opts.G.initial_estimate = True
 
     return _opts
 
@@ -34,7 +34,7 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list, solve_per):
+def true_gain_list(predicted_xds_list):
 
     gain_list = []
 
@@ -52,12 +52,13 @@ def true_gain_list(predicted_xds_list, solve_per):
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
-        bound = 8 if solve_per == "array" else 10
+        bound = 8
 
         da.random.seed(0)
         rm = da.random.normal(size=(n_time, 1, n_ant, n_dir),
                               loc=0,
                               scale=bound)
+        rm[:, :, 0, :] = 0  # Zero the reference antenna.
         betas = rm * lambda_sq[None, :, None, None]
 
         gains = da.zeros((n_time, n_chan, n_ant, n_dir, n_corr),
@@ -66,9 +67,6 @@ def true_gain_list(predicted_xds_list, solve_per):
         gains[..., 1] = -da.sin(betas)
         gains[..., 2] = da.sin(betas)
         gains[..., 3] = da.cos(betas)
-
-        if solve_per == "array":
-            gains = da.broadcast_to(gains[:, :, :1], gains.shape)
 
         gain_list.append(gains)
 
@@ -92,6 +90,8 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
             time.map_blocks(lambda x: np.unique(x, return_inverse=True)[1])
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
+        model[..., 1] = 0  # Identity.
+        model[..., 2] = 0
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),
