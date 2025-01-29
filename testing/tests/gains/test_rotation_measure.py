@@ -15,7 +15,7 @@ def opts(base_opts):
 
     _opts.input_ms.select_corr = [0, 1, 2, 3]
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [0]
+    _opts.solver.iter_recipe = [100]
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
@@ -52,12 +52,14 @@ def true_gain_list(predicted_xds_list):
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
-        bound = 8
+        bound = 750
 
         da.random.seed(0)
-        rm = da.random.normal(size=(n_time, 1, n_ant, n_dir),
-                              loc=0,
-                              scale=bound)
+        rm = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir),
+            low=-bound,
+            high=bound
+        )
         rm[:, :, 0, :] = 0  # Zero the reference antenna.
         betas = rm * lambda_sq[None, :, None, None]
 
