@@ -166,6 +166,10 @@ class RotationMeasure(ParameterizedGain):
                 # NOTE: This works on my test data but it is slightly hand wavy.
                 n = max(2 * n_chan, 1024)
                 fft_freq = np.fft.fftshift(np.fft.fftfreq(n, delta_freq))
+                # We do not include a factor of 2 * np.pi in the RM matrix i.e.
+                # we are not working with angular frequencies. We introduce a
+                # factor 2 * np.pi here to account for this discrepancy.
+                fft_freq *= 2 * np.pi
 
                 if n_corr != 4:
                     raise ValueError(
