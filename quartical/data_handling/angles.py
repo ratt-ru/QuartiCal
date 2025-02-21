@@ -24,7 +24,8 @@ def assign_parangle_data(ms_path, data_xds_list):
     anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
     feedtab_xdsl = xds_from_storage_table(
         ms_path + "::FEED",
-        group_cols="__row__"
+        columns=["POLARIZATION_TYPE", "RECEPTOR_ANGLE"],
+        group_cols=["SPECTRAL_WINDOW_ID"]
     )
     fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
 
@@ -44,13 +45,10 @@ def assign_parangle_data(ms_path, data_xds_list):
 
     phase_dirs = fieldtab.PHASE_DIR.values
 
-    receptor_angles = da.concatenate(
-        [xds.RECEPTOR_ANGLE.data for xds in feedtab_xdsl],
-    )
-    receptor_angles = receptor_angles.rechunk((-1, -1))
-
     updated_data_xds_list = []
     for xds in data_xds_list:
+        ddid = xds.DATA_DESC_ID
+        receptor_angles = feedtab_xdsl[ddid].RECEPTOR_ANGLE.data
         xds = xds.assign(
             {
                 "RECEPTOR_ANGLE": (
