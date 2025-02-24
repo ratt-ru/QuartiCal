@@ -37,6 +37,8 @@ def compute_chunking(ms_opts, compute=True):
         compute=False
     )
 
+    # TODO: Respect the fact that DATA_DESC_ID refers to rows of the
+    # DATA_DESCRIPTION subtable.
     chan_chunking_per_xds = [chan_chunking_per_spw[xds.DATA_DESC_ID]
                              for xds in indexing_xds_list]
 

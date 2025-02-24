@@ -153,6 +153,8 @@ def read_xds_list(model_columns, ms_opts):
         # for solvers which require this information. Also adds the antenna
         # names which will be useful when reference antennas are required.
 
+        # TODO: Respect the fact that DATA_DESC_ID refers to rows of the
+        # DATA_DESCRIPTION subtable.
         chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
         chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
 

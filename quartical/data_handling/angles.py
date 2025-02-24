@@ -28,6 +28,10 @@ def assign_parangle_data(ms_path, data_xds_list):
         group_cols=["SPECTRAL_WINDOW_ID"]
     )
     fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
+    ddtab_xdsl = xds_from_storage_table(
+        ms_path + "::DATA_DESCRIPTION"
+        group_cols="__roW__"
+    )
 
     # We do the following eagerly to reduce graph complexity.
     unique_feeds = {
@@ -48,7 +52,8 @@ def assign_parangle_data(ms_path, data_xds_list):
     updated_data_xds_list = []
     for xds in data_xds_list:
         ddid = xds.DATA_DESC_ID
-        receptor_angles = feedtab_xdsl[ddid].RECEPTOR_ANGLE.data
+        spw_id = ddtab_xdsl[ddid].SPECTRAL_WINDOW_ID.data
+        receptor_angles = feedtab_xdsl[spw_id].RECEPTOR_ANGLE.data
         xds = xds.assign(
             {
                 "RECEPTOR_ANGLE": (
