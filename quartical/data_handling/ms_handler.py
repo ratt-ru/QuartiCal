@@ -109,8 +109,19 @@ def read_xds_list(model_columns, ms_opts):
         table_schema=["MS", {**schema}]
     )
 
+    # NOTE(JSKenyon): This is a temporary solution - handling of selection
+    # needs to be substantially improved. The root issue is that we cannot
+    # filter inside the xds_from_table calls i.e. we may need to provide
+    # chunking information for unused data partitions.
     missing_columns = set().union(
-        *[set(columns) - set(xds.data_vars.keys()) for xds in data_xds_list]
+        *[
+            set(columns) - set(xds.data_vars.keys())
+            for xds in filter_xds_list(
+                data_xds_list,
+                ms_opts.select_fields,
+                ms_opts.select_ddids
+            )
+        ]
     )
 
     if missing_columns:
@@ -183,9 +194,9 @@ def read_xds_list(model_columns, ms_opts):
 
     data_xds_list = _data_xds_list
 
-    # Filter out fields/ddids which we are not interested in. Also select out
-    # correlations. TODO: Does this type of selection/filtering belong here?
-
+    # Filter out fields/ddids which we are not interested in. TODO: This should
+    # be modified to include specific spectral window and polarization selection
+    # instead of using the ddid directly.
     data_xds_list = filter_xds_list(
         data_xds_list,
         ms_opts.select_fields,
