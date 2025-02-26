@@ -107,6 +107,8 @@ def make_parangle_xds_list(ms_path, data_xds_list):
 
     for xds, field_centre in zip(data_xds_list, field_centres):
 
+        # TODO: This is unnecessary - we should just reify the field centres
+        # and pass them in.
         cloned_field_centre = da.concatenate(
             [clone(field_centre) for _ in xds.chunksizes["row"]]
         )
