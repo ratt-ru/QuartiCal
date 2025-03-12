@@ -358,6 +358,11 @@ def summary():
 
     args = parser.parse_args()
 
+    for key, val in vars(args).items():
+        print(f"{key}: {val}")
+
+    import ipdb; ipdb.set_trace()
+
     # this should result in a list of field IDs or names or None
     try:
         fields = list(map(int, args.fields))
@@ -404,7 +409,7 @@ def summary():
         chunks={"row": 25000, "chan": 1024, "corr": -1},
     )
 
-    data_xds_list = [ds if ds.FIELD_ID in field_ids else None for ds in data_xds_list]
+    data_xds_list = [ds for ds in data_xds_list if ds.FIELD_ID in field_ids]
 
     dimension_summary(data_xds_list)
     flagging_summary(data_xds_list)
