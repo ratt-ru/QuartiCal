@@ -358,11 +358,6 @@ def summary():
 
     args = parser.parse_args()
 
-    for key, val in vars(args).items():
-        print(f"{key}: {val}")
-
-    import ipdb; ipdb.set_trace()
-
     # this should result in a list of field IDs or names or None
     try:
         fields = list(map(int, args.fields))
