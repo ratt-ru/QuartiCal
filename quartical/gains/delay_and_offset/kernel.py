@@ -138,8 +138,7 @@ def nb_delay_and_offset_solver_impl(
 
         # We actually solve for D' = (D(nu_min + nu_max))/2. This helps avoid
         # numerical issues, but requires some scaling of the parameters.
-        chan_freq = ms_inputs.CHAN_FREQ
-        mid_freq = (chan_freq.min() + chan_freq.max())/2
+        mid_freq = ms_inputs.CENTRAL_FREQ
         active_params[..., 1::2] *= mid_freq
 
         for loop_idx in range(max_iter or 1):
@@ -331,9 +330,7 @@ def nb_compute_jhj_jhr(
 
         n_gains = len(gains)
 
-        cf_min = chan_freq.min()
-        cf_max = chan_freq.max()
-        cf_mid = (cf_min + cf_max) / 2
+        cf_mid = ms_inputs.CENTRAL_FREQ
 
         # Determine loop variables based on where we are in the chain.
         # gt means greater than (n>j) and lt means less than (n<j).
@@ -602,9 +599,7 @@ def nb_finalize_update(
                     params[..., pd, :] = 0
 
             chan_freq = ms_inputs.CHAN_FREQ
-            cf_min = chan_freq.min()
-            cf_max = chan_freq.max()
-            cf_mid = (cf_min + cf_max) / 2
+            cf_mid = ms_inputs.CENTRAL_FREQ
 
             for t in range(n_time):
                 for f in range(n_freq):
@@ -833,15 +828,14 @@ def delay_and_offset_params_to_gains(
     params,
     gains,
     chan_freq,
+    central_freq,
     param_freq_map,
     rescaled=False
 ):
 
     n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
 
-    cf_min = chan_freq.min()
-    cf_max = chan_freq.max()
-    cf_mid = (cf_min + cf_max) / 2
+    cf_mid = central_freq
 
     if rescaled:
         offset = 1.0
@@ -870,6 +864,7 @@ def delay_and_offset_params_to_gains(
 def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
 
     chan_freq = ms_inputs.CHAN_FREQ
+    central_freq = ms_inputs.CENTRAL_FREQ
 
     active_term = meta_inputs.active_term
     ref_ant = meta_inputs.reference_antenna
@@ -899,7 +894,12 @@ def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
                         p -= rp
 
     delay_and_offset_params_to_gains(
-        params, gains, chan_freq, param_freq_map, rescaled=True
+        params,
+        gains,
+        chan_freq,
+        central_freq,
+        param_freq_map,
+        rescaled=True
     )
 
     # Referencing may move flagged gains/params from identity.

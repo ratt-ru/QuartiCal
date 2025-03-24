@@ -13,7 +13,10 @@ from quartical.gains.general.flagging import (
 
 # Overload the default measurement set inputs to include the frequencies.
 ms_inputs = namedtuple(
-    'ms_inputs', ParameterizedGain.ms_inputs._fields + ('CHAN_FREQ',)
+    'ms_inputs', ParameterizedGain.ms_inputs._fields + (
+        'CHAN_FREQ',
+        'CENTRAL_FREQ'
+    )
 )
 
 
@@ -64,6 +67,7 @@ class Delay(ParameterizedGain):
             params,
             gains,
             ms_kwargs["CHAN_FREQ"],
+            ms_kwargs["CENTRAL_FREQ"],
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 
@@ -162,6 +166,7 @@ class Delay(ParameterizedGain):
             params,
             gains,
             ms_kwargs["CHAN_FREQ"],
+            ms_kwargs["CENTRAL_FREQ"],
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 
