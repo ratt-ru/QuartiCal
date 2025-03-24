@@ -136,6 +136,12 @@ def read_xds_list(model_columns, ms_opts):
         chunks=chunking_per_spw_xds
     )
 
+    for spw_xds in spw_xds_list:
+        chan_freq = spw_xds.CHAN_FREQ.values  # Reify.
+        min_freq, max_freq = chan_freq.min(), chan_freq.max()
+        spw_xds.attrs["CENTRAL_FREQ"] = (min_freq + max_freq) / 2
+        spw_xds.attrs["BANDWIDTH"] = max_freq - min_freq
+
     # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
     # for undoing BDA.
     ref_xds_list = data_xds_list if ms_opts.is_bda else None
@@ -164,8 +170,11 @@ def read_xds_list(model_columns, ms_opts):
         # for solvers which require this information. Also adds the antenna
         # names which will be useful when reference antennas are required.
 
-        chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
-        chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
+        spw_xds = spw_xds_list[xds.DATA_DESC_ID]
+        chan_freqs = clone(spw_xds.CHAN_FREQ.data)
+        chan_widths = clone(spw_xds.CHAN_WIDTH.data)
+        bandwidth = spw_xds.attrs["BANDWIDTH"]
+        central_freq = spw_xds.attrs["CENTRAL_FREQ"]
 
         _xds = _xds.assign(
             {
@@ -186,7 +195,9 @@ def read_xds_list(model_columns, ms_opts):
         _xds = _xds.assign_attrs(
             {
                 "UTIME_CHUNKS": utime_chunks,
-                "FIELD_NAME": field_name
+                "FIELD_NAME": field_name,
+                "BANDWIDTH": bandwidth,
+                "CENTRAL_FREQ": central_freq
             }
         )
 

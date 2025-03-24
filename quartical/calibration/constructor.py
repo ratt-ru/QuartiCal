@@ -72,6 +72,11 @@ def construct_solver(
             if v.name in required_fields:
                 blocker.add_input(v.name, v.data, v.dims)
 
+        # If a required value is in the xds attrs, add it to the blocker.
+        for k, v in data_xds.attrs.items():
+            if k in required_fields:
+                blocker.add_input(k, v)
+
         # NOTE: We need to treat time as a rowlike dimension here.
         for v in mapping_xds.data_vars.values():
             blocker.add_input(
