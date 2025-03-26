@@ -15,7 +15,8 @@ from quartical.gains.general.flagging import (
 ms_inputs = namedtuple(
     'ms_inputs', ParameterizedGain.ms_inputs._fields + (
         'CHAN_FREQ',
-        'CENTRAL_FREQ'
+        'MIN_FREQ',
+        'MAX_FREQ'
     )
 )
 
@@ -70,7 +71,8 @@ class DelayAndOffset(ParameterizedGain):
             params,
             gains,
             ms_kwargs["CHAN_FREQ"],
-            ms_kwargs["CENTRAL_FREQ"],
+            ms_kwargs["MIN_FREQ"],
+            ms_kwargs["MAX_FREQ"],
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 
@@ -169,7 +171,8 @@ class DelayAndOffset(ParameterizedGain):
             params,
             gains,
             ms_kwargs["CHAN_FREQ"],
-            ms_kwargs["CENTRAL_FREQ"],
+            ms_kwargs["MIN_FREQ"],
+            ms_kwargs["MAX_FREQ"],
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 

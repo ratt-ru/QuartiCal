@@ -138,9 +138,8 @@ def read_xds_list(model_columns, ms_opts):
 
     for spw_xds in spw_xds_list:
         chan_freq = spw_xds.CHAN_FREQ.values  # Reify.
-        min_freq, max_freq = chan_freq.min(), chan_freq.max()
-        spw_xds.attrs["CENTRAL_FREQ"] = (min_freq + max_freq) / 2
-        spw_xds.attrs["BANDWIDTH"] = max_freq - min_freq
+        spw_xds.attrs["MIN_FREQ"] = chan_freq.min()
+        spw_xds.attrs["MAX_FREQ"] = chan_freq.max()
 
     # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
     # for undoing BDA.
@@ -173,8 +172,6 @@ def read_xds_list(model_columns, ms_opts):
         spw_xds = spw_xds_list[xds.DATA_DESC_ID]
         chan_freqs = clone(spw_xds.CHAN_FREQ.data)
         chan_widths = clone(spw_xds.CHAN_WIDTH.data)
-        bandwidth = spw_xds.attrs["BANDWIDTH"]
-        central_freq = spw_xds.attrs["CENTRAL_FREQ"]
 
         _xds = _xds.assign(
             {
@@ -196,8 +193,8 @@ def read_xds_list(model_columns, ms_opts):
             {
                 "UTIME_CHUNKS": utime_chunks,
                 "FIELD_NAME": field_name,
-                "BANDWIDTH": bandwidth,
-                "CENTRAL_FREQ": central_freq
+                "MIN_FREQ": spw_xds.MIN_FREQ,
+                "MAX_FREQ": spw_xds.MAX_FREQ
             }
         )
 
