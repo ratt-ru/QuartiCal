@@ -133,8 +133,7 @@ def nb_tec_and_offset_solver_impl(
 
         # We actually solve for TEC' = TEC/bandwidth. This helps avoid
         # numerical issues, but requires some scaling of the parameters.
-        chan_freq = ms_inputs.CHAN_FREQ
-        bandwidth = chan_freq.max() - chan_freq.min()
+        bandwidth = ms_inputs.MAX_FREQ - ms_inputs.MIN_FREQ
         active_params[..., 1::2] /= bandwidth
 
         for loop_idx in range(max_iter or 1):
@@ -326,8 +325,8 @@ def nb_compute_jhj_jhr(
 
         n_gains = len(gains)
 
-        cf_min = chan_freq.min()
-        cf_max = chan_freq.max()
+        cf_min = ms_inputs.MIN_FREQ
+        cf_max = ms_inputs.MAX_FREQ
         bandwidth = cf_max - cf_min
         offset = np.log(cf_min / cf_max)
 
@@ -598,8 +597,8 @@ def nb_finalize_update(
                     params[..., pd, :] = 0
 
             chan_freq = ms_inputs.CHAN_FREQ
-            cf_min = chan_freq.min()
-            cf_max = chan_freq.max()
+            cf_min = ms_inputs.MIN_FREQ
+            cf_max = ms_inputs.MAX_FREQ
             bandwidth = cf_max - cf_min
             offset = np.log(cf_min/cf_max)
 
@@ -830,14 +829,16 @@ def tec_and_offset_params_to_gains(
     params,
     gains,
     chan_freq,
+    min_freq,
+    max_freq,
     param_freq_map,
     rescaled=False
 ):
 
     n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
 
-    cf_min = chan_freq.min()
-    cf_max = chan_freq.max()
+    cf_min = min_freq
+    cf_max = max_freq
     bandwidth = cf_max - cf_min
 
     # The log term absorbs the leading factor of -1, inverting the fraction.
@@ -897,7 +898,13 @@ def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
                         p -= rp
 
     tec_and_offset_params_to_gains(
-        params, gains, chan_freq, param_freq_map, rescaled=True
+        params,
+        gains,
+        chan_freq,
+        ms_inputs.MIN_FREQ,
+        ms_inputs.MAX_FREQ,
+        param_freq_map,
+        rescaled=True
     )
 
     # Referencing may move flagged gains/params from identity.
