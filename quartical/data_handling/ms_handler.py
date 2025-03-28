@@ -69,8 +69,8 @@ def read_xds_list(model_columns, ms_opts):
 
     field_info = "\n  ".join(
         [
-            f"Field: {n} - Phase direction: {tuple(d)}"
-            for n, d in list(zip(field_names, phase_dirs))[:10]
+            f"Field: {n} - Phase direction: {[float(d) for d in pd]}"
+            for n, pd in list(zip(field_names, phase_dirs))
         ]
     )
 
