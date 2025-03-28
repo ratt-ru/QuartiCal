@@ -125,6 +125,15 @@ def read_xds_list(model_columns, ms_opts):
         chunks=chunking_per_spw_xds
     )
 
+    dd_xds = xds_from_storage_table(
+        ms_opts.path + "::DATA_DESCRIPTION",
+        chunks={"row": -1}
+    )[0]
+
+    # Reify these values as they should be added to the xarray datasets.
+    polarization_ids = dd_xds.POLARIZATION_ID.values
+    spectral_window_ids = dd_xds.SPECTRAL_WINDOW_ID.values
+
     # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
     # for undoing BDA.
     ref_xds_list = data_xds_list if ms_opts.is_bda else None
@@ -144,6 +153,10 @@ def read_xds_list(model_columns, ms_opts):
     ant_names = np.array(antenna_xds.NAME.values, dtype='U')
 
     for xds_ind, xds in enumerate(data_xds_list):
+
+        spw_id = spectral_window_ids[xds.DATA_DESC_ID]
+        pol_id = polarization_ids[xds.DATA_DESC_ID]
+
         # Add coordinates to the xarray datasets.
         _xds = xds.assign_coords({"corr": corr_types,
                                   "chan": np.arange(xds.sizes["chan"]),
@@ -153,10 +166,8 @@ def read_xds_list(model_columns, ms_opts):
         # for solvers which require this information. Also adds the antenna
         # names which will be useful when reference antennas are required.
 
-        # TODO: Respect the fact that DATA_DESC_ID refers to rows of the
-        # DATA_DESCRIPTION subtable.
-        chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
-        chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
+        chan_freqs = clone(spw_xds_list[spw_id].CHAN_FREQ.data)
+        chan_widths = clone(spw_xds_list[spw_id].CHAN_WIDTH.data)
 
         _xds = _xds.assign(
             {
@@ -177,7 +188,9 @@ def read_xds_list(model_columns, ms_opts):
         _xds = _xds.assign_attrs(
             {
                 "UTIME_CHUNKS": utime_chunks,
-                "FIELD_NAME": field_name
+                "FIELD_NAME": field_name,
+                "SPECTRAL_WINDOW_ID": spw_id,
+                "POLARIZATION_ID": pol_id
             }
         )
 

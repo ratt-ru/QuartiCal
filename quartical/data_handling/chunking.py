@@ -18,6 +18,18 @@ def compute_chunking(ms_opts, compute=True):
         chunks={"row": -1}
     )
 
+    dd_xds = xds_from_storage_table(
+        ms_opts.path + "::DATA_DESCRIPTION",
+        chunks={"row": -1}
+    )[0]
+
+    polarization_ids = dd_xds.POLARIZATION_ID.values
+    spectral_window_ids = dd_xds.SPECTRAL_WINDOW_ID.values
+
+    for xds in indexing_xds_list:
+        xds.attrs["SPECTRAL_WINDOW_ID"] = spectral_window_ids[xds.DATA_DESC_ID]
+        xds.attrs["POLARIZATION_ID"] = polarization_ids[xds.DATA_DESC_ID]
+
     utime_chunking_per_xds, row_chunking_per_xds = row_chunking(
         indexing_xds_list,
         ms_opts.time_chunk,
@@ -37,10 +49,10 @@ def compute_chunking(ms_opts, compute=True):
         compute=False
     )
 
-    # TODO: Respect the fact that DATA_DESC_ID refers to rows of the
-    # DATA_DESCRIPTION subtable.
-    chan_chunking_per_xds = [chan_chunking_per_spw[xds.DATA_DESC_ID]
-                             for xds in indexing_xds_list]
+    chan_chunking_per_xds = [
+        chan_chunking_per_spw[xds.SPECTRAL_WINDOW_ID]
+        for xds in indexing_xds_list
+    ]
 
     zipper = zip(row_chunking_per_xds, chan_chunking_per_xds)
     chunking_per_data_xds = [{"row": r, "chan": c} for r, c in zipper]
@@ -81,7 +93,7 @@ def chan_chunking(
     """
     chan_chunking_per_spw = {}
 
-    for ddid, xds in enumerate(spw_xds_list):
+    for spw_id, xds in enumerate(spw_xds_list):
 
         # If the chunking interval is a float after preprocessing, we are
         # dealing with a bandwidth rather than a number of channels.
@@ -136,7 +148,7 @@ def chan_chunking(
                                      dtype=np.int32)
 
         # We use delayed to convert to tuples and satisfy daskms/dask.
-        chan_chunking_per_spw[ddid] = dd(tuple)(chunking)
+        chan_chunking_per_spw[spw_id] = dd(tuple)(chunking)
 
     if compute:
         return da.compute(chan_chunking_per_spw)[0]

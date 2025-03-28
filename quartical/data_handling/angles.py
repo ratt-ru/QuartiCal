@@ -28,7 +28,6 @@ def assign_parangle_data(ms_path, data_xds_list):
         group_cols=["SPECTRAL_WINDOW_ID"]
     )
     fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
-    ddtab_xds = xds_from_storage_table(ms_path + "::DATA_DESCRIPTION")[0]
 
     # We do the following eagerly to reduce graph complexity.
     unique_feeds = {
@@ -48,8 +47,7 @@ def assign_parangle_data(ms_path, data_xds_list):
 
     updated_data_xds_list = []
     for xds in data_xds_list:
-        ddid = xds.DATA_DESC_ID
-        spw_id = ddtab_xds.SPECTRAL_WINDOW_ID.data[ddid]
+        spw_id = xds.SPECTRAL_WINDOW_ID
         receptor_angles = feedtab_xdsl[spw_id].RECEPTOR_ANGLE.data
         xds = xds.assign(
             {
@@ -63,6 +61,9 @@ def assign_parangle_data(ms_path, data_xds_list):
             }
         )
         xds.attrs["FEED_TYPE"] = feed_type
+        # TODO: If we are calibrating multiple fields at the same time,
+        # this code will become problematic as the FIELD_ID will need to
+        # be checked per row.
         xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[xds.FIELD_ID, 0])
 
         updated_data_xds_list.append(xds)
@@ -94,9 +95,6 @@ def make_parangle_xds_list(ms_path, data_xds_list):
 
     field_centres = [phase_dirs[xds.FIELD_ID, 0] for xds in data_xds_list]
 
-    # TODO: This could be more complicated for arrays with multiple feeds.
-    receptor_angles = feedtab.RECEPTOR_ANGLE.data
-
     ant_names = anttab.NAME.data
 
     ant_positions_ecef = anttab.POSITION.data  # ECEF coordinates.
@@ -106,6 +104,8 @@ def make_parangle_xds_list(ms_path, data_xds_list):
     parangle_xds_list = []
 
     for xds, field_centre in zip(data_xds_list, field_centres):
+
+        receptor_angles = xds.RECEPTOR_ANGLE.data
 
         parangles = da.blockwise(_make_parangles, "tar",
                                  xds.TIME.data, "t",
