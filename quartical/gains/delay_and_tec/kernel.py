@@ -133,10 +133,11 @@ def nb_delay_and_tec_solver_impl(
         # numerical issues, but requires some scaling of the parameters.
         # We actually solve for TEC' = TEC/bandwidth. This helps avoid
         # numerical issues, but requires some scaling of the parameters.
-        chan_freq = ms_inputs.CHAN_FREQ
-        mid_freq = (chan_freq.min() + chan_freq.max())/2
+        min_freq = ms_inputs.MIN_FREQ
+        max_freq = ms_inputs.MAX_FREQ
+        mid_freq = (min_freq + max_freq) / 2
         active_params[..., 1::2] *= mid_freq
-        bandwidth = chan_freq.max() - chan_freq.min()
+        bandwidth = max_freq - min_freq
         active_params[..., 0::2] /= bandwidth
 
         for loop_idx in range(max_iter or 1):
@@ -330,8 +331,8 @@ def nb_compute_jhj_jhr(
 
         n_gains = len(gains)
 
-        cf_min = chan_freq.min()
-        cf_max = chan_freq.max()
+        cf_min = ms_inputs.MIN_FREQ
+        cf_max = ms_inputs.MAX_FREQ
         cf_mid = (cf_min + cf_max) / 2
         bandwidth = cf_max - cf_min
         tec_offset = np.log(cf_min / cf_max)
@@ -608,8 +609,8 @@ def nb_finalize_update(
                     params[..., pd, :] = 0
 
             chan_freq = ms_inputs.CHAN_FREQ
-            cf_min = chan_freq.min()
-            cf_max = chan_freq.max()
+            cf_min = ms_inputs.MIN_FREQ
+            cf_max = ms_inputs.MAX_FREQ
             cf_mid = (cf_min + cf_max) / 2
             bandwidth = cf_max - cf_min
             tec_offset = np.log(cf_min / cf_max)
@@ -863,14 +864,16 @@ def delay_and_tec_params_to_gains(
     params,
     gains,
     chan_freq,
+    min_freq,
+    max_freq,
     param_freq_map,
     rescaled=False
 ):
 
     n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
 
-    cf_min = chan_freq.min()
-    cf_max = chan_freq.max()
+    cf_min = min_freq
+    cf_max = max_freq
     cf_mid = (cf_min + cf_max) / 2
 
     # DELAY
@@ -945,7 +948,13 @@ def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
                         p -= rp
 
     delay_and_tec_params_to_gains(
-        params, gains, chan_freq, param_freq_map, rescaled=True
+        params,
+        gains,
+        chan_freq,
+        ms_inputs.MIN_FREQ,
+        ms_inputs.MAX_FREQ,
+        param_freq_map,
+        rescaled=True
     )
 
     # Referencing may move flagged gains/params from identity.
