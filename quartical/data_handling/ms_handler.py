@@ -64,11 +64,17 @@ def read_xds_list(model_columns, ms_opts):
     # by merging the field xds grouped by DDID into data grouped by DDID.
 
     field_xds = xds_from_storage_table(ms_opts.path + "::FIELD")[0]
-    phase_dir = np.squeeze(field_xds.PHASE_DIR.values)
+    phase_dirs = field_xds.PHASE_DIR.values[:, 0, :]  # Ignore field-poly.
     field_names = field_xds.NAME.values
 
-    logger.info("Field table indicates phase centre is at ({} {}).",
-                phase_dir[0], phase_dir[1])
+    field_info = "\n  ".join(
+        [
+            f"Field: {n} - Phase direction: {tuple(d)}"
+            for n, d in list(zip(field_names, phase_dirs))[:10]
+        ]
+    )
+
+    logger.info(f"Field table indicates phase centre is at:\n  {field_info}")
 
     # Determine all the chunking in time, row and channel.
     chunking_info = compute_chunking(ms_opts, compute=True)
