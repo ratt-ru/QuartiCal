@@ -70,7 +70,9 @@ def print_help(HelpConfig, section_names=None):
 def help():
     """Prints the help."""
 
-    help_args = [arg for arg in sys.argv if arg.startswith('help')]
+    # NOTE: If evert we have an argument which starts with help, this might
+    # cause a problem. Ok for now.
+    help_args = [arg for arg in sys.argv if arg.lstrip('-').startswith('help')]
 
     # Always take the last specified help request.
     help_arg = help_args.pop() if help_args else help_args
@@ -88,7 +90,7 @@ def help():
         print_help(HelpConfig)
     else:
         selection = help_arg.split("=")[-1]
-        selection = re.sub('[\[\] ]', "", selection)  # noqa
+        selection = re.sub(r'[\[\] ]', "", selection)
         selection = selection.split(",")
         print_help(HelpConfig, section_names=selection)
 

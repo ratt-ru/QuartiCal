@@ -16,7 +16,7 @@ from quartical.data_handling.angles import _make_parangles
 ms_inputs = namedtuple(
     'ms_inputs', 
     ParameterizedGain.ms_inputs._fields + \
-        ('RECEPTOR_ANGLE', 'POSITION', 'TIME')
+        ('RECEPTOR_ANGLE', 'POSITION')
 )
 
 class ParallacticAngle(ParameterizedGain):
@@ -37,6 +37,10 @@ class ParallacticAngle(ParameterizedGain):
     def __init__(self, term_name, term_opts):
 
         super().__init__(term_name, term_opts)
+
+        # NOTE: Ignore user-specified values on this term.
+        self.time_interval = 1
+        self.freq_interval = 0
 
     @classmethod
     def _make_freq_map(cls, chan_freqs, chan_widths, freq_interval):
