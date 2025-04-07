@@ -186,7 +186,7 @@ class DelayAndTec(ParameterizedGain):
                     # TODO: Investigate whether it is better to use the delay
                     # estimates with a higher number of subintervals over the
                     # median of the power spectrum.
-                    # ctz_delay[ut, uf, i] = delay_est
+                    ctz_delay[ut, uf, i] = delay_est
 
                 # Zero the reference antenna/antennas without data.
                 ctz_delay[ut, uf, :, ~valid_ant] = 0

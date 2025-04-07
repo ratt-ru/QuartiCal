@@ -22,6 +22,7 @@ def opts(base_opts, select_corr):
     _opts.solver.threads = 2
     _opts.G.type = "delay_and_tec"
     _opts.G.freq_interval = 0
+    _opts.G.initial_estimate = True
 
     return _opts
 
@@ -61,8 +62,8 @@ def true_gain_list(predicted_xds_list):
         da.random.seed(0)
         tec = da.random.uniform(
             size=(n_time, 1, n_ant, n_dir, n_corr),
-            low=-0.05*max_tec,
-            high=0.05*max_tec,
+            low=-0.2*max_tec,
+            high=0.2*max_tec,
             chunks=tec_chunking
         )
         tec[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
@@ -81,11 +82,13 @@ def true_gain_list(predicted_xds_list):
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
 
-        tec_offset = np.log(cf_min/cf_max)/(cf_max - cf_min)
+        nu_mean = chan_freq.mean()
+        inu_mean = (1/chan_freq).mean()
+
         tec_coeff = \
-            2 * np.pi * (1/chan_freq[None, :, None, None, None] + tec_offset)
+            2 * np.pi * (1/chan_freq[None, :, None, None, None] - inu_mean)
         delay_coeff = \
-            2*np.pi*(chan_freq[None, :, None, None, None] - band_centre)
+            2*np.pi*(chan_freq[None, :, None, None, None] - nu_mean)
 
         phase = tec*tec_coeff + delays*delay_coeff 
         gains = amp*da.exp(1j*phase)

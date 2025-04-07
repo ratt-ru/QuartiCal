@@ -50,7 +50,7 @@ def true_gain_list(predicted_xds_list):
 
         chan_freq = xds.CHAN_FREQ.data
         chan_width = chan_freq[1] - chan_freq[0]
-        band_centre = (chan_freq[0] + chan_freq[-1]) / 2
+        mean_freq = chan_freq.mean()
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
 
@@ -70,7 +70,7 @@ def true_gain_list(predicted_xds_list):
         if n_corr == 4:  # This solver only considers the diagonal elements.
             amp *= da.array([1, 0, 0, 1])
 
-        origin_chan_freq = chan_freq - band_centre
+        origin_chan_freq = chan_freq - mean_freq
         phase = 2*np.pi*delays*origin_chan_freq[None, :, None, None, None]
         gains = amp*da.exp(1j*phase)
 

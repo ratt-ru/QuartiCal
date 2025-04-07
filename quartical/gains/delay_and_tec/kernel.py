@@ -134,10 +134,10 @@ def nb_delay_and_tec_solver_impl(
         # We actually solve for TEC' = TEC/bandwidth. This helps avoid
         # numerical issues, but requires some scaling of the parameters.
         chan_freq = ms_inputs.CHAN_FREQ
-        mid_freq = (chan_freq.min() + chan_freq.max())/2
-        active_params[..., 1::2] *= mid_freq
-        bandwidth = chan_freq.max() - chan_freq.min()
-        active_params[..., 0::2] /= bandwidth
+        mean_freq = chan_freq.mean()
+        active_params[..., 1::2] *= mean_freq
+        mean_ifreq = (1/chan_freq).mean()
+        active_params[..., 0::2] *= mean_ifreq
 
         for loop_idx in range(max_iter or 1):
 
@@ -226,10 +226,10 @@ def nb_delay_and_tec_solver_impl(
             )
 
         # Undo rescaling so that quantities are in native units.
-        active_params[..., 1::2] /= mid_freq
-        native_imdry.jhj[..., 1::2] *= mid_freq ** 2
-        active_params[..., 0::2] *= bandwidth
-        native_imdry.jhj[..., 0::2, 0::2] /= bandwidth ** 2
+        active_params[..., 1::2] /= mean_freq
+        native_imdry.jhj[..., 1::2] *= mean_freq ** 2
+        active_params[..., 0::2] /= mean_ifreq
+        native_imdry.jhj[..., 0::2, 0::2] *= mean_ifreq ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
@@ -330,11 +330,8 @@ def nb_compute_jhj_jhr(
 
         n_gains = len(gains)
 
-        cf_min = chan_freq.min()
-        cf_max = chan_freq.max()
-        cf_mid = (cf_min + cf_max) / 2
-        bandwidth = cf_max - cf_min
-        tec_offset = np.log(cf_min / cf_max)
+        mean_freq = chan_freq.mean()
+        mean_ifreq = (1/chan_freq).mean()
 
         # Determine loop variables based on where we are in the chain.
         # gt means greater than (n>j) and lt means less than (n<j).
@@ -459,9 +456,9 @@ def nb_compute_jhj_jhr(
 
                     # Coefficients introduced by differentiation of exponent.
                     delay_coeff = \
-                        2 * np.pi * (chan_freq[f]/cf_mid - 1)
+                        2 * np.pi * (chan_freq[f]/mean_freq - 1)
                     tec_coeff = \
-                        2 * np.pi * (bandwidth/chan_freq[f] + tec_offset)
+                        2 * np.pi * (1/(chan_freq[f] * mean_ifreq) - 1)
 
                     for d in range(n_gdir):
 
@@ -608,19 +605,16 @@ def nb_finalize_update(
                     params[..., pd, :] = 0
 
             chan_freq = ms_inputs.CHAN_FREQ
-            cf_min = chan_freq.min()
-            cf_max = chan_freq.max()
-            cf_mid = (cf_min + cf_max) / 2
-            bandwidth = cf_max - cf_min
-            tec_offset = np.log(cf_min / cf_max)
+            mean_freq = chan_freq.mean()
+            mean_ifreq = (1/chan_freq).mean()
 
             for t in range(n_time):
                 for f in range(n_freq):
                     f_m = param_freq_map[f]
                     delay_coeff = \
-                        2 * np.pi * (chan_freq[f]/cf_mid - 1)
+                        2 * np.pi * (chan_freq[f]/mean_freq - 1)
                     tec_coeff = \
-                        2 * np.pi * (bandwidth/chan_freq[f] + tec_offset)
+                        2 * np.pi * (1/(chan_freq[f] * mean_ifreq) - 1)
                     for a in range(n_ant):
                         for d in range(n_dir):
 
@@ -869,26 +863,24 @@ def delay_and_tec_params_to_gains(
 
     n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
 
-    cf_min = chan_freq.min()
-    cf_max = chan_freq.max()
-    cf_mid = (cf_min + cf_max) / 2
+    mean_freq = chan_freq.mean()
 
     # DELAY
     if rescaled:
         delay_offset = 1.0
-        delay_denom = cf_mid
+        delay_denom = mean_freq
     else:
-        delay_offset = cf_mid
+        delay_offset = mean_freq
         delay_denom = 1.0
 
-    bandwidth = cf_max - cf_min
+    mean_ifreq = (1/chan_freq).mean()
 
     # TEC
     if rescaled:
-        tec_offset = np.log(cf_min/cf_max)
-        tec_numerator = bandwidth
+        tec_offset = 1.0
+        tec_numerator = 1/mean_ifreq
     else:
-        tec_offset = np.log(cf_min/cf_max)/bandwidth
+        tec_offset = mean_ifreq
         tec_numerator = 1.0
 
     for t in range(n_time):
@@ -899,7 +891,7 @@ def delay_and_tec_params_to_gains(
                 2 * np.pi * (chan_freq[f] / delay_denom - delay_offset)
             # Coeff associated with the the tec.
             tec_coeff = \
-                2 * np.pi * (tec_numerator / chan_freq[f] + tec_offset)
+                2 * np.pi * (tec_numerator / chan_freq[f] - tec_offset)
             for a in range(n_ant):
                 for d in range(n_dir):
 
