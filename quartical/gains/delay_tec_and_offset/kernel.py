@@ -167,11 +167,6 @@ def nb_delay_tec_and_offset_solver_impl(
 
             compute_update(native_imdry, corr_mode)
 
-            # NOTE: COOKERY!! - Why is this necessary?
-            if loop_idx < 20:
-                native_imdry.update[:,:,:,:,1::3] = 0
-                native_imdry.update[:,:,:,:,2::3] = 0
-
             finalize_update(
                 ms_inputs,
                 mapping_inputs,
