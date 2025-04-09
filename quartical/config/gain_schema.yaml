@@ -18,6 +18,7 @@ gain:
       - leakage
       - parallactic_angle
       - feed_flip
+      - delay_tec_and_offset
     info:
       Type of gain to solve for.
 
