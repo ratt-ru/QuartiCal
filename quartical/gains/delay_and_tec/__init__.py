@@ -103,8 +103,11 @@ class DelayAndTec(ParameterizedGain):
         n_fint = ufint.size
         # NOTE: This determines the number of subintervals which are used to
         # estimate the delay and tec values. More subintervals will typically
-        # yield better estimates at the cost of SNR.
-        n_subint = 2
+        # yield better estimates at the cost of SNR. TODO: Thus doesn't factor
+        # in the flagging behaviour which may make some estimates worse than
+        # others. Should we instead only consider unflagged regions or weight
+        # the mean calaculation?
+        n_subint = max(int(np.ceil(n_chan / 512)), 2)
 
         if n_corr == 1:
             n_paramt = 1 #number of parameters in TEC
@@ -162,6 +165,13 @@ class DelayAndTec(ParameterizedGain):
                     si_sel = slice(si, si + subint_stride)
 
                     subint_data = fsel_data[:, si_sel]
+
+                    # NOTE: Collapse correlation axis when term is scalar.
+                    if self.scalar:
+                        subint_data[..., :] = subint_data.sum(
+                            axis=-1, keepdims=True
+                        )
+
                     subint_freq = fsel_chan[si_sel]
                     subint_ifreq = 1/subint_freq
 
