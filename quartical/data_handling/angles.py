@@ -1,6 +1,7 @@
 import numpy as np
 import casacore.measures
 import casacore.quanta as pq
+from loguru import logger
 
 from daskms import xds_from_storage_table
 import dask.array as da
@@ -64,7 +65,15 @@ def assign_parangle_data(ms_path, data_xds_list):
         # TODO: If we are calibrating multiple fields at the same time,
         # this code will become problematic as the FIELD_ID will need to
         # be checked per row.
-        xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[xds.FIELD_ID, 0])
+        if hasattr(xds, "FIELD_ID"):
+            xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[xds.FIELD_ID, 0])
+        else:
+            xds.attrs["FIELD_ID"] = 0
+            xds.attrs["FIELD_CENTRE"] = 0
+            logger.warning(
+                "Parallactic angle correction will fail for "
+                "multi-field calibration - leave it disabled."
+            )
 
         updated_data_xds_list.append(xds)
 
