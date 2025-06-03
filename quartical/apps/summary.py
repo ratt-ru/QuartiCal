@@ -24,18 +24,22 @@ def configure_loguru(output_dir):
 
     fmt = " | ".join([tim_fmt, lvl_fmt, src_fmt, msg_fmt])
 
-    output_path = Path(output_dir)
-    output_name = Path("{time:YYYYMMDD_HHmmss}.summary.qc")
-
-    config = {
-        "handlers": [
-            {"sink": sys.stderr,
-             "level": "INFO",
-             "format": fmt},
+    handlers = [
+        {"sink": sys.stderr,
+         "level": "INFO",
+         "format": fmt}
+    ]
+    if output_dir is not None:
+        output_path = Path(output_dir)
+        output_name = Path("{time:YYYYMMDD_HHmmss}.summary.qc")
+        handlers.append(
             {"sink": str(output_path / output_name),
              "level": "INFO",
              "format": fmt}
-        ],
+        )
+
+    config = {
+        "handlers": handlers,
     }
 
     logger.configure(**config)
@@ -365,17 +369,13 @@ def summary():
         fields = args.fields
         pass
 
-    if args.output_dir is None:
-        # TODO - check if path points to file system of object store
-        summary_dir = Path(args.path.full_path).parent.joinpath('summary')
-        summary_dir.mkdir(exist_ok=True)
-        output_dir = str(summary_dir)
-    else:
+    if args.output_dir is not None:
         output_dir = str(args.output_dir.resolve())
+    else:
+        output_dir = None
 
     path = args.path.url
 
-    # import ipdb; ipdb.set_trace()
     configure_loguru(output_dir)
 
     # Get summary info for subtables. TODO: Improve as needed.
