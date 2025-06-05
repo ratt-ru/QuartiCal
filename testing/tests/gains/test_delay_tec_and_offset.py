@@ -18,7 +18,7 @@ def opts(base_opts, select_corr, scalar_mode):
     _opts.solver.terms = ['G']
     _opts.solver.iter_recipe = [100]
     _opts.solver.propagate_flags = False
-    _opts.solver.convergence_fraction = 1.1
+    _opts.solver.convergence_fraction = 1.0
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.threads = 2
     _opts.G.type = "delay_tec_and_offset"
@@ -58,10 +58,10 @@ def true_gain_list(predicted_xds_list, scalar_mode):
 
         # Set the maximum delay and tec based on the number of times they
         # may wrap across the bandwidth.
-        max_tec_wraps = n_chan // 1024
+        max_tec_wraps = n_chan // 256
         max_tec = max_tec_wraps * (min_freq * max_freq) / (max_freq - min_freq) 
 
-        max_delay_wraps = n_chan // 1024
+        max_delay_wraps = n_chan // 256
         max_delay = max_delay_wraps / (max_freq - min_freq)
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
@@ -255,7 +255,7 @@ def test_params(cmp_gain_xds_lod, true_gain_list):
         tec_wrap_number = true_params[...,1::3] / cf.max() - true_params[...,1::3] / cf.min()
         combined_wrap_number = delay_wrap_number + tec_wrap_number
 
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
 
         # To ensure the missing antenna handling doesn't render this test
         # useless, check that we have non-zero entries first.

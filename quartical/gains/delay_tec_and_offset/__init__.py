@@ -241,27 +241,23 @@ class DelayTecAndOffset(ParameterizedGain):
 
         n_ant, n_param = est_arr.shape
 
-        dfreq = np.abs(freq[-2] - freq[-1])
+        # The number of bins is set such that the transform has a specific
+        # resolution in terms of wrap number. This can be set independently of
+        # bandwidth and has an intuitive explanation i.e. a value of 0.01 will
+        # yield an nbins value such that adjacent values of the transform will
+        # change the wrap number by exactly 0.01. 
 
-        nbins = max(2 * freq.size, 2 * 4096)  # Need adequate samples.
-        # nbins = freq.size
+        dfreq = np.abs(freq[-2] - freq[-1])
+        est_resolution= 0.01
+        max_n_wrap = 1 / (2 * dfreq) * (freq[-1] - freq[0])
+        nbins = int((2 * max_n_wrap) / est_resolution)
+        fft_freq = np.fft.fftfreq(nbins, dfreq)
 
         fft_arr = np.zeros((n_ant, nbins, n_param), dtype=fsel_data.dtype)
 
-        # At this point we have the raw frequencies. finufft expects the domain
-        # of the signal to be [-np.pi, np.pi). We need to rescale the frequency
-        # axis appropriately.
-        rescaled_freq = freq - freq.mean()
-        rescaling = np.pi / np.max(np.abs(rescaled_freq))
-        rescaled_freq *= rescaling
-        # rescaled_freq *= np.pi
-        dfreq = rescaled_freq[-1] - rescaled_freq[-2]
-        fft_freq = np.fft.fftfreq(nbins, dfreq)
-        fft_freq = np.fft.fftshift(fft_freq)
-
-        ufft_dfreq = freq[-1] - freq[-2]
-        ufft_freq = np.fft.fftfreq(nbins, ufft_dfreq)
-        ufft_freq = np.fft.fftshift(ufft_freq)
+        # NOTE: We do not fftshift either the output of the FFT or the
+        # fftfreq values - this is completely acceptable as long as we treat
+        # both consistently.
 
         for i in range(n_param):
             if i == 0:
@@ -271,24 +267,16 @@ class DelayTecAndOffset(ParameterizedGain):
             else:
                 raise ValueError("Unsupported number of parameters for delay.")
 
-            # TODO: Why does the normal FFT disagree with the nufft? Ideally
-            # we want to use numpy as it reduces our dependencies.
-            vis_fft = np.fft.fftshift(np.fft.fft(datak.copy(), axis=-1, n=nbins), axes=1)
-            
+            fft_arr_i = fft_arr[..., i]
 
-
-            vis_finufft = finufft.nufft1d3(
-                rescaled_freq,
+            np.fft.fft(
                 datak.copy(),
-                fft_freq,
-                eps=1e-12,
-                isign=-1
+                axis=-1,
+                n=nbins,
+                out=fft_arr_i
             )
 
-            fft_arr[:, :, i] = vis_finufft
-            est_arr[:, i] = fft_freq[np.argmax(np.abs(vis_finufft), axis=1)] * rescaling / (2 * np.pi)
-
-            est_arr[:, i] = ufft_freq[np.argmax(np.abs(vis_fft), axis=1)]
+            est_arr[:, i] = fft_freq[np.argmax(np.abs(fft_arr_i), axis=1)]
 
         est_arr[~valid_ant] = 0
 
