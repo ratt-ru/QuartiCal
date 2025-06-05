@@ -242,10 +242,6 @@ class DelayTecAndOffset(ParameterizedGain):
         n_ant, n_param = est_arr.shape
 
         dfreq = np.abs(freq[-2] - freq[-1])
-        #Maximum reconstructable delta
-        max_delta = 1/ dfreq
-        nyq_rate = 1./ (2*(freq.max() - freq.min()))
-        nbins = int(max_delta/ nyq_rate)
 
         nbins = max(2 * freq.size, 2 * 4096)  # Need adequate samples.
         # nbins = freq.size
@@ -256,12 +252,16 @@ class DelayTecAndOffset(ParameterizedGain):
         # of the signal to be [-np.pi, np.pi). We need to rescale the frequency
         # axis appropriately.
         rescaled_freq = freq - freq.mean()
-        rescaling = np.max(np.abs(rescaled_freq))
-        rescaled_freq /= rescaling
-        rescaled_freq *= np.pi
+        rescaling = np.pi / np.max(np.abs(rescaled_freq))
+        rescaled_freq *= rescaling
+        # rescaled_freq *= np.pi
         dfreq = rescaled_freq[-1] - rescaled_freq[-2]
         fft_freq = np.fft.fftfreq(nbins, dfreq)
         fft_freq = np.fft.fftshift(fft_freq)
+
+        ufft_dfreq = freq[-1] - freq[-2]
+        ufft_freq = np.fft.fftfreq(nbins, ufft_dfreq)
+        ufft_freq = np.fft.fftshift(ufft_freq)
 
         for i in range(n_param):
             if i == 0:
@@ -273,18 +273,22 @@ class DelayTecAndOffset(ParameterizedGain):
 
             # TODO: Why does the normal FFT disagree with the nufft? Ideally
             # we want to use numpy as it reduces our dependencies.
-            # vis_fft = np.fft.fftshift(np.fft.fft(datak.copy(), axis=-1, n=nbins), axes=1)
+            vis_fft = np.fft.fftshift(np.fft.fft(datak.copy(), axis=-1, n=nbins), axes=1)
+            
+
 
             vis_finufft = finufft.nufft1d3(
                 rescaled_freq,
                 datak.copy(),
                 fft_freq,
-                eps=1e-6,
+                eps=1e-12,
                 isign=-1
             )
 
             fft_arr[:, :, i] = vis_finufft
-            est_arr[:, i] = fft_freq[np.argmax(np.abs(vis_finufft), axis=1)] / (2 * rescaling)
+            est_arr[:, i] = fft_freq[np.argmax(np.abs(vis_finufft), axis=1)] * rescaling / (2 * np.pi)
+
+            est_arr[:, i] = ufft_freq[np.argmax(np.abs(vis_fft), axis=1)]
 
         est_arr[~valid_ant] = 0
 
