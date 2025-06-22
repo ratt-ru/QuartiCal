@@ -1,6 +1,7 @@
 import numpy as np
 import casacore.measures
 import casacore.quanta as pq
+from loguru import logger
 
 from daskms import xds_from_storage_table
 import dask.array as da
@@ -24,7 +25,8 @@ def assign_parangle_data(ms_path, data_xds_list):
     anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
     feedtab_xdsl = xds_from_storage_table(
         ms_path + "::FEED",
-        group_cols="__row__"
+        columns=["POLARIZATION_TYPE", "RECEPTOR_ANGLE"],
+        group_cols=["SPECTRAL_WINDOW_ID"]
     )
     fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
 
@@ -44,13 +46,10 @@ def assign_parangle_data(ms_path, data_xds_list):
 
     phase_dirs = fieldtab.PHASE_DIR.values
 
-    receptor_angles = da.concatenate(
-        [xds.RECEPTOR_ANGLE.data for xds in feedtab_xdsl],
-    )
-    receptor_angles = receptor_angles.rechunk((-1, -1))
-
     updated_data_xds_list = []
     for xds in data_xds_list:
+        spw_id = xds.SPECTRAL_WINDOW_ID
+        receptor_angles = feedtab_xdsl[spw_id].RECEPTOR_ANGLE.data
         xds = xds.assign(
             {
                 "RECEPTOR_ANGLE": (
@@ -63,7 +62,18 @@ def assign_parangle_data(ms_path, data_xds_list):
             }
         )
         xds.attrs["FEED_TYPE"] = feed_type
-        xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[xds.FIELD_ID, 0])
+        # TODO: If we are calibrating multiple fields at the same time,
+        # this code will become problematic as the FIELD_ID will need to
+        # be checked per row.
+        if hasattr(xds, "FIELD_ID"):
+            xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[xds.FIELD_ID, 0])
+        else:
+            xds.attrs["FIELD_ID"] = 0
+            xds.attrs["FIELD_CENTRE"] = 0
+            logger.warning(
+                "Parallactic angle correction will fail for "
+                "multi-field calibration - leave it disabled."
+            )
 
         updated_data_xds_list.append(xds)
 
@@ -94,9 +104,6 @@ def make_parangle_xds_list(ms_path, data_xds_list):
 
     field_centres = [phase_dirs[xds.FIELD_ID, 0] for xds in data_xds_list]
 
-    # TODO: This could be more complicated for arrays with multiple feeds.
-    receptor_angles = feedtab.RECEPTOR_ANGLE.data
-
     ant_names = anttab.NAME.data
 
     ant_positions_ecef = anttab.POSITION.data  # ECEF coordinates.
@@ -106,6 +113,8 @@ def make_parangle_xds_list(ms_path, data_xds_list):
     parangle_xds_list = []
 
     for xds, field_centre in zip(data_xds_list, field_centres):
+
+        receptor_angles = xds.RECEPTOR_ANGLE.data
 
         # TODO: This is unnecessary - we should just reify the field centres
         # and pass them in.
