@@ -3,7 +3,8 @@ from quartical.gains.conversion import trig_to_angle
 from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.crosshand_phase.kernel import (
     crosshand_phase_solver,
-    crosshand_params_to_gains
+    crosshand_params_to_gains,
+    get_xy_sum_and_counts
 )
 from quartical.gains.crosshand_phase.null_v_kernel import (
     null_v_crosshand_phase_solver
@@ -48,6 +49,55 @@ class CrosshandPhase(ParameterizedGain):
         gains, gain_flags, params, param_flags = super().init_term(
             term_spec, ref_ant, ms_kwargs, term_kwargs
         )
+
+        if self.load_from or not self.initial_estimate:
+
+            apply_param_flags_to_params(param_flags, params, 0)
+            apply_gain_flags_to_gains(gain_flags, gains)
+
+            return gains, gain_flags, params, param_flags
+
+        data = ms_kwargs["DATA"]  # (row, chan, corr)
+        flags = ms_kwargs["FLAG"]  # (row, chan)
+        a1 = ms_kwargs["ANTENNA1"]
+        a2 = ms_kwargs["ANTENNA2"]
+        t_map = term_kwargs[f"{term_spec.name}_time_map"]
+        f_map = term_kwargs[f"{term_spec.name}_param_freq_map"]
+
+        # We only need the autocorrelations.
+        sel = np.where(a1 == a2)
+
+        if not (sel[0].ndim and sel[0].size):
+            raise ValueError(
+                "No autocorrelations present in the data. These are required "
+                "for performing initial estimates for the crosshand phase."
+            )
+
+        a1 = a1[sel]
+        a2 = a2[sel]
+        t_map = t_map[sel]
+        data = data[sel]
+        flags = flags[sel]
+
+        xy_sum, xy_counts = get_xy_sum_and_counts(data, t_map, f_map, a1)
+
+        params[...] = np.angle(
+            np.divide(
+                xy_sum,
+                xy_counts,
+                out=np.zeros_like(xy_sum),
+                where=xy_counts >= 0
+            )
+        )
+
+        # Set all antennas to the phase on the reference antenna.
+        if self.solve_per == "array":
+            params[...] = params[:, :, ref_ant: ref_ant + 1]
+
+        # NOTE(JSKenyon): This is a hack for now - ideally, we would be able to
+        # trust the flags on the autos when doing this.
+        gain_flags[...] = 0
+        param_flags[...] = 0
 
         # Convert the parameters into gains.
         crosshand_params_to_gains(params, gains)
