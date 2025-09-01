@@ -4,7 +4,7 @@ from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.crosshand_phase.kernel import (
     crosshand_phase_solver,
     crosshand_params_to_gains,
-    get_mean_xy_phase
+    get_xy_sum_and_counts
 )
 from quartical.gains.crosshand_phase.null_v_kernel import (
     null_v_crosshand_phase_solver
@@ -72,7 +72,20 @@ class CrosshandPhase(ParameterizedGain):
         data = data[sel]
         flags = flags[sel]
 
-        params[...] = np.angle(get_mean_xy_phase(data, t_map, f_map, a1))
+        xy_sum, xy_counts = get_xy_sum_and_counts(data, t_map, f_map, a1)
+
+        params[...] = np.angle(
+            np.divide(
+                xy_sum,
+                xy_counts,
+                out=np.zeros_like(xy_sum),
+                where=xy_counts >= 0
+            )
+        )
+
+        # Set all antennas to the phase on the reference antenna.
+        if self.solve_per == "array":
+            params[...] = params[:, :, ref_ant: ref_ant + 1]
 
         # NOTE(JSKenyon): This is a hack for now - ideally, we would be able to
         # trust the flags on the autos when doing this.

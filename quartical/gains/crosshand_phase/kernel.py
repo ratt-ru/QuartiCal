@@ -668,7 +668,7 @@ def crosshand_params_to_gains(
 
 
 @njit(**JIT_OPTIONS)
-def get_mean_xy_phase(
+def get_xy_sum_and_counts(
     vis,
     t_map,
     f_map,
@@ -694,4 +694,4 @@ def get_mean_xy_phase(
             output[ti, fi, ant, 0, 0] = vis[r, c, 1]
             counts[ti, fi, ant, 0, 0] += 1
 
-    return output/counts
+    return output, counts
