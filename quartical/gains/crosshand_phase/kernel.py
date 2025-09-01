@@ -665,3 +665,33 @@ def crosshand_params_to_gains(
 
                     g[0] = np.exp(1j*p[0])
                     g[-1] = 1
+
+
+@njit(**JIT_OPTIONS)
+def get_mean_xy_phase(
+    vis,
+    t_map,
+    f_map,
+    antenna,
+):
+
+    n_row, n_chan, n_corr = vis.shape
+
+    n_tint = t_map.max() + 1
+    n_fint = f_map.max() + 1
+    n_ant = antenna.max() + 1
+
+    output = np.zeros((n_tint, n_fint, n_ant, 1, 1), dtype=np.complex64)
+    counts = np.zeros((n_tint, n_fint, n_ant, 1, 1))
+
+    for r in range(n_row):
+        for c in range(n_chan):
+
+            ti = t_map[r]
+            fi = f_map[c]
+            ant = antenna[r]
+
+            output[ti, fi, ant, 0, 0] = vis[r, c, 1]
+            counts[ti, fi, ant, 0, 0] += 1
+
+    return output/counts
