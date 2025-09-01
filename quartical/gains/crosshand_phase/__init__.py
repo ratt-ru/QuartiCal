@@ -66,6 +66,13 @@ class CrosshandPhase(ParameterizedGain):
 
         # We only need the autocorrelations.
         sel = np.where(a1 == a2)
+
+        if not (sel[0].ndim and sel[0].size):
+            raise ValueError(
+                "No autocorrelations present in the data. These are required "
+                "for performing initial estimates for the crosshand phase."
+            )
+
         a1 = a1[sel]
         a2 = a2[sel]
         t_map = t_map[sel]
