@@ -138,8 +138,8 @@ def nb_delay_solver_impl(
         # We actually solve for D' = (D(nu_min + nu_max))/2. This helps avoid
         # numerical issues, but requires some scaling of the parameters.
         chan_freq = ms_inputs.CHAN_FREQ
-        mean_freq = chan_freq.mean()
-        active_params[:] *= mean_freq
+        mid_freq = (chan_freq.min() + chan_freq.max())/2
+        active_params[:] *= mid_freq
 
         for loop_idx in range(max_iter or 1):
 
@@ -228,8 +228,8 @@ def nb_delay_solver_impl(
             )
 
         # Undo rescaling so that quantities are in native units.
-        active_params[:] /= mean_freq
-        native_imdry.jhj[:] *= mean_freq ** 2
+        active_params[:] /= mid_freq
+        native_imdry.jhj[:] *= mid_freq ** 2
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
@@ -330,7 +330,9 @@ def nb_compute_jhj_jhr(
 
         n_gains = len(gains)
 
-        cf_mid = chan_freq.mean()
+        cf_min = chan_freq.min()
+        cf_max = chan_freq.max()
+        cf_mid = (cf_min + cf_max) / 2
 
         # Determine loop variables based on where we are in the chain.
         # gt means greater than (n>j) and lt means less than (n<j).
@@ -599,7 +601,9 @@ def nb_finalize_update(
                     params[..., pd, :] = 0
 
             chan_freq = ms_inputs.CHAN_FREQ
-            cf_mid = chan_freq.mean()
+            cf_min = chan_freq.min()
+            cf_max = chan_freq.max()
+            cf_mid = (cf_min + cf_max) / 2
 
             for t in range(n_time):
                 for f in range(n_freq):
@@ -795,7 +799,9 @@ def delay_params_to_gains(
 
     n_time, n_freq, n_ant, n_dir, n_corr = gains.shape
 
-    cf_mid = chan_freq.mean()
+    cf_min = chan_freq.min()
+    cf_max = chan_freq.max()
+    cf_mid = (cf_min + cf_max) / 2
 
     if rescaled:
         offset = 1.0
