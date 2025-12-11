@@ -63,7 +63,7 @@ jobs:
           restore-keys: numba-cache-${{ matrix.python-version }}-
           path: ${{ env.NUMBA_CACHE_DIR }}
 
-            - name: List the measures directory
+      - name: List the measures directory
         run: curl --disable-epsv  ftp://ftp.astron.nl/outgoing/Measures/ > measures_dir.txt
 
       - name: Load cached CASA Measures Data
