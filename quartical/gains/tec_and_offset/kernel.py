@@ -98,6 +98,7 @@ def nb_tec_and_offset_solver_impl(
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
         active_params = chain_inputs.params[active_term]
+        active_param_flags = chain_inputs.param_flags[active_term]
 
         # Set up some intemediaries used for flagging. TODO: Move?
         km1_gain = active_gain.copy()
@@ -133,8 +134,17 @@ def nb_tec_and_offset_solver_impl(
 
         # We actually solve for TEC' = TEC/bandwidth. This helps avoid
         # numerical issues, but requires some scaling of the parameters.
-        bandwidth = ms_inputs.MAX_FREQ - ms_inputs.MIN_FREQ
+        min_freq = ms_inputs.MIN_FREQ
+        max_freq = ms_inputs.MAX_FREQ
+        bandwidth = max_freq - min_freq
         active_params[..., 1::2] /= bandwidth
+
+        # This alters the offset parameter to be consistent with the zero mean
+        # corrections used in the solver. QuartiCal now removes this factor
+        # when returning from this solver.
+        apply_zero_mean_correction(
+            min_freq, max_freq, active_params, active_param_flags
+        )
 
         for loop_idx in range(max_iter or 1):
 
@@ -225,6 +235,13 @@ def nb_tec_and_offset_solver_impl(
         # Undo rescaling so that quantities are in native units.
         active_params[..., 1::2] *= bandwidth
         native_imdry.jhj[..., 1::2, 1::2] /= bandwidth ** 2
+
+        # This alters the offset parameter to be consistent with the zero mean
+        # corrections used in the solver. QuartiCal now removes this factor
+        # when returning from this solver.
+        apply_zero_mean_correction(
+            min_freq, max_freq, active_params, active_param_flags, inverse=True
+        )
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
@@ -910,3 +927,18 @@ def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
     # Referencing may move flagged gains/params from identity.
     apply_param_flags_to_params(param_flags, params, 0)
     apply_gain_flags_to_gains(gain_flags, gains)
+
+
+@njit(**JIT_OPTIONS)
+def apply_zero_mean_correction(
+    min_freq, max_freq, params, param_flags, inverse=False
+):
+    sign = -1 if inverse else 1
+    # Set the starting value of the offset to be consistent with the
+    # zero-mean correction factor. This is important if we are loading
+    # a term.
+    tec_factor = np.log(min_freq/max_freq)/(max_freq - min_freq)
+    params[..., 0::2] += -sign * 2 * np.pi * tec_factor * params[..., 1::2]
+
+    # Ensure that the values of flagged parameters remain zero.
+    apply_param_flags_to_params(param_flags, params, 0)
