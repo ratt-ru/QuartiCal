@@ -98,7 +98,7 @@ class DelayTecAndOffset(ParameterizedGain):
         scale_factor = (chan_freq.min() + chan_freq.max()) / 2
         scaled_chan_freq = chan_freq / scale_factor
 
-        est_resolution = 0.001  # NOTE: Make this lower.
+        est_resolution = 0.01  # NOTE: Make this lower.
 
         # We only need the baselines which include the ref_ant.
         sel = np.where((a1 == ref_ant) | (a2 == ref_ant))

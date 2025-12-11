@@ -55,28 +55,29 @@ def true_gain_list(predicted_xds_list):
 
         # Set the maximum delay and tec based on the number of times they
         # may wrap across the bandwidth.
-        max_tec_wraps = 1.5
+        max_tec_wraps = 5
         max_tec = max_tec_wraps * (cf_min * cf_max) / (cf_max - cf_min)
 
-        max_delay_wraps = 1.5
+        max_delay_wraps = 5
         max_delay = max_delay_wraps / (cf_max - cf_min)
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
-        tec_chunking = (utime_chunks, 1, n_ant, n_dir, n_corr)
+        param_chunking = (utime_chunks, 1, n_ant, n_dir, n_corr)
 
         da.random.seed(0)
         tec = da.random.uniform(
             size=(n_time, 1, n_ant, n_dir, n_corr),
             low=-max_tec,
             high=max_tec,
-            chunks=tec_chunking
+            chunks=param_chunking
         )
         tec[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
 
         delays = da.random.uniform(
             size=(n_time, 1, n_ant, n_dir, n_corr),
             low=-max_delay,
-            high=max_delay
+            high=max_delay,
+            chunks=param_chunking
         )
         delays[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
 

@@ -4,7 +4,7 @@ import numpy as np
 import dask.array as da
 import xarray as xr
 from quartical.calibration.calibrate import add_calibration_graph
-from testing.utils.gains import apply_gains, reference_gains
+from testing.utils.gains import apply_gains
 
 
 @pytest.fixture(scope="module")
