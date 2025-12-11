@@ -14,31 +14,36 @@ test_root_path = Path(__file__).resolve().parent
 test_data_path = Path(test_root_path, "data")
 
 _data_tar_name = "C147_subset.tar.gz"
+_data_4k_tar_name = "4k.tar.gz"
 _beam_tar_name = "beams.tar.gz"
 _ms_name = "C147_subset.MS"
+_ms_4k_name = "4k.ms"
 _beam_name = "beams"
 _conf_name = "test_config.yaml"
 _lsm_name = "3C147_intrinsic.lsm.html"
 
 data_tar_path = Path(test_data_path, _data_tar_name)
+data_4k_tar_path = Path(test_data_path, _data_4k_tar_name)
 beam_tar_path = Path(test_data_path, _beam_tar_name)
 ms_path = Path(test_data_path, _ms_name)
+ms_4k_path = Path(test_data_path, _ms_4k_name)
 beam_path = Path(test_data_path, _beam_name)
 conf_path = Path(test_data_path, _conf_name)
 lsm_path = Path(test_data_path, _lsm_name)
 
 data_lnk = "https://www.dropbox.com/s/8e49mfgsh4h6skq/C147_subset.tar.gz"
+data_4k_lnk = "https://www.dropbox.com/scl/fi/kappe9cj4va6wa0umjjqk/4k.tar.gz?rlkey=pgo67p94hzemfspo0tpp6venm&st=rmapyk7c&dl=0"
 beam_lnk = "https://www.dropbox.com/s/26bgrolo1qyfy4k/beams.tar.gz"
 
-tar_lnk_list = [data_lnk, beam_lnk]
-tar_pth_list = [data_tar_path, beam_tar_path]
-dat_pth_list = [ms_path, beam_path]
+tar_lnk_list = [data_lnk, data_4k_lnk, beam_lnk]
+tar_pth_list = [data_tar_path, data_4k_tar_path, beam_tar_path]
+dat_pth_list = [ms_path, ms_4k_path, beam_path]
 
 
 def pytest_sessionstart(session):
     """Called after Session object has been created, before run test loop."""
 
-    if ms_path.exists() and beam_path.exists():
+    if all([p.exists() for p in dat_pth_list]): # ms_path.exists() and beam_path.exists():
         print("Test data already present - not downloading.")
     else:
         print("Test data not found - downloading...")
@@ -61,6 +66,11 @@ def pytest_sessionstart(session):
 #             rmtree(pth)
 #             print("Test data successfully removed.")
 
+@pytest.fixture(scope="session")
+def test_data_location():
+    """Session level fixture for test data path."""
+
+    return test_data_path
 
 @pytest.fixture(scope="session")
 def ms_name():

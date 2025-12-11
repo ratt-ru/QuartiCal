@@ -5,6 +5,7 @@ dist
 __pycache__
 user_config.yaml
 *.MS
+*.ms
 .cache
 *.fits
 *.log

@@ -8,6 +8,13 @@ from testing.utils.gains import apply_gains
 
 
 @pytest.fixture(scope="module")
+def ms_name(test_data_location):
+    """Override the session level fixture to use a single time, 4k ms."""
+
+    return str(test_data_location.joinpath("4k.ms"))
+
+
+@pytest.fixture(scope="module")
 def opts(base_opts, select_corr, scalar_mode):
 
     # Don't overwrite base config - instead create a copy and update.
@@ -260,7 +267,7 @@ def test_gain_flags(cmp_gain_xds_lod):
 
         # We know that these antennas are missing in the test data. No other
         # antennas should have flags.
-        assert set(np.unique(fants)) == {18, 20}
+        assert set(np.unique(fants)) == set()
 
 
 # -----------------------------------------------------------------------------
