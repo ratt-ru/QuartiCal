@@ -15,13 +15,14 @@ def opts(base_opts, select_corr):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [100]
+    _opts.solver.iter_recipe = [50]
     _opts.solver.propagate_flags = False
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.convergence_fraction = 1
     _opts.solver.threads = 2
     _opts.G.type = "tec_and_offset"
     _opts.G.freq_interval = 0
+    _opts.G.initial_estimate = True
 
     return _opts
 
@@ -49,8 +50,13 @@ def true_gain_list(predicted_xds_list):
 
         chan_freq = xds.CHAN_FREQ.data
         max_tec = 1/(1/chan_freq[-1] - 1/chan_freq[-2])
-        cf_min = chan_freq.min()
-        cf_max = chan_freq.max()
+        min_freq = chan_freq.min()
+        max_freq = chan_freq.max()
+
+        # Set the maximum delay and tec based on the number of times they
+        # may wrap across the bandwidth.
+        max_tec_wraps = 5
+        max_tec = max_tec_wraps * (min_freq * max_freq) / (max_freq - min_freq)
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
         tec_chunking = (utime_chunks, 1, n_ant, n_dir, n_corr)
@@ -58,8 +64,8 @@ def true_gain_list(predicted_xds_list):
         da.random.seed(0)
         tec = da.random.uniform(
             size=(n_time, 1, n_ant, n_dir, n_corr),
-            low=-0.05*max_tec,
-            high=0.05*max_tec,
+            low=-max_tec,
+            high=max_tec,
             chunks=tec_chunking
         )
         tec[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
@@ -74,13 +80,12 @@ def true_gain_list(predicted_xds_list):
         # the fact that we only have 8 channels/degeneracy between parameters.
         offsets = da.random.uniform(
             size=(n_time, 1, n_ant, n_dir, n_corr),
-            low=-0.5*np.pi,
-            high=0.5*np.pi
+            low=-np.pi,
+            high=np.pi
         )
         offsets[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
 
-        offset = np.log(cf_min/cf_max)/(cf_max - cf_min)
-        coeff = 2 * np.pi * (1/chan_freq[None, :, None, None, None] + offset)
+        coeff = 2 * np.pi * (1/chan_freq[None, :, None, None, None])
         phase = tec*coeff + offsets
         gains = amp*da.exp(1j*phase)
 
