@@ -820,10 +820,12 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             upd_00 = (drv_00*r_0).real
             upd_11 = (drv_23*r_1).real
 
-            jhr[0] += tec_coeff*upd_00
-            jhr[1] += delay_coeff*upd_00
-            jhr[2] += tec_coeff*upd_11
-            jhr[3] += delay_coeff*upd_11
+            jhr[0] += upd_00
+            jhr[1] += tec_coeff * upd_00
+            jhr[2] += delay_coeff * upd_00
+            jhr[3] += upd_11
+            jhr[4] += tec_coeff * upd_11
+            jhr[5] += delay_coeff * upd_11
 
             # Accumulate an element of jhwj.
             jh_00, jh_11 = unpack(rop)
@@ -835,16 +837,26 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             tec_coeffsq = tec_coeff ** 2
 
             tmp = (jh_00*n_00*w_00*j_00).real
-            jhj[0, 0] += tmp*tec_coeffsq
-            jhj[0, 1] += tmp*delay_coeff*tec_coeff
-            jhj[1, 0] += tmp*delay_coeff*tec_coeff
-            jhj[1, 1] += tmp*delay_coeffsq
+            jhj[0, 0] += tmp
+            jhj[0, 1] += tmp * tec_coeff
+            jhj[0, 2] += tmp * delay_coeff
+            jhj[1, 0] += tmp * tec_coeff
+            jhj[1, 1] += tmp * tec_coeffsq
+            jhj[1, 2] += tmp * delay_coeff * tec_coeff
+            jhj[2, 0] += tmp * delay_coeff
+            jhj[2, 1] += tmp * tec_coeff * delay_coeff
+            jhj[2, 2] += tmp * delay_coeffsq
 
             tmp = (jh_11*n_11*w_11*j_11).real
-            jhj[2, 2] += tmp*tec_coeffsq
-            jhj[2, 3] += tmp*delay_coeff*tec_coeff
-            jhj[3, 2] += tmp*delay_coeff*tec_coeff
-            jhj[3, 3] += tmp*delay_coeffsq
+            jhj[3, 3] += tmp
+            jhj[3, 4] += tmp * tec_coeff
+            jhj[3, 5] += tmp * delay_coeff
+            jhj[4, 3] += tmp * tec_coeff
+            jhj[4, 4] += tmp * tec_coeffsq
+            jhj[4, 5] += tmp * delay_coeff * tec_coeff
+            jhj[5, 3] += tmp * delay_coeff
+            jhj[5, 4] += tmp * tec_coeff * delay_coeff
+            jhj[5, 5] += tmp * delay_coeffsq
 
     elif corr_mode.literal_value == 1:
         def impl(
