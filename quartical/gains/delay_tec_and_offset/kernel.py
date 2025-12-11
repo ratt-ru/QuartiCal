@@ -878,8 +878,9 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
 
             upd_00 = (drv_00*r_0).real
 
-            jhr[0] += tec_coeff*upd_00
-            jhr[1] += delay_coeff*upd_00
+            jhr[0] += upd_00
+            jhr[1] += tec_coeff * upd_00
+            jhr[2] += delay_coeff * upd_00
 
             # Accumulate an element of jhwj.
             jh_00 = unpack(rop)
@@ -891,10 +892,15 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             tec_coeffsq = tec_coeff ** 2
 
             tmp = (jh_00*n_00*w_00*j_00).real
-            jhj[0, 0] += tmp*tec_coeffsq
-            jhj[0, 1] += tmp*delay_coeff*tec_coeff
-            jhj[1, 0] += tmp*delay_coeff*tec_coeff
-            jhj[1, 1] += tmp*delay_coeffsq
+            jhj[0, 0] += tmp
+            jhj[0, 1] += tmp * tec_coeff
+            jhj[0, 2] += tmp * delay_coeff
+            jhj[1, 0] += tmp * tec_coeff
+            jhj[1, 1] += tmp * tec_coeffsq
+            jhj[1, 2] += tmp * delay_coeff * tec_coeff
+            jhj[2, 0] += tmp * delay_coeff
+            jhj[2, 1] += tmp * tec_coeff * delay_coeff
+            jhj[2, 2] += tmp * delay_coeffsq
     else:
         raise ValueError("Unsupported number of correlations.")
 
