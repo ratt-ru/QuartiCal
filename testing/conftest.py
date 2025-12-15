@@ -43,7 +43,7 @@ dat_pth_list = [ms_path, ms_4k_path, beam_path]
 def pytest_sessionstart(session):
     """Called after Session object has been created, before run test loop."""
 
-    if all([p.exists() for p in dat_pth_list]): # ms_path.exists() and beam_path.exists():
+    if all([p.exists() for p in dat_pth_list]):
         print("Test data already present - not downloading.")
     else:
         print("Test data not found - downloading...")
@@ -56,15 +56,14 @@ def pytest_sessionstart(session):
             pth.unlink()
         print("Test data successfully downloaded.")
 
+def pytest_sessionfinish(session, exitstatus):
+    """Called after test run finished, before returning exit status."""
 
-# def pytest_sessionfinish(session, exitstatus):
-#     """Called after test run finished, before returning exit status."""
-
-#     for pth in dat_pth_list:
-#         if pth.exists():
-#             print("\nRemoving test data ({}).".format(pth))
-#             rmtree(pth)
-#             print("Test data successfully removed.")
+    for pth in dat_pth_list:
+        if pth.exists():
+            print("\nRemoving test data ({}).".format(pth))
+            rmtree(pth)
+            print("Test data successfully removed.")
 
 @pytest.fixture(scope="session")
 def test_data_location():
