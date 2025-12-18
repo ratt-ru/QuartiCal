@@ -2,8 +2,9 @@ from copy import deepcopy
 import pytest
 import numpy as np
 import dask.array as da
+import xarray as xr
 from quartical.calibration.calibrate import add_calibration_graph
-from testing.utils.gains import apply_gains, reference_gains
+from testing.utils.gains import apply_gains
 
 
 @pytest.fixture(scope="module")
@@ -13,9 +14,8 @@ def ms_name(test_data_location):
     return str(test_data_location.joinpath("4k.ms"))
 
 
-
 @pytest.fixture(scope="module")
-def opts(base_opts, select_corr):
+def opts(base_opts, select_corr, scalar_mode):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -23,14 +23,15 @@ def opts(base_opts, select_corr):
 
     _opts.input_ms.select_corr = select_corr
     _opts.solver.terms = ['G']
-    _opts.solver.iter_recipe = [100]
+    _opts.solver.iter_recipe = [50]
     _opts.solver.propagate_flags = False
+    _opts.solver.convergence_fraction = 1.0
     _opts.solver.convergence_criteria = 1e-7
-    _opts.solver.convergence_fraction = 1
     _opts.solver.threads = 2
-    _opts.G.type = "delay_and_tec"
+    _opts.G.type = "delay_tec_and_offset"
     _opts.G.freq_interval = 0
     _opts.G.initial_estimate = True
+    _opts.G.scalar = scalar_mode
 
     return _opts
 
@@ -42,9 +43,9 @@ def raw_xds_list(read_xds_list_output):
 
 
 @pytest.fixture(scope="module")
-def true_gain_list(predicted_xds_list):
+def true_gain_list(predicted_xds_list, scalar_mode):
 
-    gain_list = []
+    gain_xds_list = []
 
     for xds in predicted_xds_list:
 
@@ -57,17 +58,17 @@ def true_gain_list(predicted_xds_list):
         n_corr = xds.sizes["corr"]
 
         chan_freq = xds.CHAN_FREQ.data
-        cf_min = chan_freq.min()
-        cf_max = chan_freq.max()
-        band_centre = (cf_min + cf_max) / 2
+
+        min_freq = chan_freq.min()
+        max_freq = chan_freq.max()
 
         # Set the maximum delay and tec based on the number of times they
         # may wrap across the bandwidth.
         max_tec_wraps = 5
-        max_tec = max_tec_wraps * (cf_min * cf_max) / (cf_max - cf_min)
+        max_tec = max_tec_wraps * (min_freq * max_freq) / (max_freq - min_freq)
 
         max_delay_wraps = 5
-        max_delay = max_delay_wraps / (cf_max - cf_min)
+        max_delay = max_delay_wraps / (max_freq - min_freq)
 
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
         param_chunking = (utime_chunks, 1, n_ant, n_dir, n_corr)
@@ -89,24 +90,66 @@ def true_gain_list(predicted_xds_list):
         )
         delays[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
 
-        amp = da.ones((n_time, n_chan, n_ant, n_dir, n_corr),
-                      chunks=chunking)
+        # Using the full 2pi range makes some tests fail - this may be due to
+        # the fact that we only have 8 channels/degeneracy between parameters.
+        offsets = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-np.pi,
+            high=np.pi,
+            chunks=param_chunking
+        )
+        offsets[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
 
-        if n_corr == 4:  # This solver only considers the diagonal elements.
-            amp *= da.array([1, 0, 0, 1])
+        amp = da.ones(
+            (n_time, n_chan, n_ant, n_dir, n_corr),
+            chunks=chunking
+        )
 
-        tec_offset = np.log(cf_min/cf_max)/(cf_max - cf_min)
-        tec_coeff = \
-            2 * np.pi * (1/chan_freq[None, :, None, None, None] + tec_offset)
-        delay_coeff = \
-            2*np.pi*(chan_freq[None, :, None, None, None] - band_centre)
+        if n_corr == 4:
+            amp[..., 1] = 0
+            amp[..., 2] = 0
 
-        phase = tec*tec_coeff + delays*delay_coeff
+        origin_chan_freq = chan_freq # - band_centre
+        origin_chan_freq = origin_chan_freq[None, :, None, None, None]
+        phase = (
+            2 * np.pi * delays * origin_chan_freq +
+            2 * np.pi * tec * (1 / origin_chan_freq) +
+            offsets
+        )
         gains = amp*da.exp(1j*phase)
 
-        gain_list.append(gains)
+        if n_corr == 1:
+            n_param = 3
+        else:
+            n_param = 6
 
-    return gain_list
+        params = da.zeros(
+            (n_time, 1, n_ant, n_dir, n_param),
+            chunks=param_chunking[:-1] + (n_param,)
+        )
+        params[..., 0] = offsets[..., 0]
+        params[..., 1] = tec[..., 0]
+        params[..., 2] = delays[..., 0]
+
+        if n_corr > 1:
+            params[..., 3] = offsets[..., -1]
+            params[..., 4] = tec[..., -1]
+            params[..., 5] = delays[..., -1]
+
+        if scalar_mode and n_corr > 1:
+            gains[..., -1] = gains[..., 0]
+            params[..., 3:] = params[..., :3]
+
+        gxds = xr.Dataset(
+            data_vars={
+                "GAINS": (("time", "freq", "ant", "dir", "corr"), gains),
+                "PARAMS":  (("ti", "fi", "ant", "dir", "param"), params)
+            }
+        )
+
+        gain_xds_list.append(gxds)
+
+    return gain_xds_list
 
 
 @pytest.fixture(scope="module")
@@ -114,7 +157,9 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
     corrupted_data_xds_list = []
 
-    for xds, gains in zip(predicted_xds_list, true_gain_list):
+    for xds, gxds in zip(predicted_xds_list, true_gain_list):
+
+        gains = gxds.GAINS.data
 
         n_corr = xds.sizes["corr"]
 
@@ -178,16 +223,11 @@ def test_solver_flags(cmp_post_solve_data_xds_list):
 
 def test_gains(cmp_gain_xds_lod, true_gain_list):
 
-    for solved_gain_dict, true_gain in zip(cmp_gain_xds_lod, true_gain_list):
+    for solved_gain_dict, true_gain_xds in zip(cmp_gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
         solved_gain, solved_flags = da.compute(solved_gain_xds.gains.data,
                                                solved_gain_xds.gain_flags.data)
-        true_gain = true_gain.compute()  # TODO: This could be done elsewhere.
-
-        n_corr = true_gain.shape[-1]
-
-        solved_gain = reference_gains(solved_gain, n_corr)
-        true_gain = reference_gains(true_gain, n_corr)
+        true_gain = true_gain_xds.GAINS.values
 
         true_gain[np.where(solved_flags)] = 0
         solved_gain[np.where(solved_flags)] = 0
@@ -196,6 +236,25 @@ def test_gains(cmp_gain_xds_lod, true_gain_list):
         # useless, check that we have non-zero entries first.
         assert np.any(solved_gain), "All gains are zero!"
         np.testing.assert_array_almost_equal(true_gain, solved_gain)
+
+
+def test_params(cmp_gain_xds_lod, true_gain_list):
+
+    for solved_gain_dict, true_gain_xds in zip(cmp_gain_xds_lod, true_gain_list):
+        solved_gain_xds = solved_gain_dict["G"]
+        solved_params, solved_flags = da.compute(solved_gain_xds.params.data,
+                                                 solved_gain_xds.param_flags.data)
+        true_params = true_gain_xds.PARAMS.values
+
+        solved_params[...,::3] = np.angle(np.exp(1j*solved_params[..., ::3]))
+
+        true_params[np.where(solved_flags)] = 0
+        solved_params[np.where(solved_flags)] = 0
+
+        # To ensure the missing antenna handling doesn't render this test
+        # useless, check that we have non-zero entries first.
+        assert np.any(solved_params), "All params are zero!"
+        np.testing.assert_allclose(true_params, solved_params, rtol=1e-5)
 
 
 def test_gain_flags(cmp_gain_xds_lod):

@@ -2,9 +2,9 @@ import numpy as np
 from collections import namedtuple
 from quartical.gains.conversion import no_op, trig_to_angle
 from quartical.gains.parameterized_gain import ParameterizedGain
-from quartical.gains.tec_and_offset.kernel import (
-    tec_and_offset_solver,
-    tec_and_offset_params_to_gains
+from quartical.gains.delay_tec_and_offset.kernel import (
+    delay_tec_and_offset_solver,
+    delay_tec_and_offset_params_to_gains
 )
 from quartical.gains.general.flagging import (
     apply_gain_flags_to_gains,
@@ -21,18 +21,20 @@ ms_inputs = namedtuple(
 )
 
 
-class TecAndOffset(ParameterizedGain):
+class DelayTecAndOffset(ParameterizedGain):
 
-    solver = staticmethod(tec_and_offset_solver)
+    solver = staticmethod(delay_tec_and_offset_solver)
     ms_inputs = ms_inputs
 
     native_to_converted = (
         (0, (np.cos,)),
         (1, (np.sin,)),
+        (1, (no_op,)),
         (1, (no_op,))
     )
     converted_to_native = (
         (2, trig_to_angle),
+        (1, no_op),
         (1, no_op)
     )
     converted_dtype = np.float64
@@ -55,7 +57,7 @@ class TecAndOffset(ParameterizedGain):
 
         param_corr = [c for c in correlations if c in parameterisable]
 
-        template = ("phase_offset_{}", "TEC_{}")
+        template = ("offset_{}", "tec_{}", "delay_{}")
 
         return [n.format(c) for c in param_corr for n in template]
 
@@ -67,7 +69,7 @@ class TecAndOffset(ParameterizedGain):
         )
 
         # Convert the parameters into gains.
-        tec_and_offset_params_to_gains(
+        delay_tec_and_offset_params_to_gains(
             params,
             gains,
             ms_kwargs["CHAN_FREQ"],
@@ -226,13 +228,13 @@ class TecAndOffset(ParameterizedGain):
         b = subint_delays
         x = np.matmul(ATAinvAT, b[..., None])[..., 0]  # Remove trailing dim.
 
-        params[:, :, :, 0, 1::2] = x[..., 1] * scale_factor
+        params[:, :, :, 0, 1::3] = x[..., 1] * scale_factor
+        params[:, :, :, 0, 2::3] = x[..., 0] / scale_factor
 
         # Flip the sign on antennas > reference as they correspond to G^H.
         params[:, :, ref_ant:] = -params[:, :, ref_ant:]
 
-        # Convert the parameters into gains.
-        tec_and_offset_params_to_gains(
+        delay_tec_and_offset_params_to_gains(
             params,
             gains,
             ms_kwargs["CHAN_FREQ"],
@@ -241,8 +243,8 @@ class TecAndOffset(ParameterizedGain):
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 
-        # Apply flags to gains and parameters.
-        apply_param_flags_to_params(param_flags, params, 1)
+        apply_param_flags_to_params(param_flags, params, 0)
         apply_gain_flags_to_gains(gain_flags, gains)
 
         return gains, gain_flags, params, param_flags
+

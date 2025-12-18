@@ -1,6 +1,6 @@
 import numpy as np
 from collections import namedtuple
-from quartical.gains.conversion import no_op, trig_to_angle
+from quartical.gains.conversion import no_op
 from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.delay_and_tec.kernel import (
     delay_and_tec_solver,
@@ -19,7 +19,6 @@ ms_inputs = namedtuple(
         'MAX_FREQ'
     )
 )
-
 
 class DelayAndTec(ParameterizedGain):
 
@@ -91,6 +90,12 @@ class DelayAndTec(ParameterizedGain):
         f_map = term_kwargs[f"{term_spec.name}_param_freq_map"]
         _, n_chan, n_ant, n_dir, n_corr = gains.shape
 
+        # Rescale the channel frequencies.
+        scale_factor = (chan_freq.min() + chan_freq.max()) / 2
+        scaled_chan_freq = chan_freq / scale_factor
+
+        est_resolution = 0.001  # NOTE: Make this lower.
+
         # We only need the baselines which include the ref_ant.
         sel = np.where((a1 == ref_ant) | (a2 == ref_ant))
         a1 = a1[sel]
@@ -103,6 +108,33 @@ class DelayAndTec(ParameterizedGain):
 
         utint = np.unique(t_map)
         ufint = np.unique(f_map)
+        n_tint = utint.size
+        n_fint = ufint.size
+        # NOTE: This determines the number of subintervals which are used to
+        # estimate the delay and tec values. More subintervals will typically
+        # yield better estimates at the cost of SNR. TODO: Thus doesn't factor
+        # in the flagging behaviour which may make some estimates worse than
+        # others. Should we instead only consider unflagged regions or weight
+        # the mean calaculation?
+        n_subint = max(int(np.ceil(n_chan / 1024)), 2)
+
+        if n_corr == 1:
+            n_paramt = 1 #number of parameters in TEC
+            n_paramk = 1 #number of parameters in delay
+            corr_slice = slice(None)
+        elif n_corr == 2:
+            n_paramt = 2
+            n_paramk = 2
+            corr_slice = slice(None)
+        elif n_corr == 4:
+            n_paramt = 2
+            n_paramk = 2
+            corr_slice = slice(0, 4, 3)
+        else:
+            raise ValueError("Unsupported number of correlations.")
+
+        subint_delays = np.zeros((n_tint, n_fint, n_ant, n_paramk, n_subint))
+        gradients = np.zeros((n_tint, n_fint, n_subint))
 
         for ut in utint:
             sel = np.where((t_map == ut) & (a1 != a2))
@@ -132,39 +164,71 @@ class DelayAndTec(ParameterizedGain):
             for uf in ufint:
 
                 fsel = np.where(f_map == uf)[0]
-                sel_n_chan = fsel.size
-                n = int(np.ceil(2 ** 15 / sel_n_chan)) * sel_n_chan
+                fsel_nchan = fsel.size
+                fsel_chan = scaled_chan_freq[fsel]
 
                 fsel_data = ref_data[:, fsel]
                 valid_ant = fsel_data.any(axis=(1, 2))
 
-                fft_data = np.abs(
-                    np.fft.fft(fsel_data, n=n, axis=1)
-                )
-                fft_data = np.fft.fftshift(fft_data, axes=1)
+                subint_stride = int(np.ceil(fsel_nchan / n_subint))
 
-                delta_freq = chan_freq[1] - chan_freq[0]
-                fft_freq = np.fft.fftfreq(n, delta_freq)
-                fft_freq = np.fft.fftshift(fft_freq)
+                for i, si in enumerate(range(0, fsel_nchan, subint_stride)):
 
-                delay_est_ind_00 = np.argmax(fft_data[..., 0], axis=1)
-                delay_est_00 = fft_freq[delay_est_ind_00]
-                delay_est_00[~valid_ant] = 0
+                    si_sel = slice(si, si + subint_stride)
 
-                if n_corr > 1:
-                    delay_est_ind_11 = np.argmax(fft_data[..., -1], axis=1)
-                    delay_est_11 = fft_freq[delay_est_ind_11]
-                    delay_est_11[~valid_ant] = 0
+                    subint_data = fsel_data[:, si_sel]
 
-                for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
-                    if p == ref_ant:
-                        params[t, uf, q, 0, 1] = -delay_est_00[q]
-                        if n_corr > 1:
-                            params[t, uf, q, 0, 3] = -delay_est_11[q]
-                    else:
-                        params[t, uf, p, 0, 1] = delay_est_00[p]
-                        if n_corr > 1:
-                            params[t, uf, p, 0, 3] = delay_est_11[p]
+                    # NOTE: Collapse correlation axis when term is scalar.
+                    if self.scalar:
+                        subint_data[..., :] = subint_data.sum(
+                            axis=-1, keepdims=True
+                        )
+
+                    subint_freq = fsel_chan[si_sel]
+                    subint_ifreq = 1/subint_freq
+
+                    dfreq = np.abs(subint_freq[-2] - subint_freq[-1])
+                    max_n_wrap = (
+                        (subint_freq[-1] - subint_freq[0]) / (2 * dfreq)
+                    )
+
+                    nbins = int((2 * max_n_wrap) / est_resolution)
+                    fft_freq = np.fft.fftfreq(nbins, dfreq)
+
+                    gradients[ut, uf, i], _ = np.polyfit(
+                        subint_freq, subint_ifreq, deg=1
+                    )
+
+                    fft = np.fft.fft(
+                        subint_data[..., corr_slice].copy(),
+                        axis=1,
+                        n=nbins
+                    )
+
+                    subint_delays[ut, uf, ..., i] = \
+                        fft_freq[np.argmax(np.abs(fft), axis=1)]
+
+                # Zero the reference antenna/antennas without data.
+                subint_delays[ut, uf, ~valid_ant] = 0
+
+        # We can solve this problem using the normal equations.
+        A = np.ones((n_subint, 2), dtype=np.float64)
+
+        A[:, 1] = gradients[0, 0, :]
+
+        ATA00, ATA01, ATA10, ATA11 = (A.T @ A).ravel()
+        ATA_det  = ATA00 * ATA11 - ATA01 * ATA10
+        ATAinv = 1/ATA_det * np.array([[ATA11, -ATA01], [-ATA10, ATA00]])
+        ATAinvAT = ATAinv @ A.T
+
+        b = subint_delays
+        x = np.matmul(ATAinvAT, b[..., None])[..., 0]  # Remove trailing dim.
+
+        params[:, :, :, 0, 0::2] = x[..., 1] * scale_factor
+        params[:, :, :, 0, 1::2] = x[..., 0] / scale_factor
+
+        # Flip the sign on antennas > reference as they correspond to G^H.
+        params[:, :, ref_ant:] = -params[:, :, ref_ant:]
 
         delay_and_tec_params_to_gains(
             params,
