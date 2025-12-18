@@ -190,8 +190,9 @@ class TecAndOffset(ParameterizedGain):
                     subint_ifreq = 1/subint_freq
 
                     dfreq = np.abs(subint_freq[-2] - subint_freq[-1])
-                    max_n_wrap = \
-                        1 / (2 * dfreq) * (subint_freq[-1] - subint_freq[0])
+                    max_n_wrap = (
+                        (subint_freq[-1] - subint_freq[0]) / (2 * dfreq)
+                    )
 
                     nbins = int((2 * max_n_wrap) / est_resolution)
                     fft_freq = np.fft.fftfreq(nbins, dfreq)
@@ -217,7 +218,9 @@ class TecAndOffset(ParameterizedGain):
 
         A[:, 1] = gradients[0, 0, :]
 
-        ATAinv = np.linalg.inv(A.T @ A)
+        ATA00, ATA01, ATA10, ATA11 = (A.T @ A).ravel()
+        ATA_det  = ATA00 * ATA11 - ATA01 * ATA10
+        ATAinv = 1/ATA_det * np.array([[ATA11, -ATA01], [-ATA10, ATA00]])
         ATAinvAT = ATAinv @ A.T
 
         b = subint_delays
