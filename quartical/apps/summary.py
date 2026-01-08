@@ -24,18 +24,22 @@ def configure_loguru(output_dir):
 
     fmt = " | ".join([tim_fmt, lvl_fmt, src_fmt, msg_fmt])
 
-    output_path = Path(output_dir)
-    output_name = Path("{time:YYYYMMDD_HHmmss}.summary.qc")
-
-    config = {
-        "handlers": [
-            {"sink": sys.stderr,
-             "level": "INFO",
-             "format": fmt},
+    handlers = [
+        {"sink": sys.stderr,
+         "level": "INFO",
+         "format": fmt}
+    ]
+    if output_dir is not None:
+        output_path = Path(output_dir)
+        output_name = Path("{time:YYYYMMDD_HHmmss}.summary.qc")
+        handlers.append(
             {"sink": str(output_path / output_name),
              "level": "INFO",
              "format": fmt}
-        ],
+        )
+
+    config = {
+        "handlers": handlers,
     }
 
     logger.configure(**config)
@@ -112,7 +116,7 @@ def flag_cmd_info(path):
     # what is relevant.
 
 
-def field_info(path):
+def field_info(path, fields):
 
     field_xds = xds_from_storage_table(path + "::FIELD")[0]
 
@@ -137,13 +141,19 @@ def field_info(path):
         field_ids, source_ids, names, phase_dirs, ref_dirs, delay_dirs
     )
 
+    # selected field IDs corresponding to field names
+    out_field_ids = []
     for vals in zipper:
-        msg += f"    {vals[0]:<10} {vals[1]:<10} {vals[2]:<16} " \
-               f"{'{:.4f} {:.4f}'.format(*vals[3][0]):<16} " \
-               f"{'{:.4f} {:.4f}'.format(*vals[4][0]):<16} " \
-               f"{'{:.4f} {:.4f}'.format(*vals[5][0]):<16}\n"
+        if fields is None or vals[0] in fields or vals[2] in fields:
+            out_field_ids.append(vals[0])
+            msg += f"    {vals[0]:<10} {vals[1]:<10} {vals[2]:<16} " \
+                f"{'{:.4f} {:.4f}'.format(*vals[3][0]):<16} " \
+                f"{'{:.4f} {:.4f}'.format(*vals[4][0]):<16} " \
+                f"{'{:.4f} {:.4f}'.format(*vals[5][0]):<16}\n"
 
     logger.info(msg)
+
+    return out_field_ids
 
 
 def history_info(path):
@@ -330,17 +340,41 @@ def summary():
         help='Path to input measurement set, e.g. path/to/dir/foo.MS. Also '
              'accepts valid s3 urls.'
     )
+    
     parser.add_argument(
-        'output_dir',
+        '--output-dir',
         type=Path,
-        help='Path to output directory, e.g. summaries.qc. Local file system '
-             'only.'
+        default=None,
+        help='Path to output directory, e.g. summaries.qc. '
+             'Local file system only.'
+             'By default output is written in summary directory '
+             'in MS parent directory.'
+    )
+
+    parser.add_argument(
+        '--fields',
+        type=str,
+        nargs='+',
+        default=None,
+        help='Field names or IDs to include in summary.'
+
     )
 
     args = parser.parse_args()
 
+    # this should result in a list of field IDs or names or None
+    try:
+        fields = list(map(int, args.fields))
+    except (ValueError, TypeError):
+        fields = args.fields
+        pass
+
+    if args.output_dir is not None:
+        output_dir = str(args.output_dir.resolve())
+    else:
+        output_dir = None
+
     path = args.path.url
-    output_dir = str(args.output_dir.resolve())
 
     configure_loguru(output_dir)
 
@@ -349,7 +383,7 @@ def summary():
     data_desc_info(path)
     feed_info(path)
     flag_cmd_info(path)
-    field_info(path)
+    field_ids = field_info(path, fields)
     history_info(path)
     observation_info(path)
     polarization_info(path)
@@ -369,6 +403,8 @@ def summary():
         group_cols=("DATA_DESC_ID", "SCAN_NUMBER", "FIELD_ID"),
         chunks={"row": 25000, "chan": 1024, "corr": -1},
     )
+
+    data_xds_list = [ds for ds in data_xds_list if ds.FIELD_ID in field_ids]
 
     dimension_summary(data_xds_list)
     flagging_summary(data_xds_list)

@@ -109,8 +109,19 @@ def read_xds_list(model_columns, ms_opts):
         table_schema=["MS", {**schema}]
     )
 
+    # NOTE(JSKenyon): This is a temporary solution - handling of selection
+    # needs to be substantially improved. The root issue is that we cannot
+    # filter inside the xds_from_table calls i.e. we may need to provide
+    # chunking information for unused data partitions.
     missing_columns = set().union(
-        *[set(columns) - set(xds.data_vars.keys()) for xds in data_xds_list]
+        *[
+            set(columns) - set(xds.data_vars.keys())
+            for xds in filter_xds_list(
+                data_xds_list,
+                ms_opts.select_fields,
+                ms_opts.select_ddids
+            )
+        ]
     )
 
     if missing_columns:
@@ -124,6 +135,11 @@ def read_xds_list(model_columns, ms_opts):
         columns=["CHAN_FREQ", "CHAN_WIDTH"],
         chunks=chunking_per_spw_xds
     )
+
+    for spw_xds in spw_xds_list:
+        chan_freq = spw_xds.CHAN_FREQ.values  # Reify.
+        spw_xds.attrs["MIN_FREQ"] = chan_freq.min()
+        spw_xds.attrs["MAX_FREQ"] = chan_freq.max()
 
     # Preserve a copy of the xds_list prior to any BDA/assignment. Necessary
     # for undoing BDA.
@@ -153,8 +169,9 @@ def read_xds_list(model_columns, ms_opts):
         # for solvers which require this information. Also adds the antenna
         # names which will be useful when reference antennas are required.
 
-        chan_freqs = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_FREQ.data)
-        chan_widths = clone(spw_xds_list[xds.DATA_DESC_ID].CHAN_WIDTH.data)
+        spw_xds = spw_xds_list[xds.DATA_DESC_ID]
+        chan_freqs = clone(spw_xds.CHAN_FREQ.data)
+        chan_widths = clone(spw_xds.CHAN_WIDTH.data)
 
         _xds = _xds.assign(
             {
@@ -175,7 +192,9 @@ def read_xds_list(model_columns, ms_opts):
         _xds = _xds.assign_attrs(
             {
                 "UTIME_CHUNKS": utime_chunks,
-                "FIELD_NAME": field_name
+                "FIELD_NAME": field_name,
+                "MIN_FREQ": spw_xds.MIN_FREQ,
+                "MAX_FREQ": spw_xds.MAX_FREQ
             }
         )
 
@@ -183,9 +202,9 @@ def read_xds_list(model_columns, ms_opts):
 
     data_xds_list = _data_xds_list
 
-    # Filter out fields/ddids which we are not interested in. Also select out
-    # correlations. TODO: Does this type of selection/filtering belong here?
-
+    # Filter out fields/ddids which we are not interested in. TODO: This should
+    # be modified to include specific spectral window and polarization selection
+    # instead of using the ddid directly.
     data_xds_list = filter_xds_list(
         data_xds_list,
         ms_opts.select_fields,

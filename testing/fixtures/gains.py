@@ -25,3 +25,8 @@ def cmp_post_solve_data_xds_list(cmp_calibration_graph_outputs):
 @pytest.fixture(params=["antenna", "array"], scope="module")
 def solve_per(request):
     return request.param
+
+
+@pytest.fixture(params=[True, False], scope="module")
+def scalar_mode(request):
+    return request.param

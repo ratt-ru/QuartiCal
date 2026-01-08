@@ -107,12 +107,18 @@ def make_parangle_xds_list(ms_path, data_xds_list):
 
     for xds, field_centre in zip(data_xds_list, field_centres):
 
+        # TODO: This is unnecessary - we should just reify the field centres
+        # and pass them in.
+        cloned_field_centre = da.concatenate(
+            [clone(field_centre) for _ in xds.chunksizes["row"]]
+        )
+
         parangles = da.blockwise(_make_parangles, "tar",
                                  xds.TIME.data, "t",
                                  clone(ant_names), "a",
                                  clone(ant_positions_ecef), "a3",
                                  clone(receptor_angles), "ar",
-                                 clone(field_centre), "t",
+                                 cloned_field_centre, "t",
                                  epoch, None,
                                  align_arrays=False,
                                  concatenate=True,

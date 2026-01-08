@@ -2,7 +2,7 @@
 import sys
 import os
 from loguru import logger
-from ruamel.yaml import round_trip_dump
+from ruamel.yaml import YAML
 from omegaconf import OmegaConf as oc
 from quartical.config.external import finalize_structure
 from quartical.config.internal import additional_validation
@@ -26,13 +26,9 @@ def create_user_config():
     config = oc.merge(config, *additional_config)
 
     with open(config_file_path, 'w') as outfile:
-        round_trip_dump(
-            oc.to_container(config),
-            outfile,
-            default_flow_style=False,
-            width=60,
-            indent=2
-        )
+        yaml = YAML()
+
+        yaml.dump(oc.to_container(config), outfile)
 
     logger.success(
         f"{config_file_path} successfully generated. Go forth and calibrate!"
