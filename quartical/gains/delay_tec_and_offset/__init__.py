@@ -137,6 +137,10 @@ class DelayTecAndOffset(ParameterizedGain):
         else:
             raise ValueError("Unsupported number of correlations.")
 
+        # Loop over all antennas except the reference antenna.
+        loop_ants = list(range(n_ant))
+        loop_ants.pop(ref_ant)
+
         subint_delays = np.zeros((n_tint, n_fint, n_ant, n_paramk, n_subint))
         gradients = np.zeros((n_tint, n_fint, n_ant, n_subint))
 
@@ -174,7 +178,16 @@ class DelayTecAndOffset(ParameterizedGain):
                 fsel_data = ref_data[:, fsel]
                 valid_ant = fsel_data.any(axis=(1, 2))
 
-                for a in range(1, n_ant):
+                # NOTE: Previous attempts to set the resolution per subinterval
+                # and antenna caused problems. Consequently, we set the
+                # resolution per solution interval. This has not been tested
+                # comprehensively in the case where we have multiple solution
+                # intervals in frequency.
+                dfreq = np.abs(fsel_chan[-1] - fsel_chan[-2])
+                max_n_wrap = (fsel_chan[-1] - fsel_chan[0]) / (2 * dfreq)
+                nbins = int((2 * max_n_wrap) / est_resolution)
+
+                for a in loop_ants:
 
                     mask_indices = np.flatnonzero(mask[a])
 
@@ -197,12 +210,6 @@ class DelayTecAndOffset(ParameterizedGain):
                         subint_freq = fsel_chan[subint_indices]
                         subint_ifreq = 1/subint_freq
 
-                        dfreq = np.abs(subint_freq[1:] - subint_freq[:1]).min()
-                        max_n_wrap = (
-                            (subint_freq[-1] - subint_freq[0]) / (2 * dfreq)
-                        )
-
-                        nbins = int((2 * max_n_wrap) / est_resolution)
                         fft_freq = np.fft.fftfreq(nbins, dfreq)
 
                         gradients[ut, uf, a, i], _ = np.polyfit(
@@ -222,17 +229,35 @@ class DelayTecAndOffset(ParameterizedGain):
                 subint_delays[ut, uf, ~valid_ant] = 0
 
         # We can solve this problem using the normal equations.
-        A = np.ones((n_subint, 2), dtype=np.float64)
+        A = np.ones((n_tint, n_fint, n_ant, n_subint, 2), dtype=np.float64)
 
-        A[:, 1] = gradients[0, 0, :]
+        A[..., 1] = gradients
 
-        ATA00, ATA01, ATA10, ATA11 = (A.T @ A).ravel()
+        ATA = A.transpose(0,1,2,4,3) @ A
+
+        ATA00 = ATA[..., 0, 0]
+        ATA01 = ATA[..., 0, 1]
+        ATA10 = ATA[..., 1, 0]
+        ATA11 = ATA[..., 1, 1]
+
         ATA_det  = ATA00 * ATA11 - ATA01 * ATA10
-        ATAinv = 1/ATA_det * np.array([[ATA11, -ATA01], [-ATA10, ATA00]])
-        ATAinvAT = ATAinv @ A.T
+
+        ATAinv = np.zeros_like(ATA)
+
+        ATAinv[..., 0, 0] = ATA11
+        ATAinv[..., 0, 1] = -ATA01
+        ATAinv[..., 1, 0] = -ATA10
+        ATAinv[..., 1, 1] = ATA00
+
+        ATAinv *= np.where(
+            ATA_det[..., None, None], 1/ATA_det[..., None, None], 0
+        )
+        ATAinvAT = ATAinv @ A.transpose(0,1,2,4,3)
 
         b = subint_delays
-        x = np.matmul(ATAinvAT, b[..., None])[..., 0]  # Remove trailing dim.
+        # NOTE: Matmul doesn't work in the particular case so we explicitly
+        # einsum instead. Trailing dim (the matrix column) gets trimmed.
+        x = np.einsum("abcij,abcdjk->abcdik", ATAinvAT, b[..., None])[..., 0]
 
         params[:, :, :, 0, 1::3] = x[..., 1] * scale_factor
         params[:, :, :, 0, 2::3] = x[..., 0] / scale_factor
