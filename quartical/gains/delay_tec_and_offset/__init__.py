@@ -193,6 +193,9 @@ class DelayTecAndOffset(ParameterizedGain):
 
                     subint_stride = int(np.ceil(mask_indices.size / n_subint))
 
+                    if not valid_ant[a]:  # Fully flagged.
+                        continue
+
                     for i, si in enumerate(range(0, mask_indices.size, subint_stride)):
 
                         subint_indices = mask_indices[si: si + subint_stride]
