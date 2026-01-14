@@ -138,7 +138,7 @@ class DelayTecAndOffset(ParameterizedGain):
             raise ValueError("Unsupported number of correlations.")
 
         subint_delays = np.zeros((n_tint, n_fint, n_ant, n_paramk, n_subint))
-        gradients = np.zeros((n_tint, n_fint, n_subint))
+        gradients = np.zeros((n_tint, n_fint, n_ant, n_subint))
 
         for ut in utint:
             sel = np.where((t_map == ut) & (a1 != a2))
@@ -164,53 +164,59 @@ class DelayTecAndOffset(ParameterizedGain):
                 where=counts[:, :, None] != 0,
                 out=ref_data
             )
+            mask = counts.astype(bool)
 
             for uf in ufint:
 
                 fsel = np.where(f_map == uf)[0]
-                fsel_nchan = fsel.size
                 fsel_chan = scaled_chan_freq[fsel]
 
                 fsel_data = ref_data[:, fsel]
                 valid_ant = fsel_data.any(axis=(1, 2))
 
-                subint_stride = int(np.ceil(fsel_nchan / n_subint))
+                for a in range(1, n_ant):
 
-                for i, si in enumerate(range(0, fsel_nchan, subint_stride)):
+                    mask_indices = np.flatnonzero(mask[a])
 
-                    si_sel = slice(si, si + subint_stride)
+                    subint_stride = int(np.ceil(mask_indices.size / n_subint))
 
-                    subint_data = fsel_data[:, si_sel]
+                    for i, si in enumerate(range(0, mask_indices.size, subint_stride)):
 
-                    # NOTE: Collapse correlation axis when term is scalar.
-                    if self.scalar:
-                        subint_data[..., :] = subint_data.sum(
-                            axis=-1, keepdims=True
+                        subint_indices = mask_indices[si: si + subint_stride]
+                        subint_start = subint_indices[0]
+                        subint_end = subint_indices[-1]
+
+                        subint_data = fsel_data[a, subint_start:subint_end]
+
+                        # NOTE: Collapse correlation axis when term is scalar.
+                        if self.scalar:
+                            subint_data[..., :] = subint_data.sum(
+                                axis=-1, keepdims=True
+                            )
+
+                        subint_freq = fsel_chan[subint_indices]
+                        subint_ifreq = 1/subint_freq
+
+                        dfreq = np.abs(subint_freq[1:] - subint_freq[:1]).min()
+                        max_n_wrap = (
+                            (subint_freq[-1] - subint_freq[0]) / (2 * dfreq)
                         )
 
-                    subint_freq = fsel_chan[si_sel]
-                    subint_ifreq = 1/subint_freq
+                        nbins = int((2 * max_n_wrap) / est_resolution)
+                        fft_freq = np.fft.fftfreq(nbins, dfreq)
 
-                    dfreq = np.abs(subint_freq[-2] - subint_freq[-1])
-                    max_n_wrap = (
-                        (subint_freq[-1] - subint_freq[0]) / (2 * dfreq)
-                    )
+                        gradients[ut, uf, a, i], _ = np.polyfit(
+                            subint_freq, subint_ifreq, deg=1
+                        )
 
-                    nbins = int((2 * max_n_wrap) / est_resolution)
-                    fft_freq = np.fft.fftfreq(nbins, dfreq)
+                        fft = np.fft.fft(
+                            subint_data[:, corr_slice].copy(),
+                            axis=0,
+                            n=nbins
+                        )
 
-                    gradients[ut, uf, i], _ = np.polyfit(
-                        subint_freq, subint_ifreq, deg=1
-                    )
-
-                    fft = np.fft.fft(
-                        subint_data[..., corr_slice].copy(),
-                        axis=1,
-                        n=nbins
-                    )
-
-                    subint_delays[ut, uf, ..., i] = \
-                        fft_freq[np.argmax(np.abs(fft), axis=1)]
+                        subint_delays[ut, uf, a, :, i] = \
+                            fft_freq[np.argmax(np.abs(fft), axis=0)]
 
                 # Zero the reference antenna/antennas without data.
                 subint_delays[ut, uf, ~valid_ant] = 0
