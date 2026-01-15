@@ -164,7 +164,8 @@ class DelayTecAndOffset(ParameterizedGain):
                 baseline_data[..., :] = baseline_data.sum(axis=-1, keepdims=True)
 
             # Apply simple 1D smoothing in time to the input data. This helps
-            # improve the SNR on particularly bad baselines.
+            # improve the SNR on particularly bad baselines. Currently, this
+            # cannot be configured from the CLI.
             baseline_data = gaussian_filter1d_masked(
                 baseline_data, 1, mask=(baseline_flags==0)[...,None], axis=0
             )
