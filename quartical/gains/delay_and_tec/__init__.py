@@ -107,11 +107,9 @@ class DelayAndTec(ParameterizedGain):
             ref_ant=ref_ant
         )
 
+        # Pack the estimates into the parameter array and undo rescaling.
         params[:, :, :, 0, 0::2] = estimates[..., 1] * scale_factor
         params[:, :, :, 0, 1::2] = estimates[..., 0] / scale_factor
-
-        # Flip the sign on antennas > reference as they correspond to G^H.
-        params[:, :, ref_ant:] = -params[:, :, ref_ant:]
 
         delay_and_tec_params_to_gains(
             params,

@@ -20,8 +20,6 @@ def estimate_delay_and_tec(
     a1, a2 = antenna1, antenna2  # Alias for brevity.
     _, n_chan, n_ant, _, n_corr = gain_shape
 
-    est_resolution = 0.01  # NOTE: Make this lower.
-
     # We only need the baselines which include the ref_ant.
     sel = np.where((a1 == ref_ant) | (a2 == ref_ant))
     a1 = a1[sel]
@@ -39,14 +37,11 @@ def estimate_delay_and_tec(
 
     # NOTE: This determines the number of subintervals which are used to
     # estimate the delay and tec values. More subintervals will typically
-    # yield better estimates at the cost of SNR. TODO: Thus doesn't factor
-    # in the flagging behaviour which may make some estimates worse than
-    # others. Should we instead only consider unflagged regions or weight
-    # the mean calaculation?
+    # yield better estimates at the cost of SNR.
     n_subint = max(int(np.ceil(n_chan / 1024)), 2)
 
     if n_corr == 1:
-        n_paramk = 1 #number of parameters in delay
+        n_paramk = 1 # Total number of delay parameters.
         corr_slice = slice(None)
     elif n_corr == 2:
         n_paramk = 2
@@ -64,9 +59,9 @@ def estimate_delay_and_tec(
     subint_delays = np.zeros((n_tint, n_fint, n_ant, n_paramk, n_subint))
     gradients = np.zeros((n_tint, n_fint, n_ant, n_subint))
 
-    # TODO: We should make baseline the outermost axis for the initial
-    # estimates. This allows us to do things like smooth the data on
-    # the baseline prior to performing the estimates.
+    # We loop over baseline (to the reference antenna) at the outermost level.
+    # This allows us to do things like smooth the data on the baseline prior
+    # to performing the estimates.
 
     for a in loop_ants:
 
@@ -120,7 +115,7 @@ def estimate_delay_and_tec(
                 # multiple solution intervals in frequency.
                 dfreq = np.abs(f_sel_chan[-1] - f_sel_chan[-2])
                 max_n_wrap = (f_sel_chan[-1] - f_sel_chan[0]) / (2 * dfreq)
-                nbins = int((2 * max_n_wrap) / est_resolution)
+                nbins = int((2 * max_n_wrap) / estimate_resolution)
 
                 mask_indices = np.flatnonzero(f_sel_mask)
                 n_valid = mask_indices.size
@@ -188,5 +183,8 @@ def estimate_delay_and_tec(
     # NOTE: Matmul doesn't work in the particular case so we explicitly
     # einsum instead. Trailing dim (the matrix column) gets trimmed.
     x = np.einsum("abcij,abcdjk->abcdik", ATAinvAT, b[..., None])[..., 0]
+
+    # Flip the sign on antennas > reference as they correspond to G^H.
+    x[:, :, ref_ant:] = -x[:, :, ref_ant:]
 
     return x
