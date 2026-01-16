@@ -1,5 +1,6 @@
 import numpy as np
 from collections import namedtuple
+from quartical.utils.smoothing import gaussian_filter1d_masked
 from quartical.gains.conversion import no_op, trig_to_angle
 from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.tec_and_offset.kernel import (
@@ -121,110 +122,148 @@ class TecAndOffset(ParameterizedGain):
         n_subint = max(int(np.ceil(n_chan / 1024)), 2)
 
         if n_corr == 1:
-            n_paramt = 1 #number of parameters in TEC
             n_paramk = 1 #number of parameters in delay
             corr_slice = slice(None)
         elif n_corr == 2:
-            n_paramt = 2
             n_paramk = 2
             corr_slice = slice(None)
         elif n_corr == 4:
-            n_paramt = 2
             n_paramk = 2
             corr_slice = slice(0, 4, 3)
         else:
             raise ValueError("Unsupported number of correlations.")
 
+        # Loop over all antennas except the reference antenna.
+        loop_ants = list(range(n_ant))
+        loop_ants.pop(ref_ant)
+
         subint_delays = np.zeros((n_tint, n_fint, n_ant, n_paramk, n_subint))
-        gradients = np.zeros((n_tint, n_fint, n_subint))
+        gradients = np.zeros((n_tint, n_fint, n_ant, n_subint))
 
-        for ut in utint:
-            sel = np.where((t_map == ut) & (a1 != a2))
-            ant_map_pq = np.where(a1[sel] == ref_ant, a2[sel], 0)
-            ant_map_qp = np.where(a2[sel] == ref_ant, a1[sel], 0)
-            ant_map = ant_map_pq + ant_map_qp
+        # TODO: We should make baseline the outermost axis for the initial
+        # estimates. This allows us to do things like smooth the data on
+        # the baseline prior to performing the estimates.
 
-            ref_data = np.zeros((n_ant, n_chan, n_corr), dtype=np.complex128)
-            counts = np.zeros((n_ant, n_chan), dtype=int)
-            np.add.at(
-                ref_data,
-                ant_map,
-                data[sel]
-            )
-            np.add.at(
-                counts,
-                ant_map,
-                flags[sel] == 0
-            )
-            np.divide(
-                ref_data,
-                counts[:, :, None],
-                where=counts[:, :, None] != 0,
-                out=ref_data
+        for a in loop_ants:
+
+            bl_sel = np.where(
+                (a1 != a2) & ((a1 == ref_ant) & (a2 == a)) | ((a2 == ref_ant) & (a1 == a))
             )
 
-            for uf in ufint:
+            baseline_data = data[bl_sel]
+            baseline_flags = flags[bl_sel]
+            baseline_t_map = t_map[bl_sel]
 
-                fsel = np.where(f_map == uf)[0]
-                fsel_nchan = fsel.size
-                fsel_chan = scaled_chan_freq[fsel]
+            # NOTE: Collapse correlation axis when term is scalar.
+            if self.scalar:
+                baseline_data[..., :] = baseline_data.sum(axis=-1, keepdims=True)
 
-                fsel_data = ref_data[:, fsel]
-                valid_ant = fsel_data.any(axis=(1, 2))
+            # Apply simple 1D smoothing in time to the input data. This helps
+            # improve the SNR on particularly bad baselines. Currently, this
+            # cannot be configured from the CLI.
+            baseline_data = gaussian_filter1d_masked(
+                baseline_data, 1, mask=(baseline_flags==0)[...,None], axis=0
+            )
 
-                subint_stride = int(np.ceil(fsel_nchan / n_subint))
+            for ut in utint:
+                t_sel = np.where(baseline_t_map == ut)
 
-                for i, si in enumerate(range(0, fsel_nchan, subint_stride)):
+                t_sel_data = baseline_data[t_sel].sum(axis=0)
+                t_sel_counts = (baseline_flags[t_sel] == 0).sum(axis=0)
+                np.divide(
+                    t_sel_data,
+                    t_sel_counts[..., None],
+                    where=t_sel_counts[..., None] != 0,
+                    out=t_sel_data
+                )
+                t_sel_mask = t_sel_counts.astype(bool)
 
-                    si_sel = slice(si, si + subint_stride)
+                for uf in ufint:
 
-                    subint_data = fsel_data[:, si_sel]
+                    f_sel = np.where(f_map == uf)[0]
+                    f_sel_chan = scaled_chan_freq[f_sel]
 
-                    # NOTE: Collapse correlation axis when term is scalar.
-                    if self.scalar:
-                        subint_data[..., :] = subint_data.sum(
-                            axis=-1, keepdims=True
+                    f_sel_data = t_sel_data[f_sel]
+                    f_sel_mask = t_sel_mask[f_sel]
+
+                    if not f_sel_mask.any():  # No valid data in the interval.
+                        continue
+
+                    # NOTE: Previous attempts to set the resolution per
+                    # subinterval and antenna caused problems. Consequently, we
+                    # set the resolution per solution interval. This has not
+                    # been tested comprehensively in the case where we have
+                    # multiple solution intervals in frequency.
+                    dfreq = np.abs(f_sel_chan[-1] - f_sel_chan[-2])
+                    max_n_wrap = (f_sel_chan[-1] - f_sel_chan[0]) / (2 * dfreq)
+                    nbins = int((2 * max_n_wrap) / est_resolution)
+
+                    mask_indices = np.flatnonzero(f_sel_mask)
+                    n_valid = mask_indices.size
+                    subint_stride = int(np.ceil(n_valid / n_subint))
+
+                    for i, si in enumerate(range(0, n_valid, subint_stride)):
+
+                        subint_indices = mask_indices[si: si + subint_stride]
+                        subint_start = subint_indices[0]
+                        subint_end = subint_indices[-1]
+
+                        subint_data = f_sel_data[subint_start:subint_end]
+
+                        # Fit straight line to 1/nu, where nu are the unflagged
+                        # channel frequencies in this solution interval.
+                        subint_freq = f_sel_chan[subint_indices]
+                        subint_ifreq = 1/subint_freq
+                        gradients[ut, uf, a, i], _ = np.polyfit(
+                            subint_freq, subint_ifreq, deg=1
                         )
 
-                    subint_freq = fsel_chan[si_sel]
-                    subint_ifreq = 1/subint_freq
+                        # Perform the FFT on the subinterval data and find
+                        # the location of the resulting peak in the power
+                        # spectrum.
+                        fft = np.fft.fft(
+                            subint_data[:, corr_slice].copy(),
+                            axis=0,
+                            n=nbins
+                        )
+                        fft_freq = np.fft.fftfreq(nbins, dfreq)
 
-                    dfreq = np.abs(subint_freq[-2] - subint_freq[-1])
-                    max_n_wrap = (
-                        (subint_freq[-1] - subint_freq[0]) / (2 * dfreq)
-                    )
+                        subint_delays[ut, uf, a, :, i] = \
+                            fft_freq[np.argmax(np.abs(fft), axis=0)]
 
-                    nbins = int((2 * max_n_wrap) / est_resolution)
-                    fft_freq = np.fft.fftfreq(nbins, dfreq)
+        # We can combine the estimates of the gradeint of a straight line fit
+        # to 1/nu in each interval and the location of the peak in the
+        # associated power spectrum to estimate the clock and dTEC using the
+        # normal equations.
+        A = np.ones((n_tint, n_fint, n_ant, n_subint, 2), dtype=np.float64)
 
-                    gradients[ut, uf, i], _ = np.polyfit(
-                        subint_freq, subint_ifreq, deg=1
-                    )
+        A[..., 1] = gradients
 
-                    fft = np.fft.fft(
-                        subint_data[..., corr_slice].copy(),
-                        axis=1,
-                        n=nbins
-                    )
+        ATA = A.transpose(0,1,2,4,3) @ A
 
-                    subint_delays[ut, uf, ..., i] = \
-                        fft_freq[np.argmax(np.abs(fft), axis=1)]
+        ATA00 = ATA[..., 0, 0]
+        ATA01 = ATA[..., 0, 1]
+        ATA10 = ATA[..., 1, 0]
+        ATA11 = ATA[..., 1, 1]
 
-                # Zero the reference antenna/antennas without data.
-                subint_delays[ut, uf, ~valid_ant] = 0
+        # Determine the determinant for each 2x2 element of ATA. Re-add
+        # axes to ensure compatibility with ATAinv array.
+        ATA_det  = (ATA00 * ATA11 - ATA01 * ATA10)[..., None, None]
 
-        # We can solve this problem using the normal equations.
-        A = np.ones((n_subint, 2), dtype=np.float64)
+        ATAinv = np.zeros_like(ATA)
 
-        A[:, 1] = gradients[0, 0, :]
+        ATAinv[..., 0, 0] = ATA11
+        ATAinv[..., 0, 1] = -ATA01
+        ATAinv[..., 1, 0] = -ATA10
+        ATAinv[..., 1, 1] = ATA00
 
-        ATA00, ATA01, ATA10, ATA11 = (A.T @ A).ravel()
-        ATA_det  = ATA00 * ATA11 - ATA01 * ATA10
-        ATAinv = 1/ATA_det * np.array([[ATA11, -ATA01], [-ATA10, ATA00]])
-        ATAinvAT = ATAinv @ A.T
+        np.divide(ATAinv, ATA_det, where=ATA_det!=0, out=ATAinv)
+        ATAinvAT = ATAinv @ A.transpose(0,1,2,4,3)
 
         b = subint_delays
-        x = np.matmul(ATAinvAT, b[..., None])[..., 0]  # Remove trailing dim.
+        # NOTE: Matmul doesn't work in the particular case so we explicitly
+        # einsum instead. Trailing dim (the matrix column) gets trimmed.
+        x = np.einsum("abcij,abcdjk->abcdik", ATAinvAT, b[..., None])[..., 0]
 
         params[:, :, :, 0, 1::2] = x[..., 1] * scale_factor
 
