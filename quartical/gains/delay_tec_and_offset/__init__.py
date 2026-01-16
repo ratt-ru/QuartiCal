@@ -251,7 +251,9 @@ class DelayTecAndOffset(ParameterizedGain):
         ATA10 = ATA[..., 1, 0]
         ATA11 = ATA[..., 1, 1]
 
-        ATA_det  = ATA00 * ATA11 - ATA01 * ATA10
+        # Determine the determinant for each 2x2 element of ATA. Re-add
+        # axes to ensure compatibility with ATAinv array.
+        ATA_det  = (ATA00 * ATA11 - ATA01 * ATA10)[..., None, None]
 
         ATAinv = np.zeros_like(ATA)
 
@@ -260,9 +262,7 @@ class DelayTecAndOffset(ParameterizedGain):
         ATAinv[..., 1, 0] = -ATA10
         ATAinv[..., 1, 1] = ATA00
 
-        ATAinv *= np.where(
-            ATA_det[..., None, None], 1/ATA_det[..., None, None], 0
-        )
+        np.divide(ATAinv, ATA_det, where=ATA_det!=0, out=ATAinv)
         ATAinvAT = ATAinv @ A.transpose(0,1,2,4,3)
 
         b = subint_delays
