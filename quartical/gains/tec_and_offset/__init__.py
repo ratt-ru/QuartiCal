@@ -106,7 +106,8 @@ class TecAndOffset(ParameterizedGain):
             f_map,
             scaled_chan_freq,
             gains.shape,
-            ref_ant=ref_ant
+            ref_ant=ref_ant,
+            scalar=self.scalar
         )
 
         # Pack the estimates into the parameter array and undo rescaling.
