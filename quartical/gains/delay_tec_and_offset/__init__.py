@@ -124,15 +124,12 @@ class DelayTecAndOffset(ParameterizedGain):
         n_subint = max(int(np.ceil(n_chan / 1024)), 2)
 
         if n_corr == 1:
-            n_paramt = 1 #number of parameters in TEC
             n_paramk = 1 #number of parameters in delay
             corr_slice = slice(None)
         elif n_corr == 2:
-            n_paramt = 2
             n_paramk = 2
             corr_slice = slice(None)
         elif n_corr == 4:
-            n_paramt = 2
             n_paramk = 2
             corr_slice = slice(0, 4, 3)
         else:
