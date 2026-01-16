@@ -16,6 +16,34 @@ def estimate_delay_and_tec(
     estimate_resolution: float = 0.01,
     scalar: bool = False
 ) -> NDArray[np.float64]:
+    """Estimate delay and dTEC from visibility data.
+
+    This function estimates delay and dTEC parameters from visibility data by
+    performing windowed FFTs along the frequency axis. The locations of the
+    peaks in the resulting power spectra are used as the input to a
+    least-squares fit to determine the delay and TEC values for each antenna.
+
+    Args:
+        data: Complex visibility data array.
+        flags: Flag array indicating invalid measurements.
+        antenna1: First antenna indices for each baseline.
+        antenna2: Second antenna indices for each baseline.
+        time_map: Time interval indices for each visibility.
+        freq_map: Frequency interval indices for each visibility.
+        chan_freq: Channel frequencies (possibly scaled).
+        gain_shape: Shape of the gain solutions array
+            (n_tint, n_f_int, n_ant, n_dir, n_corr).
+        ref_ant: Reference antenna index.
+        estimate_resolution: Used to determine the padding required in the
+            FFT to ensure that peaks can be resolved to this level.
+        scalar: If True, collapse correlation axis for scalar solutions.
+
+    Returns:
+        Estimated delay and dTEC values.
+
+    Raises:
+        ValueError: If the number of correlations is not supported.
+    """
 
     a1, a2 = antenna1, antenna2  # Alias for brevity.
     _, n_chan, n_ant, _, n_corr = gain_shape
