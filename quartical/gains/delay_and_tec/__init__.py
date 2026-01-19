@@ -100,6 +100,7 @@ class DelayAndTec(ParameterizedGain):
             flags,
             a1,
             a2,
+            param_flags,
             t_map,
             f_map,
             scaled_chan_freq,

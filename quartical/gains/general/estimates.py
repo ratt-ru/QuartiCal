@@ -8,6 +8,7 @@ def estimate_delay_and_tec(
     flags: NDArray[np.int8],
     antenna1: NDArray[np.int32],
     antenna2: NDArray[np.int32],
+    param_flags: NDArray[np.int8],
     time_map: NDArray[np.int32],
     freq_map: NDArray[np.int32],
     chan_freq: NDArray[np.float64],
@@ -28,6 +29,7 @@ def estimate_delay_and_tec(
         flags: Flag array indicating invalid measurements.
         antenna1: First antenna indices for each baseline.
         antenna2: Second antenna indices for each baseline.
+        param_flags: Flag array associated with the parameters.
         time_map: Time interval indices for each visibility.
         freq_map: Frequency interval indices for each visibility.
         chan_freq: Channel frequencies (possibly scaled).
@@ -134,6 +136,7 @@ def estimate_delay_and_tec(
                 f_sel_mask = t_sel_mask[f_sel]
 
                 if not f_sel_mask.any():  # No valid data in the interval.
+                    param_flags[ut, uf, a, 0] = 1
                     continue
 
                 # NOTE: Previous attempts to set the resolution per
