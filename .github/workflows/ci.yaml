@@ -68,11 +68,7 @@ jobs:
 
       - name: Load cached CASA Measures Data
         id: load-cached-casa-measures
-<<<<<<< HEAD
-        uses: actions/cache@v4
-=======
         uses: actions/cache@v5
->>>>>>> main
         with:
           key: casa-measures-${{ hashFiles('measures_dir.txt')}}
           path: |
@@ -147,8 +143,4 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Release
-<<<<<<< HEAD
-        uses: softprops/action-gh-release@v0.1.15
-=======
         uses: softprops/action-gh-release@v2.5.0
->>>>>>> main
