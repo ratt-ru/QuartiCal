@@ -11,7 +11,10 @@ from quartical.gains.leakage import Leakage
 from quartical.gains.delay_and_tec import DelayAndTec
 from quartical.gains.parallactic_angle import ParallacticAngle
 from quartical.gains.feed_flip import FeedFlip
+<<<<<<< HEAD
 from quartical.gains.delay_tec_and_offset import DelayTecAndOffset
+=======
+>>>>>>> main
 
 
 TERM_TYPES = {
@@ -29,6 +32,10 @@ TERM_TYPES = {
     "leakage": Leakage,
     "delay_and_tec": DelayAndTec,
     "parallactic_angle": ParallacticAngle,
+<<<<<<< HEAD
     "feed_flip": FeedFlip,
     "delay_tec_and_offset": DelayTecAndOffset
+=======
+    "feed_flip": FeedFlip
+>>>>>>> main
 }
