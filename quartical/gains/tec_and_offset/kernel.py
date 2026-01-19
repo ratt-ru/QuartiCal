@@ -134,13 +134,9 @@ def nb_tec_and_offset_solver_impl(
 
         # We actually solve for TEC' = TEC/bandwidth. This helps avoid
         # numerical issues, but requires some scaling of the parameters.
-<<<<<<< HEAD
         min_freq = ms_inputs.MIN_FREQ
         max_freq = ms_inputs.MAX_FREQ
         bandwidth = max_freq - min_freq
-=======
-        bandwidth = ms_inputs.MAX_FREQ - ms_inputs.MIN_FREQ
->>>>>>> main
         active_params[..., 1::2] /= bandwidth
 
         # This alters the offset parameter to be consistent with the zero mean

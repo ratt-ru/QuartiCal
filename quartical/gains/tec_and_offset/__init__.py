@@ -73,7 +73,6 @@ class TecAndOffset(ParameterizedGain):
             ms_kwargs["CHAN_FREQ"],
             ms_kwargs["MIN_FREQ"],
             ms_kwargs["MAX_FREQ"],
-<<<<<<< HEAD
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 
@@ -239,8 +238,6 @@ class TecAndOffset(ParameterizedGain):
             ms_kwargs["CHAN_FREQ"],
             ms_kwargs["MIN_FREQ"],
             ms_kwargs["MAX_FREQ"],
-=======
->>>>>>> main
             term_kwargs[f"{self.name}_param_freq_map"],
         )
 
