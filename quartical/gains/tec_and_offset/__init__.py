@@ -10,6 +10,8 @@ from quartical.gains.general.flagging import (
     apply_gain_flags_to_gains,
     apply_param_flags_to_params
 )
+from quartical.gains.general.estimates import estimate_delay_and_tec
+
 
 # Overload the default measurement set inputs to include the frequencies.
 ms_inputs = namedtuple(
@@ -90,146 +92,26 @@ class TecAndOffset(ParameterizedGain):
         chan_freq = ms_kwargs["CHAN_FREQ"]
         t_map = term_kwargs[f"{term_spec.name}_time_map"]
         f_map = term_kwargs[f"{term_spec.name}_param_freq_map"]
-        _, n_chan, n_ant, n_dir, n_corr = gains.shape
 
         # Rescale the channel frequencies.
         scale_factor = (chan_freq.min() + chan_freq.max()) / 2
         scaled_chan_freq = chan_freq / scale_factor
 
-        est_resolution = 0.01  # NOTE: Make this lower.
+        estimates = estimate_delay_and_tec(
+            data,
+            flags,
+            a1,
+            a2,
+            t_map,
+            f_map,
+            scaled_chan_freq,
+            gains.shape,
+            ref_ant=ref_ant,
+            scalar=self.scalar
+        )
 
-        # We only need the baselines which include the ref_ant.
-        sel = np.where((a1 == ref_ant) | (a2 == ref_ant))
-        a1 = a1[sel]
-        a2 = a2[sel]
-        t_map = t_map[sel]
-        data = data[sel]
-        flags = flags[sel]
-
-        data[flags == 1] = 0  # Ignore UV-cut, otherwise there may be no est.
-
-        utint = np.unique(t_map)
-        ufint = np.unique(f_map)
-        n_tint = utint.size
-        n_fint = ufint.size
-        # NOTE: This determines the number of subintervals which are used to
-        # estimate the delay and tec values. More subintervals will typically
-        # yield better estimates at the cost of SNR. TODO: Thus doesn't factor
-        # in the flagging behaviour which may make some estimates worse than
-        # others. Should we instead only consider unflagged regions or weight
-        # the mean calaculation?
-        n_subint = max(int(np.ceil(n_chan / 1024)), 2)
-
-        if n_corr == 1:
-            n_paramt = 1 #number of parameters in TEC
-            n_paramk = 1 #number of parameters in delay
-            corr_slice = slice(None)
-        elif n_corr == 2:
-            n_paramt = 2
-            n_paramk = 2
-            corr_slice = slice(None)
-        elif n_corr == 4:
-            n_paramt = 2
-            n_paramk = 2
-            corr_slice = slice(0, 4, 3)
-        else:
-            raise ValueError("Unsupported number of correlations.")
-
-        subint_delays = np.zeros((n_tint, n_fint, n_ant, n_paramk, n_subint))
-        gradients = np.zeros((n_tint, n_fint, n_subint))
-
-        for ut in utint:
-            sel = np.where((t_map == ut) & (a1 != a2))
-            ant_map_pq = np.where(a1[sel] == ref_ant, a2[sel], 0)
-            ant_map_qp = np.where(a2[sel] == ref_ant, a1[sel], 0)
-            ant_map = ant_map_pq + ant_map_qp
-
-            ref_data = np.zeros((n_ant, n_chan, n_corr), dtype=np.complex128)
-            counts = np.zeros((n_ant, n_chan), dtype=int)
-            np.add.at(
-                ref_data,
-                ant_map,
-                data[sel]
-            )
-            np.add.at(
-                counts,
-                ant_map,
-                flags[sel] == 0
-            )
-            np.divide(
-                ref_data,
-                counts[:, :, None],
-                where=counts[:, :, None] != 0,
-                out=ref_data
-            )
-
-            for uf in ufint:
-
-                fsel = np.where(f_map == uf)[0]
-                fsel_nchan = fsel.size
-                fsel_chan = scaled_chan_freq[fsel]
-
-                fsel_data = ref_data[:, fsel]
-                valid_ant = fsel_data.any(axis=(1, 2))
-
-                subint_stride = int(np.ceil(fsel_nchan / n_subint))
-
-                for i, si in enumerate(range(0, fsel_nchan, subint_stride)):
-
-                    si_sel = slice(si, si + subint_stride)
-
-                    subint_data = fsel_data[:, si_sel]
-
-                    # NOTE: Collapse correlation axis when term is scalar.
-                    if self.scalar:
-                        subint_data[..., :] = subint_data.sum(
-                            axis=-1, keepdims=True
-                        )
-
-                    subint_freq = fsel_chan[si_sel]
-                    subint_ifreq = 1/subint_freq
-
-                    dfreq = np.abs(subint_freq[-2] - subint_freq[-1])
-                    max_n_wrap = (
-                        (subint_freq[-1] - subint_freq[0]) / (2 * dfreq)
-                    )
-
-                    nbins = int((2 * max_n_wrap) / est_resolution)
-                    fft_freq = np.fft.fftfreq(nbins, dfreq)
-
-                    gradients[ut, uf, i], _ = np.polyfit(
-                        subint_freq, subint_ifreq, deg=1
-                    )
-
-                    fft = np.fft.fft(
-                        subint_data[..., corr_slice].copy(),
-                        axis=1,
-                        n=nbins
-                    )
-
-                    subint_delays[ut, uf, ..., i] = \
-                        fft_freq[np.argmax(np.abs(fft), axis=1)]
-
-                # Zero the reference antenna/antennas without data.
-                subint_delays[ut, uf, ~valid_ant] = 0
-
-        # We can solve this problem using the normal equations.
-        A = np.ones((n_subint, 2), dtype=np.float64)
-
-        A[:, 1] = gradients[0, 0, :]
-
-        ATA00, ATA01, ATA10, ATA11 = (A.T @ A).ravel()
-        ATA_det  = ATA00 * ATA11 - ATA01 * ATA10
-        ATAinv = 1/ATA_det * np.array([[ATA11, -ATA01], [-ATA10, ATA00]])
-        ATAinvAT = ATAinv @ A.T
-
-        b = subint_delays
-        x = np.matmul(ATAinvAT, b[..., None])[..., 0]  # Remove trailing dim.
-
-        params[:, :, :, 0, 1::2] = x[..., 1] * scale_factor
-
-        # Flip the sign on antennas > reference as they correspond to G^H.
-        params[:, :, ref_ant:] = -params[:, :, ref_ant:]
+        # Pack the estimates into the parameter array and undo rescaling.
+        params[:, :, :, 0, 1::2] = estimates[..., 1] * scale_factor
 
         # Convert the parameters into gains.
         tec_and_offset_params_to_gains(
