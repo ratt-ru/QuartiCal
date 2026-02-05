@@ -1,6 +1,6 @@
 import numpy as np
 from collections import namedtuple
-from quartical.gains.conversion import no_op, trig_to_angle
+from quartical.gains.conversion import no_op
 from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.delay_and_tec.kernel import (
     delay_and_tec_solver,
@@ -10,6 +10,8 @@ from quartical.gains.general.flagging import (
     apply_gain_flags_to_gains,
     apply_param_flags_to_params
 )
+from quartical.gains.general.estimates import estimate_delay_and_tec
+
 
 # Overload the default measurement set inputs to include the frequencies.
 ms_inputs = namedtuple(
@@ -19,7 +21,6 @@ ms_inputs = namedtuple(
         'MAX_FREQ'
     )
 )
-
 
 class DelayAndTec(ParameterizedGain):
 
@@ -89,82 +90,28 @@ class DelayAndTec(ParameterizedGain):
         chan_freq = ms_kwargs["CHAN_FREQ"]
         t_map = term_kwargs[f"{term_spec.name}_time_map"]
         f_map = term_kwargs[f"{term_spec.name}_param_freq_map"]
-        _, n_chan, n_ant, n_dir, n_corr = gains.shape
 
-        # We only need the baselines which include the ref_ant.
-        sel = np.where((a1 == ref_ant) | (a2 == ref_ant))
-        a1 = a1[sel]
-        a2 = a2[sel]
-        t_map = t_map[sel]
-        data = data[sel]
-        flags = flags[sel]
+        # Rescale the channel frequencies.
+        scale_factor = (chan_freq.min() + chan_freq.max()) / 2
+        scaled_chan_freq = chan_freq / scale_factor
 
-        data[flags == 1] = 0  # Ignore UV-cut, otherwise there may be no est.
+        estimates = estimate_delay_and_tec(
+            data,
+            flags,
+            a1,
+            a2,
+            param_flags,
+            t_map,
+            f_map,
+            scaled_chan_freq,
+            gains.shape,
+            ref_ant=ref_ant,
+            scalar=self.scalar
+        )
 
-        utint = np.unique(t_map)
-        ufint = np.unique(f_map)
-
-        for ut in utint:
-            sel = np.where((t_map == ut) & (a1 != a2))
-            ant_map_pq = np.where(a1[sel] == ref_ant, a2[sel], 0)
-            ant_map_qp = np.where(a2[sel] == ref_ant, a1[sel], 0)
-            ant_map = ant_map_pq + ant_map_qp
-
-            ref_data = np.zeros((n_ant, n_chan, n_corr), dtype=np.complex128)
-            counts = np.zeros((n_ant, n_chan), dtype=int)
-            np.add.at(
-                ref_data,
-                ant_map,
-                data[sel]
-            )
-            np.add.at(
-                counts,
-                ant_map,
-                flags[sel] == 0
-            )
-            np.divide(
-                ref_data,
-                counts[:, :, None],
-                where=counts[:, :, None] != 0,
-                out=ref_data
-            )
-
-            for uf in ufint:
-
-                fsel = np.where(f_map == uf)[0]
-                sel_n_chan = fsel.size
-                n = int(np.ceil(2 ** 15 / sel_n_chan)) * sel_n_chan
-
-                fsel_data = ref_data[:, fsel]
-                valid_ant = fsel_data.any(axis=(1, 2))
-
-                fft_data = np.abs(
-                    np.fft.fft(fsel_data, n=n, axis=1)
-                )
-                fft_data = np.fft.fftshift(fft_data, axes=1)
-
-                delta_freq = chan_freq[1] - chan_freq[0]
-                fft_freq = np.fft.fftfreq(n, delta_freq)
-                fft_freq = np.fft.fftshift(fft_freq)
-
-                delay_est_ind_00 = np.argmax(fft_data[..., 0], axis=1)
-                delay_est_00 = fft_freq[delay_est_ind_00]
-                delay_est_00[~valid_ant] = 0
-
-                if n_corr > 1:
-                    delay_est_ind_11 = np.argmax(fft_data[..., -1], axis=1)
-                    delay_est_11 = fft_freq[delay_est_ind_11]
-                    delay_est_11[~valid_ant] = 0
-
-                for t, p, q in zip(t_map[sel], a1[sel], a2[sel]):
-                    if p == ref_ant:
-                        params[t, uf, q, 0, 1] = -delay_est_00[q]
-                        if n_corr > 1:
-                            params[t, uf, q, 0, 3] = -delay_est_11[q]
-                    else:
-                        params[t, uf, p, 0, 1] = delay_est_00[p]
-                        if n_corr > 1:
-                            params[t, uf, p, 0, 3] = delay_est_11[p]
+        # Pack the estimates into the parameter array and undo rescaling.
+        params[:, :, :, 0, 0::2] = estimates[..., 1] * scale_factor
+        params[:, :, :, 0, 1::2] = estimates[..., 0] / scale_factor
 
         delay_and_tec_params_to_gains(
             params,
