@@ -250,9 +250,11 @@ def solver_wrapper(
                     corr_mode
                 )
             except Exception as e:
+                t0 = ms_kwargs["TIME"][0]
+                t1 = ms_kwargs["TIME"][-1]
                 print(
                     f"Failed with exception {e}. Problem occured for block {block_id_arr}. "
-                    f"Problem occurs between t0 = {ms_kwargs["TIME"][0]} and t1 = {ms_kwargs["TIME"][-1]}"
+                    f"Problem occurs between t0 = {t0} and t1 = {t1}"
                 )
                 raise e
         else:
