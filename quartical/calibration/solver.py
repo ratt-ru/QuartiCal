@@ -241,13 +241,21 @@ def solver_wrapper(
         )
 
         if term.solver:
-            jhj, conv_iter, conv_perc = term.solver(
-                ms_inputs,
-                mapping_inputs,
-                chain_inputs,
-                meta_inputs,
-                corr_mode
-            )
+            try:
+                jhj, conv_iter, conv_perc = term.solver(
+                    ms_inputs,
+                    mapping_inputs,
+                    chain_inputs,
+                    meta_inputs,
+                    corr_mode
+                )
+                jhj[...,0] = "a"
+            except Exception as e:
+                print(
+                    f"Failed with exception {e}. Problem occured for block {block_id_arr}. "
+                    f"Problem occurs between t0 = {ms_kwargs["TIME"][0]} and t1 = {ms_kwargs["TIME"][-1]}"
+                )
+                raise e
         else:
             pshape, gshape = active_spec.pshape, active_spec.shape
             jhj = np.zeros(pshape if term.is_parameterized else gshape)
