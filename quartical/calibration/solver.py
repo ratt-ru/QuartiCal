@@ -249,7 +249,6 @@ def solver_wrapper(
                     meta_inputs,
                     corr_mode
                 )
-                jhj[...,0] = "a"
             except Exception as e:
                 print(
                     f"Failed with exception {e}. Problem occured for block {block_id_arr}. "
