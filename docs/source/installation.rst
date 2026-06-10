@@ -28,35 +28,41 @@ QuartiCal can be installed by running the following:
 		pip3 install -e path/to/repo/
 
 
-Ubuntu 18.04+ via poetry
-~~~~~~~~~~~~~~~~~~~~~~~~
+Ubuntu 18.04+ via uv
+~~~~~~~~~~~~~~~~~~~~
 
-Installing via poetry is less simple but should always work.
+Installing via uv is less simple but should always work.
 
-Firstly, install `poetry <https://python-poetry.org/docs/>`_
+Firstly, install `uv <https://docs.astral.sh/uv/>`_
 
 Assuming you have cloned the repository from git and checked out the relevant
 tag, run the following from inside the QuartiCal folder:
 
 .. code:: bash
 
-	poetry install
+	uv sync
 
 .. note::
 
 	This will automatically install QuartiCal into a new virtual environment
-	matching your system Python. The Python version can be changed prior to
+	(.venv) in the repository root. The Python version can be selected prior to
 	installation using:
 
 	.. code:: bash
 
-		poetry env use python3.10
+		uv sync --python 3.10
 
-Users can enter the QuartiCal virtual environment using:
+Users can run commands inside the QuartiCal virtual environment using:
 
 	.. code:: bash
 
-		poetry -C path/to/repo shell
+		uv run goquartical
+
+or by activating it directly:
+
+	.. code:: bash
+
+		source path/to/repo/.venv/bin/activate
 
 
 Using a virtual environment
