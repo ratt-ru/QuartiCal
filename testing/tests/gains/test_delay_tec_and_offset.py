@@ -265,8 +265,7 @@ def test_gain_flags(cmp_gain_xds_lod):
 
         frows, fchans, fants, fdir = np.where(solved_flags)
 
-        # We know that these antennas are missing in the test data. No other
-        # antennas should have flags.
+        # No antennas should be flagged for this test data.
         assert set(np.unique(fants)) == set()
 
 

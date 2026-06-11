@@ -158,7 +158,7 @@ def estimate_delay_and_tec(
                     subint_start = subint_indices[0]
                     subint_end = subint_indices[-1]
 
-                    subint_data = f_sel_data[subint_start:subint_end]
+                    subint_data = f_sel_data[subint_start:subint_end + 1]
 
                     # Fit straight line to 1/nu, where nu are the unflagged
                     # channel frequencies in this solution interval.
@@ -181,7 +181,7 @@ def estimate_delay_and_tec(
                     subint_delays[ut, uf, a, :, i] = \
                         fft_freq[np.argmax(np.abs(fft), axis=0)]
 
-    # We can combine the estimates of the gradeint of a straight line fit
+    # We can combine the estimates of the gradient of a straight line fit
     # to 1/nu in each interval and the location of the peak in the
     # associated power spectrum to estimate the clock and dTEC using the
     # normal equations.
