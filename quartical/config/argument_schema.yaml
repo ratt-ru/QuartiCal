@@ -168,7 +168,8 @@ output:
     dtype: URI
     writable: true
     must_exist: false
-    write_parent_dir: true
+    path_policies:
+      write_parent: true
     info:
       Name of directory in which QuartiCal gain outputs will be stored.
       Accepts both local and s3 paths. QuartiCal will always produce gain
