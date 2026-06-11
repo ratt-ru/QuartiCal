@@ -39,7 +39,7 @@ class BaseConfigSection:
                     elements = value.values()
                 else:
                     raise ValueError(
-                        f"Paramter {name} of type {type(value)} has element "
+                        f"Parameter {name} of type {type(value)} has element "
                         f"choices. This is not supported."
                     )
                 invalid_elements = set(elements) - set(element_choices)
