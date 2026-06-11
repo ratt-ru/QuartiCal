@@ -22,6 +22,12 @@ classifiers = [
 ]
 dependencies = [
     "astro-tigger-lsm>=1.8.0,<=1.8.0",
+    # bokeh is capped at <3.7: bokeh 3.7.0 renamed its bundled templates to
+    # add a .jinja suffix (file.html -> file.html.jinja), but distributed
+    # 2024.10.0's performance_report.html still does {% extends "file.html" %}.
+    # The mismatch raises TemplateNotFound('file.html') when compute_context's
+    # performance_report writes its HTML report on exit.
+    "bokeh>=2.4.2,<3.7",
     "codex-africanus[dask,scipy,astropy,python-casacore]>=0.4.1,<=0.4.4",
     "colorama>=0.4.6,<=0.4.6",
     "columnar>=1.4.1,<=1.4.1",
