@@ -28,7 +28,7 @@ def opts(base_opts, select_corr, scalar_mode):
     _opts.solver.convergence_fraction = 1.0
     _opts.solver.convergence_criteria = 1e-7
     _opts.solver.threads = 2
-    _opts.G.type = "tec_and_offset"
+    _opts.G.type = "delay_tec_and_offset"
     _opts.G.freq_interval = 0
     _opts.G.initial_estimate = True
     _opts.G.scalar = scalar_mode
@@ -67,6 +67,9 @@ def true_gain_list(predicted_xds_list, scalar_mode):
         max_tec_wraps = 5
         max_tec = max_tec_wraps * (min_freq * max_freq) / (max_freq - min_freq)
 
+        max_delay_wraps = 5
+        max_delay = max_delay_wraps / (max_freq - min_freq)
+
         chunking = (utime_chunks, chan_chunks, n_ant, n_dir, n_corr)
         param_chunking = (utime_chunks, 1, n_ant, n_dir, n_corr)
 
@@ -78,6 +81,14 @@ def true_gain_list(predicted_xds_list, scalar_mode):
             chunks=param_chunking
         )
         tec[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
+
+        delays = da.random.uniform(
+            size=(n_time, 1, n_ant, n_dir, n_corr),
+            low=-max_delay,
+            high=max_delay,
+            chunks=param_chunking
+        )
+        delays[:, :, 0, :, :] = 0  # Zero the reference antenna for safety.
 
         # Using the full 2pi range makes some tests fail - this may be due to
         # the fact that we only have 8 channels/degeneracy between parameters.
@@ -101,15 +112,16 @@ def true_gain_list(predicted_xds_list, scalar_mode):
         origin_chan_freq = chan_freq # - band_centre
         origin_chan_freq = origin_chan_freq[None, :, None, None, None]
         phase = (
+            2 * np.pi * delays * origin_chan_freq +
             2 * np.pi * tec * (1 / origin_chan_freq) +
             offsets
         )
         gains = amp*da.exp(1j*phase)
 
         if n_corr == 1:
-            n_param = 2
+            n_param = 3
         else:
-            n_param = 4
+            n_param = 6
 
         params = da.zeros(
             (n_time, 1, n_ant, n_dir, n_param),
@@ -117,13 +129,16 @@ def true_gain_list(predicted_xds_list, scalar_mode):
         )
         params[..., 0] = offsets[..., 0]
         params[..., 1] = tec[..., 0]
+        params[..., 2] = delays[..., 0]
+
         if n_corr > 1:
-            params[..., 2] = offsets[..., -1]
-            params[..., 3] = tec[..., -1]
+            params[..., 3] = offsets[..., -1]
+            params[..., 4] = tec[..., -1]
+            params[..., 5] = delays[..., -1]
 
         if scalar_mode and n_corr > 1:
             gains[..., -1] = gains[..., 0]
-            params[..., 2:] = params[..., :2]
+            params[..., 3:] = params[..., :3]
 
         gxds = xr.Dataset(
             data_vars={
@@ -231,7 +246,7 @@ def test_params(cmp_gain_xds_lod, true_gain_list):
                                                  solved_gain_xds.param_flags.data)
         true_params = true_gain_xds.PARAMS.values
 
-        solved_params[...,::2] = np.angle(np.exp(1j*solved_params[..., ::2]))
+        solved_params[...,::3] = np.angle(np.exp(1j*solved_params[..., ::3]))
 
         true_params[np.where(solved_flags)] = 0
         solved_params[np.where(solved_flags)] = 0
