@@ -1,6 +1,6 @@
 [project]
 name = "quartical"
-version = "0.2.6"
+version = "0.2.7"
 description = "Fast and flexible calibration suite for radio interferometer data."
 readme = "README.md"
 license = "MIT"
