@@ -112,7 +112,7 @@ jobs:
           python -m build
 
       - name: Publish distribution to Test PyPI
-        uses: pypa/gh-action-pypi-publish@v1.13.0
+        uses: pypa/gh-action-pypi-publish@v1.14.0
         with:
           user: __token__
           password: ${{ secrets.TEST_PYPI }}
@@ -120,7 +120,7 @@ jobs:
         continue-on-error: true
 
       - name: Publish distribution to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.13.0
+        uses: pypa/gh-action-pypi-publish@v1.14.0
         with:
           user: __token__
           password: ${{ secrets.PYPI }}
