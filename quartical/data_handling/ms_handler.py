@@ -64,7 +64,8 @@ def read_xds_list(model_columns, ms_opts):
     # by merging the field xds grouped by DDID into data grouped by DDID.
 
     field_xds = xds_from_storage_table(ms_opts.path + "::FIELD")[0]
-    phase_dirs = field_xds.PHASE_DIR.values[:, 0, :]  # Ignore field-poly.
+    # Squeeze out field-poly (unsupported by QC). Errors if it is present.
+    phase_dirs = np.squeeze(field_xds.PHASE_DIR.values, axis=1)
     field_names = field_xds.NAME.values
 
     field_info = "\n  ".join(
