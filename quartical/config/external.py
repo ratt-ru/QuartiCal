@@ -16,7 +16,7 @@ def finalize_structure(additional_config):
             break
 
     # Use the default terms if no alternative is specified.
-    terms = terms or BaseConfig.solver.terms
+    terms = terms or BaseConfig().solver.terms
 
     FinalConfig = make_dataclass(
         "FinalConfig",
@@ -41,7 +41,7 @@ def make_stimela_schema(
     else:
         terms = params.get('solver.terms', None)
     if terms is None:
-        terms = BaseConfig.solver.terms  # Fall back to default.
+        terms = BaseConfig().solver.terms  # Fall back to default.
 
     # For each term, add the relevant entries to the inputs.
     for jones in terms:

@@ -223,4 +223,27 @@ mean phase offset.
     This solver is highly experimental. Any problems should be reported via
     the issue tracker.
 
+Delay and TEC - ``delay_and_tec``
+---------------------------------------
+
+This solves for the delays and differential TEC values given gains of the following
+form (in the case of linear feeds, but the same is true for circular feeds):
+
+.. math::
+
+    \mathbf{G} = \begin{bmatrix}
+        e^{i 2\pi (d_{XX} (\nu - \nu_c) + t_{XX}(\nu^{-1} + \frac{\log(\nu_{min}) - \log(\nu_{max})}{\nu_{max} - \nu_{min}}))} & 0 \\
+        0 & e^{i 2\pi (d_{YY} (\nu - \nu_c) + t_{YY}(\nu^{-1} + \frac{\log(\nu_{min}) - \log(\nu_{max})}{\nu_{max} - \nu_{min}}))}
+    \end{bmatrix}
+
+where :math:`\nu` is the frequency of a particular channel, :math:`\nu_c` is
+the central frequency, :math:`\nu_{min}` is the smallest frequency, :math:`\nu_{max}` is the largest 
+frequency, :math:`d` is the delay and :math:`t` is the differential (not absolute) TEC.
+
+
+.. note::
+
+    This gain type supports the joint initialisation of `d` and `t` via the ``initial_estimate`` parameter (paper in prep.).
+
+
 

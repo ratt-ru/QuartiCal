@@ -9,6 +9,7 @@ gain:
       - delay
       - delay_and_offset
       - delay_and_tec
+      - delay_tec_and_offset
       - phase
       - tec_and_offset
       - rotation_measure
