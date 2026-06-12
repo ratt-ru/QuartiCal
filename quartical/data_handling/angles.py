@@ -30,6 +30,10 @@ def assign_parangle_data(ms_path, data_xds_list):
     )
     fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
 
+    # If the first element of the feed xdsl has SPECTRAL_WINDOW_ID == -1,
+    # we assume that it applies to all spectral windows.
+    global_feeds = feedtab_xdsl[0].SPECTRAL_WINDOW_ID == -1
+
     # We do the following eagerly to reduce graph complexity.
     unique_feeds = {
         pt
@@ -49,7 +53,7 @@ def assign_parangle_data(ms_path, data_xds_list):
     updated_data_xds_list = []
     for xds in data_xds_list:
         spw_id = xds.SPECTRAL_WINDOW_ID
-        receptor_angles = feedtab_xdsl[spw_id].RECEPTOR_ANGLE.data
+        receptor_angles = feedtab_xdsl[0 if global_feeds else spw_id].RECEPTOR_ANGLE.data
         xds = xds.assign(
             {
                 "RECEPTOR_ANGLE": (
