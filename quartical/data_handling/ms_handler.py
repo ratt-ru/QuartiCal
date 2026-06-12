@@ -214,8 +214,8 @@ def read_xds_list(model_columns, ms_opts):
                 "FIELD_NAME": field_name,
                 "SPECTRAL_WINDOW_ID": spw_id,
                 "POLARIZATION_ID": pol_id,
-                "MIN_FREQ": spw_xds.MIN_FREQ,
-                "MAX_FREQ": spw_xds.MAX_FREQ
+                "MIN_FREQ": spw_xds_list[spw_id].MIN_FREQ,
+                "MAX_FREQ": spw_xds_list[spw_id].MAX_FREQ
             }
         )
 
