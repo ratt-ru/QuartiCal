@@ -124,6 +124,33 @@ def test_assign_parangle_data_global_feeds(monkeypatch):
     )
 
 
+def test_assign_parangle_data_sparse_unordered_spw(monkeypatch):
+    """Selection is keyed by SPECTRAL_WINDOW_ID, not group position.
+
+    The FEED groups are deliberately sparse (no SPWs 0-4) and out of order, so
+    positional indexing (the previous behaviour) would either select the wrong
+    group or raise IndexError. Keyed lookup must still return the SPW-5 group.
+    """
+    feed_groups = [_feed_group(5, 5.5), _feed_group(2, 2.5)]
+    _patch_tables(monkeypatch, feed_groups)
+
+    [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=5, field_id=0)])
+
+    np.testing.assert_array_equal(
+        xds.RECEPTOR_ANGLE.data.compute(),
+        np.full((N_ANT, N_RECEPTOR), 5.5),
+    )
+
+
+def test_assign_parangle_data_missing_spw_raises(monkeypatch):
+    """A SPW with no matching FEED group and no global (-1) entry must raise."""
+    feed_groups = [_feed_group(0, 0.0)]
+    _patch_tables(monkeypatch, feed_groups)
+
+    with pytest.raises(ValueError, match="No FEED table entry"):
+        assign_parangle_data("fake.ms", [_data_xds(spw_id=3, field_id=0)])
+
+
 def test_assign_parangle_data_flags_multi_field(monkeypatch):
     """Data not partitioned by FIELD_ID is flagged and given placeholders."""
     feed_groups = [_feed_group(0, 0.0)]

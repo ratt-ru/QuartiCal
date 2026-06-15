@@ -29,9 +29,12 @@ def assign_parangle_data(ms_path, data_xds_list):
     )
     fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
 
-    # If the first element of the feed xdsl has SPECTRAL_WINDOW_ID == -1,
-    # we assume that it applies to all spectral windows.
-    global_feeds = feedtab_xdsl[0].SPECTRAL_WINDOW_ID == -1
+    # Build a lookup from SPECTRAL_WINDOW_ID to its FEED dataset. The grouped
+    # datasets are neither guaranteed to be ordered by SPECTRAL_WINDOW_ID nor
+    # to contain an entry for every spectral window, so we cannot index by
+    # position. A SPECTRAL_WINDOW_ID of -1 is a global entry which applies to
+    # all spectral windows.
+    feeds_by_spw = {int(xds.SPECTRAL_WINDOW_ID): xds for xds in feedtab_xdsl}
 
     # We do the following eagerly to reduce graph complexity.
     unique_feeds = {
@@ -51,8 +54,14 @@ def assign_parangle_data(ms_path, data_xds_list):
 
     updated_data_xds_list = []
     for xds in data_xds_list:
-        spw_id = xds.SPECTRAL_WINDOW_ID
-        receptor_angles = feedtab_xdsl[0 if global_feeds else spw_id].RECEPTOR_ANGLE.data
+        spw_id = int(xds.SPECTRAL_WINDOW_ID)
+        feed_xds = feeds_by_spw.get(spw_id, feeds_by_spw.get(-1))
+        if feed_xds is None:
+            raise ValueError(
+                f"No FEED table entry found for SPECTRAL_WINDOW_ID {spw_id} "
+                "and no global (-1) entry is present."
+            )
+        receptor_angles = feed_xds.RECEPTOR_ANGLE.data
         xds = xds.assign(
             {
                 "RECEPTOR_ANGLE": (
