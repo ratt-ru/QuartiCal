@@ -2,7 +2,8 @@
 import dask.array as da
 import numpy as np
 from quartical.data_handling.predict import predict
-from quartical.data_handling.angles import apply_parangles
+from quartical.data_handling.angles import (apply_parangles,
+                                            assert_parangle_supported)
 from quartical.config.preprocess import IdentityRecipe, Ingredients
 from quartical.utils.array import flat_ident_like
 from loguru import logger  # noqa
@@ -59,6 +60,7 @@ def add_model_graph(
     n_corr = {xds.sizes["corr"] for xds in data_xds_list}.pop()
 
     if model_opts.apply_p_jones:
+        assert_parangle_supported(data_xds_list)
         # NOTE: Applying parallactic angle when there are fewer than four
         # correlations is problematic for linear feeds as it amounts to
         # rotating information to/from correlations which are not present i.e.
