@@ -28,7 +28,7 @@ jobs:
 
       # Checkout the source code
       - name: Checkout source
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # Full fetch required to restore times.
 
@@ -102,7 +102,7 @@ jobs:
           python-version: "3.12"
 
       - name: Checkout source
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -131,6 +131,6 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Release
         uses: softprops/action-gh-release@v3.0.0
