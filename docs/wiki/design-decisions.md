@@ -1,0 +1,340 @@
+# Design Decisions
+
+> **Purpose:** Why QuartiCal is built the way it is — a ledger of decisions, their rationale,
+> and their consequences. Append new entries as decisions land.
+> **Last verified:** f1c603b, 2026-07-07
+
+Entries follow a fixed shape (Context / Decision / Rationale / Consequences / Source) so a
+reader can judge whether a decision's premises still hold before "fixing" what it produced.
+Interview entries record the lead developer's testimony (2026-07-07); paper citations refer
+to Kenyon et al. 2025, "Africanus II. QuartiCal" (Astronomy and Computing 52, 100962;
+arXiv:2412.10072). The [Known debt](#known-debt-do-not-entrench) and
+[Recurring gotchas](#recurring-gotchas) sections at the end are not decisions but belong
+here: they mark what should *not* be entrenched and what repeatedly bites contributors.
+
+## Lessons from CubiCal
+
+- **Context:** QuartiCal succeeds CubiCal, and much of its design is a direct reaction to
+  CubiCal's failure modes.
+- **Decision:** Treat per-correlation weights as first-class in the formulation; prefer
+  functions over stateful objects; ship tests; avoid data layouts and large intermediary
+  products that inflate memory; formulate the chain mathematics so parameterised terms can
+  appear at arbitrary positions.
+- **Rationale:** CubiCal could not incorporate per-correlation weights — the relationship
+  between the 2x2 matrix formulation and its 4x4 Mueller representation was not clear at
+  the time it was developed. Its extensive OOP backfired: god classes and mutable state
+  made changes very difficult. It lacked proper tests, so changes often broke things. To
+  keep the implementation numpy-like, it packed data into arrays with a pair of N_ant-sized
+  axes (all baselines slot in easily), doubling the memory footprint, and produced many
+  large intermediaries. Its mathematics precluded parameterised terms at arbitrary points
+  in the Jones chain.
+- **Consequences:** QuartiCal's weighted 2x2 formulation, functional task style, test
+  suite, memory frugality, and chain-rule parameterisation (see
+  [domain-primer.md](domain-primer.md)) all trace back to these lessons.
+- **Source:** interview 2026-07-07; Kenyon et al. 2025, Sections 1–2.
+
+## Solution-interval independence as the architectural driver
+
+- **Context:** Calibration data volume grows quadratically with antenna count; QuartiCal
+  must scale from a laptop to a cluster — the gap CASA/CubiCal did not fill.
+- **Decision:** Formulate calibration so each time/frequency solution interval is solved
+  entirely independently of its neighbours, exposing an embarrassingly parallel task graph.
+- **Rationale:** The update equations sum over samples inside an interval, so intervals
+  share nothing. Chunks are sized to span whole solution intervals precisely so that no
+  inter-chunk communication is ever needed.
+- **Consequences:** Chunk size is a memory/parallelism knob, not a correctness knob;
+  solution intervals must not straddle chunk boundaries (enforced by construction — see
+  [dask-machinery.md](dask-machinery.md), Chunking model). Chunk sizes therefore place an
+  upper limit on solution intervals (see Recurring gotchas).
+- **Source:** Kenyon et al. 2025, Sections 2.3 and 4.1.
+
+## AllJones diagonal approximation of JᴴWJ
+
+- **Context:** An unmodified Gauss–Newton update is expensive: large matrix products plus
+  the inverse of JᴴWJ.
+- **Decision:** Adopt the most extreme approximation from Smirnov & Tasse (2015),
+  "AllJones": discard all off-diagonal entries of JᴴWJ.
+- **Rationale:** Reduces per-iteration cost — only the left half of J need be considered,
+  no large matrix is ever explicitly constructed, and the diagonal is guaranteed
+  invertible.
+- **Consequences:** Trades per-iteration accuracy for cheaper iterations. The maths is
+  summarised in [domain-primer.md](domain-primer.md).
+- **Source:** Kenyon et al. 2025, Section 2.3.
+
+## One-term-at-a-time chain updates
+
+- **Context:** QuartiCal solves chains of Jones terms of arbitrary length, some
+  parameterised.
+- **Decision:** Only ever update a single term in the chain at a time: iterate a term to
+  convergence, move to the next, optionally repeat over epochs.
+- **Rationale:** Solving all terms jointly is computationally impractical and may exhibit
+  degeneracies. The approach offers no convergence guarantee but works empirically.
+- **Consequences:** No formal convergence guarantee; multiple `solver.epochs` are sometimes
+  required (robust reweighting in particular only triggers across epochs).
+- **Source:** Kenyon et al. 2025, Sections 2.2 and 4.3.
+
+## Analytic Jacobian instead of autodiff
+
+- **Context:** The Gauss–Newton update needs the Jacobian; autodiff (e.g. JAX) could
+  construct it automatically.
+- **Decision:** Derive Jacobian elements analytically via Wirtinger calculus.
+- **Rationale:** Autodiff cannot exploit the problem's structure — in particular the
+  AllJones diagonal approximation — with meaningful cost to both performance and memory.
+- **Consequences:** Hand-derived, hand-maintained kernels; in exchange, the approximations
+  above stay available.
+- **Source:** Kenyon et al. 2025, Section 2.3.
+
+## Numba kernels (over vectorised numpy, Cython, or multiprocessing)
+
+- **Context:** The solver kernels are the hot loops. The Measurement Set is essentially a
+  relational database whose columns may hold arrays — very general, frequently ragged with
+  missing data.
+- **Decision:** Implement solver kernels as numba-jitted loops.
+- **Rationale:** Array-based numpy maths becomes very challenging in the presence of
+  missing data; neatly packing an MS into numpy-friendly matrices was one of CubiCal's
+  core problems, and not all operations are array-expressible anyway. Numba gives loops at
+  C-like speed, releases the GIL (enabling thread-level parallelism where
+  CubiCal/DDFacet needed multiprocessing + shared memory), and — as a JIT — makes the
+  package easy to distribute with no wheel-building (the unsolved packaging problem that
+  ruled out repeating CubiCal's Cython experiment).
+- **Consequences:** Nested parallelism (dask threads over numba `prange` threads) with
+  near-zero extra memory per core; numba parallelism only applies to code written in
+  numba. Aspiration, not yet verified: getting numba to emit vectorised (SIMD) machine
+  code.
+- **Source:** interview 2026-07-07; Kenyon et al. 2025, Sections 3.4 and 4.3.
+
+## Factory + literal-dispatch kernel pattern
+
+- **Context:** QuartiCal supports 1, 2 and 4 correlations with markedly different maths;
+  per-element runtime branching would be slow.
+- **Decision:** Build kernel internals from factory functions
+  (`quartical/gains/general/factories.py`) that select a closure body at compile time from
+  a numba literal, so each correlation count compiles to specialised machine code.
+- **Rationale:** An optimisation attempt: the introducing PR was a performance-parity
+  exercise, iterating until the correlation-agnostic kernels matched the speed of the old
+  hand-specialised code. The lead developer's own caveat: "it is not guaranteed that I
+  succeeded."
+- **Consequences:** Indirection (factories returning closures) is now the required
+  extension pattern for new gain types — see
+  [solver-architecture.md](solver-architecture.md), Numba kernel conventions.
+- **Source:** interview 2026-07-07; commit 958eb83 (#63); Kenyon et al. 2025, Section 4.3.
+
+## Dask for parallelism and distribution
+
+- **Context:** QuartiCal needed one codebase that scales from laptop to cluster/cloud.
+  CASA's MPI support requires manual partitioning; CubiCal's stateful shared-memory design
+  could not be adapted.
+- **Decision:** Express the pipeline as a dask task graph, using the distributed scheduler
+  for multi-node execution.
+- **Rationale:** The promise of a single graph is that dask maps it onto the hardware for
+  you — resilience, node death, scheduling all handled. The reality was not quite so rosy
+  (see AutoRestrictor below), but the graph also clearly encodes every dependency between
+  functions and their outputs.
+- **Consequences:** Forfeits fine-grained task placement (partially clawed back via the
+  scheduler plugin); inherits the distributed scheduler's greedy, memory-unpredictable
+  behaviour; couples QuartiCal to dask's upper-bound pins. Dask is now considered one of
+  the project's biggest liabilities — upstream has stagnated and the plan is to move away
+  from it eventually (see Known debt).
+- **Source:** interview 2026-07-07; Kenyon et al. 2025, Sections 1, 3.1 and 4.5.
+
+## Single end-to-end dask.compute()
+
+- **Context:** Reads, model, calibration, flagging, MS writes and gain writes are all
+  assembled lazily; shared intermediates (visibilities, residuals, gains) feed multiple
+  outputs.
+- **Decision:** Trigger exactly one materialising `dask.compute()` for the whole pipeline
+  (`quartical/executor.py`), bundling all writes.
+- **Rationale:** Shared intermediates are computed once and reused — the MS is not read
+  twice — and the end-to-end graph encodes the entire calibration process and its
+  dependencies explicitly.
+- **Consequences:** One very large graph, hard to inspect or describe. Two small earlier
+  eager computes (chunking, gain scaffolds) are needed to reify shapes first — see
+  [dask-machinery.md](dask-machinery.md), Single-compute design.
+- **Source:** interview 2026-07-07; Kenyon et al. 2025, Section 4.2.
+
+## Blocker: hand-built graphs instead of dask blockwise
+
+- **Context:** The solver is a many-input/many-output per-chunk operation returning a
+  variable set of heterogeneously shaped arrays.
+- **Decision:** Build the solver layer's HighLevelGraph by hand via a custom `Blocker`
+  class (`quartical/utils/dask.py`) whose tasks return dicts keyed by output name.
+- **Rationale:** `dask.array.blockwise` never supported many-to-many mappings, at least
+  not transparently; Blocker is the custom workaround for that deficiency. Named dict
+  outputs also avoid error-prone reliance on output position.
+- **Consequences:** Full mechanics in [dask-machinery.md](dask-machinery.md), Blocker.
+  Complicates the graph, but makes the many-output solver expressible at all.
+- **Source:** interview 2026-07-07; Kenyon et al. 2025, Section 4.2.
+
+## Pure task functions, paid for with guard copies
+
+- **Context:** Dask graph nodes must not mutate their inputs — a mutated shared input
+  corrupts every other task that consumes it.
+- **Decision:** Write graph functions as pure functions; defensively copy inputs the solver
+  would otherwise mutate (`WEIGHT` and `FLAG` are `.copy()`-ed at solver entry —
+  `quartical/calibration/solver.py:96`, "a necessary evil").
+- **Rationale:** A deliberate rejection of CubiCal's mutable-state style; the paper calls
+  the functional constraint a double-edged sword — it prevents hard-to-debug stateful
+  behaviour but forces spurious copies.
+- **Consequences:** Higher peak memory in places; part of the peak-vs-average memory gap
+  seen in benchmarks.
+- **Source:** Kenyon et al. 2025, Sections 4.2, 4.3 and 5.2; file comment
+  `quartical/calibration/solver.py:96`.
+
+## Zarr-backed gain outputs via xarray
+
+- **Context:** There is no universally accepted gain-solution format; every package rolls
+  its own. Gains live naturally on a labelled (time, freq, antenna, direction, correlation)
+  grid.
+- **Decision:** Store gains as xarray Datasets written to zarr, one group per term.
+- **Rationale:** xarray arrived in the project via its main data-ingest dependency,
+  dask-ms; no backends beyond xarray's defaults were ever considered. Zarr won on merit:
+  parallel reads *and* writes, thread safety, object-store (cloud) compatibility, and a
+  chunked layout that maps directly onto dask's processing model. Self-describing labelled
+  gains then make transfer calibration and on-the-fly interpolation simple.
+- **Consequences:** A non-standard format whose interoperability depends on adoption
+  (pfb-imaging already consumes it). Loading machinery lives in `quartical/interpolation/`.
+- **Source:** interview 2026-07-07; Kenyon et al. 2025, Sections 3.3 and 4.4.
+
+## Zarr-backed Measurement Sets as a CTDS escape hatch
+
+- **Context:** The CASA Table Data System (CTDS) behind normal MSs is not thread-safe and
+  exposes no explicit time axis, so parallel I/O stalls and time chunking needs a
+  preprocessing pass.
+- **Decision:** Support (via dask-ms) converting an MS to a zarr-backed equivalent, used
+  interchangeably.
+- **Rationale:** Zarr reads/writes are parallel and thread-safe and work against object
+  stores. Benchmarks show zarr is faster than CTDS but uses *more* memory at a given thread
+  count — slow CTDS access effectively starves the pipeline, keeping less in flight.
+- **Consequences:** An extra conversion step; the memory-vs-throughput trade-off is
+  workload dependent.
+- **Source:** Kenyon et al. 2025, Sections 3.2, 3.4 and 5.3.
+
+## AutoRestrictor: pinning subtrees after annotations failed
+
+- **Context:** Dask's distributed scheduler is greedy and does no static graph analysis to
+  minimise data movement or memory pressure, so it shuffles intermediates between workers
+  even though QuartiCal's per-chunk subtrees are fully independent.
+- **Decision:** An opt-in `SchedulerPlugin` (`quartical/scheduling/`) that pins each
+  independent subtree of the graph to a specific worker. This *replaced* an earlier
+  annotation-based attempt.
+- **Rationale:** "Curbs dask's enthusiasm": guaranteeing each parallel stream stays on one
+  node curtailed unnecessary data movement and capped the memory footprint. The annotation
+  approach was abandoned because dask task fusion clobbers annotations (dask/dask#7036).
+- **Consequences:** Hard pinning reduces resilience and caps dask-level parallelism at the
+  number of data partitions; load is balanced by task count, not data size. Mechanics in
+  [dask-machinery.md](dask-machinery.md), AutoRestrictor. A less strict successor that pins
+  only the solver tasks (the paper's "Solver Restrictor", implemented as a `ScatterSolvers`
+  plugin) exists on the unmerged `v0.2.4-simple-scheduling` branch but was never released.
+- **Source:** interview 2026-07-07; commit 5e4cc28 (#62); Kenyon et al. 2025, Section 4.5;
+  branch `v0.2.4-simple-scheduling`.
+
+## Vendored graph_metrics from old dask
+
+- **Context:** `AutoRestrictor` depends on dask's `graph_metrics`, which was removed
+  upstream.
+- **Decision:** Copy `graph_metrics` verbatim into `quartical/scheduling/__init__.py` from
+  a pinned old dask commit.
+- **Rationale:** In-code: "removed upstream but currently critical for the scheduler
+  plugin... a temporary work around while we consider revised strategies."
+- **Consequences:** Bumping dask will not bring the symbol back; the copy stays until the
+  plugin is reworked.
+- **Source:** file comment `quartical/scheduling/__init__.py:163`.
+
+## Scheduler plugin installed via run_on_scheduler
+
+- **Context:** The standard way to install a scheduler plugin is
+  `dask-scheduler --preload install_plugin.py`, which is awkward for QuartiCal's
+  single-command workflow.
+- **Decision:** Install the plugin at runtime with `client.run_on_scheduler(...)`, gated
+  behind `dask.scheduler_plugin`.
+- **Rationale:** The preload pattern presumes an independently managed cluster, which the
+  average user neither runs nor understands; `run_on_scheduler` is the easiest way to get
+  the plugin into every user's hands regardless of how their cluster was started. The
+  in-code comment flags the trade-off ("Controversial from a security POV,
+  run_on_scheduler is a debugging function").
+- **Consequences:** Works uniformly for local and user-supplied clusters at the cost of
+  using a debugging hook in production; the security caveat stands.
+- **Source:** interview 2026-07-07; file comment `quartical/executor.py:94`.
+
+## Disable dask memory management (no spill, no pause, no limit)
+
+- **Context:** By default, distributed workers spill data to disk under memory pressure
+  and pause or kill workers approaching their memory limit.
+- **Decision:** Opt out of dask's memory management entirely: QuartiCal routinely disables
+  spill-to-disk when deploying, and the internally spawned `LocalCluster` starts workers
+  with `memory_limit=0` (`quartical/executor.py:87`).
+- **Rationale:** Spilling is "the death-knell" of a pipeline at this data volume, and
+  dask's memory management has a tendency to pause and stall tasks. Disabling it and
+  monitoring memory usage directly — tuning chunk sizes as needed — proved more robust in
+  practice.
+- **Consequences:** Memory control is the operator's job: chunk sizing is the knob, and
+  there is no graceful degradation to disk. Larger problems need genuinely more RAM or
+  more nodes.
+- **Source:** interview 2026-07-07; Kenyon et al. 2025, Section 4.5; `quartical/executor.py:87`.
+
+## Dependency upper bounds as a deliberate policy
+
+- **Context:** dask releases after 2024.10.0 break dask-ms read graphs; bokeh 3.7 breaks
+  distributed's performance report; stimela is the orchestration front-end that must always
+  co-install.
+- **Decision:** Pin `dask[distributed]<=2024.10.0` and `bokeh<3.7`; never give `stimela` an
+  upper bound.
+- **Rationale and mechanics:** documented in full in
+  [dask-machinery.md](dask-machinery.md), Dependency pins — read that before touching any
+  pin. The pyproject comments are the canonical statement of intent.
+- **Consequences:** The bokeh cap is coupled to the dask cap; lifting dask requires dask-ms
+  read graphs to survive the newer optimisers.
+- **Source:** `pyproject.toml` inline comments.
+
+## No TAQL: zero autocorrelation weights instead of deselecting rows
+
+- **Context:** Early code used TAQL (CASA table query language) row selection, e.g. to drop
+  autocorrelations.
+- **Decision:** Remove all TAQL; keep autocorrelation rows but set their weights to zero.
+- **Rationale:** QuartiCal supports two storage backends — the Measurement Set (CTDS) and
+  its zarr equivalent — and zarr does not support TAQL. Removing TAQL entirely ensures both
+  formats behave identically (lead developer's recollection).
+- **Consequences:** Autocorrelations remain in the data, silently down-weighted to zero;
+  nothing in the read path may reintroduce TAQL without breaking the zarr backend.
+- **Source:** commit 291f7c5 (#117); interview 2026-07-07.
+
+## Known debt (do not entrench)
+
+Testimony from the lead developer (interview 2026-07-07). An LLM extending QuartiCal should
+treat these as scars, not patterns to replicate:
+
+- **The CLI / config system.** Dynamically expanding config (one section per gain term) is
+  not something argparse or click support, and no simpler-but-equal design was ever found.
+  The complexity is tolerated, not endorsed.
+- **Per-solver code duplication.** Solver kernels were deliberately kept separate so each
+  could evolve independently, avoiding "hideous if-else ladders" across correlation and
+  parameterisation variants — but the result is that adding a feature across all solvers is
+  painful, and the original choice "may have been misguided". Don't copy-paste a sixteenth
+  variant without weighing shared machinery.
+- **Dask itself.** No longer improving upstream and largely fallen out of favour; the
+  project will almost certainly move away from it at some point. Avoid deepening dask
+  coupling in new code where a scheduler-agnostic seam is possible.
+- **Numba code generation.** The factory pattern's optimisation payoff was never verified,
+  and the kernels do not yet reliably produce vectorised (SIMD) machine code — an
+  acknowledged improvement area.
+
+## Recurring gotchas
+
+Things that have repeatedly bitten the developers and contributors (interview 2026-07-07):
+
+- Adding a new solver requires touching all the registration locations — follow
+  [solver-architecture.md](solver-architecture.md), "Adding a gain type", to the letter.
+- Accidentally introducing shared root nodes into the dask graph sends task ordering
+  haywire.
+- CASA table caching underneath dask-ms can produce suspicious memory footprints depending
+  on how the data is tiled.
+- A direction-dependent gain needs *both* a direction-dependent model *and* the
+  direction-dependent label on the term itself.
+- The model specification syntax (`input_model.recipe`) is complicated; expect user error.
+- MAD flagging overflags when the model is incomplete and the data is poorly calibrated.
+- Robust reweighting only triggers across multiple solver epochs — one epoch silently does
+  no reweighting.
+- Gain terms cannot change type when loaded from disk (arguably should be allowed between
+  amplitude/phase/diag_complex — an open improvement).
+- Chunk sizes place an upper limit on solution intervals, and solving over all time will
+  likely load the entire dataset into memory.
