@@ -2,7 +2,7 @@
 
 > **Purpose:** The radio-interferometry and optimisation background QuartiCal's code assumes —
 > RIME, Jones chains, gain solving as complex NLLS.
-> **Last verified:** 2b75ebd, 2026-07-07
+> **Last verified:** 50207c9, 2026-07-07
 
 This page states the physics and optimisation background as standard, textbook-level material and
 maps it onto QuartiCal's symbols, config, and files. Physics/maths statements are kept
@@ -183,9 +183,12 @@ declare how to move between native gains and an interpolation space via
 `native_to_converted`/`converted_to_native`/`native_dtype`/`converted_dtype`. A `Complex` term
 converts to amplitude+trig components (so interpolation respects phase wrapping); a `Delay` uses
 `no_op` conversions and a `float64 native_dtype` because the delay parameter is already the smooth
-quantity to interpolate. Parameterised terms also solve gains per channel (`Delay._make_freq_map`
-returns `arange(n_chan)`) while the *parameter* grid may be coarser. See
-[interpolation.md](interpolation.md) for how prior solutions are loaded and regridded.
+quantity to interpolate. Terms whose parameters produce frequency-dependent gain responses (the
+delay family, `tec_and_offset`, `rotation_measure`, `parallactic_angle`) override
+`_make_freq_map` to solve gains in every channel (`Delay._make_freq_map` returns
+`arange(n_chan)`) while the *parameter* grid may be coarser; `phase`, `amplitude`, `rotation` and
+`crosshand_phase` keep the base interval-binned frequency map. See
+[interpolation.md](interpolation.md) (stub) for how prior solutions are loaded and regridded.
 
 ## Vocabulary map
 

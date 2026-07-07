@@ -2,7 +2,7 @@
 
 > **Purpose:** How gain terms, mappings, and the calibration graph fit together — read before
 > touching quartical/gains/ or quartical/calibration/.
-> **Last verified:** 70242ac, 2026-07-07
+> **Last verified:** 50207c9, 2026-07-07
 
 The published description of this machinery is Kenyon et al. 2025, "Africanus II. QuartiCal"
 (Astronomy and Computing 52, 100962; arXiv:2412.10072) — Section 2 for the update equations the
@@ -238,7 +238,8 @@ single-compute design and the `Blocker`.
    the class at the top of that file.
 3. **Expose options** by adding the type string to `gain.type.choices` in
    `quartical/config/gain_schema.yaml` (and any term-specific option fields there). See
-   [config-system.md](config-system.md) for how the schema materialises into per-term dataclasses.
+   [config-system.md](config-system.md) (stub) for how the schema materialises into per-term
+   dataclasses.
 4. **Write the kernel** following the factory + `@overload` skeleton above; reuse
    `quartical/gains/general/factories.py`, `.../flagging.py`, `.../inversion.py`,
    `.../convenience.py`, and `.../generics.py` rather than reimplementing correlation dispatch.

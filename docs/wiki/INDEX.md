@@ -1,5 +1,8 @@
 # QuartiCal LLM Wiki — Index
 
+> **Purpose:** One row per wiki page — what it covers and when to read it.
+> **Last verified:** 50207c9, 2026-07-07
+
 Deep internal knowledge for LLM agents (and humans) working on QuartiCal. Read the
 matching page *before* spelunking source. Pages marked (stub) have a defined scope but
 no content yet — fill them in as you work in that subsystem (see the maintenance rule

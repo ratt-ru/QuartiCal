@@ -2,7 +2,7 @@
 
 > **Purpose:** How QuartiCal builds and executes its dask graphs — chunking, Blocker,
 > single-compute, AutoRestrictor, and why the dask/bokeh pins exist.
-> **Last verified:** 70242ac, 2026-07-07
+> **Last verified:** 50207c9, 2026-07-07
 
 The published description of this machinery is Kenyon et al. 2025, "Africanus II. QuartiCal"
 (Astronomy and Computing 52, 100962; arXiv:2412.10072) — Section 4.2 for graph construction
@@ -53,7 +53,9 @@ chunk size is a memory/parallelism knob, and each chunk is solved independently.
 The solver task is a many-input/many-output blockwise operation: `solver_wrapper` consumes MS
 columns, several interval-mapping arrays, per-chunk spec objects and scalar config, and returns a
 **dictionary** with one entry per output (`weights` dims `("row","chan","corr")`;
-`flags` dims `("row","chan")`; `presolve_chisq` and `postsolve_chisq` each dims `("row","chan")`;
+`flags` dims `("row","chan")`; `presolve_chisq` and `postsolve_chisq` nominally
+`("row","chan")` but one scalar value per chunk — they land on the stats datasets as
+`("t_chunk","f_chunk")`;
 per-term `<name>_gains`, `<name>_gain_flags`, `<name>_jhj`, `<name>_conviter`, `<name>_convperc`,
 and the `param` variants).
 Plain `dask.array.blockwise` is awkward for this shape: it addresses each output by positional
@@ -91,8 +93,8 @@ output is wrapped as a `da.Array(hlg, name=..., chunks=o.chunks, dtype=o.dtype)`
 `construct_solver` (`quartical/calibration/constructor.py`) is the primary consumer: per data xds
 it creates `Blocker(solver_wrapper, ("row", "chan"))`, adds the required MS columns, mapping arrays
 (time-dimensioned inputs relabelled to `row`), the per-chunk `term_spec_list`, and scalar config,
-declares the outputs listed above, and calls `get_dask_outputs()`. `blockwise_unique` (same file)
-is a second, self-contained consumer. See [solver-architecture.md](solver-architecture.md) for how
+declares the outputs listed above, and calls `get_dask_outputs()`. `blockwise_unique`
+(`quartical/utils/dask.py`, alongside `Blocker`) is a second, self-contained consumer. See [solver-architecture.md](solver-architecture.md) for how
 the outputs are assigned back onto the gain/data/stats datasets.
 
 ## Single-compute design
