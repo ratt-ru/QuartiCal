@@ -2,7 +2,11 @@
 
 > **Purpose:** How QuartiCal builds and executes its dask graphs — chunking, Blocker,
 > single-compute, AutoRestrictor, and why the dask/bokeh pins exist.
-> **Last verified:** 072f1ac, 2026-07-07
+> **Last verified:** 70242ac, 2026-07-07
+
+The published description of this machinery is Kenyon et al. 2025, "Africanus II. QuartiCal"
+(Astronomy and Computing 52, 100962; arXiv:2412.10072) — Section 4.2 for graph construction
+(including Blocker) and Section 4.5 for distributed execution and the scheduler plugin.
 
 ## Chunking model
 

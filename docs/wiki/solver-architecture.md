@@ -2,7 +2,12 @@
 
 > **Purpose:** How gain terms, mappings, and the calibration graph fit together — read before
 > touching quartical/gains/ or quartical/calibration/.
-> **Last verified:** 728770d, 2026-07-07
+> **Last verified:** 70242ac, 2026-07-07
+
+The published description of this machinery is Kenyon et al. 2025, "Africanus II. QuartiCal"
+(Astronomy and Computing 52, 100962; arXiv:2412.10072) — Section 2 for the update equations the
+kernels implement, Section 4.3 for the solver design. [domain-primer.md](domain-primer.md)
+summarises the maths.
 
 ## The term abstraction
 
