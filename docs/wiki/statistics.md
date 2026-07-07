@@ -1,7 +1,12 @@
-# Statistics
+---
+type: stub
+title: Statistics
+description: "Per-chunk chi-squared tracking and post-solve statistics logging."
+timestamp: 2026-07-07
+last_verified_commit: 602d584
+---
 
-> **Purpose:** Per-chunk chi-squared tracking and post-solve statistics logging.
-> **Last verified:** 602d584, 2026-07-07
+# Statistics
 
 **STUB** — scope defined, content pending. Fill in when working in this subsystem
 (see maintenance rule in CLAUDE.md). Do not fabricate content to fill this page;

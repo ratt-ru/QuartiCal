@@ -1,8 +1,12 @@
-# Flagging
+---
+type: stub
+title: Flagging
+description: "Data flagging (init, propagation, MAD) and its relationship to solver-internal gain flagging."
+timestamp: 2026-07-07
+last_verified_commit: 602d584
+---
 
-> **Purpose:** Data flagging (init, propagation, MAD) and its relationship to
-> solver-internal gain flagging.
-> **Last verified:** 602d584, 2026-07-07
+# Flagging
 
 **STUB** — scope defined, content pending. Fill in when working in this subsystem
 (see maintenance rule in CLAUDE.md). Do not fabricate content to fill this page;

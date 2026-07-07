@@ -1,8 +1,12 @@
-# Gain Interpolation
+---
+type: stub
+title: Gain Interpolation
+description: "Loading previously solved gains and interpolating them onto the current solution grid."
+timestamp: 2026-07-07
+last_verified_commit: 602d584
+---
 
-> **Purpose:** Loading previously solved gains and interpolating them onto the
-> current solution grid.
-> **Last verified:** 602d584, 2026-07-07
+# Gain Interpolation
 
 **STUB** — scope defined, content pending. Fill in when working in this subsystem
 (see maintenance rule in CLAUDE.md). Do not fabricate content to fill this page;

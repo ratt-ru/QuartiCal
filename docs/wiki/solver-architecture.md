@@ -1,8 +1,12 @@
-# Solver Architecture
+---
+type: architecture
+title: Solver Architecture
+description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
+timestamp: 2026-07-07
+last_verified_commit: 50207c9
+---
 
-> **Purpose:** How gain terms, mappings, and the calibration graph fit together — read before
-> touching quartical/gains/ or quartical/calibration/.
-> **Last verified:** 50207c9, 2026-07-07
+# Solver Architecture
 
 The published description of this machinery is Kenyon et al. 2025, "Africanus II. QuartiCal"
 (Astronomy and Computing 52, 100962; arXiv:2412.10072) — Section 2 for the update equations the

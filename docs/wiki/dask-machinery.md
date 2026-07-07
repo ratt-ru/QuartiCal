@@ -1,8 +1,12 @@
-# Dask Machinery
+---
+type: architecture
+title: Dask Machinery
+description: "How QuartiCal builds and executes its dask graphs — chunking, Blocker, single-compute, AutoRestrictor, and why the dask/bokeh pins exist."
+timestamp: 2026-07-07
+last_verified_commit: 50207c9
+---
 
-> **Purpose:** How QuartiCal builds and executes its dask graphs — chunking, Blocker,
-> single-compute, AutoRestrictor, and why the dask/bokeh pins exist.
-> **Last verified:** 50207c9, 2026-07-07
+# Dask Machinery
 
 The published description of this machinery is Kenyon et al. 2025, "Africanus II. QuartiCal"
 (Astronomy and Computing 52, 100962; arXiv:2412.10072) — Section 4.2 for graph construction

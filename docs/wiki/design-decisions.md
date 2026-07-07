@@ -1,8 +1,12 @@
-# Design Decisions
+---
+type: decision-ledger
+title: Design Decisions
+description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
+timestamp: 2026-07-07
+last_verified_commit: f1c603b
+---
 
-> **Purpose:** Why QuartiCal is built the way it is — a ledger of decisions, their rationale,
-> and their consequences. Append new entries as decisions land.
-> **Last verified:** f1c603b, 2026-07-07
+# Design Decisions
 
 Entries follow a fixed shape (Context / Decision / Rationale / Consequences / Source) so a
 reader can judge whether a decision's premises still hold before "fixing" what it produced.

@@ -1,8 +1,12 @@
-# Domain Primer
+---
+type: primer
+title: Domain Primer
+description: "The radio-interferometry and optimisation background QuartiCal's code assumes — RIME, Jones chains, gain solving as complex NLLS."
+timestamp: 2026-07-07
+last_verified_commit: 50207c9
+---
 
-> **Purpose:** The radio-interferometry and optimisation background QuartiCal's code assumes —
-> RIME, Jones chains, gain solving as complex NLLS.
-> **Last verified:** 50207c9, 2026-07-07
+# Domain Primer
 
 This page states the physics and optimisation background as standard, textbook-level material and
 maps it onto QuartiCal's symbols, config, and files. Physics/maths statements are kept

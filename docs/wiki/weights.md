@@ -1,8 +1,12 @@
-# Weights
+---
+type: stub
+title: Weights
+description: "How QuartiCal initialises visibility weights and performs robust reweighting."
+timestamp: 2026-07-07
+last_verified_commit: 602d584
+---
 
-> **Purpose:** How QuartiCal initialises visibility weights and performs robust
-> reweighting.
-> **Last verified:** 602d584, 2026-07-07
+# Weights
 
 **STUB** — scope defined, content pending. Fill in when working in this subsystem
 (see maintenance rule in CLAUDE.md). Do not fabricate content to fill this page;

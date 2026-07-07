@@ -106,9 +106,9 @@ objects. Validation hooks live in `config_classes.py`.
 
 ## LLM wiki
 
-`docs/wiki/` holds deep internal documentation written for LLM consumption — read the
-relevant page BEFORE reading source in that area. `docs/wiki/INDEX.md` maps pages to
-tasks; highlights:
+`docs/wiki/` holds deep internal documentation written for LLM consumption, structured as
+an Open Knowledge Format (OKF v0.1) bundle — read the relevant page BEFORE reading source
+in that area. `docs/wiki/index.md` maps pages to tasks; highlights:
 
 - Solver/gains/calibration work → `docs/wiki/solver-architecture.md`
 - Graph construction, scheduling, performance → `docs/wiki/dask-machinery.md`
@@ -116,7 +116,8 @@ tasks; highlights:
 - Before proposing structural changes → `docs/wiki/design-decisions.md`
 
 **Maintenance rule (update-as-you-touch):** if a change you make invalidates or extends
-a wiki page, update that page in the same session and refresh its `Last verified` stamp
-(`git rev-parse --short HEAD`, date). If you work in a subsystem whose page is a stub,
-fill in what you verified while it is fresh in context. New design decisions get an
-entry in `design-decisions.md`.
+a wiki page, update that page in the same session and refresh its frontmatter
+`last_verified_commit` (`git rev-parse --short HEAD`) and `timestamp` (date). If you work
+in a subsystem whose page is a stub, fill in what you verified while it is fresh in
+context (and change its `type` from `stub`). New design decisions get an entry in
+`design-decisions.md`.
