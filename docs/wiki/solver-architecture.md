@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-07-07
-last_verified_commit: 50207c9
+timestamp: 2026-07-08
+last_verified_commit: ed1e02c
 ---
 
 # Solver Architecture
@@ -180,6 +180,22 @@ loop-variable construction for scalar (1-corr) and diagonal (2-corr) gains is id
 body; `corr_mode` flows only into an internal `unpack_factory` call, so the factory itself
 performs no correlation-count branching.
 
+Factories come in two styles. The original **array-buffer style** (`iunpack_factory`,
+`v1_imul_v2_factory`, `valloc_factory`, ...) writes results into small array buffers; most kernels
+still use it. The newer **tuple style** (`tuple_unpack_factory`, `tuple_v1_mul_v2_factory`, and
+friends — see the "Tuple-based helpers" block in `factories.py`) operates on and returns tuples,
+which are immutable SSA values inside jitted code: per-visibility intermediaries stay in registers
+instead of round-tripping through memory. The complex kernel
+(`quartical/gains/complex/kernel.py`) was rewritten in the tuple style in 2026-07 for a measured
+2.1-2.8x single-thread speedup (see design-decisions.md, "Tuple-based kernel maths"); other
+kernels are candidates for the same treatment. The tuple style always returns tuples even in the
+1-correlation case (unlike `unpack_factory`, which returns a bare scalar) so results can be fed
+back into other tuple helpers. One hard-won constraint: **never return nested tuples from an
+inlined (`qcjit`) helper called inside a `prange` body** — numba's parfor array analysis misreads
+tuple-of-tuples returns as array shapes and dies with `AssertionError: Dimension mismatch`.
+Return flat tuples and slice by literal index instead (this is why the jhr/jhj accumulator in the
+complex kernel is one flat tuple).
+
 Kernel structure (see `quartical/gains/complex/kernel.py` and `.../delay/kernel.py`), all following
 the same skeleton:
 
@@ -193,8 +209,13 @@ the same skeleton:
   `inversion.invert_factory`) → `finalize_update` → `update_gain_flags` (which also returns the
   converged percentage) → break at `conv_perc >= meta_inputs.stop_frac`.
 - `compute_jhj_jhr` is `@overload`-ed with `PARALLEL_JIT_OPTIONS` and does the `prange` over
-  solution intervals, accumulating per-antenna JHJ (a Kronecker/`a_kron_bt` form for 4-corr) and
-  JHr from the residual.
+  solution intervals, accumulating per-antenna JHJ (a Kronecker form for 4-corr — most kernels
+  build it explicitly via `a_kron_bt`; the complex kernel instead uses an algebraically
+  factorised form, accumulates only the upper triangle and mirrors the lower triangle once per
+  solution interval via `mirror_jhj`) and JHr from the residual. The complex kernel additionally
+  has a fast path for the single-direction case (`single_dir`) which accumulates each row's
+  JHJ/JHr contributions in registers and flushes to memory once per row — valid because the
+  antenna pair, and hence the accumulation target, is fixed along a row.
 - Every solve returns `(native_imdry.jhj, loop_idx + 1, conv_perc)`.
 
 Flagging hooks live in `quartical/gains/general/flagging.py` and are called by the kernels:

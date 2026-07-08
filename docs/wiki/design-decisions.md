@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-07-07
-last_verified_commit: f1c603b
+timestamp: 2026-07-08
+last_verified_commit: ed1e02c
 ---
 
 # Design Decisions
@@ -122,6 +122,38 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   extension pattern for new gain types — see
   [solver-architecture.md](solver-architecture.md), Numba kernel conventions.
 - **Source:** interview 2026-07-07; commit 958eb83 (#63); Kenyon et al. 2025, Section 4.3.
+
+## Tuple-based kernel maths in the complex solver (over array-buffer factories)
+
+- **Context:** Benchmarking (2026-07-08, i7-1355U, single P-core, synthetic 28-antenna
+  problem) confirmed the long-suspected code-generation problem: the hot
+  `compute_jhj_jhr` loop emitted **zero** packed (SIMD) floating-point instructions in
+  all correlation modes, and data-movement instructions outnumbered arithmetic ~2:1 —
+  per-visibility intermediaries were round-tripping through the small `valloc` array
+  buffers instead of staying in registers.
+- **Decision:** Rewrite the complex kernel's per-visibility maths on new tuple-based
+  factories (`tuple_*` in `quartical/gains/general/factories.py`): tuples are immutable
+  SSA values, so intermediaries become register-resident. On top of that: (a) accumulate
+  only the upper triangle of each (4, 4) JHJ element and mirror it once per solution
+  interval instead of once per visibility; (b) use the Kronecker factorisation
+  `jhj[2i+j, 2k+l] = sum_p a_ip conj(a_kp) C_jl^p` with real diagonal factors, roughly
+  halving 4-corr JHJ flops; (c) add a `single_dir` fast path which accumulates each row's
+  JHJ/JHr in registers and flushes once per row (the antenna pair is fixed along a row).
+- **Rationale:** Measured, interleaved A/B benchmarks against the pre-change tree at every
+  step; every retained change beat its predecessor. Cumulative single-thread speedup on the
+  full solve (20 fixed iterations): **2.8x (1 corr), 2.5x (2 corr), 2.1x (4 corr)**; the
+  direction-dependent (general) path also gained 1.6-1.9x. Outputs agree with the old
+  kernel to ~1e-15 relative (fastmath reassociation only); `testing/tests/gains/
+  test_complex.py` and the calibration suite pass.
+- **Consequences:** Two factory styles now coexist (array-buffer and tuple); the other
+  kernels still use the array-buffer style and are candidates for the same rewrite. The
+  chain-product block is duplicated between the fast and general paths inside
+  `nb_compute_jhj_jhr` — a numba parfor bug prevents factoring it out (see Recurring
+  gotchas: nested tuple returns). The code is still essentially scalar (no packed SIMD in
+  the 4-corr hot loop); the remaining ~2x SIMD headroom would require cross-visibility
+  vectorisation with flag masking, judged not worth the complexity yet.
+- **Source:** benchmark session 2026-07-08 (this entry); design predecessor: commit
+  958eb83 (#63).
 
 ## Dask for parallelism and distribution
 
@@ -319,8 +351,12 @@ treat these as scars, not patterns to replicate:
   project will almost certainly move away from it at some point. Avoid deepening dask
   coupling in new code where a scheduler-agnostic seam is possible.
 - **Numba code generation.** The factory pattern's optimisation payoff was never verified,
-  and the kernels do not yet reliably produce vectorised (SIMD) machine code — an
-  acknowledged improvement area.
+  and the kernels do not reliably produce vectorised (SIMD) machine code — an acknowledged
+  improvement area. Partially addressed 2026-07-08: assembly inspection confirmed the hot
+  loops were 100% scalar and memory-bound, and the **complex** kernel was rewritten on
+  tuple-based factories for a 2.1-2.8x measured speedup (see "Tuple-based kernel maths in
+  the complex solver"). The other kernels (delay, phase, diag_complex, rotation, ...)
+  still use the array-buffer style and remain unverified.
 
 ## Recurring gotchas
 
@@ -328,6 +364,12 @@ Things that have repeatedly bitten the developers and contributors (interview 20
 
 - Adding a new solver requires touching all the registration locations — follow
   [solver-architecture.md](solver-architecture.md), "Adding a gain type", to the letter.
+- Returning nested tuples from an inlined (`qcjit`) helper called inside a `prange` body
+  crashes compilation: numba's parfor array analysis misreads tuple-of-tuples returns as
+  array shapes and fails with `AssertionError: Dimension mismatch` (seen with numba
+  0.65.1). Return a single flat tuple and index it with literals instead — this is why the
+  complex kernel's JHJ/JHr accumulator is one flat tuple and why its chain-product block is
+  inlined rather than factored into a helper returning four operator tuples.
 - Accidentally introducing shared root nodes into the dask graph sends task ordering
   haywire.
 - CASA table caching underneath dask-ms can produce suspicious memory footprints depending
