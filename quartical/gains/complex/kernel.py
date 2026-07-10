@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, njit
+from numba import njit
 from numba.extending import overload
 from quartical.utils.numba import (coerce_literal,
                                    JIT_OPTIONS,
@@ -14,11 +14,9 @@ from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_gain_flags,
                                               finalize_gain_flags,
                                               apply_gain_flags_to_flag_col)
-from quartical.gains.general.convenience import (get_row,
-                                                 get_extents)
+from quartical.gains.general.convenience import get_extents
 import quartical.gains.general.factories as factories
-from quartical.gains.general.inversion import (invert_factory,
-                                               inversion_buffer_factory)
+from quartical.gains.general.accumulation import build_jhj_jhr_impl
 from quartical.gains.general.solver_ops import compute_update  # noqa
 
 
@@ -218,350 +216,21 @@ def nb_compute_jhj_jhr(
     row_weights_idx = ms_inputs.fields.index('ROW_WEIGHTS')
     row_weights_type = ms_inputs[row_weights_idx]
 
-    # NOTE: The per-visibility work below is deliberately expressed using the
-    # tuple_* factories - intermediary values live in tuples (registers)
-    # rather than small array buffers (memory). See factories.py.
-    tuple_unpack = factories.tuple_unpack_factory(corr_mode)
-    tuple_unpackct = factories.tuple_unpackct_factory(corr_mode)
-    tuple_unpack_rweight = factories.tuple_unpack_rweight_factory(
-        corr_mode, row_weights_type
+    # The accumulation loop itself is shared between kernels - only the
+    # hooks below (the per-term maths) are specific to complex terms. The
+    # complex residual has no auxiliary values and no per-channel
+    # coefficients, so n_resid_aux is zero and there is no stage hook.
+    return build_jhj_jhr_impl(
+        corr_mode,
+        row_weights_type,
+        elem_factory=compute_jhwj_jhwr_elem_factory,
+        acc_zeros_factory=jhwj_jhwr_zeros_factory,
+        flush_factory=flush_jhwj_jhwr_factory,
+        resid_factory=resid_factory,
+        n_resid_aux=0,
+        stage_factory=None,
+        mirror_factory=mirror_jhj_factory,
     )
-    tuple_zeros = factories.tuple_zeros_factory(corr_mode)
-    tuple_identity = factories.tuple_identity_factory(corr_mode)
-    tuple_add = factories.tuple_add_factory(corr_mode)
-    tuple_sub = factories.tuple_sub_factory(corr_mode)
-    tuple_wmul = factories.tuple_wmul_factory(corr_mode)
-    tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
-    tuple_v1_mul_v2ct = factories.tuple_v1_mul_v2ct_factory(corr_mode)
-    tuple_v1ct_mul_v2 = factories.tuple_v1ct_mul_v2_factory(corr_mode)
-    iunpack = factories.iunpack_factory(corr_mode)
-    iadd = factories.iadd_factory(corr_mode)
-    valloc = factories.valloc_factory(corr_mode)
-    make_loop_vars = factories.loop_var_factory(corr_mode)
-    compute_jhwj_jhwr_elem = compute_jhwj_jhwr_elem_factory(corr_mode)
-    flush_jhwj_jhwr = flush_jhwj_jhwr_factory(corr_mode)
-    jhwj_jhwr_zeros = jhwj_jhwr_zeros_factory(corr_mode)
-    mirror_jhj = mirror_jhj_factory(corr_mode)
-
-    def impl(
-        ms_inputs,
-        mapping_inputs,
-        chain_inputs,
-        meta_inputs,
-        upsampled_imdry,
-        extents,
-        corr_mode
-    ):
-
-        active_term = meta_inputs.active_term
-
-        data = ms_inputs.DATA
-        model = ms_inputs.MODEL_DATA
-        weights = ms_inputs.WEIGHT
-        flags = ms_inputs.FLAG
-        antenna1 = ms_inputs.ANTENNA1
-        antenna2 = ms_inputs.ANTENNA2
-        row_map = ms_inputs.ROW_MAP
-        row_weights = ms_inputs.ROW_WEIGHTS
-
-        time_maps = mapping_inputs.time_maps
-        freq_maps = mapping_inputs.freq_maps
-        dir_maps = mapping_inputs.dir_maps
-
-        gains = chain_inputs.gains
-
-        jhj = upsampled_imdry.jhj
-        jhr = upsampled_imdry.jhr
-
-        n_row, n_chan, n_dir, n_corr = model.shape
-
-        jhj[:] = 0
-        jhr[:] = 0
-
-        n_tint, n_fint, n_ant, n_gdir, n_corr = jhr.shape
-        n_int = n_tint*n_fint
-
-        # In the (very common) single direction case the per-direction
-        # accumulators are unnecessary - the loop-invariant flag below lets
-        # the compiler produce a fast path which skips them entirely.
-        single_dir = (n_dir == 1) and (n_gdir == 1)
-
-        complex_dtype = gains[active_term].dtype
-
-        n_gains = len(gains)
-
-        row_starts = extents.row_starts
-        row_stops = extents.row_stops
-        chan_starts = extents.chan_starts
-        chan_stops = extents.chan_stops
-
-        # Determine loop variables based on where we are in the chain.
-        # gt means greater than (n>j) and lt means less than (n<j).
-        all_terms, gt_active, lt_active = make_loop_vars(n_gains, active_term)
-
-        active_t_map = time_maps[active_term]
-        active_f_map = freq_maps[active_term]
-        active_d_map = dir_maps[active_term]
-
-        # Parallel over all solution intervals.
-        for i in prange(n_int):
-
-            ti = i//n_fint
-            fi = i - ti*n_fint
-
-            rs = row_starts[ti]
-            re = row_stops[ti]
-            fs = chan_starts[fi]
-            fe = chan_stops[fi]
-
-            # Per-direction accumulators - these are the only per-visibility
-            # intermediaries which need to live in memory (a direction loop
-            # may accumulate several model directions into one gain
-            # direction). Everything else is a tuple i.e. register-resident.
-            lop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-            rop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-            lop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-            rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-
-            jhr_tifi = jhr[ti, fi]
-            jhj_tifi = jhj[ti, fi]
-
-            # Zero/identity tuples in the compute (gain) dtype. Adding the
-            # zero tuple is also used to promote lower precision inputs.
-            zero_vec = tuple_zeros(jhr_tifi[0, 0])
-            identity_vec = tuple_identity(jhr_tifi[0, 0])
-            acc_zero = jhwj_jhwr_zeros(jhr_tifi[0, 0])
-
-            for row_ind in range(rs, re):
-
-                row = get_row(row_ind, row_map)
-                a1_m, a2_m = antenna1[row], antenna2[row]
-
-                if single_dir:
-
-                    # Fast path: a single direction accumulates into a single
-                    # jhr/jhj element per antenna. As the antennas are fixed
-                    # for the duration of a row, the accumulation can be done
-                    # in registers and flushed to memory once per row.
-                    acc_p = acc_zero
-                    acc_q = acc_zero
-
-                    for f in range(fs, fe):
-
-                        if flags[row, f]:  # Skip flagged data points.
-                            continue
-
-                        # Apply row weights in the BDA case, else a no-op.
-                        w = tuple_unpack_rweight(
-                            weights[row, f], row_weights, row_ind
-                        )
-                        r_pq = tuple_unpack(data[row, f])
-
-                        # NOTE: This block is duplicated in the general path
-                        # below - a shared helper returning the four operator
-                        # tuples trips a numba parfor array analysis bug
-                        # (nested tuple returns are misread as array shapes).
-                        lop_pq = identity_vec
-                        lop_qp = identity_vec
-
-                        # Promote the model to the compute dtype - the zero
-                        # add is free but ensures type stability below.
-                        rop_qp = tuple_add(model[row, f, 0], zero_vec)
-                        rop_pq = tuple_unpackct(rop_qp)
-
-                        for gi in all_terms:
-
-                            d_m = dir_maps[gi][0]  # Broadcast dir.
-                            t_m = time_maps[gi][row_ind]
-                            f_m = freq_maps[gi][f]
-
-                            gain = gains[gi][t_m, f_m]
-
-                            g_q = tuple_unpack(gain[a2_m, d_m])
-                            rop_pq = tuple_v1_mul_v2(g_q, rop_pq)
-
-                            g_p = tuple_unpack(gain[a1_m, d_m])
-                            rop_qp = tuple_v1_mul_v2(g_p, rop_qp)
-
-                        for gi in gt_active:
-
-                            d_m = dir_maps[gi][0]
-                            t_m = time_maps[gi][row_ind]
-                            f_m = freq_maps[gi][f]
-
-                            gain = gains[gi][t_m, f_m]
-
-                            g_p = tuple_unpack(gain[a1_m, d_m])
-                            rop_pq = tuple_v1_mul_v2ct(rop_pq, g_p)
-
-                            g_q = tuple_unpack(gain[a2_m, d_m])
-                            rop_qp = tuple_v1_mul_v2ct(rop_qp, g_q)
-
-                        for gi in lt_active:
-
-                            d_m = dir_maps[gi][0]
-                            t_m = time_maps[gi][row_ind]
-                            f_m = freq_maps[gi][f]
-
-                            gain = gains[gi][t_m, f_m]
-
-                            g_p = tuple_unpack(gain[a1_m, d_m])
-                            lop_pq = tuple_v1ct_mul_v2(g_p, lop_pq)
-
-                            g_q = tuple_unpack(gain[a2_m, d_m])
-                            lop_qp = tuple_v1ct_mul_v2(g_q, lop_qp)
-
-                        g_active = tuple_unpack(
-                            gains[active_term][
-                                active_t_map[row_ind], active_f_map[f]
-                            ][a1_m, 0]
-                        )
-                        v_pq = tuple_v1ct_mul_v2(lop_pq, g_active)
-                        v_pq = tuple_v1_mul_v2ct(v_pq, rop_pq)
-
-                        r_pq = tuple_sub(r_pq, v_pq)
-
-                        wr_pq = tuple_wmul(r_pq, w)
-                        wr_qp = tuple_unpackct(wr_pq)
-
-                        acc_p = compute_jhwj_jhwr_elem(
-                            lop_pq, rop_pq, w, wr_pq, acc_p
-                        )
-                        acc_q = compute_jhwj_jhwr_elem(
-                            lop_qp, rop_qp, w, wr_qp, acc_q
-                        )
-
-                    flush_jhwj_jhwr(
-                        jhr_tifi[a1_m, 0], jhj_tifi[a1_m, 0], acc_p
-                    )
-                    flush_jhwj_jhwr(
-                        jhr_tifi[a2_m, 0], jhj_tifi[a2_m, 0], acc_q
-                    )
-
-                    continue
-
-                # General path: multiple directions require per-direction
-                # accumulation through memory.
-                for f in range(fs, fe):
-
-                    if flags[row, f]:  # Skip flagged data points.
-                        continue
-
-                    # Apply row weights in the BDA case, otherwise a no-op.
-                    w = tuple_unpack_rweight(
-                        weights[row, f], row_weights, row_ind
-                    )
-                    r_pq = tuple_unpack(data[row, f])
-
-                    lop_pq_arr[:] = 0
-                    rop_pq_arr[:] = 0
-                    lop_qp_arr[:] = 0
-                    rop_qp_arr[:] = 0
-                    v_pq = zero_vec
-
-                    for d in range(n_dir):
-
-                        lop_pq = identity_vec
-                        lop_qp = identity_vec
-
-                        # Promote the model to the compute dtype - the zero
-                        # add is free but ensures type stability below.
-                        rop_qp = tuple_add(model[row, f, d], zero_vec)
-                        rop_pq = tuple_unpackct(rop_qp)
-
-                        for gi in all_terms:
-
-                            d_m = dir_maps[gi][d]  # Broadcast dir.
-                            t_m = time_maps[gi][row_ind]
-                            f_m = freq_maps[gi][f]
-
-                            gain = gains[gi][t_m, f_m]
-
-                            g_q = tuple_unpack(gain[a2_m, d_m])
-                            rop_pq = tuple_v1_mul_v2(g_q, rop_pq)
-
-                            g_p = tuple_unpack(gain[a1_m, d_m])
-                            rop_qp = tuple_v1_mul_v2(g_p, rop_qp)
-
-                        for gi in gt_active:
-
-                            d_m = dir_maps[gi][d]
-                            t_m = time_maps[gi][row_ind]
-                            f_m = freq_maps[gi][f]
-
-                            gain = gains[gi][t_m, f_m]
-
-                            g_p = tuple_unpack(gain[a1_m, d_m])
-                            rop_pq = tuple_v1_mul_v2ct(rop_pq, g_p)
-
-                            g_q = tuple_unpack(gain[a2_m, d_m])
-                            rop_qp = tuple_v1_mul_v2ct(rop_qp, g_q)
-
-                        for gi in lt_active:
-
-                            d_m = dir_maps[gi][d]
-                            t_m = time_maps[gi][row_ind]
-                            f_m = freq_maps[gi][f]
-
-                            gain = gains[gi][t_m, f_m]
-
-                            g_p = tuple_unpack(gain[a1_m, d_m])
-                            lop_pq = tuple_v1ct_mul_v2(g_p, lop_pq)
-
-                            g_q = tuple_unpack(gain[a2_m, d_m])
-                            lop_qp = tuple_v1ct_mul_v2(g_q, lop_qp)
-
-                        out_d = active_d_map[d]
-
-                        iunpack(lop_pq_arr[out_d], lop_pq)
-                        iadd(rop_pq_arr[out_d], rop_pq)
-
-                        iunpack(lop_qp_arr[out_d], lop_qp)
-                        iadd(rop_qp_arr[out_d], rop_qp)
-
-                        g_active = tuple_unpack(
-                            gains[active_term][
-                                active_t_map[row_ind], active_f_map[f]
-                            ][a1_m, out_d]
-                        )
-                        v_pqd = tuple_v1ct_mul_v2(lop_pq, g_active)
-                        v_pqd = tuple_v1_mul_v2ct(v_pqd, rop_pq)
-                        v_pq = tuple_add(v_pq, v_pqd)
-
-                    r_pq = tuple_sub(r_pq, v_pq)
-
-                    # Weighted residual and its conjugate transpose. These
-                    # are direction independent and can be computed once.
-                    wr_pq = tuple_wmul(r_pq, w)
-                    wr_qp = tuple_unpackct(wr_pq)
-
-                    for d in range(n_gdir):
-
-                        lop_pq_d = tuple_unpack(lop_pq_arr[d])
-                        rop_pq_d = tuple_unpack(rop_pq_arr[d])
-
-                        acc = compute_jhwj_jhwr_elem(
-                            lop_pq_d, rop_pq_d, w, wr_pq, acc_zero
-                        )
-                        flush_jhwj_jhwr(
-                            jhr_tifi[a1_m, d], jhj_tifi[a1_m, d], acc
-                        )
-
-                        lop_qp_d = tuple_unpack(lop_qp_arr[d])
-                        rop_qp_d = tuple_unpack(rop_qp_arr[d])
-
-                        acc = compute_jhwj_jhwr_elem(
-                            lop_qp_d, rop_qp_d, w, wr_qp, acc_zero
-                        )
-                        flush_jhwj_jhwr(
-                            jhr_tifi[a2_m, d], jhj_tifi[a2_m, d], acc
-                        )
-
-            # Accumulation only touches the upper triangle of each jhj
-            # element (4 correlation case) - fill in the lower triangle.
-            mirror_jhj(jhj_tifi)
-        return
-    return impl
 
 
 def finalize_update(
@@ -629,6 +298,22 @@ def nb_finalize_update(
                             g += upd
 
     return impl
+
+
+def resid_factory(corr_mode):
+    """Produce the residual tuple for a complex term.
+
+    The complex residual is simply r - v. No auxiliary values are appended
+    (n_resid_aux is zero), so the returned flat tuple contains only the
+    per-correlation residual values.
+    """
+
+    tuple_sub = factories.tuple_sub_factory(corr_mode)
+
+    def impl(r, v):
+        return tuple_sub(r, v)
+
+    return factories.qcjit(impl)
 
 
 def jhwj_jhwr_zeros_factory(corr_mode):
@@ -716,12 +401,17 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     triangle of the (4, 4) jhj element is accumulated (in row-major order) -
     the lower triangle is filled in once per solution interval by
     mirror_jhj.
+
+    The signature follows the unified elem contract of the shared
+    accumulation loop (see accumulation.py). Complex terms have no chain
+    rule beyond the operators themselves, so the gain and aux arguments are
+    unused - the compiler eliminates them entirely after inlining.
     """
 
     tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, res, acc):
+        def impl(lop, rop, w, gain, aux, res, acc):
 
             # Accumulate an element of jhwr.
             upd = tuple_v1_mul_v2(lop, res)
@@ -793,7 +483,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             )
 
     elif corr_mode.literal_value == 2:
-        def impl(lop, rop, w, res, acc):
+        def impl(lop, rop, w, gain, aux, res, acc):
 
             # Accumulate an element of jhwr.
             upd = tuple_v1_mul_v2(res, rop)
@@ -810,7 +500,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
                                jh_11.imag*jh_11.imag),
             )
     elif corr_mode.literal_value == 1:
-        def impl(lop, rop, w, res, acc):
+        def impl(lop, rop, w, gain, aux, res, acc):
 
             # Accumulate an element of jhwr.
             upd = tuple_v1_mul_v2(res, rop)
