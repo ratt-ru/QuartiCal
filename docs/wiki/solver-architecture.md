@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-07-08
-last_verified_commit: c5c1d2a
+timestamp: 2026-07-10
+last_verified_commit: dee33f1
 ---
 
 # Solver Architecture
@@ -212,11 +212,45 @@ the same skeleton:
   solution intervals, accumulating per-antenna JHJ (a Kronecker form for 4-corr — most kernels
   build it explicitly via `a_kron_bt`; the complex kernel instead uses an algebraically
   factorised form, accumulates only the upper triangle and mirrors the lower triangle once per
-  solution interval via `mirror_jhj`) and JHr from the residual. The complex kernel additionally
-  has a fast path for the single-direction case (`single_dir`) which accumulates each row's
-  JHJ/JHr contributions in registers and flushes to memory once per row — valid because the
-  antenna pair, and hence the accumulation target, is fixed along a row.
+  solution interval via a mirror hook) and JHr from the residual. The tuple-based loop
+  additionally has a fast path for the single-direction case (`single_dir`) which accumulates
+  each row's JHJ/JHr contributions in registers and flushes to memory once per row — valid
+  because the antenna pair, and hence the accumulation target, is fixed along a row.
+- `compute_update` (the invert-over-intervals loop) exists exactly once, in
+  `quartical/gains/general/solver_ops.py`; every kernel module re-exports the name so external
+  imports keep working.
 - Every solve returns `(native_imdry.jhj, loop_idx + 1, conv_perc)`.
+
+**The shared accumulation loop.** The tuple-based `compute_jhj_jhr` body lives once in
+`quartical/gains/general/accumulation.py` as `build_jhj_jhr_impl(...)`, which returns the impl
+closure that a kernel's `@overload`-ed `compute_jhj_jhr` hands back to numba. The loop itself
+(the `prange` over solution intervals, the chain-product construction of the
+`lop_pq/rop_pq/lop_qp/rop_qp` operators, the single-direction fast path, and the general
+multi-direction path) is term-independent; all per-term maths arrives through hook factories:
+
+- `elem_factory(corr_mode) -> elem(lop, rop, w, gain, aux, res, acc) -> acc` — accumulates one
+  weighted JHr/JHJ element into the flat register-resident accumulator tuple. `gain` is the
+  active-term gain tuple for the relevant antenna (parameterised terms need it for the chain
+  rule; the complex elem ignores it and LLVM eliminates the fetch). `aux` is the flat
+  concatenation of the residual hook's auxiliary values and the stage hook's coefficients.
+- `acc_zeros_factory(corr_mode) -> acc_zeros(ref_elem)` — the zero accumulator tuple.
+- `flush_factory(corr_mode) -> flush(jhr_el, jhj_el, acc)` — adds an accumulator into the
+  JHr/JHJ array slices (once per row on the fast path, once per direction otherwise).
+- `resid_factory(corr_mode) -> resid(r, v)` — returns ONE flat tuple: the residual values
+  followed by `n_resid_aux` trailing auxiliary values (e.g. a per-corr normalisation factor;
+  0 for complex). The loop splits it by literal index.
+- `stage_factory(corr_mode) -> stage(ms_inputs, meta_inputs, f)` (optional) — per-channel
+  coefficient tuple for staged terms (delay/tec families); `None` yields an empty tuple.
+- `mirror_factory(corr_mode) -> mirror(jhj_tifi)` (optional) — fills the lower triangle of the
+  per-interval JHJ elements; `None` yields a no-op.
+
+All hook factories are plain-Python compile-time compositions returning `qcjit`
+(`inline="always"`) closures, so the indirection is free after inlining — extracting the loop
+from the complex kernel measured as parity (min/min speedups 0.97-1.00 across corr modes and
+a 3-direction run, checksums bitwise-identical). Each kernel keeps its own ~15-line
+`compute_jhj_jhr` + `@overload` boilerplate binding its hooks, so each kernel still owns a
+distinct overload symbol (`quartical/gains/complex/kernel.py` is the reference consumer;
+`leakage` imports complex's `compute_jhj_jhr` wholesale).
 
 Flagging hooks live in `quartical/gains/general/flagging.py` and are called by the kernels:
 `update_gain_flags` (trend-based "trendy flagging": soft/hard flags diverging solutions, resets
