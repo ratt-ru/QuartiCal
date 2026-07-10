@@ -997,6 +997,53 @@ def tuple_v1ct_mul_v2_factory(mode):
     return v1ct_mul_v2_factory(mode)
 
 
+def tuple_normf_factory(mode):
+    """Per-correlation |v1|/|v2| with a zero guard on the denominator.
+
+    This is the tuple (register-resident) counterpart of
+    absv1_idiv_absv2_factory: it returns a flat tuple whose element i is 0
+    when v2[i] is zero, else sqrt(|v1[i]|^2 / |v2[i]|^2). The zero-guard
+    semantics match absv1_idiv_absv2_factory exactly (guard on the
+    denominator v2), so it can be used to build normalised residuals in the
+    tuple-based accumulation loop without changing the maths.
+    """
+
+    if mode.literal_value == 4:
+        def impl(v1, v2):
+            f0 = 0 if v2[0] == 0 else np.sqrt(
+                (v1[0].real**2 + v1[0].imag**2)/(v2[0].real**2 + v2[0].imag**2)
+            )
+            f1 = 0 if v2[1] == 0 else np.sqrt(
+                (v1[1].real**2 + v1[1].imag**2)/(v2[1].real**2 + v2[1].imag**2)
+            )
+            f2 = 0 if v2[2] == 0 else np.sqrt(
+                (v1[2].real**2 + v1[2].imag**2)/(v2[2].real**2 + v2[2].imag**2)
+            )
+            f3 = 0 if v2[3] == 0 else np.sqrt(
+                (v1[3].real**2 + v1[3].imag**2)/(v2[3].real**2 + v2[3].imag**2)
+            )
+            return f0, f1, f2, f3
+    elif mode.literal_value == 2:
+        def impl(v1, v2):
+            f0 = 0 if v2[0] == 0 else np.sqrt(
+                (v1[0].real**2 + v1[0].imag**2)/(v2[0].real**2 + v2[0].imag**2)
+            )
+            f1 = 0 if v2[1] == 0 else np.sqrt(
+                (v1[1].real**2 + v1[1].imag**2)/(v2[1].real**2 + v2[1].imag**2)
+            )
+            return f0, f1
+    elif mode.literal_value == 1:
+        def impl(v1, v2):
+            f0 = 0 if v2[0] == 0 else np.sqrt(
+                (v1[0].real**2 + v1[0].imag**2)/(v2[0].real**2 + v2[0].imag**2)
+            )
+            return (f0,)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
 def rotation_factory(corr_mode, feed_type):
 
     if feed_type.literal_value == "circular":
