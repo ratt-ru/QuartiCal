@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import prange, njit
+from numba import njit
 from numba.extending import overload
 from quartical.utils.numba import (coerce_literal,
                                    JIT_OPTIONS,
@@ -15,12 +15,14 @@ from quartical.gains.general.flagging import (flag_intermediaries,
                                               finalize_gain_flags,
                                               apply_gain_flags_to_flag_col,
                                               update_param_flags)
-from quartical.gains.general.convenience import (get_row,
-                                                 get_extents)
+from quartical.gains.general.convenience import get_extents
 import quartical.gains.general.factories as factories
-from quartical.gains.general.inversion import (invert_factory,
-                                               inversion_buffer_factory)
+from quartical.gains.general.accumulation import build_jhj_jhr_impl
 from quartical.gains.general.solver_ops import compute_update  # noqa
+# Crosshand phase's residual is amplitude-normalised in exactly the same way
+# as the phase term (r_i*|v_i|/|r_i| - v_i), so it reuses phase's residual hook
+# rather than duplicating it.
+from quartical.gains.phase.kernel import resid_factory
 
 
 def get_identity_params(corr_mode):
@@ -238,221 +240,24 @@ def nb_compute_jhj_jhr(
     row_weights_idx = ms_inputs.fields.index('ROW_WEIGHTS')
     row_weights_type = ms_inputs[row_weights_idx]
 
-    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights_type)
-    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
-    v1ct_imul_v2 = factories.v1ct_imul_v2_factory(corr_mode)
-    absv1_idiv_absv2 = factories.absv1_idiv_absv2_factory(corr_mode)
-    iunpack = factories.iunpack_factory(corr_mode)
-    iunpackct = factories.iunpackct_factory(corr_mode)
-    imul = factories.imul_factory(corr_mode)
-    iadd = factories.iadd_factory(corr_mode)
-    isub = factories.isub_factory(corr_mode)
-    valloc = factories.valloc_factory(corr_mode)
-    make_loop_vars = factories.loop_var_factory(corr_mode)
-    set_identity = factories.set_identity_factory(corr_mode)
-    compute_jhwj_jhwr_elem = compute_jhwj_jhwr_elem_factory(corr_mode)
-
-    def impl(
-        ms_inputs,
-        mapping_inputs,
-        chain_inputs,
-        meta_inputs,
-        upsampled_imdry,
-        extents,
-        corr_mode
-    ):
-
-        active_term = meta_inputs.active_term
-
-        data = ms_inputs.DATA
-        model = ms_inputs.MODEL_DATA
-        weights = ms_inputs.WEIGHT
-        flags = ms_inputs.FLAG
-        antenna1 = ms_inputs.ANTENNA1
-        antenna2 = ms_inputs.ANTENNA2
-        row_map = ms_inputs.ROW_MAP
-        row_weights = ms_inputs.ROW_WEIGHTS
-
-        time_maps = mapping_inputs.time_maps
-        freq_maps = mapping_inputs.freq_maps
-        dir_maps = mapping_inputs.dir_maps
-
-        gains = chain_inputs.gains
-
-        jhj = upsampled_imdry.jhj
-        jhr = upsampled_imdry.jhr
-
-        _, n_chan, n_dir, n_corr = model.shape
-
-        jhj[:] = 0
-        jhr[:] = 0
-
-        n_tint, n_fint, n_ant, n_gdir, n_param = jhr.shape
-        n_int = n_tint*n_fint
-
-        complex_dtype = gains[active_term].dtype
-        weight_dtype = weights.dtype
-
-        n_gains = len(gains)
-
-        row_starts = extents.row_starts
-        row_stops = extents.row_stops
-        chan_starts = extents.chan_starts
-        chan_stops = extents.chan_stops
-
-        # Determine loop variables based on where we are in the chain.
-        # gt means greater than (n>j) and lt means less than (n<j).
-        all_terms, gt_active, lt_active = make_loop_vars(n_gains, active_term)
-
-        # Parallel over all solution intervals.
-        for i in prange(n_int):
-
-            ti = i//n_fint
-            fi = i - ti*n_fint
-
-            rs = row_starts[ti]
-            re = row_stops[ti]
-            fs = chan_starts[fi]
-            fe = chan_stops[fi]
-
-            rop_pq = valloc(complex_dtype)  # Right-multiply operator for pq.
-            rop_qp = valloc(complex_dtype)  # Right-multiply operator for qp.
-            lop_pq = valloc(complex_dtype)  # Left-multiply operator for pq.
-            lop_qp = valloc(complex_dtype)  # Left-multiply operator for qp.
-
-            w = valloc(weight_dtype)
-            r_pq = valloc(complex_dtype)
-            wr_pq = valloc(complex_dtype)
-            wr_qp = valloc(complex_dtype)
-            v_pqd = valloc(complex_dtype)
-            v_pq = valloc(complex_dtype)
-
-            gains_p = valloc(complex_dtype, leading_dims=(n_gains,))
-            gains_q = valloc(complex_dtype, leading_dims=(n_gains,))
-
-            lop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-            rop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-            lop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-            rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-
-            norm_factors = valloc(complex_dtype)
-
-            jhr_tifi = jhr[ti, fi]
-            jhj_tifi = jhj[ti, fi]
-
-            for row_ind in range(rs, re):
-
-                row = get_row(row_ind, row_map)
-                a1_m, a2_m = antenna1[row], antenna2[row]
-
-                for f in range(fs, fe):
-
-                    if flags[row, f]:  # Skip flagged data points.
-                        continue
-
-                    # Apply row weights in the BDA case, otherwise a no-op.
-                    imul_rweight(weights[row, f], w, row_weights, row_ind)
-                    iunpack(r_pq, data[row, f])
-
-                    lop_pq_arr[:] = 0
-                    rop_pq_arr[:] = 0
-                    lop_qp_arr[:] = 0
-                    rop_qp_arr[:] = 0
-                    v_pq[:] = 0
-
-                    for d in range(n_dir):
-
-                        set_identity(lop_pq)
-                        set_identity(lop_qp)
-
-                        # Construct a small contiguous gain array. This makes
-                        # the single term case fractionally slower.
-                        for gi in range(n_gains):
-                            d_m = dir_maps[gi][d]  # Broadcast dir.
-                            t_m = time_maps[gi][row_ind]
-                            f_m = freq_maps[gi][f]
-
-                            gain = gains[gi][t_m, f_m]
-
-                            iunpack(gains_p[gi], gain[a1_m, d_m])
-                            iunpack(gains_q[gi], gain[a2_m, d_m])
-
-                        m = model[row, f, d]
-                        iunpack(rop_qp, m)
-                        iunpackct(rop_pq, rop_qp)
-
-                        for g in all_terms:
-
-                            g_q = gains_q[g]
-                            v1_imul_v2(g_q, rop_pq, rop_pq)
-
-                            g_p = gains_p[g]
-                            v1_imul_v2(g_p, rop_qp, rop_qp)
-
-                        for g in gt_active:
-
-                            g_p = gains_p[g]
-                            v1_imul_v2ct(rop_pq, g_p, rop_pq)
-
-                            g_q = gains_q[g]
-                            v1_imul_v2ct(rop_qp, g_q, rop_qp)
-
-                        for g in lt_active:
-
-                            g_p = gains_p[g]
-                            v1ct_imul_v2(g_p, lop_pq, lop_pq)
-
-                            g_q = gains_q[g]
-                            v1ct_imul_v2(g_q, lop_qp, lop_qp)
-
-                        out_d = dir_maps[active_term][d]
-
-                        iunpack(lop_pq_arr[out_d], lop_pq)
-                        iadd(rop_pq_arr[out_d], rop_pq)
-
-                        iunpack(lop_qp_arr[out_d], lop_qp)
-                        iadd(rop_qp_arr[out_d], rop_qp)
-
-                        v1ct_imul_v2(lop_pq, gains_p[active_term], v_pqd)
-                        v1_imul_v2ct(v_pqd, rop_pq, v_pqd)
-                        iadd(v_pq, v_pqd)
-
-                    absv1_idiv_absv2(v_pq, r_pq, norm_factors)
-                    imul(r_pq, norm_factors)
-                    isub(r_pq, v_pq)
-
-                    for d in range(n_gdir):
-
-                        iunpack(wr_pq, r_pq)
-                        imul(wr_pq, w)
-                        iunpackct(wr_qp, wr_pq)
-
-                        lop_pq_d = lop_pq_arr[d]
-                        rop_pq_d = rop_pq_arr[d]
-
-                        compute_jhwj_jhwr_elem(lop_pq_d,
-                                               rop_pq_d,
-                                               w,
-                                               norm_factors,
-                                               gains_p[active_term],
-                                               wr_pq,
-                                               jhr_tifi[a1_m, d],
-                                               jhj_tifi[a1_m, d])
-
-                        lop_qp_d = lop_qp_arr[d]
-                        rop_qp_d = rop_qp_arr[d]
-
-                        compute_jhwj_jhwr_elem(lop_qp_d,
-                                               rop_qp_d,
-                                               w,
-                                               norm_factors,
-                                               gains_q[active_term],
-                                               wr_qp,
-                                               jhr_tifi[a2_m, d],
-                                               jhj_tifi[a2_m, d])
-        return
-    return impl
+    # The accumulation loop itself is shared between kernels - only the hooks
+    # below (the per-term maths) are specific to crosshand phase terms. The
+    # loop body is phase's verbatim, so crosshand reuses phase's amplitude-
+    # normalised residual hook (n_resid_aux is n_corr). Crosshand solves a
+    # single parameter, so its jhj is (1, 1) and the mirror hook is a no-op
+    # (mirror_factory is None). There are no per-channel coefficients, so there
+    # is no stage hook.
+    return build_jhj_jhr_impl(
+        corr_mode,
+        row_weights_type,
+        elem_factory=compute_jhwj_jhwr_elem_factory,
+        acc_zeros_factory=jhwj_jhwr_zeros_factory,
+        flush_factory=flush_jhwj_jhwr_factory,
+        resid_factory=resid_factory,
+        n_resid_aux=corr_mode.literal_value,
+        stage_factory=None,
+        mirror_factory=None,
+    )
 
 
 def finalize_update(
@@ -536,54 +341,113 @@ def param_to_gain_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def compute_jhwj_jhwr_elem_factory(corr_mode):
+def jhwj_jhwr_zeros_factory(corr_mode):
+    """Produce the zero jhr/jhj accumulator tuple for a given corr mode.
 
-    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    unpack = factories.unpack_factory(corr_mode)
-    unpackc = factories.unpackc_factory(corr_mode)
-    iabsdivsq = factories.iabsdivsq_factory(corr_mode)
-    imul = factories.imul_factory(corr_mode)
+    Crosshand phase solves a single parameter, so the accumulator is a flat
+    tuple holding the one real jhr entry followed by the single (1, 1) jhj
+    element: (jhr0, jhj00). The reference element is a jhr slice, whose dtype
+    is real, so both accumulator values are real zeros.
+    """
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, normf, gain, res, jhr, jhj):
+        def impl(invec):
+            z = invec[0]*0
+            return z, z
+    else:
+        raise ValueError("Crosshand phase can only be solved for with four "
+                         "correlation data.")
 
-            # Compute normalization factor.
-            v1_imul_v2(lop, rop, normf)
-            iabsdivsq(normf)
-            imul(res, normf)  # Apply normalization factor to r.
+    return factories.qcjit(impl)
 
-            # Accumulate an element of jhwr.
-            v1_imul_v2(res, rop, res)
-            v1_imul_v2(lop, res, res)
 
-            # Accumulate an element of jhwj.
+def flush_jhwj_jhwr_factory(corr_mode):
+    """Add a register-accumulated jhr/jhj accumulator into the arrays.
 
-            r_0, _, _, _ = unpack(res)  # NOTE: XX, XY, YX, YY
+    Crosshand phase's jhj is (1, 1), so there is no upper triangle to mirror -
+    the mirror hook is a no-op (see nb_compute_jhj_jhr).
+    """
 
-            gc_0, _, _, _ = unpackc(gain)
+    if corr_mode.literal_value == 4:
+        def impl(jhr, jhj, acc):
 
+            jhr[0] += acc[0]
+
+            jhj[0, 0] += acc[1]
+    else:
+        raise ValueError("Crosshand phase can only be solved for with four "
+                         "correlation data.")
+
+    return factories.qcjit(impl)
+
+
+def compute_jhwj_jhwr_elem_factory(corr_mode):
+    """Accumulate a jhr/jhj element into a register-resident accumulator.
+
+    All inputs and the returned accumulator are tuples (register-resident
+    values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
+    The accumulator is a flat tuple (jhr0, jhj00) - see jhwj_jhwr_zeros_factory.
+
+    The signature follows the unified elem contract of the shared accumulation
+    loop (see accumulation.py). The crosshand chain rule uses the active-term
+    gain (drv = -1j*conj(g)), so the gain argument is consumed. The aux
+    argument (the per-correlation normalisation factor from the residual hook)
+    is not used - this elem recomputes its own operator-based normalisation,
+    exactly as the original array-buffer kernel did.
+
+    Unlike phase, crosshand keeps the full (2, 2) operator product rather than
+    only its diagonal: the derivative is with respect to the single crosshand
+    phase and only the [0] (XX) component of lop @ (normalised residual) @ rop
+    is retained for jhr, while jhj sums all four elements of the first row of
+    the row-major kronecker product.
+    """
+
+    if corr_mode.literal_value == 4:
+        def impl(lop, rop, w, gain, aux, res, acc):
+
+            lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
+            rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
+
+            # Normalisation factor: 1/|lop @ rop|^2 elementwise, with the same
+            # zero guard as the array kernel (iabsdivsq of the full 2x2
+            # product).
+            nf0 = lop_0*rop_0 + lop_1*rop_2
+            nf1 = lop_0*rop_1 + lop_1*rop_3
+            nf2 = lop_2*rop_0 + lop_3*rop_2
+            nf3 = lop_2*rop_1 + lop_3*rop_3
+            n_0 = 0 if nf0 == 0 else 1/(nf0.real**2 + nf0.imag**2)
+            n_1 = 0 if nf1 == 0 else 1/(nf1.real**2 + nf1.imag**2)
+            n_2 = 0 if nf2 == 0 else 1/(nf2.real**2 + nf2.imag**2)
+            n_3 = 0 if nf3 == 0 else 1/(nf3.real**2 + nf3.imag**2)
+
+            # jhwr element: lop @ (diag-normalised residual) @ rop, keeping only
+            # the [0] (XX) entry. The incoming residual is already weighted; the
+            # normalisation factor is applied here, matching imul(res, normf).
+            s_0 = res[0]*n_0
+            s_1 = res[1]*n_1
+            s_2 = res[2]*n_2
+            s_3 = res[3]*n_3
+
+            mm_0 = s_0*rop_0 + s_1*rop_2
+            mm_2 = s_2*rop_0 + s_3*rop_2
+            r_0 = lop_0*mm_0 + lop_1*mm_2
+
+            gc_0 = gain[0].conjugate()
             drv_00 = -1j*gc_0
-
             upd_00 = (drv_00*r_0).real
 
-            jhr[0] += upd_00
+            # jhwj element: the normalisation is folded into the weights.
+            # NOTE: rop is effectively transposed (rop[2] used as rop_01)
+            # relative to lop, matching the row-major kronecker convention.
+            w_0 = n_0 * w[0]
+            w_1 = n_1 * w[1]
+            w_2 = n_2 * w[2]
+            w_3 = n_3 * w[3]
 
-            w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
-            n_0, n_1, n_2, n_3 = unpack(normf)
-
-            # Apply normalisation factors by scaling w.
-            w_0 = n_0 * w_0
-            w_1 = n_1 * w_1
-            w_2 = n_2 * w_2
-            w_3 = n_3 * w_3
-
-            lop_00, lop_01, _, _ = unpack(lop)
-            rop_00, _, rop_01, _ = unpack(rop)  # "Transpose"
-
-            jh_00 = lop_00 * rop_00
-            jh_01 = lop_00 * rop_01
-            jh_02 = lop_01 * rop_00
-            jh_03 = lop_01 * rop_01
+            jh_00 = lop_0 * rop_0
+            jh_01 = lop_0 * rop_2
+            jh_02 = lop_1 * rop_0
+            jh_03 = lop_1 * rop_2
 
             j_00 = jh_00.conjugate()
             j_01 = jh_01.conjugate()
@@ -591,9 +455,12 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             j_03 = jh_03.conjugate()
 
             jhwj_00 = jh_00*w_0*j_00 + jh_01*w_1*j_01 + \
-                      jh_02*w_2*j_02 + jh_03*w_3*j_03  # noqa
+                jh_02*w_2*j_02 + jh_03*w_3*j_03
 
-            jhj[0, 0] += jhwj_00.real
+            return (
+                acc[0] + upd_00,
+                acc[1] + jhwj_00.real,
+            )
 
     else:
         raise ValueError("Crosshand phase can only be solved for with four "
