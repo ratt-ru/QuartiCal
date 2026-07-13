@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-07-08
-last_verified_commit: c5c1d2a
+timestamp: 2026-07-13
+last_verified_commit: 04f5271
 ---
 
 # Design Decisions
@@ -154,6 +154,37 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   vectorisation with flag masking, judged not worth the complexity yet.
 - **Source:** benchmark session 2026-07-08 (this entry); design predecessor: commit
   958eb83 (#63).
+
+## Shared hook-parameterised accumulation loop
+
+- **Context:** The tuple-based rewrite of the complex kernel (previous entry) left every
+  other solver on the slow array-buffer style, and the `compute_jhj_jhr` loop body was
+  near-verbatim duplicated across all of them. Propagating the optimisation kernel-by-
+  kernel would have written the same loop ~12 more times.
+- **Decision:** ADOPTED (decision gate, 2026-07-13, after the first parameterised
+  conversion — phase). The optimised loop lives once in
+  `quartical/gains/general/accumulation.py` as `build_jhj_jhr_impl`, parameterised by
+  per-term hook factories (elem / acc_zeros / flush / resid / stage / mirror); each
+  kernel keeps a ~15-line `compute_jhj_jhr` overload that binds its hooks. The hook
+  contract is documented in solver-architecture.md ("Numba kernel conventions").
+- **Rationale:** The gate required >= 1.10x at every supported correlation mode; phase
+  measured **2.255x (1 corr), 1.979x (2 corr), 1.723x (4 corr)** (min/min, threads=1,
+  full 20-iteration solve, interleaved same-day A/B vs the 9ae814e baseline). Complex
+  itself moved onto the loop at parity (pure code motion, bitwise-identical checksums),
+  and phase's single-pass jhj/jhr checksums are bit-identical to the old kernel.
+- **Consequences:** Remaining kernels convert by writing hooks only. **Behavioural note
+  (deliberate, verified):** for multi-direction (DD) solves of parameterised terms, the
+  shared loop passes each direction's *own* active-term gain to the elem chain rule,
+  whereas the legacy array-buffer kernels passed the *last* direction's gain to every
+  direction (a stale per-visibility buffer — latent bug). Single-direction solves are
+  numerically unaffected (solved gains/params agree elementwise to <= 4e-10).
+  Localisation evidence: temporarily mimicking the stale-gain behaviour in the shared
+  loop reproduced the legacy DD output to 1.6e-8 elementwise, with the pinned direction
+  exact. Expect legacy-vs-new DD comparisons of parameterised terms to differ for this
+  reason, not from the loop itself.
+- **Source:** Task 4/6 of the kernel-unification plan (commits dee33f1, 04f5271);
+  benchmarks and elementwise diagnostics in
+  `~/claude_artifacts/quaritcal_optimisation/results/` (2026-07-13).
 
 ## Dask for parallelism and distribution
 
