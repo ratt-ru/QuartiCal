@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-07-10
-last_verified_commit: dee33f1
+timestamp: 2026-07-13
+last_verified_commit: c189278
 ---
 
 # Solver Architecture
@@ -243,6 +243,20 @@ multi-direction path) is term-independent; all per-term maths arrives through ho
   coefficient tuple for staged terms (delay/tec families); `None` yields an empty tuple.
 - `mirror_factory(corr_mode) -> mirror(jhj_tifi)` (optional) — fills the lower triangle of the
   per-interval JHJ elements; `None` yields a no-op.
+
+Worked example — delay's staged-coeff hook (`quartical/gains/delay/kernel.py`). Delay is the
+first consumer of the `stage` hook. Its `stage` returns the single-element flat tuple `(coeff,)`
+with `coeff = 2*pi*(chan_freq[f]/cf_mid - 1)` and `cf_mid = (MIN_FREQ + MAX_FREQ)/2` (the same
+band-midpoint rescaling the solver applies to the parameters). Its `resid` is byte-identical to
+phase's — the amplitude-normalised residual `r*normf - v` with `normf = |v|/|r|` appended as
+`n_resid_aux = n_corr` auxiliary values. The loop concatenates the two, so the elem receives
+`aux = (normf..., coeff)` (coeff at `aux[4]`/`aux[2]`/`aux[1]` for corr 4/2/1); delay's elem is
+phase's elem with the chain-rule coefficient folded in — it scales JHr by `coeff` and JHJ by
+`coeff**2` (from differentiating the frequency-dependent exponent) and, like phase, recomputes
+its own operator-based normalisation rather than consuming the `normf` aux. This proves that a
+flat coefficient tuple from `stage` concatenated onto flat residual aux values is a numba-safe
+way to thread per-channel data into the elem (a nested tuple return would trip the parfor array
+analysis; see the NOTE in `accumulation.py`).
 
 All hook factories are plain-Python compile-time compositions returning `qcjit`
 (`inline="always"`) closures, so the indirection is free after inlining — extracting the loop
