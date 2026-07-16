@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-07-13
-last_verified_commit: c189278
+timestamp: 2026-07-16
+last_verified_commit: ec25545
 ---
 
 # Solver Architecture
@@ -149,9 +149,9 @@ by calling classmethods on the `Gain` objects (defined in `quartical/gains/gain.
 - **Parameterised terms** additionally get `param_time_bins`, `param_time_map`, `param_freq_map`
   (same construction, allowing a distinct parameter solution grid).
 
-These are consumed inside the numba kernels via the `mapping_inputs` namedtuple. In the JHJ/JHr
-accumulation loops (`quartical/gains/complex/kernel.py:nb_compute_jhj_jhr`,
-`quartical/gains/delay/kernel.py:nb_compute_jhj_jhr`), each data point looks up its gain slice as
+These are consumed inside the numba kernels via the `mapping_inputs` namedtuple. In the shared
+JHJ/JHr accumulation loop (`quartical/gains/general/accumulation.py:build_jhj_jhr_impl`, bound
+by every kernel's `nb_compute_jhj_jhr`), each data point looks up its gain slice as
 `gains[gi][time_maps[gi][row_ind], freq_maps[gi][f]][antenna, dir_maps[gi][d]]`. The kernels also
 call `convenience.get_extents` on the (upsampled) time map and freq map to precompute the row/
 channel start–stop spans of each solution interval, and iterate `prange` over `n_tint*n_fint`
@@ -180,21 +180,25 @@ loop-variable construction for scalar (1-corr) and diagonal (2-corr) gains is id
 body; `corr_mode` flows only into an internal `unpack_factory` call, so the factory itself
 performs no correlation-count branching.
 
-Factories come in two styles. The original **array-buffer style** (`iunpack_factory`,
-`v1_imul_v2_factory`, `valloc_factory`, ...) writes results into small array buffers; most kernels
-still use it. The newer **tuple style** (`tuple_unpack_factory`, `tuple_v1_mul_v2_factory`, and
-friends — see the "Tuple-based helpers" block in `factories.py`) operates on and returns tuples,
-which are immutable SSA values inside jitted code: per-visibility intermediaries stay in registers
-instead of round-tripping through memory. The complex kernel
-(`quartical/gains/complex/kernel.py`) was rewritten in the tuple style in 2026-07 for a measured
-2.1-2.8x single-thread speedup (see design-decisions.md, "Tuple-based kernel maths"); other
-kernels are candidates for the same treatment. The tuple style always returns tuples even in the
+Factories come in two styles. The **tuple style** (`tuple_unpack_factory`,
+`tuple_v1_mul_v2_factory`, and friends — see the "Tuple-based helpers" block in `factories.py`)
+operates on and returns tuples, which are immutable SSA values inside jitted code: per-visibility
+intermediaries stay in registers instead of round-tripping through memory. It is THE pattern for
+kernel accumulation: the complex kernel was rewritten on it in 2026-07 for a measured 2.1-2.8x
+single-thread speedup, and the rewrite was then propagated to every other solvable kernel via
+the shared accumulation loop (below) for measured 1.4-2.8x speedups (see design-decisions.md,
+"Tuple-based kernel maths" and "Shared hook-parameterised accumulation loop"). The original
+**array-buffer style** (`iunpack_factory`, `v1_imul_v2_factory`, `valloc_factory`, ...) writes
+results into small array buffers; it is legacy for accumulation loops — no kernel's
+`compute_jhj_jhr` uses it any more — but survives outside them (residual computation in
+`general/generics.py`, inversion buffers, `finalize_update` bodies, and the flagging kernels).
+The tuple style always returns tuples even in the
 1-correlation case (unlike `unpack_factory`, which returns a bare scalar) so results can be fed
 back into other tuple helpers. One hard-won constraint: **never return nested tuples from an
 inlined (`qcjit`) helper called inside a `prange` body** — numba's parfor array analysis misreads
 tuple-of-tuples returns as array shapes and dies with `AssertionError: Dimension mismatch`.
-Return flat tuples and slice by literal index instead (this is why the jhr/jhj accumulator in the
-complex kernel is one flat tuple).
+Return flat tuples and slice by literal index instead (this is why the jhr/jhj accumulator in
+the shared accumulation loop is one flat tuple).
 
 Kernel structure (see `quartical/gains/complex/kernel.py` and `.../delay/kernel.py`), all following
 the same skeleton:
@@ -208,22 +212,27 @@ the same skeleton:
   `per_array_jhj_jhr` / `scalar_jhj_jhr` → `compute_update` (matrix inversion via
   `inversion.invert_factory`) → `finalize_update` → `update_gain_flags` (which also returns the
   converged percentage) → break at `conv_perc >= meta_inputs.stop_frac`.
-- `compute_jhj_jhr` is `@overload`-ed with `PARALLEL_JIT_OPTIONS` and does the `prange` over
-  solution intervals, accumulating per-antenna JHJ (a Kronecker form for 4-corr — most kernels
-  build it explicitly via `a_kron_bt`; the complex kernel instead uses an algebraically
-  factorised form, accumulates only the upper triangle and mirrors the lower triangle once per
-  solution interval via a mirror hook) and JHr from the residual. The tuple-based loop
-  additionally has a fast path for the single-direction case (`single_dir`) which accumulates
-  each row's JHJ/JHr contributions in registers and flushes to memory once per row — valid
-  because the antenna pair, and hence the accumulation target, is fixed along a row.
+- `compute_jhj_jhr` is `@overload`-ed with `PARALLEL_JIT_OPTIONS` and binds the shared
+  accumulation loop (next subsection), which does the `prange` over solution intervals,
+  accumulating per-antenna JHJ and JHr from the residual in flat register-resident tuples.
+  4-corr JHJ elements use algebraically expanded Kronecker forms in the per-term elem hooks
+  (the old explicit `a_kron_bt` array temp survives only in comments and in
+  `general/generics.py`); gain-basis kernels accumulate only the upper triangle and mirror the
+  lower triangle once per solution interval via the mirror hook. The loop also has a fast path
+  for the single-direction case (`single_dir`) which accumulates each row's JHJ/JHr
+  contributions in registers and flushes to memory once per row — valid because the antenna
+  pair, and hence the accumulation target, is fixed along a row.
 - `compute_update` (the invert-over-intervals loop) exists exactly once, in
   `quartical/gains/general/solver_ops.py`; every kernel module re-exports the name so external
   imports keep working.
 - Every solve returns `(native_imdry.jhj, loop_idx + 1, conv_perc)`.
 
 **The shared accumulation loop.** The tuple-based `compute_jhj_jhr` body lives once in
-`quartical/gains/general/accumulation.py` as `build_jhj_jhr_impl(...)`, which returns the impl
-closure that a kernel's `@overload`-ed `compute_jhj_jhr` hands back to numba. The loop itself
+`quartical/gains/general/accumulation.py` as `build_jhj_jhr_impl(...)`. This is THE pattern:
+every solvable kernel binds it (complex, diag_complex, phase, amplitude, delay,
+delay_and_offset, tec_and_offset, delay_and_tec, delay_tec_and_offset, crosshand_phase,
+crosshand_phase_null_v, rotation, rotation_measure; leakage imports complex's
+`compute_jhj_jhr` wholesale) — there are no array-buffer holdouts. The loop itself
 (the `prange` over solution intervals, the chain-product construction of the
 `lop_pq/rop_pq/lop_qp/rop_qp` operators, the single-direction fast path, and the general
 multi-direction path) is term-independent; all per-term maths arrives through hook factories:
@@ -263,8 +272,21 @@ All hook factories are plain-Python compile-time compositions returning `qcjit`
 from the complex kernel measured as parity (min/min speedups 0.97-1.00 across corr modes and
 a 3-direction run, checksums bitwise-identical). Each kernel keeps its own ~15-line
 `compute_jhj_jhr` + `@overload` boilerplate binding its hooks, so each kernel still owns a
-distinct overload symbol (`quartical/gains/complex/kernel.py` is the reference consumer;
+distinct overload symbol (`quartical/gains/phase/kernel.py` is a representative consumer;
 `leakage` imports complex's `compute_jhj_jhr` wholesale).
+
+**The module-local trampoline is mandatory.** `build_jhj_jhr_impl` returns the loop wrapped in
+`qcjit` (`inline="always"`), and each kernel's `nb_compute_jhj_jhr` must NOT hand it back to
+numba directly: it returns a module-local `impl` that simply calls (and therefore inlines) the
+shared loop. This exists for on-disk cache correctness, not style. Numba keys disk-cache
+entries by source location plus argument-type signature, discriminated only by a
+nondeterministic cloudpickle hash of the closure cells; a directly-returned shared closure is
+lowered as ONE cache unit for all 13 kernels with identical signatures, so a stale
+multi-session cache could silently load the wrong kernel's machine code (this happened —
+corrupted solves, no error; see design-decisions.md, "Per-kernel numba disk-cache
+namespaces"). The trampoline gives each kernel a private cache namespace; `prange` survives
+the inlining. The constraint is documented as the CACHE CORRECTNESS CONSTRAINT in
+`accumulation.py` — any new consumer of the shared loop must copy the trampoline shape.
 
 Flagging hooks live in `quartical/gains/general/flagging.py` and are called by the kernels:
 `update_gain_flags` (trend-based "trendy flagging": soft/hard flags diverging solutions, resets

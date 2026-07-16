@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-07-13
-last_verified_commit: 04f5271
+timestamp: 2026-07-16
+last_verified_commit: ec25545
 ---
 
 # Design Decisions
@@ -145,8 +145,9 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   direction-dependent (general) path also gained 1.6-1.9x. Outputs agree with the old
   kernel to ~1e-15 relative (fastmath reassociation only); `testing/tests/gains/
   test_complex.py` and the calibration suite pass.
-- **Consequences:** Two factory styles now coexist (array-buffer and tuple); the other
-  kernels still use the array-buffer style and are candidates for the same rewrite. The
+- **Consequences:** Two factory styles now coexist (array-buffer and tuple); the rewrite
+  was subsequently propagated to every other kernel via the shared accumulation loop
+  (see the next entry), so tuple style is now the only accumulation-loop style. The
   chain-product block is duplicated between the fast and general paths inside
   `nb_compute_jhj_jhr` — a numba parfor bug prevents factoring it out (see Recurring
   gotchas: nested tuple returns). The code is still essentially scalar (no packed SIMD in
@@ -172,7 +173,33 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   full 20-iteration solve, interleaved same-day A/B vs the 9ae814e baseline). Complex
   itself moved onto the loop at parity (pure code motion, bitwise-identical checksums),
   and phase's single-pass jhj/jhr checksums are bit-identical to the old kernel.
-- **Consequences:** Remaining kernels convert by writing hooks only. **Behavioural note
+- **Consequences:** Remaining kernels convert by writing hooks only — and all of them
+  subsequently did: as of ec25545 every solvable kernel binds `build_jhj_jhr_impl`
+  (leakage reuses complex's `compute_jhj_jhr` wholesale) and no array-buffer
+  accumulation loop remains. Final sweep (2026-07-16, threads=1, single pinned core,
+  full 20-iteration solve, interleaved same-day A/B vs the 9ae814e baseline; min/min
+  speedups, medians within a few percent throughout):
+
+  | kernel | corr 1 | corr 2 | corr 4 |
+  |---|---|---|---|
+  | complex (parity re-check) | 0.99 | 0.99 | 0.99 |
+  | diag_complex | 2.78 | 2.49 | 1.91 |
+  | phase | 2.28 | 2.00 | 1.76 |
+  | amplitude | 2.29 | 2.31 | 1.77 |
+  | delay | 2.19 | 1.98 | 1.80 |
+  | delay_and_offset | 2.11 | 1.85 | 1.90 |
+  | tec_and_offset | 2.00 | 1.97 | 1.81 |
+  | delay_and_tec | 2.11 | 1.87 | 1.88 |
+  | delay_tec_and_offset | 2.27 | 1.81 | 1.83 |
+  | crosshand_phase | — | — | 1.58 |
+  | crosshand_phase_null_v | — | — | 1.38 |
+  | rotation | — | — | 1.88 |
+  | rotation_measure | — | — | 1.85 |
+
+  (4-corr-only terms have no 1/2-corr modes; complex's parity row also covers leakage.
+  Full raw numbers in `~/claude_artifacts/quaritcal_optimisation/results/
+  UNIFICATION_LOG.md`.) The shared loop later required a caching fix — see the
+  "Per-kernel numba disk-cache namespaces" entry below. **Behavioural note
   (deliberate, verified):** for multi-direction (DD) solves of parameterised terms, the
   shared loop passes each direction's *own* active-term gain to the elem chain rule,
   whereas the legacy array-buffer kernels passed the *last* direction's gain to every
@@ -185,6 +212,41 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Source:** Task 4/6 of the kernel-unification plan (commits dee33f1, 04f5271);
   benchmarks and elementwise diagnostics in
   `~/claude_artifacts/quaritcal_optimisation/results/` (2026-07-13).
+
+## Per-kernel numba disk-cache namespaces for the shared loop
+
+- **Context:** With the shared accumulation loop (previous entry) adopted by all 13
+  kernels, the loop closure returned by `build_jhj_jhr_impl` was lowered as a **single
+  numba disk-cache unit** shared by every kernel. Numba keys on-disk cache entries by
+  source location plus argument-type signature, discriminated only by a cloudpickle
+  hash of the closure cells — and that hash is **nondeterministic per build**. Every
+  kernel presents the loop with an identical signature, so a process compiling kernel B
+  could load kernel A's machine code written by an earlier session and silently run the
+  wrong maths. Production severity: a stale multi-session cache corrupted solves with
+  no error raised (deterministic repro: delay_and_tec solving with 42.8% wrong gain
+  elements). Caught at the unification plan's full-suite gate (25 test failures across
+  delay_and_offset / delay_and_tec / rotation); all benchmark and checksum harnesses
+  were immune because they always use a fresh `NUMBA_CACHE_DIR` per process.
+- **Decision:** `build_jhj_jhr_impl` returns the loop wrapped in `qcjit`
+  (`inline="always"`), so it is never lowered as a standalone cache unit; every
+  kernel's `nb_compute_jhj_jhr` returns a **module-local trampoline** that inlines it,
+  giving each kernel a private cache namespace. The constraint is documented as the
+  CACHE CORRECTNESS CONSTRAINT in `accumulation.py`'s docstring.
+- **Rationale:** The trampoline is the smallest change that makes the cache key unique
+  per kernel (each trampoline has its own source location) without giving up disk
+  caching or the shared single-source loop. `prange` survives the inlining (parfor
+  diagnostics confirm the parallel loop in the trampoline). leakage needs no
+  trampoline of its own: it imports complex's `compute_jhj_jhr` wholesale, so sharing
+  that cache unit is byte-identical.
+- **Consequences:** Any future factory that returns a jitted closure consumed by
+  multiple kernel modules with identical signatures MUST be inlined into a
+  module-local wrapper, never returned as a directly-lowered `@overload` impl.
+  Verified at the fix: checksums bit-identical to the pre-fix tip, bench parity within
+  noise, full suite green twice back-to-back (the second run on the previously failing
+  warm cross-session cache), hermetic two-process repro green in both orders.
+- **Source:** commit ec25545 (2026-07-16); forensics and evidence in
+  `~/claude_artifacts/quaritcal_optimisation/results/UNIFICATION_LOG.md`
+  ("Cache-collision fix").
 
 ## Dask for parallelism and distribution
 
@@ -375,19 +437,28 @@ treat these as scars, not patterns to replicate:
   The complexity is tolerated, not endorsed.
 - **Per-solver code duplication.** Solver kernels were deliberately kept separate so each
   could evolve independently, avoiding "hideous if-else ladders" across correlation and
-  parameterisation variants — but the result is that adding a feature across all solvers is
-  painful, and the original choice "may have been misguided". Don't copy-paste a sixteenth
-  variant without weighing shared machinery.
+  parameterisation variants — but the result was that adding a feature across all solvers
+  was painful, and the original choice "may have been misguided". **Largely addressed
+  2026-07:** the `compute_jhj_jhr` accumulation loop now lives once in
+  `gains/general/accumulation.py` and all 13 solvable kernels bind it through hook
+  factories (leakage reuses complex's binding; no fallback holdouts remain), and
+  `compute_update` lives once in `gains/general/solver_ops.py`. What stays per-kernel is
+  the per-term maths (elem/flush/resid/stage hooks and `finalize_update`) — which is the
+  part that *should* vary. New gain types should bind the shared loop, not copy one.
 - **Dask itself.** No longer improving upstream and largely fallen out of favour; the
   project will almost certainly move away from it at some point. Avoid deepening dask
   coupling in new code where a scheduler-agnostic seam is possible.
 - **Numba code generation.** The factory pattern's optimisation payoff was never verified,
   and the kernels do not reliably produce vectorised (SIMD) machine code — an acknowledged
-  improvement area. Partially addressed 2026-07-08: assembly inspection confirmed the hot
-  loops were 100% scalar and memory-bound, and the **complex** kernel was rewritten on
+  improvement area. Largely addressed 2026-07: assembly inspection (2026-07-08) confirmed
+  the hot loops were 100% scalar and memory-bound; the **complex** kernel was rewritten on
   tuple-based factories for a 2.1-2.8x measured speedup (see "Tuple-based kernel maths in
-  the complex solver"). The other kernels (delay, phase, diag_complex, rotation, ...)
-  still use the array-buffer style and remain unverified.
+  the complex solver"), and the optimisation was then propagated to **every** other
+  solvable kernel via the shared accumulation loop for measured 1.4-2.8x speedups (see
+  "Shared hook-parameterised accumulation loop"). All kernel accumulation is now
+  tuple-based; the array-buffer factories survive only outside the hot accumulation loop
+  (e.g. `general/generics.py` residual computation, inversion buffers). The remaining
+  known headroom is cross-visibility SIMD, judged not worth the complexity yet.
 
 ## Recurring gotchas
 
@@ -399,8 +470,8 @@ Things that have repeatedly bitten the developers and contributors (interview 20
   crashes compilation: numba's parfor array analysis misreads tuple-of-tuples returns as
   array shapes and fails with `AssertionError: Dimension mismatch` (seen with numba
   0.65.1). Return a single flat tuple and index it with literals instead — this is why the
-  complex kernel's JHJ/JHr accumulator is one flat tuple and why its chain-product block is
-  inlined rather than factored into a helper returning four operator tuples.
+  shared accumulation loop's JHJ/JHr accumulator is one flat tuple and why its chain-product
+  block is inlined rather than factored into a helper returning four operator tuples.
 - Accidentally introducing shared root nodes into the dask graph sends task ordering
   haywire.
 - CASA table caching underneath dask-ms can produce suspicious memory footprints depending
