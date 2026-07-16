@@ -258,7 +258,11 @@ def nb_compute_jhj_jhr(
     # by the stage hook and consumed by the elem. Rotation measure solves a
     # single parameter, so its jhj is (1, 1) and the mirror hook is a no-op
     # (mirror_factory is None).
-    return build_jhj_jhr_impl(
+    # The shared loop is inlined into the module-local trampoline below
+    # rather than returned directly. This gives rotation_measure a private on-disk
+    # cache namespace - see the cache correctness constraint in
+    # accumulation.py.
+    shared_impl = build_jhj_jhr_impl(
         corr_mode,
         row_weights_type,
         elem_factory=compute_jhwj_jhwr_elem_factory,
@@ -269,6 +273,27 @@ def nb_compute_jhj_jhr(
         stage_factory=stage_factory,
         mirror_factory=None,
     )
+
+    def impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        upsampled_imdry,
+        extents,
+        corr_mode
+    ):
+        return shared_impl(
+            ms_inputs,
+            mapping_inputs,
+            chain_inputs,
+            meta_inputs,
+            upsampled_imdry,
+            extents,
+            corr_mode
+        )
+
+    return impl
 
 
 def finalize_update(

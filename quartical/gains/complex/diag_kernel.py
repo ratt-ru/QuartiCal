@@ -222,7 +222,11 @@ def nb_compute_jhj_jhr(
     # is zero and there is no stage hook. The jhj element for a diagonal term
     # is shaped like the gains (a flat correlation vector, not a (4, 4) block),
     # so there is no upper/lower triangle to mirror and mirror_factory is None.
-    return build_jhj_jhr_impl(
+    # The shared loop is inlined into the module-local trampoline below
+    # rather than returned directly. This gives diag_complex a private on-disk
+    # cache namespace - see the cache correctness constraint in
+    # accumulation.py.
+    shared_impl = build_jhj_jhr_impl(
         corr_mode,
         row_weights_type,
         elem_factory=compute_jhwj_jhwr_elem_factory,
@@ -233,6 +237,27 @@ def nb_compute_jhj_jhr(
         stage_factory=None,
         mirror_factory=None,
     )
+
+    def impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        upsampled_imdry,
+        extents,
+        corr_mode
+    ):
+        return shared_impl(
+            ms_inputs,
+            mapping_inputs,
+            chain_inputs,
+            meta_inputs,
+            upsampled_imdry,
+            extents,
+            corr_mode
+        )
+
+    return impl
 
 
 def finalize_update(

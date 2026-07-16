@@ -220,7 +220,11 @@ def nb_compute_jhj_jhr(
     # hooks below (the per-term maths) are specific to complex terms. The
     # complex residual has no auxiliary values and no per-channel
     # coefficients, so n_resid_aux is zero and there is no stage hook.
-    return build_jhj_jhr_impl(
+    # The shared loop is inlined into the module-local trampoline below
+    # rather than returned directly. This gives complex a private on-disk
+    # cache namespace - see the cache correctness constraint in
+    # accumulation.py.
+    shared_impl = build_jhj_jhr_impl(
         corr_mode,
         row_weights_type,
         elem_factory=compute_jhwj_jhwr_elem_factory,
@@ -231,6 +235,27 @@ def nb_compute_jhj_jhr(
         stage_factory=None,
         mirror_factory=mirror_jhj_factory,
     )
+
+    def impl(
+        ms_inputs,
+        mapping_inputs,
+        chain_inputs,
+        meta_inputs,
+        upsampled_imdry,
+        extents,
+        corr_mode
+    ):
+        return shared_impl(
+            ms_inputs,
+            mapping_inputs,
+            chain_inputs,
+            meta_inputs,
+            upsampled_imdry,
+            extents,
+            corr_mode
+        )
+
+    return impl
 
 
 def finalize_update(

@@ -30,6 +30,22 @@ def build_jhj_jhr_impl(
     return a ``qcjit``-wrapped closure. Numba only ever sees the final
     specialised closures, so the indirection is free after inlining.
 
+    CACHE CORRECTNESS CONSTRAINT: the built loop is returned as a
+    ``factories.qcjit`` (``inline="always"``) function and MUST be inlined into a
+    per-kernel-module trampoline (see any kernel's ``nb_compute_jhj_jhr``). Numba
+    keys its on-disk cache on the source location plus the argument type
+    signature of each separately-lowered function; the hook closures captured
+    here only enter the key as a cloudpickle hash which numba itself documents
+    as unstable across processes, so it cannot reliably distinguish kernels.
+    Every kernel presents this loop with an identical argument signature, so if
+    the loop were lowered as its own cache unit (a bare closure returned from
+    the overload) all kernels would share a single cache file - a process
+    compiling kernel B could then load kernel A's machine code written by an
+    earlier session, silently running the wrong maths. Returning an
+    ``inline="always"`` function prevents this: it is never lowered as a
+    standalone cache unit, and the trampoline that inlines it lives in the
+    kernel's own module, giving each kernel a private cache namespace.
+
     The residual hook returns a single FLAT tuple - the residual values
     followed by ``n_resid_aux`` trailing auxiliary values (e.g. a per-corr
     normalisation factor). The loop splits it by literal index generated here
@@ -455,4 +471,9 @@ def build_jhj_jhr_impl(
             # element (4 correlation case) - fill in the lower triangle.
             mirror(jhj_tifi)
         return
-    return impl
+
+    # Return the loop as an inline="always" function so that it is never lowered
+    # as a standalone (and separately disk-cached) unit - see the cache
+    # correctness constraint in the docstring above. Each kernel inlines this
+    # into a module-local trampoline, giving it a private cache namespace.
+    return factories.qcjit(impl)
