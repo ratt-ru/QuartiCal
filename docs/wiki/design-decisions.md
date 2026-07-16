@@ -3,7 +3,7 @@ type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
 timestamp: 2026-07-16
-last_verified_commit: ec25545
+last_verified_commit: 7fcde6c
 ---
 
 # Design Decisions
@@ -247,6 +247,52 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Source:** commit ec25545 (2026-07-16); forensics and evidence in
   `~/claude_artifacts/quaritcal_optimisation/results/UNIFICATION_LOG.md`
   ("Cache-collision fix").
+
+## Chain regression tests behind a slow marker, asserted on the net gain
+
+- **Context:** Until 2026-07, no test ever *computed* a multi-term chain solve: every
+  per-type gain test uses `solver.terms=['G']`, and `test_calibrate.py`'s G,B chain is
+  asserted lazily (graph metadata only). The kernel-unification work exposed the gap — a
+  full-pipeline A/B probe (three-term chains incl. a DD term, new vs pre-unification
+  baseline) had to be improvised to show chain mechanics were preserved. Two obstacles
+  kept chains out of the suite: (1) kernel compilation depends on the full chain signature
+  (every term's gain dtypes enter each kernel's numba tuple argument), so each distinct
+  chain composition compiles fresh and the suite already compiles for ages from scratch;
+  (2) effects bleed between terms (e.g. a sufficiently resolved complex term absorbs a
+  delay), so per-term truth assertions are ill-posed in a chain.
+- **Decision:** One `@pytest.mark.slow` module, `testing/tests/gains/test_chain.py`,
+  excluded from CI by default (`pytest -m "not slow"` in `ci.yaml`). It solves a single
+  three-term chain (complex G + delay K + diag_complex B) at one correlation mode, in two
+  variants (DI, and DD via a two-direction synthetic model with B direction-dependent)
+  that deliberately share the same chain signature — one extra set of chain compilations
+  total. Assertions target the **net gain product** (via `output.net_gains`) against the
+  composed true Jones product, plus residual magnitude and flag invariance — never
+  individual terms.
+- **Rationale:** The net product is what the data constrains, so it is invariant to
+  inter-term bleed; right-referencing to antenna 0 removes the per-(t,f,dir) gauge
+  ambiguity. Two well-posedness constraints were established empirically during
+  bring-up: (1) the truth must be **diagonal with an unpolarised model** — diagonal-type
+  terms (delay, diag_complex) are constrained by parallel-hand data only, so per-channel
+  crosshand phase in the truth is gauge-free and stalls the solve with the entire
+  cross-hand power left in the residual (~1% chi-squared plateau) while the
+  freq-constant complex term fits junk leakage; (2) the DD term must be
+  frequency-constant, otherwise only the sum over directions is constrained and the
+  per-direction net is not unique. Chain solves also need many one-term-at-a-time
+  cycles (20 in the test; converged terms exit immediately, so cycles are cheap — the
+  module runs in ~100 s cold / ~20 s with a warm numba cache). The slow marker keeps
+  the compile cost out of the default CI matrix while leaving the coverage one
+  `-m slow` away.
+- **Consequences:** Chain mechanics regressions (operator products, per-term
+  time/freq/dir maps, DD stacking) are now caught by an opt-in test instead of ad-hoc A/B
+  probes. CI no longer runs anything marked slow — genuinely slow future tests can use
+  the marker freely, but a periodic/manual slow run is needed for their coverage to
+  count. Fixing this test also surfaced a latent `n_dir > 1` bug in
+  `testing/utils/gains.py:reference_gains` (antenna loop outside the direction loop —
+  the same stale-direction shape as the legacy kernel bug).
+- **Source:** chain-mechanics A/B probe and design discussion 2026-07-16
+  (`~/claude_artifacts/quaritcal_optimisation/results/UNIFICATION_LOG.md`, "Chain-mechanics
+  A/B probe"); user requirement that compilation cost stay bounded and per-term
+  assertions be avoided.
 
 ## Dask for parallelism and distribution
 
