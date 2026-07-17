@@ -7,26 +7,13 @@ from quartical.utils.numba import (
     JIT_OPTIONS,
     PARALLEL_JIT_OPTIONS
 )
-from quartical.gains.general.generics import (
-    native_intermediaries,
-    upsampled_itermediaries,
-    per_array_jhj_jhr,
-    resample_solints,
-    downsample_jhj_jhr,
-    scalar_jhj_jhr
-)
 from quartical.gains.general.flagging import (
-    flag_intermediaries,
-    update_gain_flags,
-    finalize_gain_flags,
-    apply_gain_flags_to_flag_col,
-    update_param_flags,
     apply_gain_flags_to_gains,
     apply_param_flags_to_params
 )
-from quartical.gains.general.convenience import get_extents
 import quartical.gains.general.factories as factories
 from quartical.gains.general.accumulation import build_jhj_jhr_impl
+from quartical.gains.general.solver_loop import build_param_solver_impl
 from quartical.gains.general.solver_ops import compute_update  # noqa
 
 
@@ -67,6 +54,33 @@ def delay_and_offset_solver_impl(
     raise NotImplementedError
 
 
+# We actually solve for D' = (D(nu_min + nu_max))/2. This helps avoid
+# numerical issues, but requires some scaling of the parameters. Only the delay
+# entries (the strided [..., 1::2] slots) are rescaled; the offset entries are
+# left untouched. The solver enters this scaled basis before the loop
+# (pre_solve) and leaves it afterwards (post_solve); both hooks are module-local
+# qcjit closures that fetch their inputs from the standardised hook arguments,
+# exactly mirroring the inline rescaling the loop body previously performed.
+def pre_solve(ms_inputs, chain_inputs, meta_inputs):
+    active_params = chain_inputs.params[meta_inputs.active_term]
+    mid_freq = (ms_inputs.MIN_FREQ + ms_inputs.MAX_FREQ) / 2
+    active_params[..., 1::2] *= mid_freq
+
+
+pre_solve = factories.qcjit(pre_solve)
+
+
+def post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry):
+    active_params = chain_inputs.params[meta_inputs.active_term]
+    mid_freq = (ms_inputs.MIN_FREQ + ms_inputs.MAX_FREQ) / 2
+    # Undo rescaling so that quantities are in native units.
+    active_params[..., 1::2] /= mid_freq
+    native_imdry.jhj[..., 1::2] *= mid_freq ** 2
+
+
+post_solve = factories.qcjit(post_solve)
+
+
 @overload(delay_and_offset_solver_impl, jit_options=JIT_OPTIONS)
 def nb_delay_and_offset_solver_impl(
     ms_inputs,
@@ -80,6 +94,27 @@ def nb_delay_and_offset_solver_impl(
 
     identity_params = get_identity_params(corr_mode)
 
+    # The outer solver loop is shared between parameterised kernels - only the
+    # hooks below are specific to delay_and_offset terms. It solves on the
+    # parameter grid, supports scalar mode (two parameters per correlation - a
+    # delay and an offset), has a referencing stage, and enters/leaves a scaled
+    # solver basis (the pre/post-solve stages rescale its delay parameters). The
+    # shared loop is inlined into the module-local trampoline below rather than
+    # returned directly. This gives delay_and_offset a private on-disk cache
+    # namespace - see the cache correctness constraint in accumulation.py.
+    shared_impl = build_param_solver_impl(
+        True,
+        pre_solve,
+        compute_jhj_jhr,
+        2,
+        None,
+        finalize_update,
+        1e9,
+        identity_params,
+        reference_params,
+        post_solve,
+    )
+
     def impl(
         ms_inputs,
         mapping_inputs,
@@ -87,149 +122,13 @@ def nb_delay_and_offset_solver_impl(
         meta_inputs,
         corr_mode
     ):
-
-        gains = chain_inputs.gains
-        gain_flags = chain_inputs.gain_flags
-
-        active_term = meta_inputs.active_term
-        max_iter = meta_inputs.iters
-        solve_per = meta_inputs.solve_per
-        scalar = meta_inputs.scalar
-        dd_term = meta_inputs.dd_term
-        n_thread = meta_inputs.threads
-
-        active_gain = gains[active_term]
-        active_gain_flags = gain_flags[active_term]
-        active_params = chain_inputs.params[active_term]
-
-        # Set up some intemediaries used for flagging.
-        km1_gain = active_gain.copy()
-        km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
-        abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
-        flag_imdry = \
-            flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
-
-        # Set up some intemediaries used for solving.
-        real_dtype = active_gain.real.dtype
-        param_shape = active_params.shape
-
-        active_t_map_g = mapping_inputs.time_maps[active_term]
-        active_f_map_p = mapping_inputs.param_freq_maps[active_term]
-
-        # Create more work to do in paralllel when needed, else no-op.
-        resampler = resample_solints(active_t_map_g, param_shape, n_thread)
-
-        # Determine the starts and stops of the rows and channels associated
-        # with each solution interval.
-        extents = get_extents(resampler.upsample_t_map, active_f_map_p)
-
-        upsample_shape = resampler.upsample_shape
-        upsampled_jhj = np.empty(upsample_shape + (upsample_shape[-1],),
-                                 dtype=real_dtype)
-        upsampled_jhr = np.empty(upsample_shape, dtype=real_dtype)
-        jhj = upsampled_jhj[:param_shape[0]]
-        jhr = upsampled_jhr[:param_shape[0]]
-        update = np.zeros(param_shape, dtype=real_dtype)
-
-        upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
-        native_imdry = native_intermediaries(jhj, jhr, update)
-
-        # We actually solve for D' = (D(nu_min + nu_max))/2. This helps avoid
-        # numerical issues, but requires some scaling of the parameters.
-        mid_freq = (ms_inputs.MIN_FREQ + ms_inputs.MAX_FREQ) / 2
-        active_params[..., 1::2] *= mid_freq
-
-        for loop_idx in range(max_iter or 1):
-
-            compute_jhj_jhr(
-                ms_inputs,
-                mapping_inputs,
-                chain_inputs,
-                meta_inputs,
-                upsampled_imdry,
-                extents,
-                corr_mode
-            )
-
-            if resampler.active:
-                downsample_jhj_jhr(upsampled_imdry, resampler.downsample_t_map)
-
-            if solve_per == "array":
-                per_array_jhj_jhr(native_imdry)
-
-            if scalar and corr_mode != 1:
-                scalar_jhj_jhr(native_imdry, 2)
-
-            if not max_iter:  # Non-solvable term, we just want jhj.
-                conv_perc = 0  # Didn't converge.
-                loop_idx = -1  # Did zero iterations.
-                break
-
-            compute_update(native_imdry, corr_mode)
-
-            finalize_update(
-                ms_inputs,
-                mapping_inputs,
-                chain_inputs,
-                meta_inputs,
-                native_imdry,
-                loop_idx,
-                corr_mode
-            )
-
-            # Check for gain convergence. Produced as a side effect of
-            # flagging. The converged percentage is based on unflagged
-            # intervals.
-            conv_perc = update_gain_flags(
-                chain_inputs,
-                meta_inputs,
-                flag_imdry,
-                loop_idx,
-                corr_mode,
-                numbness=1e9
-            )
-
-            # Propagate gain flags to parameter flags.
-            update_param_flags(
-                mapping_inputs,
-                chain_inputs,
-                meta_inputs,
-                identity_params
-            )
-
-            if conv_perc >= meta_inputs.stop_frac:
-                break
-
-        # NOTE: Removes soft flags and flags points which have bad trends.
-        finalize_gain_flags(
-            chain_inputs,
-            meta_inputs,
-            flag_imdry,
-            corr_mode
-        )
-
-        reference_params(
+        return shared_impl(
             ms_inputs,
             mapping_inputs,
             chain_inputs,
             meta_inputs,
+            corr_mode
         )
-
-        # Call this one last time to ensure points flagged by finialize are
-        # propagated (in the DI case).
-        if not dd_term:
-            apply_gain_flags_to_flag_col(
-                ms_inputs,
-                mapping_inputs,
-                chain_inputs,
-                meta_inputs
-            )
-
-        # Undo rescaling so that quantities are in native units.
-        active_params[..., 1::2] /= mid_freq
-        native_imdry.jhj[..., 1::2] *= mid_freq ** 2
-
-        return native_imdry.jhj, loop_idx + 1, conv_perc
 
     return impl
 
