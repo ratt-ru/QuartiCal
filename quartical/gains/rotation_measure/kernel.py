@@ -126,13 +126,6 @@ def nb_rm_solver_impl(
         upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
         native_imdry = native_intermediaries(jhj, jhr, update)
 
-        # The per-channel lambda squared drives the frequency dependence of the
-        # rotation angle. The shared accumulation loop recomputes it per channel
-        # via the stage hook, but finalize_update still consumes the whole array
-        # when it maps parameters back onto gains.
-        chan_freqs = ms_inputs.CHAN_FREQ
-        lambda_sq = (299792458/chan_freqs)**2
-
         for loop_idx in range(max_iter or 1):
 
             compute_jhj_jhr(
@@ -165,12 +158,12 @@ def nb_rm_solver_impl(
                            corr_mode)
 
             finalize_update(
+                ms_inputs,
                 mapping_inputs,
                 chain_inputs,
                 meta_inputs,
                 native_imdry,
                 loop_idx,
-                lambda_sq,
                 corr_mode
             )
 
@@ -297,12 +290,12 @@ def nb_compute_jhj_jhr(
 
 
 def finalize_update(
+    ms_inputs,
     mapping_inputs,
     chain_inputs,
     meta_inputs,
     native_imdry,
     loop_idx,
-    lambda_sq,
     corr_mode
 ):
     raise NotImplementedError
@@ -310,12 +303,12 @@ def finalize_update(
 
 @overload(finalize_update, jit_options=JIT_OPTIONS)
 def nb_finalize_update(
+    ms_inputs,
     mapping_inputs,
     chain_inputs,
     meta_inputs,
     native_imdry,
     loop_idx,
-    lambda_sq,
     corr_mode
 ):
 
@@ -325,12 +318,12 @@ def nb_finalize_update(
 
     if corr_mode.literal_value == 4:
         def impl(
+            ms_inputs,
             mapping_inputs,
             chain_inputs,
             meta_inputs,
             native_imdry,
             loop_idx,
-            lambda_sq,
             corr_mode
         ):
 
@@ -344,6 +337,12 @@ def nb_finalize_update(
 
             param_freq_map = mapping_inputs.param_freq_maps[active_term]
             dir_map = mapping_inputs.dir_maps[active_term]
+
+            # The per-channel lambda squared drives the frequency dependence
+            # of the rotation angle when mapping parameters back onto gains.
+            # This is negligible work relative to the loop below.
+            chan_freqs = ms_inputs.CHAN_FREQ
+            lambda_sq = (299792458/chan_freqs)**2
 
             update = native_imdry.update
 

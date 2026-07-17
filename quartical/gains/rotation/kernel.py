@@ -159,6 +159,7 @@ def nb_rotation_solver_impl(
                            corr_mode)
 
             finalize_update(
+                ms_inputs,
                 mapping_inputs,
                 chain_inputs,
                 meta_inputs,
@@ -288,6 +289,7 @@ def nb_compute_jhj_jhr(
 
 
 def finalize_update(
+    ms_inputs,
     mapping_inputs,
     chain_inputs,
     meta_inputs,
@@ -300,6 +302,7 @@ def finalize_update(
 
 @overload(finalize_update, jit_options=JIT_OPTIONS)
 def nb_finalize_update(
+    ms_inputs,
     mapping_inputs,
     chain_inputs,
     meta_inputs,
@@ -314,6 +317,7 @@ def nb_finalize_update(
 
     if corr_mode.literal_value == 4:
         def impl(
+            ms_inputs,
             mapping_inputs,
             chain_inputs,
             meta_inputs,

@@ -158,6 +158,8 @@ def nb_crosshand_phase_solver_impl(
             compute_update(native_imdry, corr_mode)
 
             finalize_update(
+                ms_inputs,
+                mapping_inputs,
                 chain_inputs,
                 meta_inputs,
                 native_imdry,
@@ -286,6 +288,8 @@ def nb_compute_jhj_jhr(
 
 
 def finalize_update(
+    ms_inputs,
+    mapping_inputs,
     chain_inputs,
     meta_inputs,
     native_imdry,
@@ -297,6 +301,8 @@ def finalize_update(
 
 @overload(finalize_update, jit_options=JIT_OPTIONS)
 def nb_finalize_update(
+    ms_inputs,
+    mapping_inputs,
     chain_inputs,
     meta_inputs,
     native_imdry,
@@ -310,6 +316,8 @@ def nb_finalize_update(
     param_to_gain = param_to_gain_factory(corr_mode)
 
     def impl(
+        ms_inputs,
+        mapping_inputs,
         chain_inputs,
         meta_inputs,
         native_imdry,
