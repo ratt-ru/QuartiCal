@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-07-16
-last_verified_commit: 7fcde6c
+timestamp: 2026-07-20
+last_verified_commit: ce9de22
 ---
 
 # Design Decisions
@@ -247,6 +247,45 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Source:** commit ec25545 (2026-07-16); forensics and evidence in
   `~/claude_artifacts/quaritcal_optimisation/results/UNIFICATION_LOG.md`
   ("Cache-collision fix").
+
+## Shared hook-parameterised solver loop (the iteration above the accumulation loop)
+
+- **Context:** After the accumulation-loop unification, each kernel's `*_solver_impl`
+  body (intermediary setup, the Gauss-Newton iteration calling compute_jhj_jhr /
+  compute_update / finalize_update / flagging, and the return) remained near-verbatim
+  duplicated across 13 modules — ~120-180 lines each, with only a handful of known
+  variance points.
+- **Decision:** The outer loop lives once in `quartical/gains/general/solver_loop.py`
+  as TWO builders: `build_gain_solver_impl` (complex, diag_complex, leakage) and
+  `build_param_solver_impl` (the ten parameterised terms). Two builders, not one,
+  because the families differ in jhj dtype/shape, params/param-flags plumbing, and
+  flagging extras. Per-term rescaling stays in-kernel as opaque `pre_solve`/`post_solve`
+  jitted closures (the delay/tec families' scaled-basis entry/exit, relocated verbatim)
+  — a declarative/class-based rescaling abstraction was considered and REJECTED
+  (it presumes any rescaling fits a single class shape). Optional hooks resolve to
+  build-time no-ops; each kernel's `nb_<term>_solver_impl` returns the mandatory
+  module-local trampoline (previous entry). `crosshand_phase_null_v` keeps a private
+  loop: its inverse-gains machinery (typed-List build before the loop, extra leading
+  compute_jhj_jhr argument, per-iteration refresh) is not expressible as verbatim code
+  motion through the hooks.
+- **Rationale:** Pure maintainability refactor — the hot loops did not move, so the
+  gate was exactness and parity rather than speedup: checksums bitwise-identical to
+  kernel-propagation (4b022f4) for every ported term and supported corr mode (full and
+  jhj-only scenarios), parity spot-checks complex corr 4 at 0.983 and delay corr 4 at
+  0.993 min/min. A prerequisite commit standardised `finalize_update` to one 7-arg
+  signature across the parameterised family (rotation_measure now recomputes
+  `lambda_sq` inside its finalize impl) and `reference_params` to a 4-arg form.
+- **Consequences:** A new gain type writes only hooks at BOTH levels (accumulation
+  elem/resid/etc. + the solver-loop bindings) plus its finalize/reference machinery;
+  the iteration logic cannot drift per-kernel any more. The plan's assumption that
+  diag_complex shared complex's solver object was false — it had its own near-identical
+  loop and was absorbed via two extra optional inputs (`scalar_jhj_jhr`,
+  `reference_gains`). Known variance-inventory correction: every parameterised kernel
+  passes `numbness=1e9` explicitly except amplitude (default 1e-6).
+- **Source:** branch kernel-unification, commits 2d9d8d2..ce9de22 (2026-07-17 to
+  2026-07-20); verification numbers in
+  `~/claude_artifacts/quaritcal_optimisation/results/UNIFICATION_LOG.md`
+  ("Solver-loop unification").
 
 ## Chain regression tests behind a slow marker, asserted on the net gain
 

@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-07-16
-last_verified_commit: ec25545
+timestamp: 2026-07-20
+last_verified_commit: ce9de22
 ---
 
 # Solver Architecture
@@ -204,14 +204,16 @@ Kernel structure (see `quartical/gains/complex/kernel.py` and `.../delay/kernel.
 the same skeleton:
 
 - A thin `@njit(**JIT_OPTIONS)` entry point (`complex_solver` / `delay_solver`) forwarding to an
-  `_impl` that is `@overload`-ed. The overload calls `coerce_literal(..., ["corr_mode"])`, builds
-  its factory helpers once, then returns the `impl` closure.
-- The solve `impl` sets up flagging/solving intermediaries (`native_intermediaries`,
+  `_impl` that is `@overload`-ed. The overload calls `coerce_literal(..., ["corr_mode"])`, binds
+  one of the two shared solver-loop builders (see "The shared solver loop" below) with its
+  module-local hooks, and returns a module-local trampoline that inlines the built loop.
+- The shared solve body sets up flagging/solving intermediaries (`native_intermediaries`,
   `upsampled_itermediaries`, `flag_intermediaries`), then loops `for loop_idx in
   range(max_iter or 1)`: `compute_jhj_jhr` → optional `downsample_jhj_jhr` /
   `per_array_jhj_jhr` / `scalar_jhj_jhr` → `compute_update` (matrix inversion via
   `inversion.invert_factory`) → `finalize_update` → `update_gain_flags` (which also returns the
-  converged percentage) → break at `conv_perc >= meta_inputs.stop_frac`.
+  converged percentage; parameterised terms then propagate flags via `update_param_flags`) →
+  break at `conv_perc >= meta_inputs.stop_frac`.
 - `compute_jhj_jhr` is `@overload`-ed with `PARALLEL_JIT_OPTIONS` and binds the shared
   accumulation loop (next subsection), which does the `prange` over solution intervals,
   accumulating per-antenna JHJ and JHr from the residual in flat register-resident tuples.
@@ -275,18 +277,61 @@ a 3-direction run, checksums bitwise-identical). Each kernel keeps its own ~15-l
 distinct overload symbol (`quartical/gains/phase/kernel.py` is a representative consumer;
 `leakage` imports complex's `compute_jhj_jhr` wholesale).
 
-**The module-local trampoline is mandatory.** `build_jhj_jhr_impl` returns the loop wrapped in
-`qcjit` (`inline="always"`), and each kernel's `nb_compute_jhj_jhr` must NOT hand it back to
-numba directly: it returns a module-local `impl` that simply calls (and therefore inlines) the
-shared loop. This exists for on-disk cache correctness, not style. Numba keys disk-cache
+**The shared solver loop.** One level up from the accumulation loop, the outer solver
+iteration (each kernel's `*_solver_impl` body) also lives once, in
+`quartical/gains/general/solver_loop.py`, as two hook-parameterised builders (extracted
+2026-07-20 as pure code motion: checksums bitwise-identical per term and corr mode vs the
+pre-extraction tree, timing at parity):
+
+- `build_gain_solver_impl(get_jhj_dims, compute_jhj_jhr, scalar_jhj_jhr,
+  scalar_error_message, finalize_update, reference_gains)` — non-parameterised terms
+  (complex, diag_complex, leakage). The body is complex's historic impl. diag_complex
+  differs only via the builder inputs: `identity_dims` (its jhj is gain-shaped rather than
+  `get_jhj_dims_factory`'s block shape), its own one-arg `scalar_jhj_jhr` (scalar mode
+  supported; `None` means unsupported and raises `scalar_error_message`), and a
+  `reference_gains(chain_inputs, meta_inputs, corr_mode)` stage after `finalize_gain_flags`.
+- `build_param_solver_impl(solve_on_param_grid, pre_solve, compute_jhj_jhr,
+  params_per_corr, scalar_error_message, finalize_update, numbness, identity_params,
+  reference_params, post_solve)` — the ten parameterised terms. The body is delay's
+  historic impl. `solve_on_param_grid` selects extents from `param_freq_maps` (delay/tec
+  families, rotation, rotation_measure) vs `freq_maps` (phase, amplitude, crosshand_phase);
+  `params_per_corr` is the width passed to the generic `scalar_jhj_jhr` collapse (`None`
+  means scalar unsupported, raise); `numbness` forwards to `update_gain_flags` (1e9
+  everywhere except amplitude's default 1e-6); `identity_params` forwards to
+  `update_param_flags`; `reference_params(ms_inputs, mapping_inputs, chain_inputs,
+  meta_inputs)` runs after `finalize_gain_flags` where present (phase, delay/tec families).
+  `pre_solve(ms_inputs, chain_inputs, meta_inputs)` and `post_solve(ms_inputs,
+  chain_inputs, meta_inputs, native_imdry)` are opaque jitted closures owned by each
+  kernel module — deliberately NOT a declarative rescaling abstraction — used to enter and
+  leave a scaled solver basis: the delay/tec families' mid_freq/bandwidth strided rescales
+  (and, for the offset terms, `apply_zero_mean_correction`) relocated verbatim.
+
+`None` hooks resolve at build time (an empty `qcjit` closure or the raising scalar variant
+is substituted when the builder runs), so the compiled body carries no runtime branch for an
+absent hook. `finalize_update` is called with a single standardised signature per family:
+5-arg `(chain_inputs, meta_inputs, native_imdry, loop_idx, corr_mode)` for gain-basis terms,
+7-arg `(ms_inputs, mapping_inputs, ...)` for parameterised terms (rotation_measure
+recomputes `lambda_sq` from `ms_inputs.CHAN_FREQ` inside its finalize impl).
+`crosshand_phase_null_v` is the one deliberate holdout: its loop builds a typed List of
+inverse gains before iterating, passes it as an extra leading argument to its own
+`compute_jhj_jhr`, and refreshes the active inverse each iteration — not expressible as
+verbatim code motion through these hooks — so it keeps a private copy of the loop in
+`null_v_kernel.py`.
+
+**The module-local trampoline is mandatory.** `build_jhj_jhr_impl` and both solver-loop
+builders return their loops wrapped in `qcjit` (`inline="always"`), and each kernel's
+`nb_compute_jhj_jhr` / `nb_<term>_solver_impl` must NOT hand the built closure back to
+numba directly: it returns a module-local `impl` that simply calls (and therefore inlines)
+the shared loop. This exists for on-disk cache correctness, not style. Numba keys disk-cache
 entries by source location plus argument-type signature, discriminated only by a
 nondeterministic cloudpickle hash of the closure cells; a directly-returned shared closure is
-lowered as ONE cache unit for all 13 kernels with identical signatures, so a stale
+lowered as ONE cache unit for all kernels with identical signatures, so a stale
 multi-session cache could silently load the wrong kernel's machine code (this happened —
 corrupted solves, no error; see design-decisions.md, "Per-kernel numba disk-cache
 namespaces"). The trampoline gives each kernel a private cache namespace; `prange` survives
 the inlining. The constraint is documented as the CACHE CORRECTNESS CONSTRAINT in
-`accumulation.py` — any new consumer of the shared loop must copy the trampoline shape.
+`accumulation.py` (canonical) and restated at the top of `solver_loop.py` — any new consumer
+of either shared loop must copy the trampoline shape.
 
 Flagging hooks live in `quartical/gains/general/flagging.py` and are called by the kernels:
 `update_gain_flags` (trend-based "trendy flagging": soft/hard flags diverging solutions, resets
