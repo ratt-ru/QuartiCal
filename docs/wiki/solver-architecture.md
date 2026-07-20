@@ -3,7 +3,7 @@ type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
 timestamp: 2026-07-20
-last_verified_commit: ce9de22
+last_verified_commit: d3916e0
 ---
 
 # Solver Architecture
@@ -281,16 +281,19 @@ distinct overload symbol (`quartical/gains/phase/kernel.py` is a representative 
 iteration (each kernel's `*_solver_impl` body) also lives once, in
 `quartical/gains/general/solver_loop.py`, as two hook-parameterised builders (extracted
 2026-07-20 as pure code motion: checksums bitwise-identical per term and corr mode vs the
-pre-extraction tree, timing at parity):
+pre-extraction tree, timing at parity). Both builders take their hooks as **keyword-only
+arguments** (a leading bare `*` in each signature); every kernel call site passes them by
+name, so the opaque positional `build_param_solver_impl(False, None, ..., 1e9, ..., None)`
+form is a `TypeError`:
 
-- `build_gain_solver_impl(get_jhj_dims, compute_jhj_jhr, scalar_jhj_jhr,
+- `build_gain_solver_impl(*, get_jhj_dims, compute_jhj_jhr, scalar_jhj_jhr,
   scalar_error_message, finalize_update, reference_gains)` — non-parameterised terms
   (complex, diag_complex, leakage). The body is complex's historic impl. diag_complex
   differs only via the builder inputs: `identity_dims` (its jhj is gain-shaped rather than
   `get_jhj_dims_factory`'s block shape), its own one-arg `scalar_jhj_jhr` (scalar mode
   supported; `None` means unsupported and raises `scalar_error_message`), and a
   `reference_gains(chain_inputs, meta_inputs, corr_mode)` stage after `finalize_gain_flags`.
-- `build_param_solver_impl(solve_on_param_grid, pre_solve, compute_jhj_jhr,
+- `build_param_solver_impl(*, solve_on_param_grid, pre_solve, compute_jhj_jhr,
   params_per_corr, scalar_error_message, finalize_update, numbness, identity_params,
   reference_params, post_solve)` — the ten parameterised terms. The body is delay's
   historic impl. `solve_on_param_grid` selects extents from `param_freq_maps` (delay/tec

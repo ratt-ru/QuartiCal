@@ -102,16 +102,16 @@ def nb_delay_solver_impl(
     # delay a private on-disk cache namespace - see the cache correctness
     # constraint in accumulation.py.
     shared_impl = build_param_solver_impl(
-        True,
-        pre_solve,
-        compute_jhj_jhr,
-        1,
-        None,
-        finalize_update,
-        1e9,
-        identity_params,
-        reference_params,
-        post_solve,
+        solve_on_param_grid=True,
+        pre_solve=pre_solve,
+        compute_jhj_jhr=compute_jhj_jhr,
+        params_per_corr=1,
+        scalar_error_message=None,
+        finalize_update=finalize_update,
+        numbness=1e9,
+        identity_params=identity_params,
+        reference_params=reference_params,
+        post_solve=post_solve,
     )
 
     def impl(

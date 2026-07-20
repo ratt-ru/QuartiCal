@@ -70,16 +70,16 @@ def nb_rotation_solver_impl(
     # returned directly. This gives rotation a private on-disk cache namespace -
     # see the cache correctness constraint in accumulation.py.
     shared_impl = build_param_solver_impl(
-        True,
-        None,
-        compute_jhj_jhr,
-        None,
-        "Scalar mode not supported for rotation terms.",
-        finalize_update,
-        1e9,
-        identity_params,
-        None,
-        None,
+        solve_on_param_grid=True,
+        pre_solve=None,
+        compute_jhj_jhr=compute_jhj_jhr,
+        params_per_corr=None,
+        scalar_error_message="Scalar mode not supported for rotation terms.",
+        finalize_update=finalize_update,
+        numbness=1e9,
+        identity_params=identity_params,
+        reference_params=None,
+        post_solve=None,
     )
 
     def impl(

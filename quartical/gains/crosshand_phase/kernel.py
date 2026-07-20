@@ -72,16 +72,16 @@ def nb_crosshand_phase_solver_impl(
     # on-disk cache namespace - see the cache correctness constraint in
     # accumulation.py.
     shared_impl = build_param_solver_impl(
-        False,
-        None,
-        compute_jhj_jhr,
-        None,
-        "Scalar mode not supported for crosshand phase terms.",
-        finalize_update,
-        1e9,
-        identity_params,
-        None,
-        None,
+        solve_on_param_grid=False,
+        pre_solve=None,
+        compute_jhj_jhr=compute_jhj_jhr,
+        params_per_corr=None,
+        scalar_error_message="Scalar mode not supported for crosshand phase terms.",
+        finalize_update=finalize_update,
+        numbness=1e9,
+        identity_params=identity_params,
+        reference_params=None,
+        post_solve=None,
     )
 
     def impl(

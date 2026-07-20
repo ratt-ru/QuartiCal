@@ -55,12 +55,12 @@ def nb_complex_solver_impl(
     # returned directly. This gives complex a private on-disk cache namespace -
     # see the cache correctness constraint in accumulation.py.
     shared_impl = build_gain_solver_impl(
-        get_jhj_dims_factory(corr_mode),
-        compute_jhj_jhr,
-        None,
-        "Scalar mode not supported for complex terms.",
-        finalize_update,
-        None,
+        get_jhj_dims=get_jhj_dims_factory(corr_mode),
+        compute_jhj_jhr=compute_jhj_jhr,
+        scalar_jhj_jhr=None,
+        scalar_error_message="Scalar mode not supported for complex terms.",
+        finalize_update=finalize_update,
+        reference_gains=None,
     )
 
     def impl(

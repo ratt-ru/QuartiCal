@@ -59,12 +59,12 @@ def nb_diag_complex_solver_impl(
     # rather than returned directly. This gives diag_complex a private on-disk
     # cache namespace - see the cache correctness constraint in accumulation.py.
     shared_impl = build_gain_solver_impl(
-        identity_dims,
-        compute_jhj_jhr,
-        scalar_jhj_jhr,
-        None,
-        finalize_update,
-        reference_gains,
+        get_jhj_dims=identity_dims,
+        compute_jhj_jhr=compute_jhj_jhr,
+        scalar_jhj_jhr=scalar_jhj_jhr,
+        scalar_error_message=None,
+        finalize_update=finalize_update,
+        reference_gains=reference_gains,
     )
 
     def impl(

@@ -56,6 +56,7 @@ identity_dims = factories.qcjit(identity_dims)
 
 
 def build_gain_solver_impl(
+    *,
     get_jhj_dims,
     compute_jhj_jhr,
     scalar_jhj_jhr,
@@ -261,6 +262,7 @@ def build_gain_solver_impl(
 
 
 def build_param_solver_impl(
+    *,
     solve_on_param_grid,
     pre_solve,
     compute_jhj_jhr,
