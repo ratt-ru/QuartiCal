@@ -19,8 +19,8 @@ from quartical.gains.general.flagging import (flag_intermediaries,
                                               update_param_flags)
 from quartical.gains.general.convenience import get_extents
 import quartical.gains.general.factories as factories
-from quartical.gains.general.accumulation import build_jhj_jhr_impl
-from quartical.gains.general.solver_ops import compute_update  # noqa
+from quartical.gains.general.solver_components import build_jhj_jhr_impl
+from quartical.gains.general.solver_components import compute_update  # noqa
 # The null-V residual is a plain r - v (no amplitude normalisation), which is
 # exactly the complex term's residual hook.
 from quartical.gains.complex.kernel import resid_factory
@@ -401,7 +401,7 @@ def nb_shared_compute_jhj_jhr(
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives the null-V crosshand term a
     # private on-disk cache namespace - see the cache correctness constraint
-    # in accumulation.py.
+    # in solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode,
         row_weights_type,
@@ -528,7 +528,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     are imported.
 
     The signature follows the unified elem contract of the shared accumulation
-    loop (see accumulation.py). The chain rule uses the active-term gain
+    loop (see solver_components.py). The chain rule uses the active-term gain
     (drv = -1j*conj(g)), so the gain argument is consumed; the aux argument is
     empty (n_resid_aux is zero) and unused. The incoming residual is r = -v
     (zero data, plain subtraction) and is UNWEIGHTED - the forged unit weights

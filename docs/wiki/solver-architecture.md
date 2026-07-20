@@ -3,7 +3,7 @@ type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
 timestamp: 2026-07-20
-last_verified_commit: d3916e0
+last_verified_commit: cf5bef7
 ---
 
 # Solver Architecture
@@ -150,7 +150,7 @@ by calling classmethods on the `Gain` objects (defined in `quartical/gains/gain.
   (same construction, allowing a distinct parameter solution grid).
 
 These are consumed inside the numba kernels via the `mapping_inputs` namedtuple. In the shared
-JHJ/JHr accumulation loop (`quartical/gains/general/accumulation.py:build_jhj_jhr_impl`, bound
+JHJ/JHr accumulation loop (`quartical/gains/general/solver_components.py:build_jhj_jhr_impl`, bound
 by every kernel's `nb_compute_jhj_jhr`), each data point looks up its gain slice as
 `gains[gi][time_maps[gi][row_ind], freq_maps[gi][f]][antenna, dir_maps[gi][d]]`. The kernels also
 call `convenience.get_extents` on the (upsampled) time map and freq map to precompute the row/
@@ -225,12 +225,12 @@ the same skeleton:
   contributions in registers and flushes to memory once per row — valid because the antenna
   pair, and hence the accumulation target, is fixed along a row.
 - `compute_update` (the invert-over-intervals loop) exists exactly once, in
-  `quartical/gains/general/solver_ops.py`; every kernel module re-exports the name so external
+  `quartical/gains/general/solver_components.py`; every kernel module re-exports the name so external
   imports keep working.
 - Every solve returns `(native_imdry.jhj, loop_idx + 1, conv_perc)`.
 
 **The shared accumulation loop.** The tuple-based `compute_jhj_jhr` body lives once in
-`quartical/gains/general/accumulation.py` as `build_jhj_jhr_impl(...)`. This is THE pattern:
+`quartical/gains/general/solver_components.py` as `build_jhj_jhr_impl(...)`. This is THE pattern:
 every solvable kernel binds it (complex, diag_complex, phase, amplitude, delay,
 delay_and_offset, tec_and_offset, delay_and_tec, delay_tec_and_offset, crosshand_phase,
 crosshand_phase_null_v, rotation, rotation_measure; leakage imports complex's
@@ -267,7 +267,7 @@ phase's elem with the chain-rule coefficient folded in — it scales JHr by `coe
 its own operator-based normalisation rather than consuming the `normf` aux. This proves that a
 flat coefficient tuple from `stage` concatenated onto flat residual aux values is a numba-safe
 way to thread per-channel data into the elem (a nested tuple return would trip the parfor array
-analysis; see the NOTE in `accumulation.py`).
+analysis; see the NOTE in `solver_components.py`).
 
 All hook factories are plain-Python compile-time compositions returning `qcjit`
 (`inline="always"`) closures, so the indirection is free after inlining — extracting the loop
@@ -333,7 +333,7 @@ multi-session cache could silently load the wrong kernel's machine code (this ha
 corrupted solves, no error; see design-decisions.md, "Per-kernel numba disk-cache
 namespaces"). The trampoline gives each kernel a private cache namespace; `prange` survives
 the inlining. The constraint is documented as the CACHE CORRECTNESS CONSTRAINT in
-`accumulation.py` (canonical) and restated at the top of `solver_loop.py` — any new consumer
+`solver_components.py` (canonical) and restated at the top of `solver_loop.py` — any new consumer
 of either shared loop must copy the trampoline shape.
 
 Flagging hooks live in `quartical/gains/general/flagging.py` and are called by the kernels:

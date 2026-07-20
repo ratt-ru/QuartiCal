@@ -6,9 +6,9 @@ from quartical.utils.numba import (coerce_literal,
                                    JIT_OPTIONS,
                                    PARALLEL_JIT_OPTIONS)
 import quartical.gains.general.factories as factories
-from quartical.gains.general.accumulation import build_jhj_jhr_impl
+from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
-from quartical.gains.general.solver_ops import compute_update  # noqa
+from quartical.gains.general.solver_components import compute_update  # noqa
 # Crosshand phase's residual is amplitude-normalised in exactly the same way
 # as the phase term (r_i*|v_i|/|r_i| - v_i), so it reuses phase's residual hook
 # rather than duplicating it.
@@ -70,7 +70,7 @@ def nb_crosshand_phase_solver_impl(
     # stages). The shared loop is inlined into the module-local trampoline
     # below rather than returned directly. This gives crosshand_phase a private
     # on-disk cache namespace - see the cache correctness constraint in
-    # accumulation.py.
+    # solver_components.py.
     shared_impl = build_param_solver_impl(
         solve_on_param_grid=False,
         pre_solve=None,
@@ -141,7 +141,7 @@ def nb_compute_jhj_jhr(
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives crosshand_phase a private on-disk
     # cache namespace - see the cache correctness constraint in
-    # accumulation.py.
+    # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode,
         row_weights_type,
@@ -311,7 +311,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     The accumulator is a flat tuple (jhr0, jhj00) - see jhwj_jhwr_zeros_factory.
 
     The signature follows the unified elem contract of the shared accumulation
-    loop (see accumulation.py). The crosshand chain rule uses the active-term
+    loop (see solver_components.py). The crosshand chain rule uses the active-term
     gain (drv = -1j*conj(g)), so the gain argument is consumed. The aux
     argument (the per-correlation normalisation factor from the residual hook)
     is not used - this elem recomputes its own operator-based normalisation,

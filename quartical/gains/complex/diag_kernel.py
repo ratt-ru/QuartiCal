@@ -7,10 +7,10 @@ from quartical.utils.numba import (coerce_literal,
                                    PARALLEL_JIT_OPTIONS)
 from quartical.gains.general.flagging import apply_gain_flags_to_gains
 import quartical.gains.general.factories as factories
-from quartical.gains.general.accumulation import build_jhj_jhr_impl
+from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import (build_gain_solver_impl,
                                                  identity_dims)
-from quartical.gains.general.solver_ops import compute_update  # noqa
+from quartical.gains.general.solver_components import compute_update  # noqa
 
 
 @njit(**JIT_OPTIONS)
@@ -57,7 +57,7 @@ def nb_diag_complex_solver_impl(
     # scalar mode via its own scalar_jhj_jhr, and references its gains after
     # solving. The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives diag_complex a private on-disk
-    # cache namespace - see the cache correctness constraint in accumulation.py.
+    # cache namespace - see the cache correctness constraint in solver_components.py.
     shared_impl = build_gain_solver_impl(
         get_jhj_dims=identity_dims,
         compute_jhj_jhr=compute_jhj_jhr,
@@ -124,7 +124,7 @@ def nb_compute_jhj_jhr(
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives diag_complex a private on-disk
     # cache namespace - see the cache correctness constraint in
-    # accumulation.py.
+    # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode,
         row_weights_type,
@@ -329,7 +329,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     jhwj_jhwr_zeros_factory).
 
     The signature follows the unified elem contract of the shared accumulation
-    loop (see accumulation.py). Diagonal complex terms have no chain rule
+    loop (see solver_components.py). Diagonal complex terms have no chain rule
     beyond the operators themselves, so the gain and aux arguments are unused -
     the compiler eliminates them entirely after inlining. The 1 and 2
     correlation cases are identical to the (full) complex kernel; only the 4

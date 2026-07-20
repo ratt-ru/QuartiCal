@@ -6,9 +6,9 @@ from quartical.utils.numba import (coerce_literal,
                                    JIT_OPTIONS,
                                    PARALLEL_JIT_OPTIONS)
 import quartical.gains.general.factories as factories
-from quartical.gains.general.accumulation import build_jhj_jhr_impl
+from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
-from quartical.gains.general.solver_ops import compute_update  # noqa
+from quartical.gains.general.solver_components import compute_update  # noqa
 # Rotation measure's residual is the plain complex residual (r - v), so it
 # reuses the complex term's residual hook rather than duplicating it.
 from quartical.gains.complex.kernel import resid_factory
@@ -69,7 +69,7 @@ def nb_rm_solver_impl(
     # stages). The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives rotation_measure a private
     # on-disk cache namespace - see the cache correctness constraint in
-    # accumulation.py.
+    # solver_components.py.
     shared_impl = build_param_solver_impl(
         solve_on_param_grid=True,
         pre_solve=None,
@@ -142,7 +142,7 @@ def nb_compute_jhj_jhr(
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives rotation_measure a private on-disk
     # cache namespace - see the cache correctness constraint in
-    # accumulation.py.
+    # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode,
         row_weights_type,
@@ -342,7 +342,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     The accumulator is a flat tuple (jhr0, jhj00) - see jhwj_jhwr_zeros_factory.
 
     The signature follows the unified elem contract of the shared accumulation
-    loop (see accumulation.py). This is rotation's elem with the per-channel
+    loop (see solver_components.py). This is rotation's elem with the per-channel
     lambda squared factor folded into the derivative. The active-term gain IS
     the rotation matrix [cos, -sin; sin, cos] (row-major XX, XY, YX, YY) with
     argument beta = lambda_sq*rm, so cos_beta = gain[0].real and

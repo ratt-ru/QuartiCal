@@ -52,7 +52,7 @@ def nb_leakage_solver_impl(
     # scalar error string are specific to leakage terms. The shared loop is
     # inlined into the module-local trampoline below rather than returned
     # directly. This gives leakage a private on-disk cache namespace - see the
-    # cache correctness constraint in accumulation.py.
+    # cache correctness constraint in solver_components.py.
     shared_impl = build_gain_solver_impl(
         get_jhj_dims=get_jhj_dims_factory(corr_mode),
         compute_jhj_jhr=compute_jhj_jhr,

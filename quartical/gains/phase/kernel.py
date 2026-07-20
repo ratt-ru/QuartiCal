@@ -8,9 +8,9 @@ from quartical.utils.numba import (coerce_literal,
 from quartical.gains.general.flagging import (apply_gain_flags_to_gains,
                                               apply_param_flags_to_params)
 import quartical.gains.general.factories as factories
-from quartical.gains.general.accumulation import build_jhj_jhr_impl
+from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
-from quartical.gains.general.solver_ops import compute_update  # noqa
+from quartical.gains.general.solver_components import compute_update  # noqa
 
 
 def get_identity_params(corr_mode):
@@ -70,7 +70,7 @@ def nb_phase_solver_impl(
     # stages). The shared loop is inlined into the module-local trampoline
     # below rather than returned directly. This gives phase a private on-disk
     # cache namespace - see the cache correctness constraint in
-    # accumulation.py.
+    # solver_components.py.
     shared_impl = build_param_solver_impl(
         solve_on_param_grid=False,
         pre_solve=None,
@@ -139,7 +139,7 @@ def nb_compute_jhj_jhr(
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives phase a private on-disk
     # cache namespace - see the cache correctness constraint in
-    # accumulation.py.
+    # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode,
         row_weights_type,
@@ -401,7 +401,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     triangle of the real jhj element - see jhwj_jhwr_zeros_factory).
 
     The signature follows the unified elem contract of the shared
-    accumulation loop (see accumulation.py). The phase chain rule uses the
+    accumulation loop (see solver_components.py). The phase chain rule uses the
     active-term gain (drv = -1j*conj(g)), so the gain argument is consumed.
     The aux argument (the per-correlation normalisation factor from the
     residual hook) is not used - this elem recomputes its own operator-based

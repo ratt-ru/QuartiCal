@@ -3,7 +3,7 @@ type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
 timestamp: 2026-07-20
-last_verified_commit: ce9de22
+last_verified_commit: cf5bef7
 ---
 
 # Design Decisions
@@ -164,7 +164,7 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   kernel would have written the same loop ~12 more times.
 - **Decision:** ADOPTED (decision gate, 2026-07-13, after the first parameterised
   conversion — phase). The optimised loop lives once in
-  `quartical/gains/general/accumulation.py` as `build_jhj_jhr_impl`, parameterised by
+  `quartical/gains/general/solver_components.py` as `build_jhj_jhr_impl`, parameterised by
   per-term hook factories (elem / acc_zeros / flush / resid / stage / mirror); each
   kernel keeps a ~15-line `compute_jhj_jhr` overload that binds its hooks. The hook
   contract is documented in solver-architecture.md ("Numba kernel conventions").
@@ -231,7 +231,7 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   (`inline="always"`), so it is never lowered as a standalone cache unit; every
   kernel's `nb_compute_jhj_jhr` returns a **module-local trampoline** that inlines it,
   giving each kernel a private cache namespace. The constraint is documented as the
-  CACHE CORRECTNESS CONSTRAINT in `accumulation.py`'s docstring.
+  CACHE CORRECTNESS CONSTRAINT in `solver_components.py`'s docstring.
 - **Rationale:** The trampoline is the smallest change that makes the cache key unique
   per kernel (each trampoline has its own source location) without giving up disk
   caching or the shared single-source loop. `prange` survives the inlining (parfor
@@ -525,9 +525,9 @@ treat these as scars, not patterns to replicate:
   parameterisation variants — but the result was that adding a feature across all solvers
   was painful, and the original choice "may have been misguided". **Largely addressed
   2026-07:** the `compute_jhj_jhr` accumulation loop now lives once in
-  `gains/general/accumulation.py` and all 13 solvable kernels bind it through hook
+  `gains/general/solver_components.py` and all 13 solvable kernels bind it through hook
   factories (leakage reuses complex's binding; no fallback holdouts remain), and
-  `compute_update` lives once in `gains/general/solver_ops.py`. What stays per-kernel is
+  `compute_update` lives once in `gains/general/solver_components.py`. What stays per-kernel is
   the per-term maths (elem/flush/resid/stage hooks and `finalize_update`) — which is the
   part that *should* vary. New gain types should bind the shared loop, not copy one.
 - **Dask itself.** No longer improving upstream and largely fallen out of favour; the

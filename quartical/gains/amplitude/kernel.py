@@ -6,9 +6,9 @@ from quartical.utils.numba import (coerce_literal,
                                    JIT_OPTIONS,
                                    PARALLEL_JIT_OPTIONS)
 import quartical.gains.general.factories as factories
-from quartical.gains.general.accumulation import build_jhj_jhr_impl
+from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
-from quartical.gains.general.solver_ops import compute_update  # noqa
+from quartical.gains.general.solver_components import compute_update  # noqa
 
 
 def get_identity_params(corr_mode):
@@ -68,7 +68,7 @@ def nb_amplitude_solver_impl(
     # pre/post-solve stages). The shared loop is inlined into the module-local
     # trampoline below rather than returned directly. This gives amplitude a
     # private on-disk cache namespace - see the cache correctness constraint in
-    # accumulation.py.
+    # solver_components.py.
     shared_impl = build_param_solver_impl(
         solve_on_param_grid=False,
         pre_solve=None,
@@ -139,7 +139,7 @@ def nb_compute_jhj_jhr(
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives amplitude a private on-disk
     # cache namespace - see the cache correctness constraint in
-    # accumulation.py.
+    # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode,
         row_weights_type,
@@ -398,7 +398,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     triangle of the real jhj element - see jhwj_jhwr_zeros_factory).
 
     The signature follows the unified elem contract of the shared accumulation
-    loop (see accumulation.py). Amplitude's parameter-to-gain map is the
+    loop (see solver_components.py). Amplitude's parameter-to-gain map is the
     identity, so its chain-rule derivative is one and the gain argument is not
     consumed. The aux argument is empty (the residual hook fully normalises the
     residual, so there are no auxiliary values) and is likewise ignored. The

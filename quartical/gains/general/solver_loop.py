@@ -17,7 +17,7 @@ from quartical.gains.general.flagging import (
     update_param_flags,
 )
 from quartical.gains.general.convenience import get_extents
-from quartical.gains.general.solver_ops import compute_update
+from quartical.gains.general.solver_components import compute_update
 
 
 # CACHE CORRECTNESS CONSTRAINT: the builders below return the solver-loop body
@@ -31,7 +31,8 @@ from quartical.gains.general.solver_ops import compute_update
 # MUST return a module-local trampoline (def impl(...): return shared(...)) that
 # inlines it, giving every kernel a private cache namespace. This exact bug
 # shipped once; the canonical explanation lives in the docstring of
-# build_jhj_jhr_impl in accumulation.py - read it before touching this file.
+# build_jhj_jhr_impl in solver_components.py - read it before touching this
+# file.
 
 
 def identity_dims(shape):
@@ -75,7 +76,7 @@ def build_gain_solver_impl(
 
     All ``None`` hooks are resolved to build-time no-ops (or, for the scalar
     stage, to one of two prebuilt step closures) so that the compiled body never
-    carries a runtime branch for an absent hook - mirroring how accumulation.py
+    carries a runtime branch for an absent hook - mirroring how solver_components.py
     substitutes its optional stage/mirror hooks.
 
     See the module-level CACHE CORRECTNESS CONSTRAINT: the returned body is an
