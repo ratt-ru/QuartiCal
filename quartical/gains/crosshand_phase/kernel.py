@@ -12,7 +12,7 @@ from quartical.gains.general.solver_components import compute_update  # noqa
 # Crosshand phase's residual is amplitude-normalised in exactly the same way
 # as the phase term (r_i*|v_i|/|r_i| - v_i), so it reuses phase's residual hook
 # rather than duplicating it.
-from quartical.gains.phase.kernel import resid_factory
+from quartical.gains.phase.kernel import residual_factory
 
 
 def get_identity_params(corr_mode):
@@ -133,24 +133,23 @@ def nb_compute_jhj_jhr(
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to crosshand phase terms. The
     # loop body is phase's verbatim, so crosshand reuses phase's amplitude-
-    # normalised residual hook (n_resid_aux is n_corr). Crosshand solves a
+    # normalised residual hook. Crosshand solves a
     # single parameter, so its jhj is (1, 1) and the mirror hook is a no-op
-    # (mirror_factory is None). There are no per-channel coefficients, so there
+    # (mirror_jhj_factory is None). There are no per-channel coefficients, so there
     # is no stage hook.
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives crosshand_phase a private on-disk
     # cache namespace - see the cache correctness constraint in
     # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
-        corr_mode,
-        row_weights_type,
-        elem_factory=compute_jhwj_jhwr_elem_factory,
-        acc_zeros_factory=jhwj_jhwr_zeros_factory,
-        flush_factory=flush_jhwj_jhwr_factory,
-        resid_factory=resid_factory,
-        n_resid_aux=corr_mode.literal_value,
-        stage_factory=None,
-        mirror_factory=None,
+        corr_mode=corr_mode,
+        row_weights_type=row_weights_type,
+        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
+        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
+        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        residual_factory=residual_factory,
+        channel_coeffs_factory=None,
+        mirror_jhj_factory=None,
     )
 
     def impl(
@@ -262,7 +261,7 @@ def param_to_gain_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def jhwj_jhwr_zeros_factory(corr_mode):
+def zero_jhr_jhj_factory(corr_mode):
     """Produce the zero jhr/jhj accumulator tuple for a given corr mode.
 
     Crosshand phase solves a single parameter, so the accumulator is a flat
@@ -282,7 +281,7 @@ def jhwj_jhwr_zeros_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def flush_jhwj_jhwr_factory(corr_mode):
+def flush_jhr_jhj_factory(corr_mode):
     """Add a register-accumulated jhr/jhj accumulator into the arrays.
 
     Crosshand phase's jhj is (1, 1), so there is no upper triangle to mirror -
@@ -302,12 +301,12 @@ def flush_jhwj_jhwr_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def compute_jhwj_jhwr_elem_factory(corr_mode):
+def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
-    The accumulator is a flat tuple (jhr0, jhj00) - see jhwj_jhwr_zeros_factory.
+    The accumulator is a flat tuple (jhr0, jhj00) - see zero_jhr_jhj_factory.
 
     The signature follows the unified elem contract of the shared accumulation
     loop (see solver_components.py). The crosshand chain rule uses the active-term

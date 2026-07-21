@@ -162,27 +162,23 @@ def nb_compute_jhj_jhr(
 
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to delay terms. Delay's residual
-    # normalises out amplitude exactly as phase's does, so its residual hook
-    # appends a per-correlation normalisation factor as auxiliary values
-    # (n_resid_aux is n_corr). Unlike phase, delay differentiates a
-    # frequency-dependent exponent, so it also carries a per-channel
-    # coefficient computed by the stage hook; that coefficient is concatenated
-    # onto the residual's auxiliary values to form the aux tuple consumed by
-    # the elem.
+    # normalises out amplitude exactly as phase's does. Unlike phase, delay
+    # differentiates a frequency-dependent exponent, so it carries a
+    # per-channel coefficient computed by the stage hook; that coefficient is
+    # the aux tuple consumed by the elem.
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives delay a private on-disk
     # cache namespace - see the cache correctness constraint in
     # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
-        corr_mode,
-        row_weights_type,
-        elem_factory=compute_jhwj_jhwr_elem_factory,
-        acc_zeros_factory=jhwj_jhwr_zeros_factory,
-        flush_factory=flush_jhwj_jhwr_factory,
-        resid_factory=resid_factory,
-        n_resid_aux=corr_mode.literal_value,
-        stage_factory=stage_factory,
-        mirror_factory=mirror_jhj_factory,
+        corr_mode=corr_mode,
+        row_weights_type=row_weights_type,
+        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
+        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
+        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        residual_factory=residual_factory,
+        channel_coeffs_factory=channel_coeffs_factory,
+        mirror_jhj_factory=mirror_jhj_factory,
     )
 
     def impl(
@@ -312,7 +308,7 @@ def param_to_gain_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def stage_factory(corr_mode):
+def channel_coeffs_factory(corr_mode):
     """Produce the per-channel delay coefficient tuple for the shared loop.
 
     Delay solves for a frequency-dependent exponent, so differentiating the
@@ -320,8 +316,7 @@ def stage_factory(corr_mode):
     coeff = 2*pi*(chan_freq[f]/cf_mid - 1), where cf_mid is the midpoint of the
     band (the same rescaling the solver applies to the parameters). The stage
     hook computes this once per channel and returns it as a single-element flat
-    tuple (coeff,); the shared loop concatenates it onto the residual's
-    auxiliary values to form the aux tuple passed to the elem.
+    tuple (coeff,) which is the aux tuple passed to the elem.
     """
 
     def impl(ms_inputs, meta_inputs, f):
@@ -333,18 +328,14 @@ def stage_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def resid_factory(corr_mode):
+def residual_factory(corr_mode):
     """Produce the amplitude-normalised residual for a delay term.
 
     Delay's residual is identical to phase's: it normalises out amplitude
     before forming the residual. The per-correlation factor is
     normf_i = |v_i| / |r_i| (zero where r_i is zero, matching
-    absv1_idiv_absv2), and the residual is r_i*normf_i - v_i. The normf values
-    are appended as auxiliary values (n_resid_aux = n_corr) so the returned
-    flat tuple is (residual..., normf...). The elem hook recomputes its own
-    operator-based normalisation, so it does not actually consume these normf
-    auxiliary values - they are retained only to keep the residual/aux contract
-    of the shared loop uniform across terms.
+    absv1_idiv_absv2), and the residual is r_i*normf_i - v_i, returned as the
+    per-correlation residual tuple.
     """
 
     tuple_normf = factories.tuple_normf_factory(corr_mode)
@@ -357,7 +348,6 @@ def resid_factory(corr_mode):
                 r[1]*f1 - v[1],
                 r[2]*f2 - v[2],
                 r[3]*f3 - v[3],
-                f0, f1, f2, f3,
             )
     elif corr_mode.literal_value == 2:
         def impl(r, v):
@@ -365,14 +355,12 @@ def resid_factory(corr_mode):
             return (
                 r[0]*f0 - v[0],
                 r[1]*f1 - v[1],
-                f0, f1,
             )
     elif corr_mode.literal_value == 1:
         def impl(r, v):
             f0, = tuple_normf(v, r)
             return (
                 r[0]*f0 - v[0],
-                f0,
             )
     else:
         raise ValueError("Unsupported number of correlations.")
@@ -380,7 +368,7 @@ def resid_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def jhwj_jhwr_zeros_factory(corr_mode):
+def zero_jhr_jhj_factory(corr_mode):
     """Produce the zero jhr/jhj accumulator tuple for a given corr mode.
 
     The accumulator is a single flat tuple holding the (real) jhr entries
@@ -405,7 +393,7 @@ def jhwj_jhwr_zeros_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def flush_jhwj_jhwr_factory(corr_mode):
+def flush_jhr_jhj_factory(corr_mode):
     """Add a register-accumulated jhr/jhj accumulator into the arrays.
 
     For the 2 and 4 correlation cases only the upper triangle of the (2, 2)
@@ -458,34 +446,28 @@ def mirror_jhj_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def compute_jhwj_jhwr_elem_factory(corr_mode):
+def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
     The accumulator is a single flat tuple (jhr entries followed by the upper
-    triangle of the real jhj element - see jhwj_jhwr_zeros_factory).
+    triangle of the real jhj element - see zero_jhr_jhj_factory).
 
     The signature follows the unified elem contract of the shared accumulation
     loop (see solver_components.py). The delay chain rule uses the active-term gain
     (drv = -1j*conj(g)), so the gain argument is consumed. The aux argument is
-    the flat tuple (normf..., coeff) built by concatenating the residual hook's
-    normf values with the stage hook's per-channel coefficient. Its layout is:
-
-        corr 4: aux = (normf0, normf1, normf2, normf3, coeff) - coeff at aux[4]
-        corr 2: aux = (normf0, normf1, coeff)                 - coeff at aux[2]
-        corr 1: aux = (normf0, coeff)                         - coeff at aux[1]
-
-    Only the trailing coeff is consumed here: it scales jhr by coeff and jhj by
-    coeff**2 (from differentiating the frequency-dependent exponent). The normf
-    values are ignored - this elem recomputes its own operator-based
-    normalisation, exactly as the original array-buffer kernel did.
+    the single-element tuple (coeff,) produced by the stage hook: coeff is at
+    aux[0] in every corr mode. It scales jhr by coeff and jhj by coeff**2 (from
+    differentiating the frequency-dependent exponent). This elem recomputes its
+    own operator-based normalisation, exactly as the original array-buffer
+    kernel did.
     """
 
     if corr_mode.literal_value == 4:
         def impl(lop, rop, w, gain, aux, res, acc):
 
-            coeff = aux[4]
+            coeff = aux[0]
             coeffsq = coeff*coeff
 
             lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
@@ -555,7 +537,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     elif corr_mode.literal_value == 2:
         def impl(lop, rop, w, gain, aux, res, acc):
 
-            coeff = aux[2]
+            coeff = aux[0]
             coeffsq = coeff*coeff
 
             rop_0, rop_1 = rop[0], rop[1]
@@ -593,7 +575,7 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
     elif corr_mode.literal_value == 1:
         def impl(lop, rop, w, gain, aux, res, acc):
 
-            coeff = aux[1]
+            coeff = aux[0]
 
             rop_0 = rop[0]
 

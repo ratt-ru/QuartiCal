@@ -130,9 +130,9 @@ def nb_compute_jhj_jhr(
 
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to amplitude terms. Amplitude's
-    # residual fully normalises out the model amplitude before weighting, so
-    # the elem consumes no auxiliary values (n_resid_aux is 0) and there is no
-    # stage hook. The elem also ignores the active-term gain: amplitude's
+    # residual fully normalises out the model amplitude before weighting, and
+    # there is no stage hook (the elem receives an empty aux tuple). The elem
+    # also ignores the active-term gain: amplitude's
     # parameter-to-gain map is the identity, so its chain-rule derivative is
     # one and the gain never enters the maths.
     # The shared loop is inlined into the module-local trampoline below
@@ -140,15 +140,14 @@ def nb_compute_jhj_jhr(
     # cache namespace - see the cache correctness constraint in
     # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
-        corr_mode,
-        row_weights_type,
-        elem_factory=compute_jhwj_jhwr_elem_factory,
-        acc_zeros_factory=jhwj_jhwr_zeros_factory,
-        flush_factory=flush_jhwj_jhwr_factory,
-        resid_factory=resid_factory,
-        n_resid_aux=0,
-        stage_factory=None,
-        mirror_factory=mirror_jhj_factory,
+        corr_mode=corr_mode,
+        row_weights_type=row_weights_type,
+        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
+        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
+        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        residual_factory=residual_factory,
+        channel_coeffs_factory=None,
+        mirror_jhj_factory=mirror_jhj_factory,
     )
 
     def impl(
@@ -268,16 +267,15 @@ def param_to_gain_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def resid_factory(corr_mode):
+def residual_factory(corr_mode):
     """Produce the amplitude-normalised residual for an amplitude term.
 
     The amplitude solver normalises the data to the model amplitude before
     forming the residual: the per-correlation factor is normf_i = |r_i| / |v_i|
     (zero where v_i is zero, matching absv1_idiv_absv2), and the residual is
     normf_i*v_i - v_i. This reproduces the original array-buffer kernel exactly
-    (absv1_idiv_absv2(r, v, r); r *= v; r -= v). The elem hook consumes no
-    auxiliary values, so n_resid_aux is 0 and the returned flat tuple holds
-    only the residual values.
+    (absv1_idiv_absv2(r, v, r); r *= v; r -= v). The returned tuple holds only
+    the per-correlation residual values.
     """
 
     tuple_normf = factories.tuple_normf_factory(corr_mode)
@@ -310,7 +308,7 @@ def resid_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def jhwj_jhwr_zeros_factory(corr_mode):
+def zero_jhr_jhj_factory(corr_mode):
     """Produce the zero jhr/jhj accumulator tuple for a given corr mode.
 
     The accumulator is a single flat tuple holding the (real) jhr entries
@@ -335,7 +333,7 @@ def jhwj_jhwr_zeros_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def flush_jhwj_jhwr_factory(corr_mode):
+def flush_jhr_jhj_factory(corr_mode):
     """Add a register-accumulated jhr/jhj accumulator into the arrays.
 
     For the 2 and 4 correlation cases only the upper triangle of the (2, 2)
@@ -388,19 +386,19 @@ def mirror_jhj_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def compute_jhwj_jhwr_elem_factory(corr_mode):
+def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
     The accumulator is a single flat tuple (jhr entries followed by the upper
-    triangle of the real jhj element - see jhwj_jhwr_zeros_factory).
+    triangle of the real jhj element - see zero_jhr_jhj_factory).
 
     The signature follows the unified elem contract of the shared accumulation
     loop (see solver_components.py). Amplitude's parameter-to-gain map is the
     identity, so its chain-rule derivative is one and the gain argument is not
-    consumed. The aux argument is empty (the residual hook fully normalises the
-    residual, so there are no auxiliary values) and is likewise ignored. The
+    consumed. The aux argument is empty (amplitude has no stage hook) and is
+    likewise ignored. The
     residual arrives already normalised and weighted, so this elem applies no
     further normalisation - it only forms the operator products.
     """

@@ -23,12 +23,12 @@ from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_components import compute_update  # noqa
 # The null-V residual is a plain r - v (no amplitude normalisation), which is
 # exactly the complex term's residual hook.
-from quartical.gains.complex.kernel import resid_factory
+from quartical.gains.complex.kernel import residual_factory
 # The accumulator/flush hooks are identical to the crosshand phase term's -
 # both solve a single parameter with a (1, 1) jhj element.
 from quartical.gains.crosshand_phase.kernel import (
-    jhwj_jhwr_zeros_factory,
-    flush_jhwj_jhwr_factory
+    zero_jhr_jhj_factory,
+    flush_jhr_jhj_factory
 )
 
 
@@ -403,15 +403,14 @@ def nb_shared_compute_jhj_jhr(
     # private on-disk cache namespace - see the cache correctness constraint
     # in solver_components.py.
     shared_impl = build_jhj_jhr_impl(
-        corr_mode,
-        row_weights_type,
-        elem_factory=compute_jhwj_jhwr_elem_factory,
-        acc_zeros_factory=jhwj_jhwr_zeros_factory,
-        flush_factory=flush_jhwj_jhwr_factory,
-        resid_factory=resid_factory,
-        n_resid_aux=0,
-        stage_factory=None,
-        mirror_factory=None,
+        corr_mode=corr_mode,
+        row_weights_type=row_weights_type,
+        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
+        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
+        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        residual_factory=residual_factory,
+        channel_coeffs_factory=None,
+        mirror_jhj_factory=None,
     )
 
     def impl(
@@ -518,19 +517,19 @@ def param_to_gain_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def compute_jhwj_jhwr_elem_factory(corr_mode):
+def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
-    The accumulator is a flat tuple (jhr0, jhj00) - see jhwj_jhwr_zeros_factory
+    The accumulator is a flat tuple (jhr0, jhj00) - see zero_jhr_jhj_factory
     in the crosshand phase kernel, from which both the zeros and flush hooks
     are imported.
 
     The signature follows the unified elem contract of the shared accumulation
     loop (see solver_components.py). The chain rule uses the active-term gain
     (drv = -1j*conj(g)), so the gain argument is consumed; the aux argument is
-    empty (n_resid_aux is zero) and unused. The incoming residual is r = -v
+    empty (crosshand has no stage hook) and unused. The incoming residual is r = -v
     (zero data, plain subtraction) and is UNWEIGHTED - the forged unit weights
     in nb_compute_jhj_jhr guarantee this, matching the original kernel, which
     never consumed w.

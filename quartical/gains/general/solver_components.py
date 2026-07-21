@@ -25,15 +25,15 @@ from quartical.gains.general.inversion import (invert_factory,
 
 
 def build_jhj_jhr_impl(
+    *,
     corr_mode,
     row_weights_type,
-    elem_factory,
-    acc_zeros_factory,
-    flush_factory,
-    resid_factory,
-    n_resid_aux,
-    stage_factory=None,
-    mirror_factory=None,
+    accumulate_jhr_jhj_factory,
+    zero_jhr_jhj_factory,
+    flush_jhr_jhj_factory,
+    residual_factory,
+    channel_coeffs_factory=None,
+    mirror_jhj_factory=None,
 ):
     """Return the shared compute_jhj_jhr impl closure, specialised per term.
 
@@ -66,34 +66,30 @@ def build_jhj_jhr_impl(
     standalone cache unit, and the trampoline that inlines it lives in the
     kernel's own module, giving each kernel a private cache namespace.
 
-    The residual hook returns a single FLAT tuple - the residual values
-    followed by ``n_resid_aux`` trailing auxiliary values (e.g. a per-corr
-    normalisation factor). The loop splits it by literal index generated here
-    at build time. Auxiliary values from the residual are concatenated with the
-    per-channel coefficient tuple from ``stage`` to form the ``aux`` tuple that
-    is passed to the elem hook.
+    The residual hook returns the per-correlation residual tuple. The ``aux``
+    tuple passed to the elem hook is exactly the per-channel coefficient tuple
+    produced by ``stage`` (an empty tuple for terms with no stage hook).
 
     Args:
         corr_mode: Numba literal carrying ``corr_mode.literal_value`` (1/2/4).
         row_weights_type: Numba type of the ``ROW_WEIGHTS`` ms_inputs field,
             used to dispatch the (BDA) row-weight application.
-        elem_factory: ``elem_factory(corr_mode) -> elem(lop, rop, w, gain, aux,
+        accumulate_jhr_jhj_factory: ``accumulate_jhr_jhj_factory(corr_mode) -> elem(lop, rop, w, gain, aux,
             res, acc) -> acc``. Accumulates one weighted jhr/jhj element into
             the register-resident flat accumulator tuple.
-        acc_zeros_factory: ``acc_zeros_factory(corr_mode) -> acc_zeros(ref_elem)
+        zero_jhr_jhj_factory: ``zero_jhr_jhj_factory(corr_mode) -> acc_zeros(ref_elem)
             -> flat zero tuple``. Produces the zero accumulator tuple in the
             (promoted) dtype of the reference element.
-        flush_factory: ``flush_factory(corr_mode) -> flush(jhr_el, jhj_el, acc)
+        flush_jhr_jhj_factory: ``flush_jhr_jhj_factory(corr_mode) -> flush(jhr_el, jhj_el, acc)
             -> None``. Adds a completed accumulator into the jhr/jhj array
             slices.
-        resid_factory: ``resid_factory(corr_mode) -> resid(r, v) -> flat tuple``
-            (residual values ++ ``n_resid_aux`` auxiliary values).
-        n_resid_aux: Number of trailing auxiliary values ``resid`` appends
-            (0 for complex).
-        stage_factory: Optional ``stage_factory(corr_mode) -> stage(ms_inputs,
-            meta_inputs, f) -> flat coeff tuple`` computing per-channel
-            coefficients. ``None`` yields an empty coefficient tuple.
-        mirror_factory: Optional ``mirror_factory(corr_mode) -> mirror(jhj_tifi)
+        residual_factory: ``residual_factory(corr_mode) -> resid(r, v) -> tuple`` of
+            the per-correlation residual values.
+        channel_coeffs_factory: Optional ``channel_coeffs_factory(corr_mode) -> stage(ms_inputs,
+            meta_inputs, f) -> flat coeff tuple`` computing the per-channel
+            coefficients that form the ``aux`` tuple passed to the elem hook.
+            ``None`` yields an empty coefficient tuple.
+        mirror_jhj_factory: Optional ``mirror_jhj_factory(corr_mode) -> mirror(jhj_tifi)
             -> None`` filling the lower triangle of the per-interval jhj
             elements. ``None`` yields a no-op.
 
@@ -119,38 +115,24 @@ def build_jhj_jhr_impl(
     valloc = factories.valloc_factory(corr_mode)
     make_loop_vars = factories.loop_var_factory(corr_mode)
 
-    elem = elem_factory(corr_mode)
-    flush = flush_factory(corr_mode)
-    acc_zeros = acc_zeros_factory(corr_mode)
-    resid = resid_factory(corr_mode)
+    elem = accumulate_jhr_jhj_factory(corr_mode)
+    flush = flush_jhr_jhj_factory(corr_mode)
+    acc_zeros = zero_jhr_jhj_factory(corr_mode)
+    resid = residual_factory(corr_mode)
 
-    # The residual tuple has one value per correlation; any values beyond that
-    # are the auxiliary values appended by the residual hook. Both split points
-    # are compile-time constants, so numba specialises the flat-tuple slices.
-    n_res = corr_mode.literal_value
-
-    def take_resid(x):
-        return x[:n_res]
-
-    def take_raux(x):
-        return x[n_res:]
-
-    take_resid = factories.qcjit(take_resid)
-    take_raux = factories.qcjit(take_raux)
-
-    if mirror_factory is None:
+    if mirror_jhj_factory is None:
         def mirror(jhj_tifi):
             pass
         mirror = factories.qcjit(mirror)
     else:
-        mirror = mirror_factory(corr_mode)
+        mirror = mirror_jhj_factory(corr_mode)
 
-    if stage_factory is None:
+    if channel_coeffs_factory is None:
         def stage(ms_inputs, meta_inputs, f):
             return ()
         stage = factories.qcjit(stage)
     else:
-        stage = stage_factory(corr_mode)
+        stage = channel_coeffs_factory(corr_mode)
 
     def impl(
         ms_inputs,
@@ -261,8 +243,9 @@ def build_jhj_jhr_impl(
                             continue
 
                         # Per-channel coefficients (staged terms only, else an
-                        # empty tuple - the compiler drops it entirely).
-                        coeffs = stage(ms_inputs, meta_inputs, f)
+                        # empty tuple - the compiler drops it entirely). This
+                        # is the aux tuple passed to the elem hook.
+                        aux = stage(ms_inputs, meta_inputs, f)
 
                         # Apply row weights in the BDA case, else a no-op.
                         w = tuple_unpack_rweight(
@@ -338,11 +321,8 @@ def build_jhj_jhr_impl(
                         v_pq = tuple_v1ct_mul_v2(lop_pq, g_active_p)
                         v_pq = tuple_v1_mul_v2ct(v_pq, rop_pq)
 
-                        # Residual (and any auxiliary values, e.g. a per-corr
-                        # normalisation factor) as one flat tuple, split here.
-                        x = resid(r_pq, v_pq)
-                        r_pq = take_resid(x)
-                        aux = take_raux(x) + coeffs
+                        # Residual for this visibility.
+                        r_pq = resid(r_pq, v_pq)
 
                         wr_pq = tuple_wmul(r_pq, w)
                         wr_qp = tuple_unpackct(wr_pq)
@@ -367,7 +347,8 @@ def build_jhj_jhr_impl(
                         continue
 
                     # Per-channel coefficients (staged terms only, else empty).
-                    coeffs = stage(ms_inputs, meta_inputs, f)
+                    # This is the aux tuple passed to the elem hook.
+                    aux = stage(ms_inputs, meta_inputs, f)
 
                     # Apply row weights in the BDA case, otherwise a no-op.
                     w = tuple_unpack_rweight(
@@ -450,10 +431,8 @@ def build_jhj_jhr_impl(
                         v_pqd = tuple_v1_mul_v2ct(v_pqd, rop_pq)
                         v_pq = tuple_add(v_pq, v_pqd)
 
-                    # Residual (and any auxiliary values) as one flat tuple.
-                    x = resid(r_pq, v_pq)
-                    r_pq = take_resid(x)
-                    aux = take_raux(x) + coeffs
+                    # Residual for this visibility.
+                    r_pq = resid(r_pq, v_pq)
 
                     # Weighted residual and its conjugate transpose. These
                     # are direction independent and can be computed once.

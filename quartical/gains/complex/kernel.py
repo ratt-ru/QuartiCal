@@ -112,22 +112,21 @@ def nb_compute_jhj_jhr(
 
     # The accumulation loop itself is shared between kernels - only the
     # hooks below (the per-term maths) are specific to complex terms. The
-    # complex residual has no auxiliary values and no per-channel
-    # coefficients, so n_resid_aux is zero and there is no stage hook.
+    # complex residual has no per-channel coefficients, so there is no stage
+    # hook (the elem receives an empty aux tuple).
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives complex a private on-disk
     # cache namespace - see the cache correctness constraint in
     # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
-        corr_mode,
-        row_weights_type,
-        elem_factory=compute_jhwj_jhwr_elem_factory,
-        acc_zeros_factory=jhwj_jhwr_zeros_factory,
-        flush_factory=flush_jhwj_jhwr_factory,
-        resid_factory=resid_factory,
-        n_resid_aux=0,
-        stage_factory=None,
-        mirror_factory=mirror_jhj_factory,
+        corr_mode=corr_mode,
+        row_weights_type=row_weights_type,
+        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
+        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
+        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        residual_factory=residual_factory,
+        channel_coeffs_factory=None,
+        mirror_jhj_factory=mirror_jhj_factory,
     )
 
     def impl(
@@ -219,11 +218,10 @@ def nb_finalize_update(
     return impl
 
 
-def resid_factory(corr_mode):
+def residual_factory(corr_mode):
     """Produce the residual tuple for a complex term.
 
-    The complex residual is simply r - v. No auxiliary values are appended
-    (n_resid_aux is zero), so the returned flat tuple contains only the
+    The complex residual is simply r - v: the returned tuple holds only the
     per-correlation residual values.
     """
 
@@ -235,7 +233,7 @@ def resid_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def jhwj_jhwr_zeros_factory(corr_mode):
+def zero_jhr_jhj_factory(corr_mode):
     """Produce the zero jhwr/jhwj accumulator tuple for a given corr mode.
 
     The accumulator is a single flat tuple holding the jhwr element followed
@@ -264,7 +262,7 @@ def jhwj_jhwr_zeros_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def flush_jhwj_jhwr_factory(corr_mode):
+def flush_jhr_jhj_factory(corr_mode):
     """Add a register-accumulated jhwr/jhwj accumulator into the arrays.
 
     In the 4 correlation case the jhj part of the accumulator holds the
@@ -310,13 +308,13 @@ def flush_jhwj_jhwr_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def compute_jhwj_jhwr_elem_factory(corr_mode):
+def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhwr/jhwj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
     The accumulator is a single flat tuple (jhwr followed by jhwj - see
-    jhwj_jhwr_zeros_factory). In the 4 correlation case only the upper
+    zero_jhr_jhj_factory). In the 4 correlation case only the upper
     triangle of the (4, 4) jhj element is accumulated (in row-major order) -
     the lower triangle is filled in once per solution interval by
     mirror_jhj.

@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-07-20
-last_verified_commit: cf5bef7
+timestamp: 2026-07-21
+last_verified_commit: 6a35c60
 ---
 
 # Design Decisions
@@ -165,9 +165,11 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Decision:** ADOPTED (decision gate, 2026-07-13, after the first parameterised
   conversion — phase). The optimised loop lives once in
   `quartical/gains/general/solver_components.py` as `build_jhj_jhr_impl`, parameterised by
-  per-term hook factories (elem / acc_zeros / flush / resid / stage / mirror); each
-  kernel keeps a ~15-line `compute_jhj_jhr` overload that binds its hooks. The hook
-  contract is documented in solver-architecture.md ("Numba kernel conventions").
+  per-term hook factories, passed keyword-only: `accumulate_jhr_jhj_factory` /
+  `zero_jhr_jhj_factory` / `flush_jhr_jhj_factory` / `residual_factory` /
+  `channel_coeffs_factory` / `mirror_jhj_factory`; each kernel keeps a ~15-line
+  `compute_jhj_jhr` overload that binds its hooks. The hook contract is documented in
+  solver-architecture.md ("Numba kernel conventions").
 - **Rationale:** The gate required >= 1.10x at every supported correlation mode; phase
   measured **2.255x (1 corr), 1.979x (2 corr), 1.723x (4 corr)** (min/min, threads=1,
   full 20-iteration solve, interleaved same-day A/B vs the 9ae814e baseline). Complex
@@ -212,6 +214,17 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Source:** Task 4/6 of the kernel-unification plan (commits dee33f1, 04f5271);
   benchmarks and elementwise diagnostics in
   `~/claude_artifacts/quaritcal_optimisation/results/` (2026-07-13).
+- **Later cleanup (2026-07-21):** the original contract had `resid` return a flat
+  `(residual..., aux...)` tuple with an `n_resid_aux` parameter telling the loop where to
+  split it, so the elem's `aux` was the residual-aux concatenated with the stage
+  coefficients. The residual-aux values (per-corr `normf`) were never read by any elem —
+  every parameterised elem recomputes its own operator-based normalisation — so this was
+  vestigial from an earlier design. Removed: `resid` now returns only the residual, the
+  `stage` (`channel_coeffs`) output IS the whole `aux`, and `n_resid_aux` is gone. Hook
+  parameters were renamed for clarity (see the hook list above) and made keyword-only. Pure
+  cleanup: bitwise-identical checksums across all 14 terms × every corr mode, and no
+  measurable timing change on complex/delay_and_offset (numba already dead-code-eliminated
+  the unused appends).
 
 ## Per-kernel numba disk-cache namespaces for the shared loop
 

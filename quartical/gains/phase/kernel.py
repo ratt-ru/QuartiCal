@@ -132,23 +132,21 @@ def nb_compute_jhj_jhr(
 
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to phase terms. Phase's residual
-    # normalises out amplitude, so its residual hook appends a per-correlation
-    # normalisation factor as auxiliary values (n_resid_aux is n_corr). Phase
-    # has no per-channel coefficients, so there is no stage hook.
+    # normalises out amplitude. Phase has no per-channel coefficients, so there
+    # is no stage hook (the elem receives an empty aux tuple).
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives phase a private on-disk
     # cache namespace - see the cache correctness constraint in
     # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
-        corr_mode,
-        row_weights_type,
-        elem_factory=compute_jhwj_jhwr_elem_factory,
-        acc_zeros_factory=jhwj_jhwr_zeros_factory,
-        flush_factory=flush_jhwj_jhwr_factory,
-        resid_factory=resid_factory,
-        n_resid_aux=corr_mode.literal_value,
-        stage_factory=None,
-        mirror_factory=mirror_jhj_factory,
+        corr_mode=corr_mode,
+        row_weights_type=row_weights_type,
+        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
+        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
+        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        residual_factory=residual_factory,
+        channel_coeffs_factory=None,
+        mirror_jhj_factory=mirror_jhj_factory,
     )
 
     def impl(
@@ -267,17 +265,13 @@ def param_to_gain_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def resid_factory(corr_mode):
+def residual_factory(corr_mode):
     """Produce the amplitude-normalised residual for a phase term.
 
     The phase solver normalises out amplitude before forming the residual:
     the per-correlation factor is normf_i = |v_i| / |r_i| (zero where r_i is
-    zero, matching absv1_idiv_absv2), and the residual is r_i*normf_i - v_i.
-    The normf values are appended as auxiliary values (n_resid_aux = n_corr)
-    so the returned flat tuple is (residual..., normf...). The elem hook
-    recomputes its own operator-based normalisation, so it does not actually
-    consume these auxiliary values - they are retained only to keep the
-    residual/aux contract of the shared loop uniform across terms.
+    zero, matching absv1_idiv_absv2), and the residual is r_i*normf_i - v_i,
+    returned as the per-correlation residual tuple.
     """
 
     tuple_normf = factories.tuple_normf_factory(corr_mode)
@@ -290,7 +284,6 @@ def resid_factory(corr_mode):
                 r[1]*f1 - v[1],
                 r[2]*f2 - v[2],
                 r[3]*f3 - v[3],
-                f0, f1, f2, f3,
             )
     elif corr_mode.literal_value == 2:
         def impl(r, v):
@@ -298,14 +291,12 @@ def resid_factory(corr_mode):
             return (
                 r[0]*f0 - v[0],
                 r[1]*f1 - v[1],
-                f0, f1,
             )
     elif corr_mode.literal_value == 1:
         def impl(r, v):
             f0, = tuple_normf(v, r)
             return (
                 r[0]*f0 - v[0],
-                f0,
             )
     else:
         raise ValueError("Unsupported number of correlations.")
@@ -313,7 +304,7 @@ def resid_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def jhwj_jhwr_zeros_factory(corr_mode):
+def zero_jhr_jhj_factory(corr_mode):
     """Produce the zero jhr/jhj accumulator tuple for a given corr mode.
 
     The accumulator is a single flat tuple holding the (real) jhr entries
@@ -338,7 +329,7 @@ def jhwj_jhwr_zeros_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def flush_jhwj_jhwr_factory(corr_mode):
+def flush_jhr_jhj_factory(corr_mode):
     """Add a register-accumulated jhr/jhj accumulator into the arrays.
 
     For the 2 and 4 correlation cases only the upper triangle of the (2, 2)
@@ -391,20 +382,20 @@ def mirror_jhj_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def compute_jhwj_jhwr_elem_factory(corr_mode):
+def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
     The accumulator is a single flat tuple (jhr entries followed by the upper
-    triangle of the real jhj element - see jhwj_jhwr_zeros_factory).
+    triangle of the real jhj element - see zero_jhr_jhj_factory).
 
     The signature follows the unified elem contract of the shared
     accumulation loop (see solver_components.py). The phase chain rule uses the
     active-term gain (drv = -1j*conj(g)), so the gain argument is consumed.
-    The aux argument (the per-correlation normalisation factor from the
-    residual hook) is not used - this elem recomputes its own operator-based
-    normalisation, exactly as the original array-buffer kernel did.
+    The aux argument is empty (phase has no stage hook) and unused - this elem
+    recomputes its own operator-based normalisation, exactly as the original
+    array-buffer kernel did.
     """
 
     if corr_mode.literal_value == 4:

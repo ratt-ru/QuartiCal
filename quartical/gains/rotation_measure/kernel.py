@@ -11,7 +11,7 @@ from quartical.gains.general.solver_loop import build_param_solver_impl
 from quartical.gains.general.solver_components import compute_update  # noqa
 # Rotation measure's residual is the plain complex residual (r - v), so it
 # reuses the complex term's residual hook rather than duplicating it.
-from quartical.gains.complex.kernel import resid_factory
+from quartical.gains.complex.kernel import residual_factory
 
 
 def get_identity_params(corr_mode):
@@ -132,26 +132,25 @@ def nb_compute_jhj_jhr(
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to rotation measure terms. Like
     # rotation, its residual is the plain complex residual (r - v), so it reuses
-    # complex's residual hook and appends no auxiliary values (n_resid_aux is
-    # zero). Unlike rotation, the rotation angle is frequency dependent
-    # (beta = lambda_sq*rm), so a per-channel lambda_sq coefficient is supplied
-    # by the stage hook and consumed by the elem. Rotation measure solves a
+    # complex's residual hook. Unlike rotation, the rotation angle is frequency
+    # dependent (beta = lambda_sq*rm), so a per-channel lambda_sq coefficient is
+    # supplied by the stage hook as the aux tuple consumed by the elem. Rotation
+    # measure solves a
     # single parameter, so its jhj is (1, 1) and the mirror hook is a no-op
-    # (mirror_factory is None).
+    # (mirror_jhj_factory is None).
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives rotation_measure a private on-disk
     # cache namespace - see the cache correctness constraint in
     # solver_components.py.
     shared_impl = build_jhj_jhr_impl(
-        corr_mode,
-        row_weights_type,
-        elem_factory=compute_jhwj_jhwr_elem_factory,
-        acc_zeros_factory=jhwj_jhwr_zeros_factory,
-        flush_factory=flush_jhwj_jhwr_factory,
-        resid_factory=resid_factory,
-        n_resid_aux=0,
-        stage_factory=stage_factory,
-        mirror_factory=None,
+        corr_mode=corr_mode,
+        row_weights_type=row_weights_type,
+        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
+        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
+        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        residual_factory=residual_factory,
+        channel_coeffs_factory=channel_coeffs_factory,
+        mirror_jhj_factory=None,
     )
 
     def impl(
@@ -273,16 +272,14 @@ def nb_finalize_update(
     return impl
 
 
-def stage_factory(corr_mode):
+def channel_coeffs_factory(corr_mode):
     """Produce the per-channel lambda squared coefficient for the shared loop.
 
     Rotation measure's rotation angle is frequency dependent,
     beta = lambda_sq*rm with lambda_sq = (c/chan_freq)**2, so differentiating
     the model with respect to the parameter introduces the per-channel factor
     lambda_sq. The stage hook computes this once per channel and returns it as a
-    single-element flat tuple (lsq,); the shared loop concatenates it onto the
-    residual's (empty) auxiliary values to form the aux tuple passed to the
-    elem.
+    single-element flat tuple (lsq,) which is the aux tuple passed to the elem.
     """
 
     def impl(ms_inputs, meta_inputs, f):
@@ -293,7 +290,7 @@ def stage_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def jhwj_jhwr_zeros_factory(corr_mode):
+def zero_jhr_jhj_factory(corr_mode):
     """Produce the zero jhr/jhj accumulator tuple for a given corr mode.
 
     Rotation measure solves a single parameter, so the accumulator is a flat
@@ -313,7 +310,7 @@ def jhwj_jhwr_zeros_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def flush_jhwj_jhwr_factory(corr_mode):
+def flush_jhr_jhj_factory(corr_mode):
     """Add a register-accumulated jhr/jhj accumulator into the arrays.
 
     Rotation measure's jhj is (1, 1), so there is no upper triangle to mirror -
@@ -333,12 +330,12 @@ def flush_jhwj_jhwr_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def compute_jhwj_jhwr_elem_factory(corr_mode):
+def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
-    The accumulator is a flat tuple (jhr0, jhj00) - see jhwj_jhwr_zeros_factory.
+    The accumulator is a flat tuple (jhr0, jhj00) - see zero_jhr_jhj_factory.
 
     The signature follows the unified elem contract of the shared accumulation
     loop (see solver_components.py). This is rotation's elem with the per-channel
