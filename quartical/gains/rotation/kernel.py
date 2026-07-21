@@ -70,7 +70,6 @@ def nb_rotation_solver_impl(
     # returned directly. This gives rotation a private on-disk cache namespace -
     # see the cache correctness constraint in solver_components.py.
     shared_impl = build_param_solver_impl(
-        solve_on_param_grid=True,
         pre_solve=None,
         compute_jhj_jhr=compute_jhj_jhr,
         params_per_corr=None,

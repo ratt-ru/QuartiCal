@@ -129,7 +129,6 @@ def nb_delay_tec_and_offset_solver_impl(
     # gives delay_tec_and_offset a private on-disk cache namespace - see the
     # cache correctness constraint in solver_components.py.
     shared_impl = build_param_solver_impl(
-        solve_on_param_grid=True,
         pre_solve=pre_solve,
         compute_jhj_jhr=compute_jhj_jhr,
         params_per_corr=3,

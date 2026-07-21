@@ -3,7 +3,7 @@ type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
 timestamp: 2026-07-20
-last_verified_commit: cf5bef7
+last_verified_commit: 2b90c55
 ---
 
 # Solver Architecture
@@ -283,7 +283,7 @@ iteration (each kernel's `*_solver_impl` body) also lives once, in
 2026-07-20 as pure code motion: checksums bitwise-identical per term and corr mode vs the
 pre-extraction tree, timing at parity). Both builders take their hooks as **keyword-only
 arguments** (a leading bare `*` in each signature); every kernel call site passes them by
-name, so the opaque positional `build_param_solver_impl(False, None, ..., 1e9, ..., None)`
+name, so the opaque positional `build_param_solver_impl(None, ..., 1e9, ..., None)`
 form is a `TypeError`:
 
 - `build_gain_solver_impl(*, get_jhj_dims, compute_jhj_jhr, scalar_jhj_jhr,
@@ -293,11 +293,19 @@ form is a `TypeError`:
   `get_jhj_dims_factory`'s block shape), its own one-arg `scalar_jhj_jhr` (scalar mode
   supported; `None` means unsupported and raises `scalar_error_message`), and a
   `reference_gains(chain_inputs, meta_inputs, corr_mode)` stage after `finalize_gain_flags`.
-- `build_param_solver_impl(*, solve_on_param_grid, pre_solve, compute_jhj_jhr,
+- `build_param_solver_impl(*, pre_solve, compute_jhj_jhr,
   params_per_corr, scalar_error_message, finalize_update, numbness, identity_params,
   reference_params, post_solve)` — the ten parameterised terms. The body is delay's
-  historic impl. `solve_on_param_grid` selects extents from `param_freq_maps` (delay/tec
-  families, rotation, rotation_measure) vs `freq_maps` (phase, amplitude, crosshand_phase);
+  historic impl. Extents always come from `param_freq_maps`: jhj/jhr/update are allocated
+  on the parameter shape, so the parameter grid is the only consistent source. The gain
+  grid (`freq_maps`) is either bit-identical to it — for terms that don't override
+  `_make_freq_map` (phase, amplitude, crosshand_phase, rotation), since
+  `ParameterizedGain._make_param_freq_map` delegates to `Gain._make_freq_map` with the same
+  args — or deliberately finer (delay/tec families and rotation_measure solve in every
+  channel), which would be inconsistent with the parameter shape. A former
+  `solve_on_param_grid` build flag that could select `freq_maps` was removed 2026-07-20 as
+  dead: no term needed the gain-grid path (the three that set it never differed from the
+  param grid, and rotation already solved on the param grid despite matching grids).
   `params_per_corr` is the width passed to the generic `scalar_jhj_jhr` collapse (`None`
   means scalar unsupported, raise); `numbness` forwards to `update_gain_flags` (1e9
   everywhere except amplitude's default 1e-6); `identity_params` forwards to

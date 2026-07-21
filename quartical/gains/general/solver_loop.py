@@ -264,7 +264,6 @@ def build_gain_solver_impl(
 
 def build_param_solver_impl(
     *,
-    solve_on_param_grid,
     pre_solve,
     compute_jhj_jhr,
     params_per_corr,
@@ -293,10 +292,6 @@ def build_param_solver_impl(
     inline="always" function and MUST be inlined into a per-kernel trampoline.
 
     Args:
-        solve_on_param_grid: When ``True`` the extents and per-channel frequency
-            map are taken from ``param_freq_maps`` (the parameter grid); when
-            ``False`` they are taken from ``freq_maps`` (the gain grid). The
-            choice is made at build time.
         pre_solve: Optional hook
             ``pre_solve(ms_inputs, chain_inputs, meta_inputs)`` run once between
             intermediary setup and the loop (e.g. entering a scaled solver basis
@@ -329,14 +324,16 @@ def build_param_solver_impl(
         The ``impl`` closure, wrapped as an inline="always" function.
     """
 
-    # Frequency-map fetch: select the parameter-grid or gain-grid map at build
-    # time so the compiled body carries no branch on the grid choice.
-    if solve_on_param_grid:
-        def get_active_f_map(mapping_inputs, active_term):
-            return mapping_inputs.param_freq_maps[active_term]
-    else:
-        def get_active_f_map(mapping_inputs, active_term):
-            return mapping_inputs.freq_maps[active_term]
+    # Parameterised terms always solve on the parameter grid. The parameter
+    # frequency map is the base binned map (ParameterizedGain._make_param_freq_map
+    # delegates to Gain._make_freq_map), whereas the gain frequency map may be
+    # overridden per term - e.g. delay/tec/rotation_measure solve in every
+    # channel. jhj/jhr/update are allocated on the parameter shape, so the
+    # extents must come from the parameter grid; the gain grid is only ever
+    # equal to it (phase, amplitude, ...) or inconsistent with it (delay, ...).
+    # See docs/wiki/solver-architecture.md.
+    def get_active_f_map(mapping_inputs, active_term):
+        return mapping_inputs.param_freq_maps[active_term]
     get_active_f_map = factories.qcjit(get_active_f_map)
 
     # Optional pre-solve stage: a build-time no-op when absent.

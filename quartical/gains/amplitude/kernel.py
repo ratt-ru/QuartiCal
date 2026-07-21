@@ -70,7 +70,6 @@ def nb_amplitude_solver_impl(
     # private on-disk cache namespace - see the cache correctness constraint in
     # solver_components.py.
     shared_impl = build_param_solver_impl(
-        solve_on_param_grid=False,
         pre_solve=None,
         compute_jhj_jhr=compute_jhj_jhr,
         params_per_corr=1,
