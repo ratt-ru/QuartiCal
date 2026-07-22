@@ -61,6 +61,7 @@ goquartical-plot = "quartical.apps.plotter:plot"
 [dependency-groups]
 dev = [
     "pytest>=7.3.1,<=9.0.3",
+    "pytest-xdist>=3.5.0,<=3.8.0",
     "tbump>=6.10.0,<=6.11.0",
 ]
 

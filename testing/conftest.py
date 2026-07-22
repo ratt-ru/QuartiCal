@@ -43,6 +43,16 @@ dat_pth_list = [ms_path, ms_4k_path, beam_path]
 def pytest_sessionstart(session):
     """Called after Session object has been created, before run test loop."""
 
+    # Under pytest-xdist this hook fires in the controller and in every worker.
+    # Only the controller should manage the shared test data: its sessionstart
+    # completes before any worker is spawned, so downloading here guarantees the
+    # data is present on disk before the workers begin collecting. Letting the
+    # workers run this too would race multiple concurrent downloads onto the same
+    # files. Workers carry a ``workerinput`` attribute on their config; the
+    # controller does not.
+    if hasattr(session.config, "workerinput"):
+        return
+
     if all([p.exists() for p in dat_pth_list]):
         print("Test data already present - not downloading.")
     else:
@@ -58,6 +68,13 @@ def pytest_sessionstart(session):
 
 def pytest_sessionfinish(session, exitstatus):
     """Called after test run finished, before returning exit status."""
+
+    # Under pytest-xdist only the controller may remove the shared test data,
+    # and only once every worker has finished (the controller's sessionfinish
+    # runs last). If the workers ran this, the first worker to finish would
+    # rmtree the data out from under the others mid-run.
+    if hasattr(session.config, "workerinput"):
+        return
 
     for pth in dat_pth_list:
         if pth.exists():
