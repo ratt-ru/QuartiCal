@@ -75,7 +75,7 @@ def build_gain_solver_impl(
     All ``None`` hooks are resolved to build-time no-ops (or, for the scalar
     stage, to one of two prebuilt step closures) so that the compiled body never
     carries a runtime branch for an absent hook - mirroring how solver_components.py
-    substitutes its optional stage/mirror hooks.
+    substitutes its optional compute_channel_coeffs/mirror_jhj hooks.
 
     See the module-level CACHE CORRECTNESS CONSTRAINT: the returned body is an
     inline="always" function and MUST be inlined into a per-kernel trampoline.

@@ -11,7 +11,7 @@ from quartical.gains.general.solver_loop import build_param_solver_impl
 from quartical.gains.general.solver_components import compute_update  # noqa
 # Rotation measure's residual is the plain complex residual (r - v), so it
 # reuses the complex term's residual hook rather than duplicating it.
-from quartical.gains.complex.kernel import residual_factory
+from quartical.gains.complex.kernel import compute_residual_factory
 
 
 def get_identity_params(corr_mode):
@@ -134,7 +134,7 @@ def nb_compute_jhj_jhr(
     # rotation, its residual is the plain complex residual (r - v), so it reuses
     # complex's residual hook. Unlike rotation, the rotation angle is frequency
     # dependent (beta = lambda_sq*rm), so a per-channel lambda_sq coefficient is
-    # supplied by the stage hook as the aux tuple consumed by the elem. Rotation
+    # supplied by the compute_channel_coeffs hook as the channel_coeffs tuple consumed by the accumulate hook. Rotation
     # measure solves a
     # single parameter, so its jhj is (1, 1) and the mirror hook is a no-op
     # (mirror_jhj_factory is None).
@@ -148,8 +148,8 @@ def nb_compute_jhj_jhr(
         accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
         zero_jhr_jhj_factory=zero_jhr_jhj_factory,
         flush_jhr_jhj_factory=flush_jhr_jhj_factory,
-        residual_factory=residual_factory,
-        channel_coeffs_factory=channel_coeffs_factory,
+        compute_residual_factory=compute_residual_factory,
+        compute_channel_coeffs_factory=compute_channel_coeffs_factory,
         mirror_jhj_factory=None,
     )
 
@@ -272,14 +272,14 @@ def nb_finalize_update(
     return impl
 
 
-def channel_coeffs_factory(corr_mode):
+def compute_channel_coeffs_factory(corr_mode):
     """Produce the per-channel lambda squared coefficient for the shared loop.
 
     Rotation measure's rotation angle is frequency dependent,
     beta = lambda_sq*rm with lambda_sq = (c/chan_freq)**2, so differentiating
     the model with respect to the parameter introduces the per-channel factor
-    lambda_sq. The stage hook computes this once per channel and returns it as a
-    single-element flat tuple (lsq,) which is the aux tuple passed to the elem.
+    lambda_sq. The compute_channel_coeffs hook computes this once per channel and returns it as a
+    single-element flat tuple (lsq,) which is the channel_coeffs tuple passed to the accumulate hook.
     """
 
     def impl(ms_inputs, meta_inputs, f):
@@ -318,11 +318,11 @@ def flush_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value == 4:
-        def impl(jhr, jhj, acc):
+        def impl(jhr, jhj, jhr_jhj):
 
-            jhr[0] += acc[0]
+            jhr[0] += jhr_jhj[0]
 
-            jhj[0, 0] += acc[1]
+            jhj[0, 0] += jhr_jhj[1]
     else:
         raise ValueError("Rotation measure can only be solved for with four "
                          "correlation data.")
@@ -334,11 +334,11 @@ def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
-    values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
+    values) - the accumulator is only flushed to memory by flush_jhr_jhj.
     The accumulator is a flat tuple (jhr0, jhj00) - see zero_jhr_jhj_factory.
 
-    The signature follows the unified elem contract of the shared accumulation
-    loop (see solver_components.py). This is rotation's elem with the per-channel
+    The signature follows the unified accumulate_jhr_jhj contract of the shared accumulation
+    loop (see solver_components.py). This is rotation's accumulate hook with the per-channel
     lambda squared factor folded into the derivative. The active-term gain IS
     the rotation matrix [cos, -sin; sin, cos] (row-major XX, XY, YX, YY) with
     argument beta = lambda_sq*rm, so cos_beta = gain[0].real and
@@ -347,12 +347,12 @@ def accumulate_jhr_jhj_factory(corr_mode):
     parameters), because the gain entries were themselves set to those values,
     and it avoids any arctan2 wrapping. The derivative of the model with respect
     to rm carries the extra lambda_sq factor from the chain rule; lambda_sq is
-    supplied per channel by the stage hook as aux[0].
+    supplied per channel by the compute_channel_coeffs hook as channel_coeffs[0].
 
     The original array kernel built the full (4, 4) row-major kronecker product
     a_kron_bt(lop, rop) and contracted every column with dh. Here that temp
     array is eliminated: the four column contractions dhjh_j are inlined
-    symbolically from the kronecker entries. jhr is dh . (lop @ res @ rop) and
+    symbolically from the kronecker entries. jhr is dh . (lop @ wres @ rop) and
     jhj sums w_j * |dhjh_j|^2 over the four correlations; both carry the
     lambda_sq (jhr) and lambda_sq**2 (jhj) factors through dh.
     """
@@ -360,18 +360,18 @@ def accumulate_jhr_jhj_factory(corr_mode):
     tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, aux, res, acc):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
 
-            lsq = aux[0]
+            lsq = channel_coeffs[0]
 
             lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
             rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
             w_0, w_1, w_2, w_3 = w[0], w[1], w[2], w[3]
 
-            # jhwr element: r = lop @ (res @ rop), where res is the weighted
+            # jhwr element: r = lop @ (wres @ rop), where wres is the weighted
             # residual. Matches the array kernel's in-place matmuls exactly.
             r_0, r_1, r_2, r_3 = tuple_v1_mul_v2(
-                lop, tuple_v1_mul_v2(res, rop)
+                lop, tuple_v1_mul_v2(wres, rop)
             )
 
             # Derivative of the rotation matrix wrt rm, read straight from the
@@ -408,8 +408,8 @@ def accumulate_jhr_jhj_factory(corr_mode):
                 (dhjh_3 * w_3 * dhjh_3.conjugate()).real
 
             return (
-                acc[0] + upd,
-                acc[1] + jhj_00,
+                jhr_jhj[0] + upd,
+                jhr_jhj[1] + jhj_00,
             )
 
     else:

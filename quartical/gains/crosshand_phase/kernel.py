@@ -12,7 +12,7 @@ from quartical.gains.general.solver_components import compute_update  # noqa
 # Crosshand phase's residual is amplitude-normalised in exactly the same way
 # as the phase term (r_i*|v_i|/|r_i| - v_i), so it reuses phase's residual hook
 # rather than duplicating it.
-from quartical.gains.phase.kernel import residual_factory
+from quartical.gains.phase.kernel import compute_residual_factory
 
 
 def get_identity_params(corr_mode):
@@ -136,7 +136,7 @@ def nb_compute_jhj_jhr(
     # normalised residual hook. Crosshand solves a
     # single parameter, so its jhj is (1, 1) and the mirror hook is a no-op
     # (mirror_jhj_factory is None). There are no per-channel coefficients, so there
-    # is no stage hook.
+    # is no compute_channel_coeffs hook.
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives crosshand_phase a private on-disk
     # cache namespace - see the cache correctness constraint in
@@ -147,8 +147,8 @@ def nb_compute_jhj_jhr(
         accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
         zero_jhr_jhj_factory=zero_jhr_jhj_factory,
         flush_jhr_jhj_factory=flush_jhr_jhj_factory,
-        residual_factory=residual_factory,
-        channel_coeffs_factory=None,
+        compute_residual_factory=compute_residual_factory,
+        compute_channel_coeffs_factory=None,
         mirror_jhj_factory=None,
     )
 
@@ -289,11 +289,11 @@ def flush_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value == 4:
-        def impl(jhr, jhj, acc):
+        def impl(jhr, jhj, jhr_jhj):
 
-            jhr[0] += acc[0]
+            jhr[0] += jhr_jhj[0]
 
-            jhj[0, 0] += acc[1]
+            jhj[0, 0] += jhr_jhj[1]
     else:
         raise ValueError("Crosshand phase can only be solved for with four "
                          "correlation data.")
@@ -305,14 +305,14 @@ def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
-    values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
+    values) - the accumulator is only flushed to memory by flush_jhr_jhj.
     The accumulator is a flat tuple (jhr0, jhj00) - see zero_jhr_jhj_factory.
 
-    The signature follows the unified elem contract of the shared accumulation
+    The signature follows the unified accumulate_jhr_jhj contract of the shared accumulation
     loop (see solver_components.py). The crosshand chain rule uses the active-term
-    gain (drv = -1j*conj(g)), so the gain argument is consumed. The aux
+    gain (drv = -1j*conj(g)), so the gain argument is consumed. The channel_coeffs
     argument (the per-correlation normalisation factor from the residual hook)
-    is not used - this elem recomputes its own operator-based normalisation,
+    is not used - this accumulate hook recomputes its own operator-based normalisation,
     exactly as the original array-buffer kernel did.
 
     Unlike phase, crosshand keeps the full (2, 2) operator product rather than
@@ -323,7 +323,7 @@ def accumulate_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, aux, res, acc):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
 
             lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
             rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
@@ -342,11 +342,11 @@ def accumulate_jhr_jhj_factory(corr_mode):
 
             # jhwr element: lop @ (diag-normalised residual) @ rop, keeping only
             # the [0] (XX) entry. The incoming residual is already weighted; the
-            # normalisation factor is applied here, matching imul(res, normf).
-            s_0 = res[0]*n_0
-            s_1 = res[1]*n_1
-            s_2 = res[2]*n_2
-            s_3 = res[3]*n_3
+            # normalisation factor is applied here, matching imul(wres, normf).
+            s_0 = wres[0]*n_0
+            s_1 = wres[1]*n_1
+            s_2 = wres[2]*n_2
+            s_3 = wres[3]*n_3
 
             mm_0 = s_0*rop_0 + s_1*rop_2
             mm_2 = s_2*rop_0 + s_3*rop_2
@@ -378,8 +378,8 @@ def accumulate_jhr_jhj_factory(corr_mode):
                 jh_02*w_2*j_02 + jh_03*w_3*j_03
 
             return (
-                acc[0] + upd_00,
-                acc[1] + jhwj_00.real,
+                jhr_jhj[0] + upd_00,
+                jhr_jhj[1] + jhwj_00.real,
             )
 
     else:

@@ -133,7 +133,7 @@ def nb_compute_jhj_jhr(
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to phase terms. Phase's residual
     # normalises out amplitude. Phase has no per-channel coefficients, so there
-    # is no stage hook (the elem receives an empty aux tuple).
+    # is no compute_channel_coeffs hook (the accumulate hook receives an empty channel_coeffs tuple).
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives phase a private on-disk
     # cache namespace - see the cache correctness constraint in
@@ -144,8 +144,8 @@ def nb_compute_jhj_jhr(
         accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
         zero_jhr_jhj_factory=zero_jhr_jhj_factory,
         flush_jhr_jhj_factory=flush_jhr_jhj_factory,
-        residual_factory=residual_factory,
-        channel_coeffs_factory=None,
+        compute_residual_factory=compute_residual_factory,
+        compute_channel_coeffs_factory=None,
         mirror_jhj_factory=mirror_jhj_factory,
     )
 
@@ -265,7 +265,7 @@ def param_to_gain_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def residual_factory(corr_mode):
+def compute_residual_factory(corr_mode):
     """Produce the amplitude-normalised residual for a phase term.
 
     The phase solver normalises out amplitude before forming the residual:
@@ -339,20 +339,20 @@ def flush_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value in (2, 4):
-        def impl(jhr, jhj, acc):
+        def impl(jhr, jhj, jhr_jhj):
 
-            jhr[0] += acc[0]
-            jhr[1] += acc[1]
+            jhr[0] += jhr_jhj[0]
+            jhr[1] += jhr_jhj[1]
 
-            jhj[0, 0] += acc[2]
-            jhj[0, 1] += acc[3]
-            jhj[1, 1] += acc[4]
+            jhj[0, 0] += jhr_jhj[2]
+            jhj[0, 1] += jhr_jhj[3]
+            jhj[1, 1] += jhr_jhj[4]
     elif corr_mode.literal_value == 1:
-        def impl(jhr, jhj, acc):
+        def impl(jhr, jhj, jhr_jhj):
 
-            jhr[0] += acc[0]
+            jhr[0] += jhr_jhj[0]
 
-            jhj[0, 0] += acc[1]
+            jhj[0, 0] += jhr_jhj[1]
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -362,7 +362,7 @@ def flush_jhr_jhj_factory(corr_mode):
 def mirror_jhj_factory(corr_mode):
     """Fill in the lower triangle of the per-interval (n_param, n_param) jhj.
 
-    Accumulation in compute_jhwj_jhwr_elem only writes the upper triangle of
+    Accumulation in accumulate_jhr_jhj only writes the upper triangle of
     each real, symmetric jhj element. The lower triangle is a straight copy
     (jhj is real) done once per solution interval rather than once per
     visibility. This is a no-op in the single parameter (single correlation)
@@ -386,20 +386,20 @@ def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
-    values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
+    values) - the accumulator is only flushed to memory by flush_jhr_jhj.
     The accumulator is a single flat tuple (jhr entries followed by the upper
     triangle of the real jhj element - see zero_jhr_jhj_factory).
 
-    The signature follows the unified elem contract of the shared
+    The signature follows the unified accumulate_jhr_jhj contract of the shared
     accumulation loop (see solver_components.py). The phase chain rule uses the
     active-term gain (drv = -1j*conj(g)), so the gain argument is consumed.
-    The aux argument is empty (phase has no stage hook) and unused - this elem
+    The channel_coeffs argument is empty (phase has no compute_channel_coeffs hook) and unused - this accumulate hook
     recomputes its own operator-based normalisation, exactly as the original
     array-buffer kernel did.
     """
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, aux, res, acc):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
 
             lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
             rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
@@ -416,8 +416,8 @@ def accumulate_jhr_jhj_factory(corr_mode):
             # jhwr element: lop @ (diag(normalised residual) @ rop), keeping
             # the diagonal. The off-diagonal residual entries are dropped by
             # only forming res_0 and res_3 (i.e. zero weight off-diagonal).
-            res_0 = res[0]*n_0
-            res_3 = res[3]*n_3
+            res_0 = wres[0]*n_0
+            res_3 = wres[3]*n_3
             o0 = res_0*rop_0
             o1 = res_0*rop_1
             o2 = res_3*rop_2
@@ -458,15 +458,15 @@ def accumulate_jhr_jhj_factory(corr_mode):
             jhwj_33 = jh_30*w_0*j_30 + jh_33*w_3*j_33
 
             return (
-                acc[0] + upd_00,
-                acc[1] + upd_11,
-                acc[2] + jhwj_00.real,
-                acc[3] + (gc_0*jhwj_03*g_3).real,
-                acc[4] + jhwj_33.real,
+                jhr_jhj[0] + upd_00,
+                jhr_jhj[1] + upd_11,
+                jhr_jhj[2] + jhwj_00.real,
+                jhr_jhj[3] + (gc_0*jhwj_03*g_3).real,
+                jhr_jhj[4] + jhwj_33.real,
             )
 
     elif corr_mode.literal_value == 2:
-        def impl(lop, rop, w, gain, aux, res, acc):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
 
             rop_0, rop_1 = rop[0], rop[1]
 
@@ -475,8 +475,8 @@ def accumulate_jhr_jhj_factory(corr_mode):
             n_1 = 0 if rop_1 == 0 else 1/(rop_1.real**2 + rop_1.imag**2)
 
             # jhwr element (diagonal only).
-            r_0 = res[0]*n_0*rop_0
-            r_1 = res[1]*n_1*rop_1
+            r_0 = wres[0]*n_0*rop_0
+            r_1 = wres[1]*n_1*rop_1
 
             gc_0 = gain[0].conjugate()
             gc_1 = gain[1].conjugate()
@@ -487,21 +487,21 @@ def accumulate_jhr_jhj_factory(corr_mode):
             upd_00 = (drv_00*r_0).real
             upd_11 = (drv_23*r_1).real
 
-            # jhwj element (diagonal, real). The off-diagonal (acc[3]) is left
+            # jhwj element (diagonal, real). The off-diagonal (jhr_jhj[3]) is left
             # untouched, matching the array kernel which never sets it.
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
             jhj_11 = (rop_1*n_1*w[1]*rop_1.conjugate()).real
 
             return (
-                acc[0] + upd_00,
-                acc[1] + upd_11,
-                acc[2] + jhj_00,
-                acc[3],
-                acc[4] + jhj_11,
+                jhr_jhj[0] + upd_00,
+                jhr_jhj[1] + upd_11,
+                jhr_jhj[2] + jhj_00,
+                jhr_jhj[3],
+                jhr_jhj[4] + jhj_11,
             )
 
     elif corr_mode.literal_value == 1:
-        def impl(lop, rop, w, gain, aux, res, acc):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
 
             rop_0 = rop[0]
 
@@ -509,7 +509,7 @@ def accumulate_jhr_jhj_factory(corr_mode):
             n_0 = 0 if rop_0 == 0 else 1/(rop_0.real**2 + rop_0.imag**2)
 
             # jhwr element.
-            r_0 = res[0]*n_0*rop_0
+            r_0 = wres[0]*n_0*rop_0
 
             gc_0 = gain[0].conjugate()
             drv_00 = -1j*gc_0
@@ -519,8 +519,8 @@ def accumulate_jhr_jhj_factory(corr_mode):
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
 
             return (
-                acc[0] + upd_00,
-                acc[1] + jhj_00,
+                jhr_jhj[0] + upd_00,
+                jhr_jhj[1] + jhj_00,
             )
     else:
         raise ValueError("Unsupported number of correlations.")

@@ -31,8 +31,8 @@ def build_jhj_jhr_impl(
     accumulate_jhr_jhj_factory,
     zero_jhr_jhj_factory,
     flush_jhr_jhj_factory,
-    residual_factory,
-    channel_coeffs_factory=None,
+    compute_residual_factory,
+    compute_channel_coeffs_factory=None,
     mirror_jhj_factory=None,
 ):
     """Return the shared compute_jhj_jhr impl closure, specialised per term.
@@ -66,32 +66,37 @@ def build_jhj_jhr_impl(
     standalone cache unit, and the trampoline that inlines it lives in the
     kernel's own module, giving each kernel a private cache namespace.
 
-    The residual hook returns the per-correlation residual tuple. The ``aux``
-    tuple passed to the elem hook is exactly the per-channel coefficient tuple
-    produced by ``stage`` (an empty tuple for terms with no stage hook).
+    The residual hook returns the per-correlation residual tuple. The
+    ``channel_coeffs`` tuple passed to the accumulate hook is exactly the
+    per-channel coefficient tuple produced by ``compute_channel_coeffs`` (an
+    empty tuple for terms with no channel-coefficient hook).
 
     Args:
         corr_mode: Numba literal carrying ``corr_mode.literal_value`` (1/2/4).
         row_weights_type: Numba type of the ``ROW_WEIGHTS`` ms_inputs field,
             used to dispatch the (BDA) row-weight application.
-        accumulate_jhr_jhj_factory: ``accumulate_jhr_jhj_factory(corr_mode) -> elem(lop, rop, w, gain, aux,
-            res, acc) -> acc``. Accumulates one weighted jhr/jhj element into
-            the register-resident flat accumulator tuple.
-        zero_jhr_jhj_factory: ``zero_jhr_jhj_factory(corr_mode) -> acc_zeros(ref_elem)
-            -> flat zero tuple``. Produces the zero accumulator tuple in the
-            (promoted) dtype of the reference element.
-        flush_jhr_jhj_factory: ``flush_jhr_jhj_factory(corr_mode) -> flush(jhr_el, jhj_el, acc)
-            -> None``. Adds a completed accumulator into the jhr/jhj array
-            slices.
-        residual_factory: ``residual_factory(corr_mode) -> resid(r, v) -> tuple`` of
-            the per-correlation residual values.
-        channel_coeffs_factory: Optional ``channel_coeffs_factory(corr_mode) -> stage(ms_inputs,
-            meta_inputs, f) -> flat coeff tuple`` computing the per-channel
-            coefficients that form the ``aux`` tuple passed to the elem hook.
-            ``None`` yields an empty coefficient tuple.
-        mirror_jhj_factory: Optional ``mirror_jhj_factory(corr_mode) -> mirror(jhj_tifi)
-            -> None`` filling the lower triangle of the per-interval jhj
-            elements. ``None`` yields a no-op.
+        accumulate_jhr_jhj_factory: ``accumulate_jhr_jhj_factory(corr_mode) ->
+            accumulate_jhr_jhj(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj)
+            -> jhr_jhj``. Accumulates one weighted jhr/jhj element into the
+            register-resident flat accumulator tuple.
+        zero_jhr_jhj_factory: ``zero_jhr_jhj_factory(corr_mode) ->
+            zero_jhr_jhj(ref_elem) -> flat zero tuple``. Produces the zero
+            accumulator tuple in the (promoted) dtype of the reference element.
+        flush_jhr_jhj_factory: ``flush_jhr_jhj_factory(corr_mode) ->
+            flush_jhr_jhj(jhr_el, jhj_el, jhr_jhj) -> None``. Adds a completed
+            accumulator into the jhr/jhj array slices.
+        compute_residual_factory: ``compute_residual_factory(corr_mode) ->
+            compute_residual(r, v) -> tuple`` of the per-correlation residual
+            values.
+        compute_channel_coeffs_factory: Optional
+            ``compute_channel_coeffs_factory(corr_mode) ->
+            compute_channel_coeffs(ms_inputs, meta_inputs, f) -> flat coeff
+            tuple`` computing the per-channel coefficients that form the
+            ``channel_coeffs`` tuple passed to the accumulate hook. ``None``
+            yields an empty coefficient tuple.
+        mirror_jhj_factory: Optional ``mirror_jhj_factory(corr_mode) ->
+            mirror_jhj(jhj_tifi) -> None`` filling the lower triangle of the
+            per-interval jhj elements. ``None`` yields a no-op.
 
     Returns:
         The ``impl`` closure with the standard compute_jhj_jhr runtime
@@ -115,24 +120,24 @@ def build_jhj_jhr_impl(
     valloc = factories.valloc_factory(corr_mode)
     make_loop_vars = factories.loop_var_factory(corr_mode)
 
-    elem = accumulate_jhr_jhj_factory(corr_mode)
-    flush = flush_jhr_jhj_factory(corr_mode)
-    acc_zeros = zero_jhr_jhj_factory(corr_mode)
-    resid = residual_factory(corr_mode)
+    accumulate_jhr_jhj = accumulate_jhr_jhj_factory(corr_mode)
+    flush_jhr_jhj = flush_jhr_jhj_factory(corr_mode)
+    zero_jhr_jhj = zero_jhr_jhj_factory(corr_mode)
+    compute_residual = compute_residual_factory(corr_mode)
 
     if mirror_jhj_factory is None:
-        def mirror(jhj_tifi):
+        def mirror_jhj(jhj_tifi):
             pass
-        mirror = factories.qcjit(mirror)
+        mirror_jhj = factories.qcjit(mirror_jhj)
     else:
-        mirror = mirror_jhj_factory(corr_mode)
+        mirror_jhj = mirror_jhj_factory(corr_mode)
 
-    if channel_coeffs_factory is None:
-        def stage(ms_inputs, meta_inputs, f):
+    if compute_channel_coeffs_factory is None:
+        def compute_channel_coeffs(ms_inputs, meta_inputs, f):
             return ()
-        stage = factories.qcjit(stage)
+        compute_channel_coeffs = factories.qcjit(compute_channel_coeffs)
     else:
-        stage = channel_coeffs_factory(corr_mode)
+        compute_channel_coeffs = compute_channel_coeffs_factory(corr_mode)
 
     def impl(
         ms_inputs,
@@ -221,7 +226,7 @@ def build_jhj_jhr_impl(
             # zero tuple is also used to promote lower precision inputs.
             zero_vec = tuple_zeros(jhr_tifi[0, 0])
             identity_vec = tuple_identity(jhr_tifi[0, 0])
-            acc_zero = acc_zeros(jhr_tifi[0, 0])
+            jhr_jhj_zero = zero_jhr_jhj(jhr_tifi[0, 0])
 
             for row_ind in range(rs, re):
 
@@ -234,8 +239,8 @@ def build_jhj_jhr_impl(
                     # jhr/jhj element per antenna. As the antennas are fixed
                     # for the duration of a row, the accumulation can be done
                     # in registers and flushed to memory once per row.
-                    acc_p = acc_zero
-                    acc_q = acc_zero
+                    jhr_jhj_p = jhr_jhj_zero
+                    jhr_jhj_q = jhr_jhj_zero
 
                     for f in range(fs, fe):
 
@@ -244,8 +249,11 @@ def build_jhj_jhr_impl(
 
                         # Per-channel coefficients (staged terms only, else an
                         # empty tuple - the compiler drops it entirely). This
-                        # is the aux tuple passed to the elem hook.
-                        aux = stage(ms_inputs, meta_inputs, f)
+                        # is the channel_coeffs tuple passed to the accumulate
+                        # hook.
+                        channel_coeffs = compute_channel_coeffs(
+                            ms_inputs, meta_inputs, f
+                        )
 
                         # Apply row weights in the BDA case, else a no-op.
                         w = tuple_unpack_rweight(
@@ -309,9 +317,10 @@ def build_jhj_jhr_impl(
 
                         # The active-term gain for each antenna. The p-side gain
                         # also builds the model visibility below; both are
-                        # passed to the respective elem call (parameterised
-                        # terms need them for the chain rule - the complex elem
-                        # ignores its gain argument and the fetch is elided).
+                        # passed to the respective accumulate call (parameterised
+                        # terms need them for the chain rule - the complex
+                        # accumulate hook ignores its gain argument and the fetch
+                        # is elided).
                         active_gain_tifi = gains[active_term][
                             active_t_map[row_ind], active_f_map[f]
                         ]
@@ -322,20 +331,22 @@ def build_jhj_jhr_impl(
                         v_pq = tuple_v1_mul_v2ct(v_pq, rop_pq)
 
                         # Residual for this visibility.
-                        r_pq = resid(r_pq, v_pq)
+                        r_pq = compute_residual(r_pq, v_pq)
 
                         wr_pq = tuple_wmul(r_pq, w)
                         wr_qp = tuple_unpackct(wr_pq)
 
-                        acc_p = elem(
-                            lop_pq, rop_pq, w, g_active_p, aux, wr_pq, acc_p
+                        jhr_jhj_p = accumulate_jhr_jhj(
+                            lop_pq, rop_pq, w, g_active_p, channel_coeffs,
+                            wr_pq, jhr_jhj_p
                         )
-                        acc_q = elem(
-                            lop_qp, rop_qp, w, g_active_q, aux, wr_qp, acc_q
+                        jhr_jhj_q = accumulate_jhr_jhj(
+                            lop_qp, rop_qp, w, g_active_q, channel_coeffs,
+                            wr_qp, jhr_jhj_q
                         )
 
-                    flush(jhr_tifi[a1_m, 0], jhj_tifi[a1_m, 0], acc_p)
-                    flush(jhr_tifi[a2_m, 0], jhj_tifi[a2_m, 0], acc_q)
+                    flush_jhr_jhj(jhr_tifi[a1_m, 0], jhj_tifi[a1_m, 0], jhr_jhj_p)
+                    flush_jhr_jhj(jhr_tifi[a2_m, 0], jhj_tifi[a2_m, 0], jhr_jhj_q)
 
                     continue
 
@@ -347,8 +358,11 @@ def build_jhj_jhr_impl(
                         continue
 
                     # Per-channel coefficients (staged terms only, else empty).
-                    # This is the aux tuple passed to the elem hook.
-                    aux = stage(ms_inputs, meta_inputs, f)
+                    # This is the channel_coeffs tuple passed to the accumulate
+                    # hook.
+                    channel_coeffs = compute_channel_coeffs(
+                        ms_inputs, meta_inputs, f
+                    )
 
                     # Apply row weights in the BDA case, otherwise a no-op.
                     w = tuple_unpack_rweight(
@@ -432,7 +446,7 @@ def build_jhj_jhr_impl(
                         v_pq = tuple_add(v_pq, v_pqd)
 
                     # Residual for this visibility.
-                    r_pq = resid(r_pq, v_pq)
+                    r_pq = compute_residual(r_pq, v_pq)
 
                     # Weighted residual and its conjugate transpose. These
                     # are direction independent and can be computed once.
@@ -447,28 +461,28 @@ def build_jhj_jhr_impl(
                         lop_pq_d = tuple_unpack(lop_pq_arr[d])
                         rop_pq_d = tuple_unpack(rop_pq_arr[d])
 
-                        acc = elem(
-                            lop_pq_d, rop_pq_d, w, g_active_p, aux, wr_pq,
-                            acc_zero
+                        jhr_jhj = accumulate_jhr_jhj(
+                            lop_pq_d, rop_pq_d, w, g_active_p, channel_coeffs,
+                            wr_pq, jhr_jhj_zero
                         )
-                        flush(
-                            jhr_tifi[a1_m, d], jhj_tifi[a1_m, d], acc
+                        flush_jhr_jhj(
+                            jhr_tifi[a1_m, d], jhj_tifi[a1_m, d], jhr_jhj
                         )
 
                         lop_qp_d = tuple_unpack(lop_qp_arr[d])
                         rop_qp_d = tuple_unpack(rop_qp_arr[d])
 
-                        acc = elem(
-                            lop_qp_d, rop_qp_d, w, g_active_q, aux, wr_qp,
-                            acc_zero
+                        jhr_jhj = accumulate_jhr_jhj(
+                            lop_qp_d, rop_qp_d, w, g_active_q, channel_coeffs,
+                            wr_qp, jhr_jhj_zero
                         )
-                        flush(
-                            jhr_tifi[a2_m, d], jhj_tifi[a2_m, d], acc
+                        flush_jhr_jhj(
+                            jhr_tifi[a2_m, d], jhj_tifi[a2_m, d], jhr_jhj
                         )
 
             # Accumulation only touches the upper triangle of each jhj
             # element (4 correlation case) - fill in the lower triangle.
-            mirror(jhj_tifi)
+            mirror_jhj(jhj_tifi)
         return
 
     # Return the loop as an inline="always" function so that it is never lowered

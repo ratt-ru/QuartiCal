@@ -11,7 +11,7 @@ from quartical.gains.general.solver_loop import build_param_solver_impl
 from quartical.gains.general.solver_components import compute_update  # noqa
 # Rotation's residual is the plain complex residual (r - v), so it reuses the
 # complex term's residual hook rather than duplicating it.
-from quartical.gains.complex.kernel import residual_factory
+from quartical.gains.complex.kernel import compute_residual_factory
 
 
 def get_identity_params(corr_mode):
@@ -134,7 +134,7 @@ def nb_compute_jhj_jhr(
     # residual hook.
     # Rotation solves a single parameter, so its jhj is (1, 1) and the mirror
     # hook is a no-op (mirror_jhj_factory is None). There are no per-channel
-    # coefficients, so there is no stage hook.
+    # coefficients, so there is no compute_channel_coeffs hook.
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives rotation a private on-disk
     # cache namespace - see the cache correctness constraint in
@@ -145,8 +145,8 @@ def nb_compute_jhj_jhr(
         accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
         zero_jhr_jhj_factory=zero_jhr_jhj_factory,
         flush_jhr_jhj_factory=flush_jhr_jhj_factory,
-        residual_factory=residual_factory,
-        channel_coeffs_factory=None,
+        compute_residual_factory=compute_residual_factory,
+        compute_channel_coeffs_factory=None,
         mirror_jhj_factory=None,
     )
 
@@ -286,11 +286,11 @@ def flush_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value == 4:
-        def impl(jhr, jhj, acc):
+        def impl(jhr, jhj, jhr_jhj):
 
-            jhr[0] += acc[0]
+            jhr[0] += jhr_jhj[0]
 
-            jhj[0, 0] += acc[1]
+            jhj[0, 0] += jhr_jhj[1]
     else:
         raise ValueError("Rotation can only be solved for with four "
                          "correlation data.")
@@ -302,10 +302,10 @@ def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
-    values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
+    values) - the accumulator is only flushed to memory by flush_jhr_jhj.
     The accumulator is a flat tuple (jhr0, jhj00) - see zero_jhr_jhj_factory.
 
-    The signature follows the unified elem contract of the shared accumulation
+    The signature follows the unified accumulate_jhr_jhj contract of the shared accumulation
     loop (see solver_components.py). The active-term gain IS the rotation matrix
     [cos, -sin; sin, cos] (row-major XX, XY, YX, YY), so the derivative row
     dh = [-sin, -cos, cos, -sin] is read directly from the gain tuple
@@ -313,30 +313,30 @@ def accumulate_jhr_jhj_factory(corr_mode):
     from theta - this is bit-identical to the original (which used
     np.sin(theta)/np.cos(theta) with theta = params) because the gain entries
     were themselves set to np.cos(theta)/np.sin(theta), and it avoids any
-    arctan2 wrapping near theta = +/-pi. The aux argument is unused (rotation
+    arctan2 wrapping near theta = +/-pi. The channel_coeffs argument is unused (rotation
     appends no auxiliary residual values).
 
     The original array kernel built the full (4, 4) row-major kronecker product
     a_kron_bt(lop, rop) and contracted every column with dh. Here that temp
     array is eliminated: the four column contractions dhjh_j are inlined
     symbolically from the kronecker entries the dh contraction actually touches
-    (all 16, but expressed directly from lop/rop). jhr is dh . (lop @ res @ rop)
+    (all 16, but expressed directly from lop/rop). jhr is dh . (lop @ wres @ rop)
     and jhj sums w_j * |dhjh_j|^2 over the four correlations.
     """
 
     tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, aux, res, acc):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
 
             lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
             rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
             w_0, w_1, w_2, w_3 = w[0], w[1], w[2], w[3]
 
-            # jhwr element: r = lop @ (res @ rop), where res is the weighted
+            # jhwr element: r = lop @ (wres @ rop), where wres is the weighted
             # residual. Matches the array kernel's in-place matmuls exactly.
             r_0, r_1, r_2, r_3 = tuple_v1_mul_v2(
-                lop, tuple_v1_mul_v2(res, rop)
+                lop, tuple_v1_mul_v2(wres, rop)
             )
 
             # Derivative of the rotation matrix wrt theta, read straight from
@@ -372,8 +372,8 @@ def accumulate_jhr_jhj_factory(corr_mode):
                 (dhjh_3 * w_3 * dhjh_3.conjugate()).real
 
             return (
-                acc[0] + upd,
-                acc[1] + jhj_00,
+                jhr_jhj[0] + upd,
+                jhr_jhj[1] + jhj_00,
             )
 
     else:

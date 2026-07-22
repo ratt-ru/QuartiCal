@@ -112,8 +112,9 @@ def nb_compute_jhj_jhr(
 
     # The accumulation loop itself is shared between kernels - only the
     # hooks below (the per-term maths) are specific to complex terms. The
-    # complex residual has no per-channel coefficients, so there is no stage
-    # hook (the elem receives an empty aux tuple).
+    # complex residual has no per-channel coefficients, so there is no
+    # channel-coefficient hook (the accumulate hook receives an empty
+    # channel_coeffs tuple).
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives complex a private on-disk
     # cache namespace - see the cache correctness constraint in
@@ -124,8 +125,8 @@ def nb_compute_jhj_jhr(
         accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
         zero_jhr_jhj_factory=zero_jhr_jhj_factory,
         flush_jhr_jhj_factory=flush_jhr_jhj_factory,
-        residual_factory=residual_factory,
-        channel_coeffs_factory=None,
+        compute_residual_factory=compute_residual_factory,
+        compute_channel_coeffs_factory=None,
         mirror_jhj_factory=mirror_jhj_factory,
     )
 
@@ -218,7 +219,7 @@ def nb_finalize_update(
     return impl
 
 
-def residual_factory(corr_mode):
+def compute_residual_factory(corr_mode):
     """Produce the residual tuple for a complex term.
 
     The complex residual is simply r - v: the returned tuple holds only the
@@ -271,37 +272,37 @@ def flush_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value == 4:
-        def impl(jhr, jhj, acc):
+        def impl(jhr, jhj, jhr_jhj):
 
-            jhr[0] += acc[0]
-            jhr[1] += acc[1]
-            jhr[2] += acc[2]
-            jhr[3] += acc[3]
+            jhr[0] += jhr_jhj[0]
+            jhr[1] += jhr_jhj[1]
+            jhr[2] += jhr_jhj[2]
+            jhr[3] += jhr_jhj[3]
 
-            jhj[0, 0] += acc[4]
-            jhj[0, 1] += acc[5]
-            jhj[0, 2] += acc[6]
-            jhj[0, 3] += acc[7]
-            jhj[1, 1] += acc[8]
-            jhj[1, 2] += acc[9]
-            jhj[1, 3] += acc[10]
-            jhj[2, 2] += acc[11]
-            jhj[2, 3] += acc[12]
-            jhj[3, 3] += acc[13]
+            jhj[0, 0] += jhr_jhj[4]
+            jhj[0, 1] += jhr_jhj[5]
+            jhj[0, 2] += jhr_jhj[6]
+            jhj[0, 3] += jhr_jhj[7]
+            jhj[1, 1] += jhr_jhj[8]
+            jhj[1, 2] += jhr_jhj[9]
+            jhj[1, 3] += jhr_jhj[10]
+            jhj[2, 2] += jhr_jhj[11]
+            jhj[2, 3] += jhr_jhj[12]
+            jhj[3, 3] += jhr_jhj[13]
     elif corr_mode.literal_value == 2:
-        def impl(jhr, jhj, acc):
+        def impl(jhr, jhj, jhr_jhj):
 
-            jhr[0] += acc[0]
-            jhr[1] += acc[1]
+            jhr[0] += jhr_jhj[0]
+            jhr[1] += jhr_jhj[1]
 
-            jhj[0] += acc[2]
-            jhj[1] += acc[3]
+            jhj[0] += jhr_jhj[2]
+            jhj[1] += jhr_jhj[3]
     elif corr_mode.literal_value == 1:
-        def impl(jhr, jhj, acc):
+        def impl(jhr, jhj, jhr_jhj):
 
-            jhr[0] += acc[0]
+            jhr[0] += jhr_jhj[0]
 
-            jhj[0] += acc[1]
+            jhj[0] += jhr_jhj[1]
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -312,26 +313,27 @@ def accumulate_jhr_jhj_factory(corr_mode):
     """Accumulate a jhwr/jhwj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
-    values) - the accumulator is only flushed to memory by flush_jhwj_jhwr.
+    values) - the accumulator is only flushed to memory by flush_jhr_jhj.
     The accumulator is a single flat tuple (jhwr followed by jhwj - see
     zero_jhr_jhj_factory). In the 4 correlation case only the upper
     triangle of the (4, 4) jhj element is accumulated (in row-major order) -
     the lower triangle is filled in once per solution interval by
     mirror_jhj.
 
-    The signature follows the unified elem contract of the shared
-    accumulation loop (see solver_components.py). Complex terms have no chain
-    rule beyond the operators themselves, so the gain and aux arguments are
-    unused - the compiler eliminates them entirely after inlining.
+    The signature follows the unified accumulate_jhr_jhj contract of the
+    shared accumulation loop (see solver_components.py). Complex terms have no
+    chain rule beyond the operators themselves, so the gain and channel_coeffs
+    arguments are unused - the compiler eliminates them entirely after
+    inlining.
     """
 
     tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, aux, res, acc):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
 
             # Accumulate an element of jhwr.
-            upd = tuple_v1_mul_v2(lop, res)
+            upd = tuple_v1_mul_v2(lop, wres)
             upd = tuple_v1_mul_v2(upd, rop)
 
             # Accumulate an element of jhwj.
@@ -383,51 +385,51 @@ def accumulate_jhr_jhj_factory(corr_mode):
             c11_0, c11_1 = w_0*b11_0 + w_1*b11_1, w_2*b11_0 + w_3*b11_1
 
             return (
-                acc[0] + upd[0],
-                acc[1] + upd[1],
-                acc[2] + upd[2],
-                acc[3] + upd[3],
-                acc[4] + (a00_0*c00_0 + a00_1*c00_1),
-                acc[5] + (a00_0*c01_0 + a00_1*c01_1),
-                acc[6] + (a01_0*c00_0 + a01_1*c00_1),
-                acc[7] + (a01_0*c01_0 + a01_1*c01_1),
-                acc[8] + (a00_0*c11_0 + a00_1*c11_1),
-                acc[9] + (a01_0*c10_0 + a01_1*c10_1),
-                acc[10] + (a01_0*c11_0 + a01_1*c11_1),
-                acc[11] + (a11_0*c00_0 + a11_1*c00_1),
-                acc[12] + (a11_0*c01_0 + a11_1*c01_1),
-                acc[13] + (a11_0*c11_0 + a11_1*c11_1),
+                jhr_jhj[0] + upd[0],
+                jhr_jhj[1] + upd[1],
+                jhr_jhj[2] + upd[2],
+                jhr_jhj[3] + upd[3],
+                jhr_jhj[4] + (a00_0*c00_0 + a00_1*c00_1),
+                jhr_jhj[5] + (a00_0*c01_0 + a00_1*c01_1),
+                jhr_jhj[6] + (a01_0*c00_0 + a01_1*c00_1),
+                jhr_jhj[7] + (a01_0*c01_0 + a01_1*c01_1),
+                jhr_jhj[8] + (a00_0*c11_0 + a00_1*c11_1),
+                jhr_jhj[9] + (a01_0*c10_0 + a01_1*c10_1),
+                jhr_jhj[10] + (a01_0*c11_0 + a01_1*c11_1),
+                jhr_jhj[11] + (a11_0*c00_0 + a11_1*c00_1),
+                jhr_jhj[12] + (a11_0*c01_0 + a11_1*c01_1),
+                jhr_jhj[13] + (a11_0*c11_0 + a11_1*c11_1),
             )
 
     elif corr_mode.literal_value == 2:
-        def impl(lop, rop, w, gain, aux, res, acc):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
 
             # Accumulate an element of jhwr.
-            upd = tuple_v1_mul_v2(res, rop)
+            upd = tuple_v1_mul_v2(wres, rop)
 
             # Accumulate an element of jhwj: w|rop|^2, which is real.
             jh_00, jh_11 = rop[0], rop[1]
 
             return (
-                acc[0] + upd[0],
-                acc[1] + upd[1],
-                acc[2] + w[0]*(jh_00.real*jh_00.real +
+                jhr_jhj[0] + upd[0],
+                jhr_jhj[1] + upd[1],
+                jhr_jhj[2] + w[0]*(jh_00.real*jh_00.real +
                                jh_00.imag*jh_00.imag),
-                acc[3] + w[1]*(jh_11.real*jh_11.real +
+                jhr_jhj[3] + w[1]*(jh_11.real*jh_11.real +
                                jh_11.imag*jh_11.imag),
             )
     elif corr_mode.literal_value == 1:
-        def impl(lop, rop, w, gain, aux, res, acc):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
 
             # Accumulate an element of jhwr.
-            upd = tuple_v1_mul_v2(res, rop)
+            upd = tuple_v1_mul_v2(wres, rop)
 
             # Accumulate an element of jhwj: w|rop|^2, which is real.
             jh_00 = rop[0]
 
             return (
-                acc[0] + upd[0],
-                acc[1] + w[0]*(jh_00.real*jh_00.real +
+                jhr_jhj[0] + upd[0],
+                jhr_jhj[1] + w[0]*(jh_00.real*jh_00.real +
                                jh_00.imag*jh_00.imag),
             )
     else:
@@ -439,7 +441,7 @@ def accumulate_jhr_jhj_factory(corr_mode):
 def mirror_jhj_factory(corr_mode):
     """Fill in the lower triangle of the per-interval jhj elements.
 
-    In the 4 correlation case, accumulation in compute_jhwj_jhwr_elem only
+    In the 4 correlation case, accumulation in accumulate_jhr_jhj only
     writes the upper triangle of each (4, 4) jhj element. As jhj is Hermitian,
     the lower triangle is the conjugate of the upper triangle and can be
     filled in once per solution interval rather than once per visibility.
