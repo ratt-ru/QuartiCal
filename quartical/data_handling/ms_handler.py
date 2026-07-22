@@ -13,7 +13,8 @@ from quartical.data_handling import CORR_TYPES
 from quartical.data_handling.chunking import compute_chunking
 from quartical.data_handling.bda import process_bda_input, process_bda_output
 from quartical.data_handling.selection import filter_xds_list
-from quartical.data_handling.angles import apply_parangles
+from quartical.data_handling.angles import (apply_parangles,
+                                            assert_parangle_supported)
 
 DASKMS_ATTRS = {
     "__daskms_partition_schema__",
@@ -64,11 +65,18 @@ def read_xds_list(model_columns, ms_opts):
     # by merging the field xds grouped by DDID into data grouped by DDID.
 
     field_xds = xds_from_storage_table(ms_opts.path + "::FIELD")[0]
-    phase_dir = np.squeeze(field_xds.PHASE_DIR.values)
+    # Squeeze out field-poly (unsupported by QC). Errors if it is present.
+    phase_dirs = np.squeeze(field_xds.PHASE_DIR.values, axis=1)
     field_names = field_xds.NAME.values
 
-    logger.info("Field table indicates phase centre is at ({} {}).",
-                phase_dir[0], phase_dir[1])
+    field_info = "\n  ".join(
+        [
+            f"Field: {n} - Phase direction: {[float(d) for d in pd]}"
+            for n, pd in list(zip(field_names, phase_dirs))
+        ]
+    )
+
+    logger.info(f"Field table indicates phase centre is at:\n  {field_info}")
 
     # Determine all the chunking in time, row and channel.
     chunking_info = compute_chunking(ms_opts, compute=True)
@@ -136,6 +144,15 @@ def read_xds_list(model_columns, ms_opts):
         chunks=chunking_per_spw_xds
     )
 
+    dd_xds = xds_from_storage_table(
+        ms_opts.path + "::DATA_DESCRIPTION",
+        chunks={"row": -1}
+    )[0]
+
+    # Reify these values as they should be added to the xarray datasets.
+    polarization_ids = dd_xds.POLARIZATION_ID.values
+    spectral_window_ids = dd_xds.SPECTRAL_WINDOW_ID.values
+
     for spw_xds in spw_xds_list:
         chan_freq = spw_xds.CHAN_FREQ.values  # Reify.
         spw_xds.attrs["MIN_FREQ"] = chan_freq.min()
@@ -160,6 +177,10 @@ def read_xds_list(model_columns, ms_opts):
     ant_names = np.array(antenna_xds.NAME.values, dtype='U')
 
     for xds_ind, xds in enumerate(data_xds_list):
+
+        spw_id = spectral_window_ids[xds.DATA_DESC_ID]
+        pol_id = polarization_ids[xds.DATA_DESC_ID]
+
         # Add coordinates to the xarray datasets.
         _xds = xds.assign_coords({"corr": corr_types,
                                   "chan": np.arange(xds.sizes["chan"]),
@@ -169,9 +190,8 @@ def read_xds_list(model_columns, ms_opts):
         # for solvers which require this information. Also adds the antenna
         # names which will be useful when reference antennas are required.
 
-        spw_xds = spw_xds_list[xds.DATA_DESC_ID]
-        chan_freqs = clone(spw_xds.CHAN_FREQ.data)
-        chan_widths = clone(spw_xds.CHAN_WIDTH.data)
+        chan_freqs = clone(spw_xds_list[spw_id].CHAN_FREQ.data)
+        chan_widths = clone(spw_xds_list[spw_id].CHAN_WIDTH.data)
 
         _xds = _xds.assign(
             {
@@ -193,8 +213,10 @@ def read_xds_list(model_columns, ms_opts):
             {
                 "UTIME_CHUNKS": utime_chunks,
                 "FIELD_NAME": field_name,
-                "MIN_FREQ": spw_xds.MIN_FREQ,
-                "MAX_FREQ": spw_xds.MAX_FREQ
+                "SPECTRAL_WINDOW_ID": spw_id,
+                "POLARIZATION_ID": pol_id,
+                "MIN_FREQ": spw_xds_list[spw_id].MIN_FREQ,
+                "MAX_FREQ": spw_xds_list[spw_id].MAX_FREQ
             }
         )
 
@@ -443,6 +465,7 @@ def postprocess_xds_list(data_xds_list, parangle_xds_list, output_opts):
     n_corr = {xds.sizes["corr"] for xds in data_xds_list}.pop()
 
     if output_opts.apply_p_jones_inv:
+        assert_parangle_supported(data_xds_list)
         # NOTE: Applying parallactic angle when there are fewer than four
         # correlations is problematic for linear feeds as it amounts to
         # rotating information to/from correlations which are not present i.e.

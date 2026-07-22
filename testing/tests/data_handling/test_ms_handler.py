@@ -1,4 +1,6 @@
+import shutil
 from copy import deepcopy
+from pathlib import Path
 import pytest
 from quartical.data_handling.ms_handler import write_xds_list
 import numpy as np
@@ -71,14 +73,31 @@ def test_read_ms_freq_chunks(raw_xds_list, ms_opts):
 # -------------------------------write_xds_list--------------------------------
 
 @pytest.fixture(scope="module")
-def written_xds_list(raw_xds_list, ref_xds_list, ms_name, output_opts):
+def writable_ms(ms_name, tmp_path_factory):
+    # write_xds_list creates its output columns on disk at graph-build time,
+    # which mutates the target table's column schema. Under pytest-xdist the
+    # other workers hold the shared MS open for reading and would then fail with
+    # "Table::lock cannot sync ... another process changed the number of
+    # columns". Redirect the write onto a private copy of the MS instead. Under
+    # xdist tmp_path_factory is rooted in a per-worker temporary directory, so
+    # each worker gets its own copy; module scope means we copy once per worker
+    # rather than once per parameter combination (writable_ms depends on no
+    # parametrised fixtures, so pytest caches it for the whole module).
+    ms_copy = tmp_path_factory.mktemp("writable_ms") / Path(ms_name).name
+    shutil.copytree(ms_name, ms_copy)
+
+    return str(ms_copy)
+
+
+@pytest.fixture(scope="module")
+def written_xds_list(raw_xds_list, ref_xds_list, writable_ms, output_opts):
 
     raw_xds_list = [xds.assign({"_RESIDUAL": xds.DATA,
                                 "_CORRECTED_DATA": xds.DATA,
                                 "_CORRECTED_RESIDUAL": xds.DATA})
                     for xds in raw_xds_list]
 
-    return write_xds_list(raw_xds_list, ref_xds_list, ms_name, output_opts)
+    return write_xds_list(raw_xds_list, ref_xds_list, writable_ms, output_opts)
 
 
 @pytest.mark.data_handling

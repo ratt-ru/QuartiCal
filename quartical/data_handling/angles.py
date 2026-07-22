@@ -24,9 +24,17 @@ def assign_parangle_data(ms_path, data_xds_list):
     anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
     feedtab_xdsl = xds_from_storage_table(
         ms_path + "::FEED",
-        group_cols="__row__"
+        columns=["POLARIZATION_TYPE", "RECEPTOR_ANGLE"],
+        group_cols=["SPECTRAL_WINDOW_ID"]
     )
     fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
+
+    # Build a lookup from SPECTRAL_WINDOW_ID to its FEED dataset. The grouped
+    # datasets are neither guaranteed to be ordered by SPECTRAL_WINDOW_ID nor
+    # to contain an entry for every spectral window, so we cannot index by
+    # position. A SPECTRAL_WINDOW_ID of -1 is a global entry which applies to
+    # all spectral windows.
+    feeds_by_spw = {int(xds.SPECTRAL_WINDOW_ID): xds for xds in feedtab_xdsl}
 
     # We do the following eagerly to reduce graph complexity.
     unique_feeds = {
@@ -44,13 +52,16 @@ def assign_parangle_data(ms_path, data_xds_list):
 
     phase_dirs = fieldtab.PHASE_DIR.values
 
-    receptor_angles = da.concatenate(
-        [xds.RECEPTOR_ANGLE.data for xds in feedtab_xdsl],
-    )
-    receptor_angles = receptor_angles.rechunk((-1, -1))
-
     updated_data_xds_list = []
     for xds in data_xds_list:
+        spw_id = int(xds.SPECTRAL_WINDOW_ID)
+        feed_xds = feeds_by_spw.get(spw_id, feeds_by_spw.get(-1))
+        if feed_xds is None:
+            raise ValueError(
+                f"No FEED table entry found for SPECTRAL_WINDOW_ID {spw_id} "
+                "and no global (-1) entry is present."
+            )
+        receptor_angles = feed_xds.RECEPTOR_ANGLE.data
         xds = xds.assign(
             {
                 "RECEPTOR_ANGLE": (
@@ -63,11 +74,50 @@ def assign_parangle_data(ms_path, data_xds_list):
             }
         )
         xds.attrs["FEED_TYPE"] = feed_type
-        xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[xds.FIELD_ID, 0])
+        if hasattr(xds, "FIELD_ID"):
+            xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[xds.FIELD_ID, 0])
+        else:
+            # The data was not partitioned by FIELD_ID (see
+            # input_ms.group_by), so this dataset may span multiple fields
+            # with differing phase centres. The parallactic angle machinery
+            # assumes a single field centre per dataset (see _make_parangles),
+            # so it cannot be supported here. We assign placeholder values so
+            # that the unconditional - but lazy - parallactic angle graph
+            # construction does not fail, and flag the dataset so that any
+            # attempt to actually use the parallactic angles raises a clear
+            # error. See assert_parangle_supported.
+            xds.attrs["FIELD_ID"] = 0
+            xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[0, 0])
+            xds.attrs["MULTI_FIELD"] = True
 
         updated_data_xds_list.append(xds)
 
     return updated_data_xds_list
+
+
+def assert_parangle_supported(data_xds_list):
+    """Ensure parallactic angle correction is valid for the given data.
+
+    Parallactic angles are computed relative to a single field centre per
+    dataset (see _make_parangles). When the input data is not partitioned by
+    FIELD_ID (see input_ms.group_by), a dataset may contain rows from multiple
+    fields with different phase centres, violating this assumption. Rather than
+    silently producing incorrect results, we raise.
+
+    Args:
+        data_xds_list: A list of xarray.Dataset objects.
+
+    Raises:
+        ValueError: If any dataset spans multiple fields.
+    """
+    if any(xds.attrs.get("MULTI_FIELD", False) for xds in data_xds_list):
+        raise ValueError(
+            "Parallactic angle correction is not supported when the input "
+            "data is not partitioned by FIELD_ID. This affects "
+            "input_model.apply_p_jones, output.apply_p_jones_inv and the "
+            "parallactic_angle gain term. Add FIELD_ID to input_ms.group_by "
+            "to enable these features."
+        )
 
 
 def make_parangle_xds_list(ms_path, data_xds_list):
@@ -94,9 +144,6 @@ def make_parangle_xds_list(ms_path, data_xds_list):
 
     field_centres = [phase_dirs[xds.FIELD_ID, 0] for xds in data_xds_list]
 
-    # TODO: This could be more complicated for arrays with multiple feeds.
-    receptor_angles = feedtab.RECEPTOR_ANGLE.data
-
     ant_names = anttab.NAME.data
 
     ant_positions_ecef = anttab.POSITION.data  # ECEF coordinates.
@@ -106,6 +153,8 @@ def make_parangle_xds_list(ms_path, data_xds_list):
     parangle_xds_list = []
 
     for xds, field_centre in zip(data_xds_list, field_centres):
+
+        receptor_angles = xds.RECEPTOR_ANGLE.data
 
         # TODO: This is unnecessary - we should just reify the field centres
         # and pass them in.

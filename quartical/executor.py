@@ -14,7 +14,8 @@ from quartical.data_handling.ms_handler import (read_xds_list,
                                                 postprocess_xds_list)
 from quartical.data_handling.model_handler import add_model_graph
 from quartical.data_handling.angles import (make_parangle_xds_list,
-                                            assign_parangle_data)
+                                            assign_parangle_data,
+                                            assert_parangle_supported)
 from quartical.calibration.calibrate import add_calibration_graph
 from quartical.statistics.statistics import make_stats_xds_list
 from quartical.statistics.logging import log_summary_stats
@@ -112,6 +113,12 @@ def _execute(exitstack):
     # Preprocess the xds_list - initialise some values and fix bad data.
     data_xds_list = preprocess_xds_list(data_xds_list, ms_opts)
     data_xds_list = assign_parangle_data(ms_opts.path, data_xds_list)
+
+    # A parallactic_angle gain term consumes the parallactic angles directly,
+    # so it is subject to the same single-field-centre limitation as the other
+    # parallactic angle corrections.
+    if any(term.type == "parallactic_angle" for term in chain):
+        assert_parangle_supported(data_xds_list)
 
     # Make a list of datasets containing the parallactic angles as these
     # can be expensive to compute and may be used several times. NOTE: At
