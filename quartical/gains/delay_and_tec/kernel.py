@@ -54,6 +54,7 @@ def delay_and_tec_solver_impl(
 # it afterwards; these two module-local qcjit hooks fetch their inputs from the
 # standardised hook arguments, exactly mirroring the inline rescaling the loop
 # body previously performed.
+@factories.qcjit
 def pre_solve(ms_inputs, chain_inputs, meta_inputs):
     active_params = chain_inputs.params[meta_inputs.active_term]
 
@@ -69,9 +70,7 @@ def pre_solve(ms_inputs, chain_inputs, meta_inputs):
     active_params[..., 0::2] /= bandwidth
 
 
-pre_solve = factories.qcjit(pre_solve)
-
-
+@factories.qcjit
 def post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry):
     active_params = chain_inputs.params[meta_inputs.active_term]
     min_freq = ms_inputs.MIN_FREQ
@@ -84,9 +83,6 @@ def post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry):
     native_imdry.jhj[..., 1::2] *= mid_freq ** 2
     active_params[..., 0::2] *= bandwidth
     native_imdry.jhj[..., 0::2, 0::2] /= bandwidth ** 2
-
-
-post_solve = factories.qcjit(post_solve)
 
 
 @overload(delay_and_tec_solver_impl, jit_options=JIT_OPTIONS)

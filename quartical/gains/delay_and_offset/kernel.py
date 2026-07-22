@@ -61,24 +61,20 @@ def delay_and_offset_solver_impl(
 # (pre_solve) and leaves it afterwards (post_solve); both hooks are module-local
 # qcjit closures that fetch their inputs from the standardised hook arguments,
 # exactly mirroring the inline rescaling the loop body previously performed.
+@factories.qcjit
 def pre_solve(ms_inputs, chain_inputs, meta_inputs):
     active_params = chain_inputs.params[meta_inputs.active_term]
     mid_freq = (ms_inputs.MIN_FREQ + ms_inputs.MAX_FREQ) / 2
     active_params[..., 1::2] *= mid_freq
 
 
-pre_solve = factories.qcjit(pre_solve)
-
-
+@factories.qcjit
 def post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry):
     active_params = chain_inputs.params[meta_inputs.active_term]
     mid_freq = (ms_inputs.MIN_FREQ + ms_inputs.MAX_FREQ) / 2
     # Undo rescaling so that quantities are in native units.
     active_params[..., 1::2] /= mid_freq
     native_imdry.jhj[..., 1::2] *= mid_freq ** 2
-
-
-post_solve = factories.qcjit(post_solve)
 
 
 @overload(delay_and_offset_solver_impl, jit_options=JIT_OPTIONS)

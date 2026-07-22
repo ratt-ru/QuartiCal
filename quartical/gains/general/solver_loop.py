@@ -35,6 +35,7 @@ from quartical.gains.general.solver_components import compute_update
 # file.
 
 
+@factories.qcjit
 def identity_dims(shape):
     """Return the jhj shape unchanged.
 
@@ -51,9 +52,6 @@ def identity_dims(shape):
         The shape unchanged.
     """
     return shape
-
-
-identity_dims = factories.qcjit(identity_dims)
 
 
 def build_gain_solver_impl(
