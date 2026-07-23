@@ -142,9 +142,9 @@ def nb_compute_jhj_jhr(
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
-        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
-        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
-        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
+        zero_jhj_jhr_factory=zero_jhj_jhr_factory,
+        flush_jhj_jhr_factory=flush_jhj_jhr_factory,
         compute_residual_factory=compute_residual_factory,
         compute_channel_coeffs_factory=None,
         mirror_jhj_factory=None,
@@ -258,12 +258,12 @@ def nb_finalize_update(
     return impl
 
 
-def zero_jhr_jhj_factory(corr_mode):
-    """Produce the zero jhr/jhj accumulator tuple for a given corr mode.
+def zero_jhj_jhr_factory(corr_mode):
+    """Produce the zero jhj/jhr accumulator tuple for a given corr mode.
 
     Rotation solves a single parameter, so the accumulator is a flat tuple
-    holding the one real jhr entry followed by the single (1, 1) jhj element:
-    (jhr0, jhj00). The reference element is a jhr slice, whose dtype is real,
+    holding the single (1, 1) jhj element followed by the one real jhr entry:
+    (jhj00, jhr0). The reference element is a jhr slice, whose dtype is real,
     so both accumulator values are real zeros.
     """
 
@@ -278,19 +278,19 @@ def zero_jhr_jhj_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def flush_jhr_jhj_factory(corr_mode):
-    """Add a register-accumulated jhr/jhj accumulator into the arrays.
+def flush_jhj_jhr_factory(corr_mode):
+    """Add a register-accumulated jhj/jhr accumulator into the arrays.
 
     Rotation's jhj is (1, 1), so there is no upper triangle to mirror - the
     mirror hook is a no-op (see nb_compute_jhj_jhr).
     """
 
     if corr_mode.literal_value == 4:
-        def impl(jhr, jhj, jhr_jhj):
+        def impl(jhj, jhr, jhj_jhr):
 
-            jhr[0] += jhr_jhj[0]
+            jhj[0, 0] += jhj_jhr[0]
 
-            jhj[0, 0] += jhr_jhj[1]
+            jhr[0] += jhj_jhr[1]
     else:
         raise ValueError("Rotation can only be solved for with four "
                          "correlation data.")
@@ -298,14 +298,14 @@ def flush_jhr_jhj_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def accumulate_jhr_jhj_factory(corr_mode):
-    """Accumulate a jhr/jhj element into a register-resident accumulator.
+def accumulate_jhj_jhr_factory(corr_mode):
+    """Accumulate a jhj/jhr element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
-    values) - the accumulator is only flushed to memory by flush_jhr_jhj.
-    The accumulator is a flat tuple (jhr0, jhj00) - see zero_jhr_jhj_factory.
+    values) - the accumulator is only flushed to memory by flush_jhj_jhr.
+    The accumulator is a flat tuple (jhj00, jhr0) - see zero_jhj_jhr_factory.
 
-    The signature follows the unified accumulate_jhr_jhj contract of the shared accumulation
+    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
     loop (see solver_components.py). The active-term gain IS the rotation matrix
     [cos, -sin; sin, cos] (row-major XX, XY, YX, YY), so the derivative row
     dh = [-sin, -cos, cos, -sin] is read directly from the gain tuple
@@ -327,7 +327,7 @@ def accumulate_jhr_jhj_factory(corr_mode):
     tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
             rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
@@ -372,8 +372,8 @@ def accumulate_jhr_jhj_factory(corr_mode):
                 (dhjh_3 * w_3 * dhjh_3.conjugate()).real
 
             return (
-                jhr_jhj[0] + upd,
-                jhr_jhj[1] + jhj_00,
+                jhj_jhr[0] + jhj_00,
+                jhj_jhr[1] + upd,
             )
 
     else:

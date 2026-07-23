@@ -27,8 +27,8 @@ from quartical.gains.complex.kernel import compute_residual_factory
 # The accumulator/flush hooks are identical to the crosshand phase term's -
 # both solve a single parameter with a (1, 1) jhj element.
 from quartical.gains.crosshand_phase.kernel import (
-    zero_jhr_jhj_factory,
-    flush_jhr_jhj_factory
+    zero_jhj_jhr_factory,
+    flush_jhj_jhr_factory
 )
 
 
@@ -405,9 +405,9 @@ def nb_shared_compute_jhj_jhr(
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
-        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
-        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
-        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
+        zero_jhj_jhr_factory=zero_jhj_jhr_factory,
+        flush_jhj_jhr_factory=flush_jhj_jhr_factory,
         compute_residual_factory=compute_residual_factory,
         compute_channel_coeffs_factory=None,
         mirror_jhj_factory=None,
@@ -517,16 +517,16 @@ def param_to_gain_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def accumulate_jhr_jhj_factory(corr_mode):
+def accumulate_jhj_jhr_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
-    values) - the accumulator is only flushed to memory by flush_jhr_jhj.
-    The accumulator is a flat tuple (jhr0, jhj00) - see zero_jhr_jhj_factory
+    values) - the accumulator is only flushed to memory by flush_jhj_jhr.
+    The accumulator is a flat tuple (jhj00, jhr0) - see zero_jhj_jhr_factory
     in the crosshand phase kernel, from which both the zeros and flush hooks
     are imported.
 
-    The signature follows the unified accumulate_jhr_jhj contract of the shared accumulation
+    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
     loop (see solver_components.py). The chain rule uses the active-term gain
     (drv = -1j*conj(g)), so the gain argument is consumed; the channel_coeffs argument is
     empty (crosshand has no compute_channel_coeffs hook) and unused. The incoming residual is r = -v
@@ -542,7 +542,7 @@ def accumulate_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             # Project the residual onto the V-nulling combination.
             r_1 = wres[1]
@@ -578,8 +578,8 @@ def accumulate_jhr_jhj_factory(corr_mode):
             jhj_v = jh_v*j_v
 
             return (
-                jhr_jhj[0] + upd_00,
-                jhr_jhj[1] + jhj_v.real,
+                jhj_jhr[0] + jhj_v.real,
+                jhj_jhr[1] + upd_00,
             )
 
     else:

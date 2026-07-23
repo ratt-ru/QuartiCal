@@ -169,9 +169,9 @@ def nb_compute_jhj_jhr(
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
-        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
-        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
-        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
+        zero_jhj_jhr_factory=zero_jhj_jhr_factory,
+        flush_jhj_jhr_factory=flush_jhj_jhr_factory,
         compute_residual_factory=compute_residual_factory,
         compute_channel_coeffs_factory=compute_channel_coeffs_factory,
         mirror_jhj_factory=mirror_jhj_factory,
@@ -364,14 +364,14 @@ def compute_residual_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def zero_jhr_jhj_factory(corr_mode):
-    """Produce the zero jhr/jhj accumulator tuple for a given corr mode.
+def zero_jhj_jhr_factory(corr_mode):
+    """Produce the zero jhj/jhr accumulator tuple for a given corr mode.
 
-    The accumulator is a single flat tuple holding the (real) jhr entries
-    followed by the upper triangle of the (n_param, n_param) real jhj element
-    in row-major order. For the 2 and 4 correlation cases n_param is 2, giving
-    (jhr0, jhr1, jhj00, jhj01, jhj11); for the single correlation case n_param
-    is 1, giving (jhr0, jhj00). The reference element is a jhr slice, whose
+    The accumulator is a single flat tuple holding the upper triangle of the
+    (n_param, n_param) real jhj element in row-major order followed by the
+    (real) jhr entries. For the 2 and 4 correlation cases n_param is 2, giving
+    (jhj00, jhj01, jhj11, jhr0, jhr1); for the single correlation case n_param
+    is 1, giving (jhj00, jhr0). The reference element is a jhr slice, whose
     dtype is real, so every accumulator value is a real zero.
     """
 
@@ -389,7 +389,7 @@ def zero_jhr_jhj_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def flush_jhr_jhj_factory(corr_mode):
+def flush_jhj_jhr_factory(corr_mode):
     """Add a register-accumulated jhr/jhj accumulator into the arrays.
 
     For the 2 and 4 correlation cases only the upper triangle of the (2, 2)
@@ -399,20 +399,20 @@ def flush_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value in (2, 4):
-        def impl(jhr, jhj, jhr_jhj):
+        def impl(jhj, jhr, jhj_jhr):
 
-            jhr[0] += jhr_jhj[0]
-            jhr[1] += jhr_jhj[1]
+            jhj[0, 0] += jhj_jhr[0]
+            jhj[0, 1] += jhj_jhr[1]
+            jhj[1, 1] += jhj_jhr[2]
 
-            jhj[0, 0] += jhr_jhj[2]
-            jhj[0, 1] += jhr_jhj[3]
-            jhj[1, 1] += jhr_jhj[4]
+            jhr[0] += jhj_jhr[3]
+            jhr[1] += jhj_jhr[4]
     elif corr_mode.literal_value == 1:
-        def impl(jhr, jhj, jhr_jhj):
+        def impl(jhj, jhr, jhj_jhr):
 
-            jhr[0] += jhr_jhj[0]
+            jhj[0, 0] += jhj_jhr[0]
 
-            jhj[0, 0] += jhr_jhj[1]
+            jhr[0] += jhj_jhr[1]
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -422,7 +422,7 @@ def flush_jhr_jhj_factory(corr_mode):
 def mirror_jhj_factory(corr_mode):
     """Fill in the lower triangle of the per-interval (n_param, n_param) jhj.
 
-    Accumulation in accumulate_jhr_jhj only writes the upper triangle of
+    Accumulation in accumulate_jhj_jhr only writes the upper triangle of
     each real, symmetric jhj element. The lower triangle is a straight copy
     (jhj is real) done once per solution interval rather than once per
     visibility. This is a no-op in the single parameter (single correlation)
@@ -442,15 +442,15 @@ def mirror_jhj_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def accumulate_jhr_jhj_factory(corr_mode):
-    """Accumulate a jhr/jhj element into a register-resident accumulator.
+def accumulate_jhj_jhr_factory(corr_mode):
+    """Accumulate a jhj/jhr element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
-    values) - the accumulator is only flushed to memory by flush_jhr_jhj.
-    The accumulator is a single flat tuple (jhr entries followed by the upper
-    triangle of the real jhj element - see zero_jhr_jhj_factory).
+    values) - the accumulator is only flushed to memory by flush_jhj_jhr.
+    The accumulator is a single flat tuple (the upper triangle of the real jhj
+    element followed by the jhr entries - see zero_jhj_jhr_factory).
 
-    The signature follows the unified accumulate_jhr_jhj contract of the shared accumulation
+    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
     loop (see solver_components.py). The delay chain rule uses the active-term gain
     (drv = -1j*conj(g)), so the gain argument is consumed. The channel_coeffs argument is
     the single-element tuple (coeff,) produced by the compute_channel_coeffs hook: coeff is at
@@ -461,7 +461,7 @@ def accumulate_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             coeff = channel_coeffs[0]
             coeffsq = coeff*coeff
@@ -523,15 +523,15 @@ def accumulate_jhr_jhj_factory(corr_mode):
             jhwj_33 = jh_30*w_0*j_30 + jh_33*w_3*j_33
 
             return (
-                jhr_jhj[0] + coeff*upd_00,
-                jhr_jhj[1] + coeff*upd_11,
-                jhr_jhj[2] + coeffsq*jhwj_00.real,
-                jhr_jhj[3] + coeffsq*(gc_0*jhwj_03*g_3).real,
-                jhr_jhj[4] + coeffsq*jhwj_33.real,
+                jhj_jhr[0] + coeffsq*jhwj_00.real,
+                jhj_jhr[1] + coeffsq*(gc_0*jhwj_03*g_3).real,
+                jhj_jhr[2] + coeffsq*jhwj_33.real,
+                jhj_jhr[3] + coeff*upd_00,
+                jhj_jhr[4] + coeff*upd_11,
             )
 
     elif corr_mode.literal_value == 2:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             coeff = channel_coeffs[0]
             coeffsq = coeff*coeff
@@ -555,21 +555,21 @@ def accumulate_jhr_jhj_factory(corr_mode):
             upd_00 = (drv_00*r_0).real
             upd_11 = (drv_23*r_1).real
 
-            # jhwj element (diagonal, real). The off-diagonal (jhr_jhj[3]) is left
+            # jhwj element (diagonal, real). The off-diagonal (jhj_jhr[1]) is left
             # untouched, matching the array kernel which never sets it.
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
             jhj_11 = (rop_1*n_1*w[1]*rop_1.conjugate()).real
 
             return (
-                jhr_jhj[0] + coeff*upd_00,
-                jhr_jhj[1] + coeff*upd_11,
-                jhr_jhj[2] + coeffsq*jhj_00,
-                jhr_jhj[3],
-                jhr_jhj[4] + coeffsq*jhj_11,
+                jhj_jhr[0] + coeffsq*jhj_00,
+                jhj_jhr[1],
+                jhj_jhr[2] + coeffsq*jhj_11,
+                jhj_jhr[3] + coeff*upd_00,
+                jhj_jhr[4] + coeff*upd_11,
             )
 
     elif corr_mode.literal_value == 1:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             coeff = channel_coeffs[0]
 
@@ -589,8 +589,8 @@ def accumulate_jhr_jhj_factory(corr_mode):
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
 
             return (
-                jhr_jhj[0] + coeff*upd_00,
-                jhr_jhj[1] + coeff*coeff*jhj_00,
+                jhj_jhr[0] + coeff*coeff*jhj_00,
+                jhj_jhr[1] + coeff*upd_00,
             )
     else:
         raise ValueError("Unsupported number of correlations.")

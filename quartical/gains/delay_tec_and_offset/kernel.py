@@ -200,9 +200,9 @@ def nb_compute_jhj_jhr(
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
-        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
-        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
-        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
+        zero_jhj_jhr_factory=zero_jhj_jhr_factory,
+        flush_jhj_jhr_factory=flush_jhj_jhr_factory,
         compute_residual_factory=compute_residual_factory,
         compute_channel_coeffs_factory=compute_channel_coeffs_factory,
         mirror_jhj_factory=mirror_jhj_factory,
@@ -421,15 +421,15 @@ def compute_residual_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def zero_jhr_jhj_factory(corr_mode):
-    """Produce the zero jhr/jhj accumulator tuple for a given corr mode.
+def zero_jhj_jhr_factory(corr_mode):
+    """Produce the zero jhj/jhr accumulator tuple for a given corr mode.
 
-    The accumulator is a single flat tuple holding the (real) jhr entries
-    followed by the upper triangle of the (n_param, n_param) real jhj element in
-    row-major order. For the 2 and 4 correlation cases n_param is 6, giving 6
-    jhr entries and 21 upper-triangle jhj entries (27 slots) - the largest
+    The accumulator is a single flat tuple holding the upper triangle of the
+    (n_param, n_param) real jhj element in row-major order followed by the
+    (real) jhr entries. For the 2 and 4 correlation cases n_param is 6, giving
+    21 upper-triangle jhj entries and 6 jhr entries (27 slots) - the largest
     accumulator in the plan. For the single correlation case n_param is 3,
-    giving 3 jhr entries and 6 upper-triangle jhj entries (9 slots). The
+    giving 6 upper-triangle jhj entries and 3 jhr entries (9 slots). The
     reference element is a jhr slice, whose dtype is real, so every accumulator
     value is a real zero.
     """
@@ -452,7 +452,7 @@ def zero_jhr_jhj_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def flush_jhr_jhj_factory(corr_mode):
+def flush_jhj_jhr_factory(corr_mode):
     """Add a register-accumulated jhr/jhj accumulator into the arrays.
 
     The accumulator holds the jhr entries first, then the upper triangle of the
@@ -463,49 +463,49 @@ def flush_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value in (2, 4):
-        def impl(jhr, jhj, jhr_jhj):
+        def impl(jhj, jhr, jhj_jhr):
 
-            jhr[0] += jhr_jhj[0]
-            jhr[1] += jhr_jhj[1]
-            jhr[2] += jhr_jhj[2]
-            jhr[3] += jhr_jhj[3]
-            jhr[4] += jhr_jhj[4]
-            jhr[5] += jhr_jhj[5]
+            jhj[0, 0] += jhj_jhr[0]
+            jhj[0, 1] += jhj_jhr[1]
+            jhj[0, 2] += jhj_jhr[2]
+            jhj[0, 3] += jhj_jhr[3]
+            jhj[0, 4] += jhj_jhr[4]
+            jhj[0, 5] += jhj_jhr[5]
+            jhj[1, 1] += jhj_jhr[6]
+            jhj[1, 2] += jhj_jhr[7]
+            jhj[1, 3] += jhj_jhr[8]
+            jhj[1, 4] += jhj_jhr[9]
+            jhj[1, 5] += jhj_jhr[10]
+            jhj[2, 2] += jhj_jhr[11]
+            jhj[2, 3] += jhj_jhr[12]
+            jhj[2, 4] += jhj_jhr[13]
+            jhj[2, 5] += jhj_jhr[14]
+            jhj[3, 3] += jhj_jhr[15]
+            jhj[3, 4] += jhj_jhr[16]
+            jhj[3, 5] += jhj_jhr[17]
+            jhj[4, 4] += jhj_jhr[18]
+            jhj[4, 5] += jhj_jhr[19]
+            jhj[5, 5] += jhj_jhr[20]
 
-            jhj[0, 0] += jhr_jhj[6]
-            jhj[0, 1] += jhr_jhj[7]
-            jhj[0, 2] += jhr_jhj[8]
-            jhj[0, 3] += jhr_jhj[9]
-            jhj[0, 4] += jhr_jhj[10]
-            jhj[0, 5] += jhr_jhj[11]
-            jhj[1, 1] += jhr_jhj[12]
-            jhj[1, 2] += jhr_jhj[13]
-            jhj[1, 3] += jhr_jhj[14]
-            jhj[1, 4] += jhr_jhj[15]
-            jhj[1, 5] += jhr_jhj[16]
-            jhj[2, 2] += jhr_jhj[17]
-            jhj[2, 3] += jhr_jhj[18]
-            jhj[2, 4] += jhr_jhj[19]
-            jhj[2, 5] += jhr_jhj[20]
-            jhj[3, 3] += jhr_jhj[21]
-            jhj[3, 4] += jhr_jhj[22]
-            jhj[3, 5] += jhr_jhj[23]
-            jhj[4, 4] += jhr_jhj[24]
-            jhj[4, 5] += jhr_jhj[25]
-            jhj[5, 5] += jhr_jhj[26]
+            jhr[0] += jhj_jhr[21]
+            jhr[1] += jhj_jhr[22]
+            jhr[2] += jhj_jhr[23]
+            jhr[3] += jhj_jhr[24]
+            jhr[4] += jhj_jhr[25]
+            jhr[5] += jhj_jhr[26]
     elif corr_mode.literal_value == 1:
-        def impl(jhr, jhj, jhr_jhj):
+        def impl(jhj, jhr, jhj_jhr):
 
-            jhr[0] += jhr_jhj[0]
-            jhr[1] += jhr_jhj[1]
-            jhr[2] += jhr_jhj[2]
+            jhj[0, 0] += jhj_jhr[0]
+            jhj[0, 1] += jhj_jhr[1]
+            jhj[0, 2] += jhj_jhr[2]
+            jhj[1, 1] += jhj_jhr[3]
+            jhj[1, 2] += jhj_jhr[4]
+            jhj[2, 2] += jhj_jhr[5]
 
-            jhj[0, 0] += jhr_jhj[3]
-            jhj[0, 1] += jhr_jhj[4]
-            jhj[0, 2] += jhr_jhj[5]
-            jhj[1, 1] += jhr_jhj[6]
-            jhj[1, 2] += jhr_jhj[7]
-            jhj[2, 2] += jhr_jhj[8]
+            jhr[0] += jhj_jhr[6]
+            jhr[1] += jhj_jhr[7]
+            jhr[2] += jhj_jhr[8]
     else:
         raise ValueError("Unsupported number of correlations.")
 
@@ -515,7 +515,7 @@ def flush_jhr_jhj_factory(corr_mode):
 def mirror_jhj_factory(corr_mode):
     """Fill in the lower triangle of the per-interval (n_param, n_param) jhj.
 
-    Accumulation in accumulate_jhr_jhj only writes the upper triangle of
+    Accumulation in accumulate_jhj_jhr only writes the upper triangle of
     each real, symmetric jhj element. The lower triangle is a straight copy
     (jhj is real) done once per solution interval rather than once per
     visibility. For the 2 and 4 correlation cases jhj is (6, 6) so 15
@@ -558,15 +558,15 @@ def mirror_jhj_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def accumulate_jhr_jhj_factory(corr_mode):
+def accumulate_jhj_jhr_factory(corr_mode):
     """Accumulate a jhr/jhj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
-    values) - the accumulator is only flushed to memory by flush_jhr_jhj. The
-    accumulator is a single flat tuple (jhr entries followed by the upper
-    triangle of the real jhj element - see zero_jhr_jhj_factory).
+    values) - the accumulator is only flushed to memory by flush_jhj_jhr. The
+    accumulator is a single flat tuple (the upper triangle of the real jhj
+    element followed by the jhr entries - see zero_jhj_jhr_factory).
 
-    The signature follows the unified accumulate_jhr_jhj contract of the shared accumulation
+    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
     loop (see solver_components.py). The chain rule uses the active-term gain
     (drv = -1j*conj(g)), so the gain argument is consumed. The channel_coeffs argument is
     the flat tuple (delay_coeff, tec_coeff) produced by the compute_channel_coeffs hook, so
@@ -580,7 +580,7 @@ def accumulate_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             delay_coeff = channel_coeffs[0]
             tec_coeff = channel_coeffs[1]
@@ -648,41 +648,42 @@ def accumulate_jhr_jhj_factory(corr_mode):
             tmp_1 = (jhwj_03*gc_0*g_3).real
             tmp_2 = jhwj_33.real
 
-            # jhr entries in (offset, tec, delay) order per correlation. jhj
-            # upper triangle in row-major order (see zero_jhr_jhj): the two
-            # correlation blocks couple through tmp_1 (rows/cols 0-2 with 3-5).
+            # jhj upper triangle in row-major order (see zero_jhj_jhr) followed
+            # by the jhr entries in (offset, tec, delay) order per correlation:
+            # the two correlation blocks couple through tmp_1 (rows/cols 0-2
+            # with 3-5).
             return (
-                jhr_jhj[0] + upd_00,
-                jhr_jhj[1] + tec_coeff*upd_00,
-                jhr_jhj[2] + delay_coeff*upd_00,
-                jhr_jhj[3] + upd_11,
-                jhr_jhj[4] + tec_coeff*upd_11,
-                jhr_jhj[5] + delay_coeff*upd_11,
-                jhr_jhj[6] + tmp_0,
-                jhr_jhj[7] + tec_coeff*tmp_0,
-                jhr_jhj[8] + delay_coeff*tmp_0,
-                jhr_jhj[9] + tmp_1,
-                jhr_jhj[10] + tec_coeff*tmp_1,
-                jhr_jhj[11] + delay_coeff*tmp_1,
-                jhr_jhj[12] + tcsq*tmp_0,
-                jhr_jhj[13] + dctc*tmp_0,
-                jhr_jhj[14] + tec_coeff*tmp_1,
-                jhr_jhj[15] + tcsq*tmp_1,
-                jhr_jhj[16] + dctc*tmp_1,
-                jhr_jhj[17] + dcsq*tmp_0,
-                jhr_jhj[18] + delay_coeff*tmp_1,
-                jhr_jhj[19] + dctc*tmp_1,
-                jhr_jhj[20] + dcsq*tmp_1,
-                jhr_jhj[21] + tmp_2,
-                jhr_jhj[22] + tec_coeff*tmp_2,
-                jhr_jhj[23] + delay_coeff*tmp_2,
-                jhr_jhj[24] + tcsq*tmp_2,
-                jhr_jhj[25] + dctc*tmp_2,
-                jhr_jhj[26] + dcsq*tmp_2,
+                jhj_jhr[0] + tmp_0,
+                jhj_jhr[1] + tec_coeff*tmp_0,
+                jhj_jhr[2] + delay_coeff*tmp_0,
+                jhj_jhr[3] + tmp_1,
+                jhj_jhr[4] + tec_coeff*tmp_1,
+                jhj_jhr[5] + delay_coeff*tmp_1,
+                jhj_jhr[6] + tcsq*tmp_0,
+                jhj_jhr[7] + dctc*tmp_0,
+                jhj_jhr[8] + tec_coeff*tmp_1,
+                jhj_jhr[9] + tcsq*tmp_1,
+                jhj_jhr[10] + dctc*tmp_1,
+                jhj_jhr[11] + dcsq*tmp_0,
+                jhj_jhr[12] + delay_coeff*tmp_1,
+                jhj_jhr[13] + dctc*tmp_1,
+                jhj_jhr[14] + dcsq*tmp_1,
+                jhj_jhr[15] + tmp_2,
+                jhj_jhr[16] + tec_coeff*tmp_2,
+                jhj_jhr[17] + delay_coeff*tmp_2,
+                jhj_jhr[18] + tcsq*tmp_2,
+                jhj_jhr[19] + dctc*tmp_2,
+                jhj_jhr[20] + dcsq*tmp_2,
+                jhj_jhr[21] + upd_00,
+                jhj_jhr[22] + tec_coeff*upd_00,
+                jhj_jhr[23] + delay_coeff*upd_00,
+                jhj_jhr[24] + upd_11,
+                jhj_jhr[25] + tec_coeff*upd_11,
+                jhj_jhr[26] + delay_coeff*upd_11,
             )
 
     elif corr_mode.literal_value == 2:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             delay_coeff = channel_coeffs[0]
             tec_coeff = channel_coeffs[1]
@@ -710,44 +711,44 @@ def accumulate_jhr_jhj_factory(corr_mode):
             upd_11 = (drv_23*r_1).real
 
             # jhwj element (block diagonal, real). The entries coupling the two
-            # correlation blocks (jhr_jhj[9], jhr_jhj[10], jhr_jhj[11], jhr_jhj[14], jhr_jhj[15],
-            # jhr_jhj[16], jhr_jhj[18], jhr_jhj[19], jhr_jhj[20]) are left untouched, matching
+            # correlation blocks (jhj_jhr[3], jhj_jhr[4], jhj_jhr[5], jhj_jhr[8], jhj_jhr[9],
+            # jhj_jhr[10], jhj_jhr[12], jhj_jhr[13], jhj_jhr[14]) are left untouched, matching
             # the array kernel which never sets them.
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
             jhj_11 = (rop_1*n_1*w[1]*rop_1.conjugate()).real
 
             return (
-                jhr_jhj[0] + upd_00,
-                jhr_jhj[1] + tec_coeff*upd_00,
-                jhr_jhj[2] + delay_coeff*upd_00,
-                jhr_jhj[3] + upd_11,
-                jhr_jhj[4] + tec_coeff*upd_11,
-                jhr_jhj[5] + delay_coeff*upd_11,
-                jhr_jhj[6] + jhj_00,
-                jhr_jhj[7] + tec_coeff*jhj_00,
-                jhr_jhj[8] + delay_coeff*jhj_00,
-                jhr_jhj[9],
-                jhr_jhj[10],
-                jhr_jhj[11],
-                jhr_jhj[12] + tcsq*jhj_00,
-                jhr_jhj[13] + dctc*jhj_00,
-                jhr_jhj[14],
-                jhr_jhj[15],
-                jhr_jhj[16],
-                jhr_jhj[17] + dcsq*jhj_00,
-                jhr_jhj[18],
-                jhr_jhj[19],
-                jhr_jhj[20],
-                jhr_jhj[21] + jhj_11,
-                jhr_jhj[22] + tec_coeff*jhj_11,
-                jhr_jhj[23] + delay_coeff*jhj_11,
-                jhr_jhj[24] + tcsq*jhj_11,
-                jhr_jhj[25] + dctc*jhj_11,
-                jhr_jhj[26] + dcsq*jhj_11,
+                jhj_jhr[0] + jhj_00,
+                jhj_jhr[1] + tec_coeff*jhj_00,
+                jhj_jhr[2] + delay_coeff*jhj_00,
+                jhj_jhr[3],
+                jhj_jhr[4],
+                jhj_jhr[5],
+                jhj_jhr[6] + tcsq*jhj_00,
+                jhj_jhr[7] + dctc*jhj_00,
+                jhj_jhr[8],
+                jhj_jhr[9],
+                jhj_jhr[10],
+                jhj_jhr[11] + dcsq*jhj_00,
+                jhj_jhr[12],
+                jhj_jhr[13],
+                jhj_jhr[14],
+                jhj_jhr[15] + jhj_11,
+                jhj_jhr[16] + tec_coeff*jhj_11,
+                jhj_jhr[17] + delay_coeff*jhj_11,
+                jhj_jhr[18] + tcsq*jhj_11,
+                jhj_jhr[19] + dctc*jhj_11,
+                jhj_jhr[20] + dcsq*jhj_11,
+                jhj_jhr[21] + upd_00,
+                jhj_jhr[22] + tec_coeff*upd_00,
+                jhj_jhr[23] + delay_coeff*upd_00,
+                jhj_jhr[24] + upd_11,
+                jhj_jhr[25] + tec_coeff*upd_11,
+                jhj_jhr[26] + delay_coeff*upd_11,
             )
 
     elif corr_mode.literal_value == 1:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             delay_coeff = channel_coeffs[0]
             tec_coeff = channel_coeffs[1]
@@ -771,15 +772,15 @@ def accumulate_jhr_jhj_factory(corr_mode):
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
 
             return (
-                jhr_jhj[0] + upd_00,
-                jhr_jhj[1] + tec_coeff*upd_00,
-                jhr_jhj[2] + delay_coeff*upd_00,
-                jhr_jhj[3] + jhj_00,
-                jhr_jhj[4] + tec_coeff*jhj_00,
-                jhr_jhj[5] + delay_coeff*jhj_00,
-                jhr_jhj[6] + tcsq*jhj_00,
-                jhr_jhj[7] + dctc*jhj_00,
-                jhr_jhj[8] + dcsq*jhj_00,
+                jhj_jhr[0] + jhj_00,
+                jhj_jhr[1] + tec_coeff*jhj_00,
+                jhj_jhr[2] + delay_coeff*jhj_00,
+                jhj_jhr[3] + tcsq*jhj_00,
+                jhj_jhr[4] + dctc*jhj_00,
+                jhj_jhr[5] + dcsq*jhj_00,
+                jhj_jhr[6] + upd_00,
+                jhj_jhr[7] + tec_coeff*upd_00,
+                jhj_jhr[8] + delay_coeff*upd_00,
             )
     else:
         raise ValueError("Unsupported number of correlations.")

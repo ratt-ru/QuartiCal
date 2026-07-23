@@ -28,9 +28,9 @@ def build_jhj_jhr_impl(
     *,
     corr_mode,
     row_weights_type,
-    accumulate_jhr_jhj_factory,
-    zero_jhr_jhj_factory,
-    flush_jhr_jhj_factory,
+    accumulate_jhj_jhr_factory,
+    zero_jhj_jhr_factory,
+    flush_jhj_jhr_factory,
     compute_residual_factory,
     compute_channel_coeffs_factory=None,
     mirror_jhj_factory=None,
@@ -75,16 +75,17 @@ def build_jhj_jhr_impl(
         corr_mode: Numba literal carrying ``corr_mode.literal_value`` (1/2/4).
         row_weights_type: Numba type of the ``ROW_WEIGHTS`` ms_inputs field,
             used to dispatch the (BDA) row-weight application.
-        accumulate_jhr_jhj_factory: ``accumulate_jhr_jhj_factory(corr_mode) ->
-            accumulate_jhr_jhj(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj)
-            -> jhr_jhj``. Accumulates one weighted jhr/jhj element into the
-            register-resident flat accumulator tuple.
-        zero_jhr_jhj_factory: ``zero_jhr_jhj_factory(corr_mode) ->
-            zero_jhr_jhj(ref_elem) -> flat zero tuple``. Produces the zero
+        accumulate_jhj_jhr_factory: ``accumulate_jhj_jhr_factory(corr_mode) ->
+            accumulate_jhj_jhr(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr)
+            -> jhj_jhr``. Accumulates one weighted jhj/jhr element into the
+            register-resident flat accumulator tuple, which packs the jhj block
+            first and the jhr block after it.
+        zero_jhj_jhr_factory: ``zero_jhj_jhr_factory(corr_mode) ->
+            zero_jhj_jhr(ref_elem) -> flat zero tuple``. Produces the zero
             accumulator tuple in the (promoted) dtype of the reference element.
-        flush_jhr_jhj_factory: ``flush_jhr_jhj_factory(corr_mode) ->
-            flush_jhr_jhj(jhr_el, jhj_el, jhr_jhj) -> None``. Adds a completed
-            accumulator into the jhr/jhj array slices.
+        flush_jhj_jhr_factory: ``flush_jhj_jhr_factory(corr_mode) ->
+            flush_jhj_jhr(jhj_el, jhr_el, jhj_jhr) -> None``. Adds a completed
+            accumulator into the jhj/jhr array slices.
         compute_residual_factory: ``compute_residual_factory(corr_mode) ->
             compute_residual(r, v) -> tuple`` of the per-correlation residual
             values.
@@ -120,9 +121,9 @@ def build_jhj_jhr_impl(
     valloc = factories.valloc_factory(corr_mode)
     make_loop_vars = factories.loop_var_factory(corr_mode)
 
-    accumulate_jhr_jhj = accumulate_jhr_jhj_factory(corr_mode)
-    flush_jhr_jhj = flush_jhr_jhj_factory(corr_mode)
-    zero_jhr_jhj = zero_jhr_jhj_factory(corr_mode)
+    accumulate_jhj_jhr = accumulate_jhj_jhr_factory(corr_mode)
+    flush_jhj_jhr = flush_jhj_jhr_factory(corr_mode)
+    zero_jhj_jhr = zero_jhj_jhr_factory(corr_mode)
     compute_residual = compute_residual_factory(corr_mode)
 
     if mirror_jhj_factory is None:
@@ -226,7 +227,7 @@ def build_jhj_jhr_impl(
             # zero tuple is also used to promote lower precision inputs.
             zero_vec = tuple_zeros(jhr_tifi[0, 0])
             identity_vec = tuple_identity(jhr_tifi[0, 0])
-            jhr_jhj_zero = zero_jhr_jhj(jhr_tifi[0, 0])
+            jhj_jhr_zero = zero_jhj_jhr(jhr_tifi[0, 0])
 
             for row_ind in range(rs, re):
 
@@ -239,8 +240,8 @@ def build_jhj_jhr_impl(
                     # jhr/jhj element per antenna. As the antennas are fixed
                     # for the duration of a row, the accumulation can be done
                     # in registers and flushed to memory once per row.
-                    jhr_jhj_p = jhr_jhj_zero
-                    jhr_jhj_q = jhr_jhj_zero
+                    jhj_jhr_p = jhj_jhr_zero
+                    jhj_jhr_q = jhj_jhr_zero
 
                     for f in range(fs, fe):
 
@@ -336,17 +337,17 @@ def build_jhj_jhr_impl(
                         wr_pq = tuple_wmul(r_pq, w)
                         wr_qp = tuple_unpackct(wr_pq)
 
-                        jhr_jhj_p = accumulate_jhr_jhj(
+                        jhj_jhr_p = accumulate_jhj_jhr(
                             lop_pq, rop_pq, w, g_active_p, channel_coeffs,
-                            wr_pq, jhr_jhj_p
+                            wr_pq, jhj_jhr_p
                         )
-                        jhr_jhj_q = accumulate_jhr_jhj(
+                        jhj_jhr_q = accumulate_jhj_jhr(
                             lop_qp, rop_qp, w, g_active_q, channel_coeffs,
-                            wr_qp, jhr_jhj_q
+                            wr_qp, jhj_jhr_q
                         )
 
-                    flush_jhr_jhj(jhr_tifi[a1_m, 0], jhj_tifi[a1_m, 0], jhr_jhj_p)
-                    flush_jhr_jhj(jhr_tifi[a2_m, 0], jhj_tifi[a2_m, 0], jhr_jhj_q)
+                    flush_jhj_jhr(jhj_tifi[a1_m, 0], jhr_tifi[a1_m, 0], jhj_jhr_p)
+                    flush_jhj_jhr(jhj_tifi[a2_m, 0], jhr_tifi[a2_m, 0], jhj_jhr_q)
 
                     continue
 
@@ -461,23 +462,23 @@ def build_jhj_jhr_impl(
                         lop_pq_d = tuple_unpack(lop_pq_arr[d])
                         rop_pq_d = tuple_unpack(rop_pq_arr[d])
 
-                        jhr_jhj = accumulate_jhr_jhj(
+                        jhj_jhr = accumulate_jhj_jhr(
                             lop_pq_d, rop_pq_d, w, g_active_p, channel_coeffs,
-                            wr_pq, jhr_jhj_zero
+                            wr_pq, jhj_jhr_zero
                         )
-                        flush_jhr_jhj(
-                            jhr_tifi[a1_m, d], jhj_tifi[a1_m, d], jhr_jhj
+                        flush_jhj_jhr(
+                            jhj_tifi[a1_m, d], jhr_tifi[a1_m, d], jhj_jhr
                         )
 
                         lop_qp_d = tuple_unpack(lop_qp_arr[d])
                         rop_qp_d = tuple_unpack(rop_qp_arr[d])
 
-                        jhr_jhj = accumulate_jhr_jhj(
+                        jhj_jhr = accumulate_jhj_jhr(
                             lop_qp_d, rop_qp_d, w, g_active_q, channel_coeffs,
-                            wr_qp, jhr_jhj_zero
+                            wr_qp, jhj_jhr_zero
                         )
-                        flush_jhr_jhj(
-                            jhr_tifi[a2_m, d], jhj_tifi[a2_m, d], jhr_jhj
+                        flush_jhj_jhr(
+                            jhj_tifi[a2_m, d], jhr_tifi[a2_m, d], jhj_jhr
                         )
 
             # Accumulation only touches the upper triangle of each jhj

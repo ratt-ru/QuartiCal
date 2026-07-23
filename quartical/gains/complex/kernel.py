@@ -122,9 +122,9 @@ def nb_compute_jhj_jhr(
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
-        accumulate_jhr_jhj_factory=accumulate_jhr_jhj_factory,
-        zero_jhr_jhj_factory=zero_jhr_jhj_factory,
-        flush_jhr_jhj_factory=flush_jhr_jhj_factory,
+        accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
+        zero_jhj_jhr_factory=zero_jhj_jhr_factory,
+        flush_jhj_jhr_factory=flush_jhj_jhr_factory,
         compute_residual_factory=compute_residual_factory,
         compute_channel_coeffs_factory=None,
         mirror_jhj_factory=mirror_jhj_factory,
@@ -234,15 +234,16 @@ def compute_residual_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def zero_jhr_jhj_factory(corr_mode):
-    """Produce the zero jhwr/jhwj accumulator tuple for a given corr mode.
+def zero_jhj_jhr_factory(corr_mode):
+    """Produce the zero jhwj/jhwr accumulator tuple for a given corr mode.
 
-    The accumulator is a single flat tuple holding the jhwr element followed
-    by the (upper triangle, row-major, in the 4 correlation case) jhwj
+    The accumulator is a single flat tuple holding the (upper triangle,
+    row-major, in the 4 correlation case) jhwj element followed by the jhwr
     element. A flat tuple is used deliberately - returning nested tuples
     from inlined functions inside a prange trips a numba parfor array
     analysis bug. In the diagonal cases the jhwj entries are real, as
-    w|rop|^2 has no imaginary part.
+    w|rop|^2 has no imaginary part, so those leading slots hold real zeros
+    while the trailing jhwr slots hold complex zeros.
     """
 
     if corr_mode.literal_value == 4:
@@ -253,17 +254,17 @@ def zero_jhr_jhj_factory(corr_mode):
         def impl(invec):
             z = invec[0]*0
             zr = invec[0].real*0
-            return z, z, zr, zr
+            return zr, zr, z, z
     elif corr_mode.literal_value == 1:
         def impl(invec):
-            return invec[0]*0, invec[0].real*0
+            return invec[0].real*0, invec[0]*0
     else:
         raise ValueError("Unsupported number of correlations.")
 
     return factories.qcjit(impl)
 
 
-def flush_jhr_jhj_factory(corr_mode):
+def flush_jhj_jhr_factory(corr_mode):
     """Add a register-accumulated jhwr/jhwj accumulator into the arrays.
 
     In the 4 correlation case the jhj part of the accumulator holds the
@@ -272,55 +273,55 @@ def flush_jhr_jhj_factory(corr_mode):
     """
 
     if corr_mode.literal_value == 4:
-        def impl(jhr, jhj, jhr_jhj):
+        def impl(jhj, jhr, jhj_jhr):
 
-            jhr[0] += jhr_jhj[0]
-            jhr[1] += jhr_jhj[1]
-            jhr[2] += jhr_jhj[2]
-            jhr[3] += jhr_jhj[3]
+            jhj[0, 0] += jhj_jhr[0]
+            jhj[0, 1] += jhj_jhr[1]
+            jhj[0, 2] += jhj_jhr[2]
+            jhj[0, 3] += jhj_jhr[3]
+            jhj[1, 1] += jhj_jhr[4]
+            jhj[1, 2] += jhj_jhr[5]
+            jhj[1, 3] += jhj_jhr[6]
+            jhj[2, 2] += jhj_jhr[7]
+            jhj[2, 3] += jhj_jhr[8]
+            jhj[3, 3] += jhj_jhr[9]
 
-            jhj[0, 0] += jhr_jhj[4]
-            jhj[0, 1] += jhr_jhj[5]
-            jhj[0, 2] += jhr_jhj[6]
-            jhj[0, 3] += jhr_jhj[7]
-            jhj[1, 1] += jhr_jhj[8]
-            jhj[1, 2] += jhr_jhj[9]
-            jhj[1, 3] += jhr_jhj[10]
-            jhj[2, 2] += jhr_jhj[11]
-            jhj[2, 3] += jhr_jhj[12]
-            jhj[3, 3] += jhr_jhj[13]
+            jhr[0] += jhj_jhr[10]
+            jhr[1] += jhj_jhr[11]
+            jhr[2] += jhj_jhr[12]
+            jhr[3] += jhj_jhr[13]
     elif corr_mode.literal_value == 2:
-        def impl(jhr, jhj, jhr_jhj):
+        def impl(jhj, jhr, jhj_jhr):
 
-            jhr[0] += jhr_jhj[0]
-            jhr[1] += jhr_jhj[1]
+            jhj[0] += jhj_jhr[0]
+            jhj[1] += jhj_jhr[1]
 
-            jhj[0] += jhr_jhj[2]
-            jhj[1] += jhr_jhj[3]
+            jhr[0] += jhj_jhr[2]
+            jhr[1] += jhj_jhr[3]
     elif corr_mode.literal_value == 1:
-        def impl(jhr, jhj, jhr_jhj):
+        def impl(jhj, jhr, jhj_jhr):
 
-            jhr[0] += jhr_jhj[0]
+            jhj[0] += jhj_jhr[0]
 
-            jhj[0] += jhr_jhj[1]
+            jhr[0] += jhj_jhr[1]
     else:
         raise ValueError("Unsupported number of correlations.")
 
     return factories.qcjit(impl)
 
 
-def accumulate_jhr_jhj_factory(corr_mode):
+def accumulate_jhj_jhr_factory(corr_mode):
     """Accumulate a jhwr/jhwj element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
-    values) - the accumulator is only flushed to memory by flush_jhr_jhj.
-    The accumulator is a single flat tuple (jhwr followed by jhwj - see
-    zero_jhr_jhj_factory). In the 4 correlation case only the upper
+    values) - the accumulator is only flushed to memory by flush_jhj_jhr.
+    The accumulator is a single flat tuple (jhwj followed by jhwr - see
+    zero_jhj_jhr_factory). In the 4 correlation case only the upper
     triangle of the (4, 4) jhj element is accumulated (in row-major order) -
     the lower triangle is filled in once per solution interval by
     mirror_jhj.
 
-    The signature follows the unified accumulate_jhr_jhj contract of the
+    The signature follows the unified accumulate_jhj_jhr contract of the
     shared accumulation loop (see solver_components.py). Complex terms have no
     chain rule beyond the operators themselves, so the gain and channel_coeffs
     arguments are unused - the compiler eliminates them entirely after
@@ -330,7 +331,7 @@ def accumulate_jhr_jhj_factory(corr_mode):
     tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             # Accumulate an element of jhwr.
             upd = tuple_v1_mul_v2(lop, wres)
@@ -385,24 +386,24 @@ def accumulate_jhr_jhj_factory(corr_mode):
             c11_0, c11_1 = w_0*b11_0 + w_1*b11_1, w_2*b11_0 + w_3*b11_1
 
             return (
-                jhr_jhj[0] + upd[0],
-                jhr_jhj[1] + upd[1],
-                jhr_jhj[2] + upd[2],
-                jhr_jhj[3] + upd[3],
-                jhr_jhj[4] + (a00_0*c00_0 + a00_1*c00_1),
-                jhr_jhj[5] + (a00_0*c01_0 + a00_1*c01_1),
-                jhr_jhj[6] + (a01_0*c00_0 + a01_1*c00_1),
-                jhr_jhj[7] + (a01_0*c01_0 + a01_1*c01_1),
-                jhr_jhj[8] + (a00_0*c11_0 + a00_1*c11_1),
-                jhr_jhj[9] + (a01_0*c10_0 + a01_1*c10_1),
-                jhr_jhj[10] + (a01_0*c11_0 + a01_1*c11_1),
-                jhr_jhj[11] + (a11_0*c00_0 + a11_1*c00_1),
-                jhr_jhj[12] + (a11_0*c01_0 + a11_1*c01_1),
-                jhr_jhj[13] + (a11_0*c11_0 + a11_1*c11_1),
+                jhj_jhr[0] + (a00_0*c00_0 + a00_1*c00_1),
+                jhj_jhr[1] + (a00_0*c01_0 + a00_1*c01_1),
+                jhj_jhr[2] + (a01_0*c00_0 + a01_1*c00_1),
+                jhj_jhr[3] + (a01_0*c01_0 + a01_1*c01_1),
+                jhj_jhr[4] + (a00_0*c11_0 + a00_1*c11_1),
+                jhj_jhr[5] + (a01_0*c10_0 + a01_1*c10_1),
+                jhj_jhr[6] + (a01_0*c11_0 + a01_1*c11_1),
+                jhj_jhr[7] + (a11_0*c00_0 + a11_1*c00_1),
+                jhj_jhr[8] + (a11_0*c01_0 + a11_1*c01_1),
+                jhj_jhr[9] + (a11_0*c11_0 + a11_1*c11_1),
+                jhj_jhr[10] + upd[0],
+                jhj_jhr[11] + upd[1],
+                jhj_jhr[12] + upd[2],
+                jhj_jhr[13] + upd[3],
             )
 
     elif corr_mode.literal_value == 2:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             # Accumulate an element of jhwr.
             upd = tuple_v1_mul_v2(wres, rop)
@@ -411,15 +412,15 @@ def accumulate_jhr_jhj_factory(corr_mode):
             jh_00, jh_11 = rop[0], rop[1]
 
             return (
-                jhr_jhj[0] + upd[0],
-                jhr_jhj[1] + upd[1],
-                jhr_jhj[2] + w[0]*(jh_00.real*jh_00.real +
+                jhj_jhr[0] + w[0]*(jh_00.real*jh_00.real +
                                jh_00.imag*jh_00.imag),
-                jhr_jhj[3] + w[1]*(jh_11.real*jh_11.real +
+                jhj_jhr[1] + w[1]*(jh_11.real*jh_11.real +
                                jh_11.imag*jh_11.imag),
+                jhj_jhr[2] + upd[0],
+                jhj_jhr[3] + upd[1],
             )
     elif corr_mode.literal_value == 1:
-        def impl(lop, rop, w, gain, channel_coeffs, wres, jhr_jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             # Accumulate an element of jhwr.
             upd = tuple_v1_mul_v2(wres, rop)
@@ -428,9 +429,9 @@ def accumulate_jhr_jhj_factory(corr_mode):
             jh_00 = rop[0]
 
             return (
-                jhr_jhj[0] + upd[0],
-                jhr_jhj[1] + w[0]*(jh_00.real*jh_00.real +
+                jhj_jhr[0] + w[0]*(jh_00.real*jh_00.real +
                                jh_00.imag*jh_00.imag),
+                jhj_jhr[1] + upd[0],
             )
     else:
         raise ValueError("Unsupported number of correlations.")
@@ -441,7 +442,7 @@ def accumulate_jhr_jhj_factory(corr_mode):
 def mirror_jhj_factory(corr_mode):
     """Fill in the lower triangle of the per-interval jhj elements.
 
-    In the 4 correlation case, accumulation in accumulate_jhr_jhj only
+    In the 4 correlation case, accumulation in accumulate_jhj_jhr only
     writes the upper triangle of each (4, 4) jhj element. As jhj is Hermitian,
     the lower triangle is the conjugate of the upper triangle and can be
     filled in once per solution interval rather than once per visibility.

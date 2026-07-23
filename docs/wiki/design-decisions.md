@@ -2,7 +2,7 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-07-21
+timestamp: 2026-07-23
 last_verified_commit: 6a35c60
 ---
 
@@ -165,9 +165,9 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Decision:** ADOPTED (decision gate, 2026-07-13, after the first parameterised
   conversion — phase). The optimised loop lives once in
   `quartical/gains/general/solver_components.py` as `build_jhj_jhr_impl`, parameterised by
-  per-term hook factories, passed keyword-only: `accumulate_jhr_jhj_factory` /
-  `zero_jhr_jhj_factory` / `flush_jhr_jhj_factory` / `residual_factory` /
-  `channel_coeffs_factory` / `mirror_jhj_factory`; each kernel keeps a ~15-line
+  per-term hook factories, passed keyword-only: `accumulate_jhj_jhr_factory` /
+  `zero_jhj_jhr_factory` / `flush_jhj_jhr_factory` / `compute_residual_factory` /
+  `compute_channel_coeffs_factory` / `mirror_jhj_factory`; each kernel keeps a ~15-line
   `compute_jhj_jhr` overload that binds its hooks. The hook contract is documented in
   solver-architecture.md ("Numba kernel conventions").
 - **Rationale:** The gate required >= 1.10x at every supported correlation mode; phase

@@ -2,7 +2,7 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-07-21
+timestamp: 2026-07-23
 last_verified_commit: 6a35c60
 ---
 
@@ -197,7 +197,7 @@ The tuple style always returns tuples even in the
 back into other tuple helpers. One hard-won constraint: **never return nested tuples from an
 inlined (`qcjit`) helper called inside a `prange` body** — numba's parfor array analysis misreads
 tuple-of-tuples returns as array shapes and dies with `AssertionError: Dimension mismatch`.
-Return flat tuples and slice by literal index instead (this is why the jhr/jhj accumulator in
+Return flat tuples and slice by literal index instead (this is why the jhj/jhr accumulator in
 the shared accumulation loop is one flat tuple).
 
 Kernel structure (see `quartical/gains/complex/kernel.py` and `.../delay/kernel.py`), all following
@@ -217,7 +217,7 @@ the same skeleton:
 - `compute_jhj_jhr` is `@overload`-ed with `PARALLEL_JIT_OPTIONS` and binds the shared
   accumulation loop (next subsection), which does the `prange` over solution intervals,
   accumulating per-antenna JHJ and JHr from the residual in flat register-resident tuples.
-  4-corr JHJ elements use algebraically expanded Kronecker forms in the per-term elem hooks
+  4-corr JHJ elements use algebraically expanded Kronecker forms in the per-term accumulate hooks
   (the old explicit `a_kron_bt` array temp survives only in comments and in
   `general/generics.py`); gain-basis kernels accumulate only the upper triangle and mirror the
   lower triangle once per solution interval via the mirror hook. The loop also has a fast path
@@ -242,19 +242,23 @@ multi-direction path) is term-independent; all per-term maths arrives through ho
 All arguments are keyword-only (the leading `*` in the signature) so call sites read as a
 labelled hook table rather than a run of positional factories.
 
-- `accumulate_jhr_jhj_factory(corr_mode) -> elem(lop, rop, w, gain, aux, res, acc) -> acc` —
-  accumulates one weighted JHr/JHJ element into the flat register-resident accumulator tuple.
-  `gain` is the active-term gain tuple for the relevant antenna (parameterised terms need it for
-  the chain rule; the complex elem ignores it and LLVM eliminates the fetch). `aux` is the stage
-  hook's per-channel coefficient tuple (empty for terms with no stage hook).
-- `zero_jhr_jhj_factory(corr_mode) -> acc_zeros(ref_elem)` — the zero accumulator tuple.
-- `flush_jhr_jhj_factory(corr_mode) -> flush(jhr_el, jhj_el, acc)` — adds an accumulator into the
-  JHr/JHJ array slices (once per row on the fast path, once per direction otherwise).
-- `residual_factory(corr_mode) -> resid(r, v)` — returns the per-correlation residual tuple.
-- `channel_coeffs_factory(corr_mode) -> stage(ms_inputs, meta_inputs, f)` (optional) — the
-  per-channel coefficient tuple for terms with a frequency-dependent parameter (delay/TEC
-  families, rotation_measure); its output IS the `aux` tuple passed to the elem. `None` yields
-  an empty tuple.
+- `accumulate_jhj_jhr_factory(corr_mode) -> accumulate_jhj_jhr(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr) -> jhj_jhr` —
+  accumulates one weighted JHJ/JHr element into the flat register-resident accumulator tuple,
+  which packs the JHJ block first and the JHr block after it. `gain` is the active-term gain
+  tuple for the relevant antenna (parameterised terms need it for the chain rule; the complex
+  hook ignores it and LLVM eliminates the fetch). `channel_coeffs` is the per-channel coefficient
+  tuple (empty for terms with no channel-coefficient hook).
+- `zero_jhj_jhr_factory(corr_mode) -> zero_jhj_jhr(ref_elem)` — the zero accumulator tuple (JHJ
+  block first, then JHr).
+- `flush_jhj_jhr_factory(corr_mode) -> flush_jhj_jhr(jhj_el, jhr_el, jhj_jhr)` — adds an
+  accumulator into the JHJ/JHr array slices (once per row on the fast path, once per direction
+  otherwise).
+- `compute_residual_factory(corr_mode) -> compute_residual(r, v)` — returns the per-correlation
+  residual tuple.
+- `compute_channel_coeffs_factory(corr_mode) -> compute_channel_coeffs(ms_inputs, meta_inputs, f)`
+  (optional) — the per-channel coefficient tuple for terms with a frequency-dependent parameter
+  (delay/TEC families, rotation_measure); its output IS the `channel_coeffs` tuple passed to the
+  accumulate hook. `None` yields an empty tuple.
 - `mirror_jhj_factory(corr_mode) -> mirror(jhj_tifi)` (optional) — fills the lower triangle of the
   per-interval JHJ elements; `None` yields a no-op.
 
@@ -262,12 +266,13 @@ Worked example — delay's staged-coeff hook (`quartical/gains/delay/kernel.py`)
 first consumer of the `channel_coeffs` (stage) hook. Its stage returns the single-element flat
 tuple `(coeff,)` with `coeff = 2*pi*(chan_freq[f]/cf_mid - 1)` and `cf_mid = (MIN_FREQ + MAX_FREQ)/2`
 (the same band-midpoint rescaling the solver applies to the parameters). That tuple is the entire
-`aux` passed to the elem, so `coeff` is at `aux[0]` in every corr mode. Its `resid` is
-byte-identical to phase's — the amplitude-normalised residual `r*normf - v` with `normf = |v|/|r|`.
-Delay's elem is phase's elem with the chain-rule coefficient folded in — it scales JHr by `coeff`
-and JHJ by `coeff**2` (from differentiating the frequency-dependent exponent) and, like phase,
-recomputes its own operator-based normalisation. This shows that a flat coefficient tuple from the
-stage hook is a numba-safe way to thread per-channel data into the elem (a nested tuple return
+`channel_coeffs` passed to the accumulate hook, so `coeff` is at `channel_coeffs[0]` in every corr
+mode. Its residual (`compute_residual`) is byte-identical to phase's — the amplitude-normalised
+residual `r*normf - v` with `normf = |v|/|r|`. Delay's accumulate hook is phase's with the
+chain-rule coefficient folded in — it scales JHr by `coeff` and JHJ by `coeff**2` (from
+differentiating the frequency-dependent exponent) and, like phase, recomputes its own
+operator-based normalisation. This shows that a flat coefficient tuple from the channel-coefficient
+hook is a numba-safe way to thread per-channel data into the accumulate hook (a nested tuple return
 would trip the parfor array analysis; see the NOTE in `solver_components.py`).
 
 All hook factories are plain-Python compile-time compositions returning `qcjit`
