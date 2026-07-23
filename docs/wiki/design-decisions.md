@@ -300,6 +300,54 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   `~/claude_artifacts/quaritcal_optimisation/results/UNIFICATION_LOG.md`
   ("Solver-loop unification").
 
+## Coherent-product (closed-form atan2) update for crosshand_phase_null_v
+
+- **Context:** The null-V solver converged slowly and inconsistently in production
+  (array solve, 1-channel/all-time intervals): 50 iterations on a 7 GB column was not
+  enough. Analysis of the maths found the Gauss-Newton machinery algebraically correct
+  (the inverse-chain forge transports the gradient exactly, even through non-commuting
+  leakage) but statistically broken: the forge sets model := DATA, so the Jacobian —
+  and hence jhj — is built from noisy data. jhr is noise-unbiased (the noise power
+  lands in a real same-correlation product killed by the Im), but E[jhj] carries
+  `+sigma^2`, attenuating every step by `U^2/(U^2 + sigma^2)` — at the per-visibility
+  crosshand SNR of a few-percent-polarised calibrator, a 5-100x undershoot, varying by
+  channel sensitivity. Two further pathologies: the `sin^2` objective has a repelling
+  stationary point pi/2 from each minimum (escape doubles the offset per iteration, so
+  log2(1/delta) iterations from a near-stall start, and the step-size convergence
+  criterion counts a stalled interval as converged AT the V maximum), and phase spread
+  within an interval decoheres jhr but not the positive-sum jhj.
+- **Decision:** Replace the Gauss-Newton update with the closed-form minimiser. The
+  accumulate hook stores the coherent cross-hand product
+  `S = sum conj(v_XY)*v_YX` of the corrected visibilities (`E[S] = U^2 e^{-2i(psi-phi)}`,
+  unbiased in both components) in the existing (jhj, jhr) slots as (Re S, Im S)/4;
+  `finalize_update` applies `phi -= 0.5*atan2(Im S, Re S)` and `compute_update` is no
+  longer called. This is exact under the approximation that the crosshand phase
+  commutes with the rest of the chain (with exactly-corrected flanking terms the fixed
+  point matches legacy GN to 1e-9; with leakage the residual non-commuting bias is
+  absorbed over 2-3 outer iterations). The atan2 branch pins results to (-pi/2, pi/2]
+  — deterministic, though the pi ambiguity of V-nulling remains physically
+  irreducible. Direction-dependent solving now raises (the product is built from the
+  direction-summed residual; the legacy transported-gradient form distinguished
+  directions, so DD support would need a different accumulator).
+- **Rationale:** One step lands on the minimiser from any start, at any SNR: no
+  attenuation, no repeller, no decoherence undershoot, no halved-GN step-length
+  subtleties. Kernel-level tests (`testing/tests/gains/test_null_v_kernel.py`, run
+  without MS data) measured legacy vs new: noise-free with a near-stall channel 10 vs
+  3 iterations; crosshand SNR 0.5 fails to converge in 15 iterations (errors up to
+  1.29 rad) vs 3 iterations at the statistical floor; collapsed full-Jones chain 10 vs
+  3 iterations with identical recovered phases (1e-9).
+- **Consequences:** The exported `jhj` for this term now holds the coherent curvature
+  `Re S` (noise-free in expectation, `cos 2u`-weighted) rather than the noise-inflated
+  incoherent curvature — comparable magnitude at convergence, different meaning
+  mid-solve, and it can be negative far from convergence. The unused `update` buffer
+  and the `compute_update` re-export are retained for structural parity with the other
+  kernels. The forge still applies unit weights (the legacy objective); restoring real
+  weights is now a pure SNR improvement (the estimator is already unbiased) and is
+  left as follow-up.
+- **Source:** branch alternate_null_v (2026-07-23); analysis in
+  `~/claude_artifacts/quaritcal_optimisation/crosshand_null_v_solver.pdf` (idealised
+  geometry, halving, pi/2 stall) extended in-session to the chain and noise cases.
+
 ## Chain regression tests behind a slow marker, asserted on the net gain
 
 - **Context:** Until 2026-07, no test ever *computed* a multi-term chain solve: every

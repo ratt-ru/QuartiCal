@@ -333,7 +333,14 @@ recomputes `lambda_sq` from `ms_inputs.CHAN_FREQ` inside its finalize impl).
 inverse gains before iterating, passes it as an extra leading argument to its own
 `compute_jhj_jhr`, and refreshes the active inverse each iteration — not expressible as
 verbatim code motion through these hooks — so it keeps a private copy of the loop in
-`null_v_kernel.py`.
+`null_v_kernel.py`. It is also the one term whose update is not a Gauss–Newton step:
+its accumulate hook stores the coherent cross-hand product of the corrected
+visibilities in the (jhj, jhr) slots as (Re S, Im S)/4, its `finalize_update` applies
+the closed-form minimiser `phi -= 0.5*atan2(Im S, Re S)`, and its loop never calls
+`compute_update`. Direction-dependent solving raises for this term. See the
+`null_v_kernel.py` module docstring and design-decisions.md ("Coherent-product
+(closed-form atan2) update for crosshand_phase_null_v") for why the legacy GN update
+converged slowly (noise-inflated data-built jhj, a pi/2 repeller, decoherence).
 
 **The module-local trampoline is mandatory.** `build_jhj_jhr_impl` and both solver-loop
 builders return their loops wrapped in `qcjit` (`inline="always"`), and each kernel's

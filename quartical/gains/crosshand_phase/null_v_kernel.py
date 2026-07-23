@@ -1,4 +1,48 @@
 # -*- coding: utf-8 -*-
+"""The null-V crosshand-phase solver (coherent-product update).
+
+This kernel drives the corrected Stokes V to zero by solving for a single
+crosshand phase phi (per frequency solution interval) on the INVERSE of the
+chain - see ``nb_compute_jhj_jhr`` for the input forging. Unlike every other
+kernel, the update is not a Gauss-Newton step: per solution interval it
+accumulates the coherent cross-hand product of the corrected visibilities,
+
+    S = sum_pq conj(v_XY) * v_YX,    E[S] = sum_pq U^2 * exp(-2i(psi - phi)),
+
+and applies the closed-form step ``phi -= 0.5 * atan2(Im S, Re S)``, which is
+the exact global minimiser of ``sum |V(corrected)|^2`` under the (excellent)
+approximation that the crosshand phase commutes with the rest of the chain.
+The ``(jhj, jhr)`` accumulator slots hold ``(Re S, Im S)/4`` - the same
+expected values the legacy Gauss-Newton jhr carried, while the legacy jhj is
+replaced by the coherent curvature ``Re S`` instead of the incoherent
+``|v_XY|^2 + |v_YX|^2``.
+
+This replaces a Gauss-Newton iteration with three pathologies (all verified
+in ``testing/tests/gains/test_null_v_kernel.py``):
+
+* The Jacobian was built from the DATA (the forged model), not a model, so
+  E[jhj] carried the noise power: every step was attenuated by
+  U^2/(U^2 + sigma^2) - tens to hundreds of iterations at the per-visibility
+  crosshand SNR of a typical few-percent-polarised calibrator.
+* The objective is pi-periodic with a repelling stationary point a quarter
+  turn (pi/2) from each minimum: solves starting near it stalled or were
+  falsely declared converged by the step-size criterion.
+* Phase spread within a solution interval decohered jhr but not the
+  (positive-sum) jhj, further shrinking the step.
+
+The coherent product is unbiased in both components (the noise power lands in
+the real part of ``conj(v_XY)*v_XY`` terms, which never enter), so noise-free
+and noisy solves alike land on the minimiser in one step and converge as soon
+as the convergence bookkeeping allows. The atan2 branch pins the result to
+the principal representative in (-pi/2, pi/2] - the pi ambiguity of V-nulling
+data (phi and phi + pi are indistinguishable) remains, but the outcome is
+deterministic rather than initialisation-dependent.
+
+Direction-dependent solving is not supported: the coherent product is built
+from the corrected residual, which is direction-summed, so per-direction
+updates would be identical (the legacy transported-gradient formulation
+distinguished directions through the chain operators).
+"""
 import numpy as np
 from numba import njit
 from numba.typed import List
@@ -20,12 +64,16 @@ from quartical.gains.general.flagging import (flag_intermediaries,
 from quartical.gains.general.convenience import get_extents
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
+# Re-exported for API parity with the other kernel modules; the closed-form
+# atan2 update in finalize_update supersedes the jhj/jhr inversion, so this
+# kernel's solver loop never calls it.
 from quartical.gains.general.solver_components import compute_update  # noqa
 # The null-V residual is a plain r - v (no amplitude normalisation), which is
 # exactly the complex term's residual hook.
 from quartical.gains.complex.kernel import compute_residual_factory
 # The accumulator/flush hooks are identical to the crosshand phase term's -
-# both solve a single parameter with a (1, 1) jhj element.
+# both flush a two-element accumulator into the (1, 1) jhj element and the
+# single jhr entry (here holding Re S and Im S - see the module docstring).
 from quartical.gains.crosshand_phase.kernel import (
     zero_jhj_jhr_factory,
     flush_jhj_jhr_factory
@@ -103,6 +151,14 @@ def nb_null_v_crosshand_phase_solver_impl(
         dd_term = meta_inputs.dd_term
         n_thread = meta_inputs.threads
 
+        if dd_term:
+            # The coherent-product update cannot distinguish directions (see
+            # the module docstring).
+            raise ValueError(
+                "Direction-dependent solving is not supported for "
+                "crosshand_phase_null_v terms."
+            )
+
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
         active_params = chain_inputs.params[active_term]
@@ -168,8 +224,9 @@ def nb_null_v_crosshand_phase_solver_impl(
                 loop_idx = -1  # Did zero iterations.
                 break
 
-            compute_update(native_imdry, corr_mode)
-
+            # No compute_update call: the closed-form atan2 step in
+            # finalize_update consumes the accumulated (Re S, Im S) directly
+            # rather than solving jhj * update = jhr.
             finalize_update(
                 chain_inputs,
                 meta_inputs,
@@ -394,10 +451,12 @@ def nb_shared_compute_jhj_jhr(
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to the null-V crosshand term.
     # The residual is a plain r - v (complex's residual hook, no auxiliary
-    # values); the accumulator/flush hooks are crosshand phase's (single
-    # parameter, (1, 1) jhj, so the mirror hook is a no-op); the accumulate hook is the
-    # null-V projection defined below. There are no per-channel coefficients,
-    # so there is no compute_channel_coeffs hook.
+    # values); the accumulator/flush hooks are crosshand phase's (a
+    # two-element accumulator flushed into the (1, 1) jhj element and single
+    # jhr entry, so the mirror hook is a no-op); the accumulate hook is the
+    # coherent cross-hand product defined below (see the module docstring).
+    # There are no per-channel coefficients, so there is no
+    # compute_channel_coeffs hook.
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives the null-V crosshand term a
     # private on-disk cache namespace - see the cache correctness constraint
@@ -475,7 +534,8 @@ def nb_finalize_update(
         gain_flags = chain_inputs.gain_flags[active_term]
         params = chain_inputs.params[active_term]
 
-        update = native_imdry.update
+        jhj = native_imdry.jhj
+        jhr = native_imdry.jhr
 
         n_tint, n_fint, n_ant, n_dir, n_corr = gain.shape
 
@@ -492,14 +552,24 @@ def nb_finalize_update(
                         p = params[ti, fi, a, d]
                         g = gain[ti, fi, a, d]
                         fl = gain_flags[ti, fi, a, d]
-                        upd = update[ti, fi, a, d]
 
                         if fl == 1:
                             p[:] = 0
                             set_identity(g)
                         else:
-                            # NOTE: Halving the update absolutely required.
-                            p -= 0.5*upd  # Flip sign for non-inverse solution.
+                            # Closed-form step from the accumulated coherent
+                            # product S (see the module docstring): the (jhj,
+                            # jhr) slots hold (Re S, Im S) and arg S is
+                            # -2(psi - phi) for the inverse solve, so this
+                            # lands on the minimiser directly. atan2(0, 0) is
+                            # 0, so intervals with no data are a no-op. The
+                            # halving is the product's double angle; the sign
+                            # flip undoes the inverse-chain solve.
+                            upd = np.arctan2(
+                                jhr[ti, fi, a, d, 0],
+                                jhj[ti, fi, a, d, 0, 0]
+                            )
+                            p -= 0.5*upd
                             param_to_gain(p, g)
 
     return impl
@@ -518,68 +588,40 @@ def param_to_gain_factory(corr_mode):
 
 
 def accumulate_jhj_jhr_factory(corr_mode):
-    """Accumulate a jhr/jhj element into a register-resident accumulator.
+    """Accumulate the coherent cross-hand product into the accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhj_jhr.
-    The accumulator is a flat tuple (jhj00, jhr0) - see zero_jhj_jhr_factory
-    in the crosshand phase kernel, from which both the zeros and flush hooks
-    are imported.
+    The accumulator is a flat tuple holding (Re S, Im S)/4 in the (jhj00,
+    jhr0) slots - see zero_jhj_jhr_factory in the crosshand phase kernel,
+    from which both the zeros and flush hooks are imported.
 
-    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
-    loop (see solver_components.py). The chain rule uses the active-term gain
-    (drv = -1j*conj(g)), so the gain argument is consumed; the channel_coeffs argument is
-    empty (crosshand has no compute_channel_coeffs hook) and unused. The incoming residual is r = -v
-    (zero data, plain subtraction) and is UNWEIGHTED - the forged unit weights
-    in nb_compute_jhj_jhr guarantee this, matching the original kernel, which
-    never consumed w.
+    The signature follows the unified accumulate_jhj_jhr contract of the
+    shared accumulation loop (see solver_components.py), but only the
+    residual is consumed: the update is the closed-form minimiser of the
+    projected Stokes-V objective (module docstring), which needs no chain
+    transport (lop/rop) and no derivative (gain). The incoming residual is
+    r = -v with v the fully corrected visibility (zero forged data) and is
+    UNWEIGHTED - the forged unit weights in nb_compute_jhj_jhr guarantee
+    this, matching the original kernel.
 
-    The residual is first projected onto the V-nulling combination
-    (v_res = -0.5j*r_1 + 0.5j*r_2, wres -> [0, 0.5j*v_res, -0.5j*v_res, 0]);
-    jhr keeps only the [0] (XX) entry of lop @ wres @ rop, while jhj is
-    |0.5j*(jh_01 - jh_02)|^2 - only the two cross entries of the first row of
-    the row-major kronecker product survive the projection.
+    The coherent product S = conj(v_XY)*v_YX = conj(wres[1])*wres[2] (the
+    residual's signs cancel) has E[S] = U^2 exp(-2i(psi - phi)): unbiased in
+    both components, since the noise power only enters same-correlation
+    products which never appear. The q-side (conjugate-transposed) residual
+    yields the identical product, so both accumulate calls per visibility
+    add constructively. The 1/4 scale keeps the exported jhj comparable in
+    magnitude to the legacy Gauss-Newton curvature at convergence.
     """
 
     if corr_mode.literal_value == 4:
         def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
-            # Project the residual onto the V-nulling combination.
-            r_1 = wres[1]
-            r_2 = wres[2]
-
-            v_res = -0.5j*r_1 + 0.5j*r_2
-
-            s_1 = 0.5j*v_res
-            s_2 = -0.5j*v_res
-
-            # jhwr element: lop @ [[0, s_1], [s_2, 0]] @ rop, keeping only
-            # the [0] (XX) entry.
-            mm_0 = s_1*rop[2]
-            mm_2 = s_2*rop[0]
-
-            r_0 = lop[0]*mm_0 + lop[1]*mm_2
-
-            gc_0 = gain[0].conjugate()
-
-            drv_00 = -1j*gc_0
-
-            upd_00 = (drv_00*r_0).real
-
-            # jhwj element: no weights are applied (see the docstring).
-            # NOTE: rop is effectively transposed (rop[2] used as rop_01)
-            # relative to lop, matching the row-major kronecker convention.
-            jh_01 = lop[0]*rop[2]
-            jh_02 = lop[1]*rop[0]
-
-            jh_v = 0.5j*jh_01 - 0.5j*jh_02
-            j_v = jh_v.conjugate()
-
-            jhj_v = jh_v*j_v
+            s = wres[1].conjugate()*wres[2]
 
             return (
-                jhj_jhr[0] + jhj_v.real,
-                jhj_jhr[1] + upd_00,
+                jhj_jhr[0] + 0.25*s.real,
+                jhj_jhr[1] + 0.25*s.imag,
             )
 
     else:
