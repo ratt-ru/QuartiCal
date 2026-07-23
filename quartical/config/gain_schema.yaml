@@ -101,5 +101,5 @@ gain:
     dtype: bool
     default: false
     info: Controls whether or not a term will be populated with an initial
-          estimiate where applicable. Currently only supported for delay
-          terms.
+          estimiate where applicable. Currently supported for delay terms and
+          the null-V crosshand phase term.

@@ -22,6 +22,7 @@ def opts(base_opts):
     _opts.solver.threads = 2
     _opts.G.time_interval = 0
     _opts.G.type = "crosshand_phase_null_v"
+    _opts.G.initial_estimate = False
     _opts.G.solve_per = "array"
 
     return _opts
