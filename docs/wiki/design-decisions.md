@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-08-13
-last_verified_commit: d9bc461
+timestamp: 2026-08-25
+last_verified_commit: eebc144
 ---
 
 # Design Decisions
