@@ -139,8 +139,12 @@ def test_solver_flags(cmp_post_solve_data_xds_list):
         np.testing.assert_array_equal(xds._FLAG.data, xds.FLAG.data)
 
 
-@pytest.mark.xfail(reason="Ambiguous result - signs may be flipped.")
 def test_gains(cmp_gain_xds_lod, true_gain_list):
+    # The forward-model solver's branch is deterministic: its nuisance
+    # amplitude is non-negative, so with a positive true Stokes U (0.1 in
+    # the corrupted-data fixture) the exact branch is recovered - no sign
+    # flip. A negative true U would land exactly pi away (see
+    # test_null_v_kernel.py::test_negative_stokes_u_lands_on_flipped_branch).
 
     for solved_gain_dict, true_gain in zip(cmp_gain_xds_lod, true_gain_list):
         solved_gain_xds = solved_gain_dict["G"]
