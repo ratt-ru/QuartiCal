@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-07-23
-last_verified_commit: 41ed4e7
+timestamp: 2026-07-27
+last_verified_commit: f8dcf01
 ---
 
 # Solver Architecture
@@ -233,8 +233,9 @@ the same skeleton:
 `quartical/gains/general/solver_components.py` as `build_jhj_jhr_impl(...)`. This is THE pattern:
 every solvable kernel binds it (complex, diag_complex, phase, amplitude, delay,
 delay_and_offset, tec_and_offset, delay_and_tec, delay_tec_and_offset, crosshand_phase,
-crosshand_phase_null_v, rotation, rotation_measure; leakage imports complex's
-`compute_jhj_jhr` wholesale) — there are no array-buffer holdouts. The loop itself
+rotation, rotation_measure; leakage imports complex's `compute_jhj_jhr` wholesale) — there
+are no array-buffer holdouts. The one exception is `crosshand_phase_null_v`, whose update is
+not a JHJ/JHr inversion at all (see the null-V paragraph below). The loop itself
 (the `prange` over solution intervals, the chain-product construction of the
 `lop_pq/rop_pq/lop_qp/rop_qp` operators, the single-direction fast path, and the general
 multi-direction path) is term-independent; all per-term maths arrives through hook factories:
@@ -329,11 +330,22 @@ absent hook. `finalize_update` is called with a single standardised signature pe
 5-arg `(chain_inputs, meta_inputs, native_imdry, loop_idx, corr_mode)` for gain-basis terms,
 7-arg `(ms_inputs, mapping_inputs, ...)` for parameterised terms (rotation_measure
 recomputes `lambda_sq` from `ms_inputs.CHAN_FREQ` inside its finalize impl).
-`crosshand_phase_null_v` is the one deliberate holdout: its loop builds a typed List of
-inverse gains before iterating, passes it as an extra leading argument to its own
-`compute_jhj_jhr`, and refreshes the active inverse each iteration — not expressible as
-verbatim code motion through these hooks — so it keeps a private copy of the loop in
-`null_v_kernel.py`.
+`crosshand_phase_null_v` is the one deliberate holdout, for a different reason since the
+forward-model rework (branch forward-model-nullv): it no longer inverts gains or touches the
+data at all. Its solver treats the calibrator's linear polarisation as a V = 0 nuisance
+completion of the model (the supplied model's cross-hands are ignored; its parallel hands
+predict leakage×I mixing through sky-side full-Jones terms), accumulates per-interval 2×2
+normal equations for the complex nuisance `z` in a private traversal
+(`compute_z_normal_eqs`), and updates via the closed-form reparameterisation
+`phi += arg(z)` — a linear solve plus an atan2, not a JHJ/JHr inversion, so neither the
+shared accumulation loop's hook contract (two accumulator slots) nor `compute_update`
+applies. The exported `jhj`/`jhr` are diagnostics (`|z|^2·M22` curvature proxy and the
+V-nulling component `y`). One step is exact for diagonal data-side flanks from any starting
+point (no ±π/2 watershed, no low-SNR step attenuation); the branch is deterministic — the
+nuisance amplitude is non-negative, so the solution lands π away exactly when the
+calibrator's true Stokes U is negative. Direction-dependent solving raises. See the module
+docstring of `null_v_kernel.py` and the kernel tests in
+`testing/tests/gains/test_null_v_kernel.py`.
 
 **The module-local trampoline is mandatory.** `build_jhj_jhr_impl` and both solver-loop
 builders return their loops wrapped in `qcjit` (`inline="always"`), and each kernel's

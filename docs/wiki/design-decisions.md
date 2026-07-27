@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-07-23
-last_verified_commit: 41ed4e7
+timestamp: 2026-07-27
+last_verified_commit: f8dcf01
 ---
 
 # Design Decisions
@@ -278,9 +278,11 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   (it presumes any rescaling fits a single class shape). Optional hooks resolve to
   build-time no-ops; each kernel's `nb_<term>_solver_impl` returns the mandatory
   module-local trampoline (previous entry). `crosshand_phase_null_v` keeps a private
-  loop: its inverse-gains machinery (typed-List build before the loop, extra leading
-  compute_jhj_jhr argument, per-iteration refresh) is not expressible as verbatim code
-  motion through the hooks.
+  loop: at the time, its inverse-gains machinery (typed-List build before the loop,
+  extra leading compute_jhj_jhr argument, per-iteration refresh) was not expressible as
+  verbatim code motion through the hooks. (That machinery has since been removed
+  entirely — see the forward-model null-V entry below; the term still keeps a private
+  loop, now because its update is not a JHJ/JHr inversion.)
 - **Rationale:** Pure maintainability refactor — the hot loops did not move, so the
   gate was exactness and parity rather than speedup: checksums bitwise-identical to
   kernel-propagation (4b022f4) for every ported term and supported corr mode (full and
@@ -299,6 +301,46 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   2026-07-20); verification numbers in
   `~/claude_artifacts/quaritcal_optimisation/results/UNIFICATION_LOG.md`
   ("Solver-loop unification").
+
+## Forward-model null-V crosshand phase (V = 0 nuisance completion, not data correction)
+
+- **Context:** `crosshand_phase_null_v` was the one term that violated QuartiCal's forward
+  model: it inverted and reversed the whole chain and corrected the *data* (forging
+  model:=DATA, data:=0), because with an unpolarised model the corrupted model's
+  cross-hands are identically zero and ∂r/∂φ = 0 — a fixed unpolarised model provably
+  cannot constrain the crosshand phase. Measured on real MeerKAT data (2026-07-24 note,
+  `~/claude_artifacts/quaritcal_optimisation/crosshand_null_v_solver.tex`), the
+  data-correcting estimator's iteration converges 0.6–1.0 rad from the V-null whenever a
+  leakage-bearing term sits sky-side of it (contaminating harmonics 2–19× the signal),
+  forcing an ordering rule (X sky-most) as a workaround. The legacy Gauss-Newton update
+  additionally stalled at the ±π/2 repeller and attenuated steps by ρ²/(1+ρ²) at low SNR.
+- **Decision:** Reimplement the term as a forward-model solver (branch
+  forward-model-nullv): treat the calibrator's linear polarisation as a nuisance
+  completion of the model on the V = 0 manifold — sky cross-hands `XY = z`,
+  `YX = conj(z)` for complex `z` — ignore the supplied model's cross-hands, and per
+  iteration solve the exact 2×2 linear least squares for `z` against the residual
+  `D − V_m`, then reparameterise `phi += arg(z)` (`U = |z| ≥ 0` stays in the sky). The
+  nuisance bases are the sky-frame unit cross-hands pushed through the chain
+  (`P = W_p X_p (F_p e F_q^H) X_q^H W_q^H`), so gains are only ever applied to a model.
+- **Rationale:** The null-V estimator *is* the profiled likelihood of this joint problem —
+  no estimator power is lost — and the forward form dissolves the failure modes instead of
+  working around them: the model's parallel hands (I, Q) predict the leakage×I mixing
+  through sky-side full-Jones terms, so the physical ordering `[.., X, B]` is exact
+  (kernel-tested with a leaky sky-side flank); the linear fit has no ±π/2 watershed and no
+  SNR-dependent step attenuation; weights are honoured; the branch is deterministic (π
+  flip iff true Stokes U < 0). The previous integration-test `xfail` ("signs may be
+  flipped") became an xpass and was removed.
+- **Consequences:** The inverse-chain forge, chain reversal, `invert_gains`, and the
+  ordering rule are gone; the term keeps a private solver loop and traversal
+  (`compute_z_normal_eqs`) because its update is a closed-form 2×2 solve + atan2, not a
+  JHJ/JHr inversion — the shared accumulation loop's two-slot accumulator contract does
+  not fit five normal-equation slots. Exported `jhj`/`jhr` are diagnostics
+  (`|z|²·M22`, `y`), which changes `max_iter=0` semantics relative to legacy. DD solving
+  raises (direction-summed completion); `solve_per="antenna"` is Jacobi-flavoured;
+  "array" is exact. Kernel tests sweep the full circle incl. exactly ±π/2 and π
+  (`testing/tests/gains/test_null_v_kernel.py`). Real-data verification pending (manual).
+- **Source:** branch forward-model-nullv (2026-07-27); derivation and failure analysis in
+  `~/claude_artifacts/quaritcal_optimisation/crosshand_null_v_solver.tex` (rev 3).
 
 ## Chain regression tests behind a slow marker, asserted on the net gain
 
