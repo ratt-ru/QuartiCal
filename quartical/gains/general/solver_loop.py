@@ -27,12 +27,12 @@ from quartical.gains.general.solver_components import compute_update
 # (numba keys the cache on source location plus argument types, and the only
 # discriminator - the captured hook closures - enters the key merely as an
 # unstable cloudpickle hash). Returning an inline="always" function prevents
-# the body from ever being lowered standalone: each kernel's nb_<term>_solver_impl
-# MUST return a module-local trampoline (def impl(...): return shared(...)) that
-# inlines it, giving every kernel a private cache namespace. This exact bug
-# shipped once; the canonical explanation lives in the docstring of
-# build_jhj_jhr_impl in solver_components.py - read it before touching this
-# file.
+# the body from ever being lowered standalone: each kernel's
+# nb_<term>_solver_impl MUST return a module-local trampoline
+# (def impl(...): return shared(...)) that inlines it, giving every kernel a
+# private cache namespace. This exact bug shipped once; the canonical
+# explanation lives in the docstring of build_jhj_jhr_impl in
+# solver_components.py - read it before touching this file.
 
 
 @factories.qcjit
@@ -65,35 +65,38 @@ def build_gain_solver_impl(
 ):
     """Return the shared solver-loop impl closure for a non-parameterised term.
 
-    This is the outer solver loop first written for the complex kernel: it sets
-    up the flagging/solving intermediaries, resamples the solution intervals for
-    parallelism, then iterates compute_jhj_jhr -> compute_update ->
+    This is the outer solver loop used by the non-parameterised terms: it sets
+    up the flagging/solving intermediaries, resamples the solution intervals
+    for parallelism, then iterates compute_jhj_jhr -> compute_update ->
     finalize_update -> convergence check until convergence or the iteration
-    limit. The per-term maths lives entirely in the hooks passed here; the loop
-    itself is identical across the complex, leakage and diagonal-complex terms.
+    limit. The per-term maths lives entirely in the hooks passed here; the
+    loop itself is identical across the complex, leakage and diagonal-complex
+    terms.
 
     All ``None`` hooks are resolved to build-time no-ops (or, for the scalar
-    stage, to one of two prebuilt step closures) so that the compiled body never
-    carries a runtime branch for an absent hook - mirroring how solver_components.py
-    substitutes its optional compute_channel_coeffs/mirror_jhj hooks.
+    stage, to one of two prebuilt step closures) so that the compiled body
+    never carries a runtime branch for an absent hook - mirroring how
+    solver_components.py substitutes its optional
+    compute_channel_coeffs/mirror_jhj hooks.
 
     See the module-level CACHE CORRECTNESS CONSTRAINT: the returned body is an
     inline="always" function and MUST be inlined into a per-kernel trampoline.
 
     Args:
         get_jhj_dims: A qcjit closure ``get_jhj_dims(upsample_shape) -> dims``
-            giving the jhj allocation shape. Full terms pass their per-corr dims
-            factory's product; diagonal terms pass the module-level
+            giving the jhj allocation shape. Full terms pass their per-corr
+            dims factory's product; diagonal terms pass the module-level
             ``identity_dims`` (jhj is gain-shaped).
-        compute_jhj_jhr: The kernel module's @overload-ed compute_jhj_jhr; called
-            at the top of each iteration to accumulate jhj and jhr.
-        scalar_jhj_jhr: Optional hook ``scalar_jhj_jhr(native_imdry)`` collapsing
-            jhj/jhr to a scalar solve. ``None`` means scalar mode is unsupported
-            for this term, in which case ``scalar_error_message`` is raised.
+        compute_jhj_jhr: The kernel module's @overload-ed compute_jhj_jhr;
+            called at the top of each iteration to accumulate jhj and jhr.
+        scalar_jhj_jhr: Optional hook ``scalar_jhj_jhr(native_imdry)``
+            collapsing jhj/jhr to a scalar solve. ``None`` means scalar mode is
+            unsupported for this term, in which case ``scalar_error_message``
+            is raised.
         scalar_error_message: The constant message raised when scalar mode is
             requested and ``scalar_jhj_jhr`` is ``None``.
-        finalize_update: The kernel module's @overload-ed finalize_update; called
-            with the non-param 5-arg form after compute_update.
+        finalize_update: The kernel module's @overload-ed finalize_update;
+            called with the non-param 5-arg form after compute_update.
         reference_gains: Optional hook
             ``reference_gains(chain_inputs, meta_inputs, corr_mode)`` run once
             after finalize_gain_flags. ``None`` yields a build-time no-op.
@@ -105,8 +108,9 @@ def build_gain_solver_impl(
     # Scalar stage: select one of two prebuilt step closures at build time so
     # that the compiled body carries no branch on whether the term supports
     # scalar mode. When scalar_jhj_jhr is None the term raises regardless of
-    # corr_mode (the historic complex/leakage behaviour); otherwise it collapses
-    # jhj/jhr to a scalar solve, except in the already-scalar single-corr case.
+    # corr_mode - the complex and leakage terms have no scalar solve; otherwise
+    # it collapses jhj/jhr to a scalar solve, except in the already-scalar
+    # single-corr case.
     if scalar_jhj_jhr is None:
         def scalar_step(native_imdry, scalar, corr_mode):
             if scalar:
@@ -253,10 +257,10 @@ def build_gain_solver_impl(
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
-    # Return the loop as an inline="always" function so it is never lowered as a
-    # standalone (separately disk-cached) unit - see the module-level cache
-    # correctness constraint. Each kernel inlines this into a module-local
-    # trampoline, giving it a private cache namespace.
+    # Return the loop as an inline="always" function so it is never lowered
+    # as a standalone (separately disk-cached) unit - see the module-level
+    # cache correctness constraint. Each kernel inlines this into a
+    # module-local trampoline, giving it a private cache namespace.
     return factories.qcjit(impl)
 
 
@@ -274,13 +278,13 @@ def build_param_solver_impl(
 ):
     """Return the shared solver-loop impl closure for a parameterised term.
 
-    This is the outer solver loop first written for the delay kernel. It mirrors
-    build_gain_solver_impl but carries the extra plumbing every parameterised
-    term needs: it solves on the parameter grid, allocates a real (n_param,
-    n_param) jhj, forwards a numbness value and per-corr identity to the flag
-    machinery, propagates gain flags to parameter flags each iteration, and
-    exposes optional pre/post-solve stages for terms that enter and leave a
-    scaled solver basis (as delay does when it rescales its parameters).
+    This mirrors build_gain_solver_impl but carries the extra plumbing every
+    parameterised term needs: it solves on the parameter grid, allocates a real
+    (n_param, n_param) jhj, forwards a numbness value and per-corr identity to
+    the flag machinery, propagates gain flags to parameter flags each
+    iteration, and exposes optional pre/post-solve stages for terms that enter
+    and leave a scaled solver basis (as delay does when it rescales its
+    parameters).
 
     As with the non-param builder, all ``None`` hooks resolve to build-time
     no-ops and the scalar stage is one of two prebuilt step closures, so the
@@ -291,40 +295,45 @@ def build_param_solver_impl(
 
     Args:
         pre_solve: Optional hook
-            ``pre_solve(ms_inputs, chain_inputs, meta_inputs)`` run once between
-            intermediary setup and the loop (e.g. entering a scaled solver basis
-            by mutating params in place). ``None`` yields a build-time no-op.
-        compute_jhj_jhr: The kernel module's @overload-ed compute_jhj_jhr; called
-            at the top of each iteration.
+            ``pre_solve(ms_inputs, chain_inputs, meta_inputs)`` run once
+            between intermediary setup and the loop (e.g. entering a scaled
+            solver basis by mutating params in place). ``None`` yields a
+            build-time no-op.
+        compute_jhj_jhr: The kernel module's @overload-ed compute_jhj_jhr;
+            called at the top of each iteration.
         params_per_corr: The number of parameters per correlation, forwarded as
             the second argument to the generic scalar_jhj_jhr. ``None`` means
-            scalar mode is unsupported, in which case ``scalar_error_message`` is
-            raised.
+            scalar mode is unsupported, in which case ``scalar_error_message``
+            is raised.
         scalar_error_message: The constant message raised when scalar mode is
             requested and ``params_per_corr`` is ``None``.
-        finalize_update: The kernel module's @overload-ed finalize_update; called
-            with the standardised 7-arg form after compute_update.
-        numbness: The numbness value forwarded to update_gain_flags (1e-6
-            reproduces the omitted-kwarg default; the delay/tec family pass 1e9).
+        finalize_update: The kernel module's @overload-ed finalize_update;
+            called with the standardised 7-arg form after compute_update.
+        numbness: The numbness value forwarded to update_gain_flags. Amplitude
+            passes 1e-6 (the update_gain_flags default); every other
+            parameterised term passes 1e9, which is large enough that the
+            divergence test can never trip, so points are never soft-flagged
+            for diverging.
         identity_params: The per-corr identity parameter tuple forwarded to
             update_param_flags.
         reference_params: Optional @overload-ed referencing routine
             ``reference_params(ms_inputs, mapping_inputs, chain_inputs,
-            meta_inputs)`` run once after finalize_gain_flags. ``None`` yields a
-            build-time no-op.
+            meta_inputs)`` run once after finalize_gain_flags. ``None`` yields
+            a build-time no-op.
         post_solve: Optional hook
             ``post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry)``
-            run last, just before the return (e.g. exiting a scaled solver basis
-            by unscaling params and jhj in place). ``None`` yields a build-time
-            no-op.
+            run last, just before the return (e.g. exiting a scaled solver
+            basis by unscaling params and jhj in place). ``None`` yields a
+            build-time no-op.
 
     Returns:
         The ``impl`` closure, wrapped as an inline="always" function.
     """
 
     # Parameterised terms always solve on the parameter grid. The parameter
-    # frequency map is the base binned map (ParameterizedGain._make_param_freq_map
-    # delegates to Gain._make_freq_map), whereas the gain frequency map may be
+    # frequency map is the base binned map
+    # (ParameterizedGain._make_param_freq_map delegates to
+    # Gain._make_freq_map), whereas the gain frequency map may be
     # overridden per term - e.g. delay/tec/rotation_measure solve in every
     # channel. jhj/jhr/update are allocated on the parameter shape, so the
     # extents must come from the parameter grid; the gain grid is only ever
@@ -343,9 +352,9 @@ def build_param_solver_impl(
         pre_solve_step = pre_solve
 
     # Scalar stage: select one of two prebuilt step closures at build time (see
-    # the non-param builder for the rationale). When params_per_corr is None the
-    # term raises regardless of corr_mode; otherwise it collapses jhj/jhr to a
-    # scalar solve, except in the already-scalar single-corr case.
+    # the non-param builder for the rationale). When params_per_corr is None
+    # the term raises regardless of corr_mode; otherwise it collapses jhj/jhr
+    # to a scalar solve, except in the already-scalar single-corr case.
     if params_per_corr is None:
         def scalar_step(native_imdry, scalar, corr_mode):
             if scalar:
@@ -368,7 +377,9 @@ def build_param_solver_impl(
 
     # Optional post-solve stage: a build-time no-op when absent.
     if post_solve is None:
-        def post_solve_step(ms_inputs, chain_inputs, meta_inputs, native_imdry):
+        def post_solve_step(
+            ms_inputs, chain_inputs, meta_inputs, native_imdry
+        ):
             pass
         post_solve_step = factories.qcjit(post_solve_step)
     else:
@@ -525,8 +536,8 @@ def build_param_solver_impl(
 
         return native_imdry.jhj, loop_idx + 1, conv_perc
 
-    # Return the loop as an inline="always" function so it is never lowered as a
-    # standalone (separately disk-cached) unit - see the module-level cache
-    # correctness constraint. Each kernel inlines this into a module-local
-    # trampoline, giving it a private cache namespace.
+    # Return the loop as an inline="always" function so it is never lowered
+    # as a standalone (separately disk-cached) unit - see the module-level
+    # cache correctness constraint. Each kernel inlines this into a
+    # module-local trampoline, giving it a private cache namespace.
     return factories.qcjit(impl)

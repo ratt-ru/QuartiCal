@@ -47,12 +47,12 @@ def nb_leakage_solver_impl(
     coerce_literal(nb_leakage_solver_impl, ["corr_mode"])
 
     # Leakage reuses the (full) complex accumulation via the complex kernel's
-    # compute_jhj_jhr, and shares the non-parameterised outer solver loop - only
-    # the finalize_update hook (which zeroes the diagonal of the update) and the
-    # scalar error string are specific to leakage terms. The shared loop is
-    # inlined into the module-local trampoline below rather than returned
-    # directly. This gives leakage a private on-disk cache namespace - see the
-    # cache correctness constraint in solver_components.py.
+    # compute_jhj_jhr, and shares the non-parameterised outer solver loop -
+    # only the finalize_update hook (which zeroes the diagonal of the update)
+    # and the scalar error string are specific to leakage terms. The shared
+    # loop is inlined into the module-local trampoline below rather than
+    # returned directly. This gives leakage a private on-disk cache namespace -
+    # see the cache correctness constraint in solver_components.py.
     shared_impl = build_gain_solver_impl(
         get_jhj_dims=get_jhj_dims_factory(corr_mode),
         compute_jhj_jhr=compute_jhj_jhr,

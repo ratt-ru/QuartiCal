@@ -55,9 +55,10 @@ def nb_diag_complex_solver_impl(
     # the hooks below are specific to diagonal complex terms. A diagonal term
     # stores jhj gain-shaped (so it passes the identity dims helper), supports
     # scalar mode via its own scalar_jhj_jhr, and references its gains after
-    # solving. The shared loop is inlined into the module-local trampoline below
-    # rather than returned directly. This gives diag_complex a private on-disk
-    # cache namespace - see the cache correctness constraint in solver_components.py.
+    # solving. The shared loop is inlined into the module-local trampoline
+    # below rather than returned directly. This gives diag_complex a private
+    # on-disk cache namespace - see the cache correctness constraint in
+    # solver_components.py.
     shared_impl = build_gain_solver_impl(
         get_jhj_dims=identity_dims,
         compute_jhj_jhr=compute_jhj_jhr,
@@ -117,10 +118,11 @@ def nb_compute_jhj_jhr(
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to diagonal complex terms. As
     # with the (full) complex kernel, the diagonal residual is simply r - v
-    # with no per-channel coefficients, so there is no compute_channel_coeffs hook (the accumulate hook
-    # receives an empty channel_coeffs tuple). The jhj element for a diagonal term
-    # is shaped like the gains (a flat correlation vector, not a (4, 4) block),
-    # so there is no upper/lower triangle to mirror and mirror_jhj_factory is None.
+    # with no per-channel coefficients, so there is no compute_channel_coeffs
+    # hook (the accumulate hook receives an empty channel_coeffs tuple). The
+    # jhj element for a diagonal term is shaped like the gains (a flat
+    # correlation vector, not a (4, 4) block), so there is no upper/lower
+    # triangle to mirror and mirror_jhj_factory is None.
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives diag_complex a private on-disk
     # cache namespace - see the cache correctness constraint in
@@ -326,13 +328,13 @@ def accumulate_jhj_jhr_factory(corr_mode):
     The accumulator is a single flat tuple (jhwj followed by jhwr - see
     zero_jhj_jhr_factory).
 
-    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
-    loop (see solver_components.py). Diagonal complex terms have no chain rule
-    beyond the operators themselves, so the gain and channel_coeffs arguments are unused -
-    the compiler eliminates them entirely after inlining. The 1 and 2
-    correlation cases are identical to the (full) complex kernel; only the 4
-    correlation case differs, because a diagonal term keeps just the diagonal
-    (in correlation) entries of jhr and jhj.
+    The signature follows the unified accumulate_jhj_jhr contract of the shared
+    accumulation loop (see solver_components.py). Diagonal complex terms have
+    no chain rule beyond the operators themselves, so the gain and
+    channel_coeffs arguments are unused - the compiler eliminates them entirely
+    after inlining. The 1 and 2 correlation cases are identical to the (full)
+    complex kernel; only the 4 correlation case differs, because a diagonal
+    term keeps just the diagonal (in correlation) entries of jhr and jhj.
     """
 
     tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
@@ -346,9 +348,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
             # Off-diagonal weights are effectively zero for a diagonal term.
             w_0, w_3 = w[0], w[3]  # NOTE: XX, YY
 
-            # jhwr = diag(lop @ diag(res_00, res_11) @ rop). The incoming wres is
-            # the weighted residual; only its diagonal entries contribute (the
-            # off-diagonals are dropped, matching the original accumulate hook).
+            # jhwr = diag(lop @ diag(res_00, res_11) @ rop). The incoming wres
+            # is the weighted residual; only its diagonal entries contribute -
+            # the off-diagonals are dropped.
             wr_0, wr_3 = wres[0], wres[3]
             jhr0 = (l0*wr_0)*r0 + (l1*wr_3)*r2
             jhr3 = (l2*wr_0)*r1 + (l3*wr_3)*r3

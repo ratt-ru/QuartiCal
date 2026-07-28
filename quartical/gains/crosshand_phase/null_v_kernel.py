@@ -395,9 +395,9 @@ def nb_shared_compute_jhj_jhr(
     # below (the per-term maths) are specific to the null-V crosshand term.
     # The residual is a plain r - v (complex's residual hook, no auxiliary
     # values); the accumulator/flush hooks are crosshand phase's (single
-    # parameter, (1, 1) jhj, so the mirror hook is a no-op); the accumulate hook is the
-    # null-V projection defined below. There are no per-channel coefficients,
-    # so there is no compute_channel_coeffs hook.
+    # parameter, (1, 1) jhj, so the mirror hook is a no-op); the accumulate
+    # hook is the null-V projection defined below. There are no per-channel
+    # coefficients, so there is no compute_channel_coeffs hook.
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives the null-V crosshand term a
     # private on-disk cache namespace - see the cache correctness constraint
@@ -526,13 +526,13 @@ def accumulate_jhj_jhr_factory(corr_mode):
     in the crosshand phase kernel, from which both the zeros and flush hooks
     are imported.
 
-    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
-    loop (see solver_components.py). The chain rule uses the active-term gain
-    (drv = -1j*conj(g)), so the gain argument is consumed; the channel_coeffs argument is
-    empty (crosshand has no compute_channel_coeffs hook) and unused. The incoming residual is r = -v
-    (zero data, plain subtraction) and is UNWEIGHTED - the forged unit weights
-    in nb_compute_jhj_jhr guarantee this, matching the original kernel, which
-    never consumed w.
+    The signature follows the unified accumulate_jhj_jhr contract of the shared
+    accumulation loop (see solver_components.py). The chain rule uses the
+    active-term gain (drv = -1j*conj(g)), so the gain argument is consumed; the
+    channel_coeffs argument is empty (crosshand has no compute_channel_coeffs
+    hook) and unused. The incoming residual is r = -v (zero data, plain
+    subtraction) and is UNWEIGHTED - the forged unit weights in
+    nb_compute_jhj_jhr guarantee this.
 
     The residual is first projected onto the V-nulling combination
     (v_res = -0.5j*r_1 + 0.5j*r_2, wres -> [0, 0.5j*v_res, -0.5j*v_res, 0]);

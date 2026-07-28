@@ -58,8 +58,7 @@ def delay_solver_impl(
 # numerical issues, but requires some scaling of the parameters. The delay
 # solver enters this scaled solver basis before the loop (pre_solve) and leaves
 # it afterwards (post_solve); both hooks are module-local qcjit closures that
-# fetch their inputs from the standardised hook arguments, exactly mirroring the
-# inline rescaling the loop body previously performed.
+# fetch their inputs from the standardised hook arguments.
 @factories.qcjit
 def pre_solve(ms_inputs, chain_inputs, meta_inputs):
     active_params = chain_inputs.params[meta_inputs.active_term]
@@ -160,12 +159,11 @@ def nb_compute_jhj_jhr(
     # below (the per-term maths) are specific to delay terms. Delay's residual
     # normalises out amplitude exactly as phase's does. Unlike phase, delay
     # differentiates a frequency-dependent exponent, so it carries a
-    # per-channel coefficient computed by the compute_channel_coeffs hook; that coefficient is
-    # the channel_coeffs tuple consumed by the accumulate hook.
-    # The shared loop is inlined into the module-local trampoline below
-    # rather than returned directly. This gives delay a private on-disk
-    # cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # per-channel coefficient computed by the compute_channel_coeffs hook; that
+    # coefficient is the channel_coeffs tuple consumed by the accumulate hook.
+    # The shared loop is inlined into the module-local trampoline below rather
+    # than returned directly. This gives delay a private on-disk cache
+    # namespace - see the cache correctness constraint in solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
@@ -310,9 +308,10 @@ def compute_channel_coeffs_factory(corr_mode):
     Delay solves for a frequency-dependent exponent, so differentiating the
     model with respect to the parameter introduces a per-channel coefficient
     coeff = 2*pi*(chan_freq[f]/cf_mid - 1), where cf_mid is the midpoint of the
-    band (the same rescaling the solver applies to the parameters). The stage
-    hook computes this once per channel and returns it as a single-element flat
-    tuple (coeff,) which is the channel_coeffs tuple passed to the accumulate hook.
+    band (the same rescaling the solver applies to the parameters). The
+    compute_channel_coeffs hook computes this once per channel and returns it
+    as a single-element flat tuple (coeff,) which is the channel_coeffs tuple
+    passed to the accumulate hook.
     """
 
     def impl(ms_inputs, meta_inputs, f):
@@ -450,14 +449,15 @@ def accumulate_jhj_jhr_factory(corr_mode):
     The accumulator is a single flat tuple (the upper triangle of the real jhj
     element followed by the jhr entries - see zero_jhj_jhr_factory).
 
-    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
-    loop (see solver_components.py). The delay chain rule uses the active-term gain
-    (drv = -1j*conj(g)), so the gain argument is consumed. The channel_coeffs argument is
-    the single-element tuple (coeff,) produced by the compute_channel_coeffs hook: coeff is at
-    channel_coeffs[0] in every corr mode. It scales jhr by coeff and jhj by coeff**2 (from
-    differentiating the frequency-dependent exponent). This accumulate hook recomputes its
-    own operator-based normalisation, exactly as the original array-buffer
-    kernel did.
+    The signature follows the unified accumulate_jhj_jhr contract of the shared
+    accumulation loop (see solver_components.py). The delay chain rule uses the
+    active-term gain (drv = -1j*conj(g)), so the gain argument is consumed. The
+    channel_coeffs argument is the single-element tuple (coeff,) produced by
+    the compute_channel_coeffs hook: coeff is at channel_coeffs[0] in every
+    corr mode. It scales jhr by coeff and jhj by coeff**2 (from differentiating
+    the frequency-dependent exponent). The normalisation applied to the
+    residual is recomputed here from the operators rather than being passed in
+    from compute_residual.
     """
 
     if corr_mode.literal_value == 4:
@@ -555,8 +555,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
             upd_00 = (drv_00*r_0).real
             upd_11 = (drv_23*r_1).real
 
-            # jhwj element (diagonal, real). The off-diagonal (jhj_jhr[1]) is left
-            # untouched, matching the array kernel which never sets it.
+            # jhwj element (diagonal, real). The off-diagonal (jhj_jhr[1]) is
+            # never set, so it stays at the zero the accumulator was
+            # initialised with.
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
             jhj_11 = (rop_1*n_1*w[1]*rop_1.conjugate()).real
 

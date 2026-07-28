@@ -75,7 +75,9 @@ def nb_crosshand_phase_solver_impl(
         pre_solve=None,
         compute_jhj_jhr=compute_jhj_jhr,
         params_per_corr=None,
-        scalar_error_message="Scalar mode not supported for crosshand phase terms.",
+        scalar_error_message=(
+            "Scalar mode not supported for crosshand phase terms."
+        ),
         finalize_update=finalize_update,
         numbness=1e9,
         identity_params=identity_params,
@@ -133,14 +135,13 @@ def nb_compute_jhj_jhr(
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to crosshand phase terms. The
     # loop body is phase's verbatim, so crosshand reuses phase's amplitude-
-    # normalised residual hook. Crosshand solves a
-    # single parameter, so its jhj is (1, 1) and the mirror hook is a no-op
-    # (mirror_jhj_factory is None). There are no per-channel coefficients, so there
-    # is no compute_channel_coeffs hook.
-    # The shared loop is inlined into the module-local trampoline below
-    # rather than returned directly. This gives crosshand_phase a private on-disk
-    # cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # normalised residual hook. Crosshand solves a single parameter, so its jhj
+    # is (1, 1) and the mirror hook is a no-op (mirror_jhj_factory is None).
+    # There are no per-channel coefficients, so there is no
+    # compute_channel_coeffs hook. The shared loop is inlined into the
+    # module-local trampoline below rather than returned directly. This gives
+    # crosshand_phase a private on-disk cache namespace - see the cache
+    # correctness constraint in solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
@@ -308,12 +309,13 @@ def accumulate_jhj_jhr_factory(corr_mode):
     values) - the accumulator is only flushed to memory by flush_jhj_jhr.
     The accumulator is a flat tuple (jhj00, jhr0) - see zero_jhj_jhr_factory.
 
-    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
-    loop (see solver_components.py). The crosshand chain rule uses the active-term
-    gain (drv = -1j*conj(g)), so the gain argument is consumed. The channel_coeffs
-    argument (the per-correlation normalisation factor from the residual hook)
-    is not used - this accumulate hook recomputes its own operator-based normalisation,
-    exactly as the original array-buffer kernel did.
+    The signature follows the unified accumulate_jhj_jhr contract of the shared
+    accumulation loop (see solver_components.py). The crosshand chain rule uses
+    the active-term gain (drv = -1j*conj(g)), so the gain argument is consumed.
+    The channel_coeffs argument is empty (crosshand phase has no
+    compute_channel_coeffs hook) and unused; the normalisation applied to the
+    residual is recomputed here from the operators rather than being passed in
+    from compute_residual.
 
     Unlike phase, crosshand keeps the full (2, 2) operator product rather than
     only its diagonal: the derivative is with respect to the single crosshand
@@ -340,9 +342,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
             n_2 = 0 if nf2 == 0 else 1/(nf2.real**2 + nf2.imag**2)
             n_3 = 0 if nf3 == 0 else 1/(nf3.real**2 + nf3.imag**2)
 
-            # jhwr element: lop @ (diag-normalised residual) @ rop, keeping only
-            # the [0] (XX) entry. The incoming residual is already weighted; the
-            # normalisation factor is applied here, matching imul(wres, normf).
+            # jhwr element: lop @ (diag-normalised residual) @ rop, keeping
+            # only the [0] (XX) entry. The incoming residual is already
+            # weighted; the normalisation factor is applied here.
             s_0 = wres[0]*n_0
             s_1 = wres[1]*n_1
             s_2 = wres[2]*n_2

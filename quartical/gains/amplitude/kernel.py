@@ -131,10 +131,10 @@ def nb_compute_jhj_jhr(
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to amplitude terms. Amplitude's
     # residual fully normalises out the model amplitude before weighting, and
-    # there is no compute_channel_coeffs hook (the accumulate hook receives an empty channel_coeffs tuple). The accumulate hook
-    # also ignores the active-term gain: amplitude's
-    # parameter-to-gain map is the identity, so its chain-rule derivative is
-    # one and the gain never enters the maths.
+    # there is no compute_channel_coeffs hook (the accumulate hook receives an
+    # empty channel_coeffs tuple). The accumulate hook also ignores the
+    # active-term gain: amplitude's parameter-to-gain map is the identity, so
+    # its chain-rule derivative is one and the gain never enters the maths.
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives amplitude a private on-disk
     # cache namespace - see the cache correctness constraint in
@@ -394,12 +394,12 @@ def accumulate_jhj_jhr_factory(corr_mode):
     The accumulator is a single flat tuple (the upper triangle of the real
     jhj element followed by the jhr entries - see zero_jhj_jhr_factory).
 
-    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
-    loop (see solver_components.py). Amplitude's parameter-to-gain map is the
-    identity, so its chain-rule derivative is one and the gain argument is not
-    consumed. The channel_coeffs argument is empty (amplitude has no compute_channel_coeffs hook) and is
-    likewise ignored. The
-    residual arrives already normalised and weighted, so this accumulate hook applies no
+    The signature follows the unified accumulate_jhj_jhr contract of the shared
+    accumulation loop (see solver_components.py). Amplitude's parameter-to-gain
+    map is the identity, so its chain-rule derivative is one and the gain
+    argument is not consumed. The channel_coeffs argument is empty (amplitude
+    has no compute_channel_coeffs hook) and is likewise ignored. The residual
+    arrives already normalised and weighted, so this accumulate hook applies no
     further normalisation - it only forms the operator products.
     """
 
@@ -410,8 +410,8 @@ def accumulate_jhj_jhr_factory(corr_mode):
             rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
 
             # jhwr element: lop @ (diag(residual) @ rop), keeping the diagonal.
-            # The off-diagonal residual entries carry zero weight (the array
-            # kernel zeroed wres[1]/wres[2]), so only wres[0] and wres[3] are used.
+            # The off-diagonal residual entries carry zero weight, so only
+            # wres[0] and wres[3] are used.
             res_0 = wres[0]
             res_3 = wres[3]
             o0 = res_0*rop_0
@@ -460,8 +460,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
             r_0 = wres[0]*rop_0
             r_1 = wres[1]*rop_1
 
-            # jhwj element (diagonal, real). The off-diagonal (jhj_jhr[1]) is left
-            # untouched, matching the array kernel which never sets it.
+            # jhwj element (diagonal, real). The off-diagonal (jhj_jhr[1]) is
+            # never set, so it stays at the zero the accumulator was
+            # initialised with.
             jhj_00 = (rop_0*w[0]*rop_0.conjugate()).real
             jhj_11 = (rop_1*w[1]*rop_1.conjugate()).real
 

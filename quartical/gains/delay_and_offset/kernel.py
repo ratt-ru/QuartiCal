@@ -58,9 +58,9 @@ def delay_and_offset_solver_impl(
 # numerical issues, but requires some scaling of the parameters. Only the delay
 # entries (the strided [..., 1::2] slots) are rescaled; the offset entries are
 # left untouched. The solver enters this scaled basis before the loop
-# (pre_solve) and leaves it afterwards (post_solve); both hooks are module-local
-# qcjit closures that fetch their inputs from the standardised hook arguments,
-# exactly mirroring the inline rescaling the loop body previously performed.
+# (pre_solve) and leaves it afterwards (post_solve); both hooks are
+# module-local qcjit closures that fetch their inputs from the standardised
+# hook arguments.
 @factories.qcjit
 def pre_solve(ms_inputs, chain_inputs, meta_inputs):
     active_params = chain_inputs.params[meta_inputs.active_term]
@@ -94,10 +94,11 @@ def nb_delay_and_offset_solver_impl(
     # hooks below are specific to delay_and_offset terms. It solves on the
     # parameter grid, supports scalar mode (two parameters per correlation - a
     # delay and an offset), has a referencing stage, and enters/leaves a scaled
-    # solver basis (the pre/post-solve stages rescale its delay parameters). The
-    # shared loop is inlined into the module-local trampoline below rather than
-    # returned directly. This gives delay_and_offset a private on-disk cache
-    # namespace - see the cache correctness constraint in solver_components.py.
+    # solver basis (the pre/post-solve stages rescale its delay parameters).
+    # The shared loop is inlined into the module-local trampoline below rather
+    # than returned directly. This gives delay_and_offset a private on-disk
+    # cache namespace - see the cache correctness constraint in
+    # solver_components.py.
     shared_impl = build_param_solver_impl(
         pre_solve=pre_solve,
         compute_jhj_jhr=compute_jhj_jhr,
@@ -161,15 +162,14 @@ def nb_compute_jhj_jhr(
     # below (the per-term maths) are specific to delay_and_offset. Its residual
     # normalises out amplitude exactly as delay's does. Like delay, it
     # differentiates a frequency-dependent exponent, so it carries the same
-    # per-channel coefficient computed by the compute_channel_coeffs hook; that coefficient is
-    # the channel_coeffs tuple consumed by the accumulate hook. The offset parameter adds a second
-    # (frequency-independent) parameter
-    # per correlation, so the accumulator carries a 4-parameter jhj/jhr instead
-    # of delay's 2-parameter one.
-    # The shared loop is inlined into the module-local trampoline below
-    # rather than returned directly. This gives delay_and_offset a private on-disk
-    # cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # per-channel coefficient computed by the compute_channel_coeffs hook; that
+    # coefficient is the channel_coeffs tuple consumed by the accumulate hook.
+    # The offset parameter adds a second (frequency-independent) parameter per
+    # correlation, so the accumulator carries a 4-parameter jhj/jhr instead of
+    # delay's 2-parameter one. The shared loop is inlined into the module-local
+    # trampoline below rather than returned directly. This gives
+    # delay_and_offset a private on-disk cache namespace - see the cache
+    # correctness constraint in solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
@@ -314,11 +314,11 @@ def compute_channel_coeffs_factory(corr_mode):
     delay_and_offset solves for a frequency-dependent exponent (the delay
     parameter) plus a frequency-independent offset. Differentiating the model
     with respect to the delay parameter introduces the same per-channel
-    coefficient as the delay term, coeff = 2*pi*(chan_freq[f]/cf_mid - 1), where
-    cf_mid is the midpoint of the band (the same rescaling the solver applies to
-    the delay parameters). The compute_channel_coeffs hook computes this once per channel and
-    returns it as a single-element flat tuple (coeff,) which is the channel_coeffs tuple
-    passed to the accumulate hook.
+    coefficient as the delay term, coeff = 2*pi*(chan_freq[f]/cf_mid - 1),
+    where cf_mid is the midpoint of the band (the same rescaling the solver
+    applies to the delay parameters). The compute_channel_coeffs hook computes
+    this once per channel and returns it as a single-element flat tuple
+    (coeff,) which is the channel_coeffs tuple passed to the accumulate hook.
     """
 
     def impl(ms_inputs, meta_inputs, f):
@@ -404,9 +404,9 @@ def flush_jhj_jhr_factory(corr_mode):
 
     The accumulator holds the upper triangle of the (n_param, n_param) jhj
     element in row-major order followed by the jhr entries. The lower triangle
-    is filled in by mirror_jhj once per solution interval. For the 2 correlation
-    case the cross-correlation jhj entries (0, 2), (0, 3), (1, 2), (1, 3) are
-    always zero, so mirroring them is a harmless no-op there.
+    is filled in by mirror_jhj once per solution interval. For the 2
+    correlation case the cross-correlation jhj entries (0, 2), (0, 3), (1, 2),
+    (1, 3) are always zero, so mirroring them is a harmless no-op there.
     """
 
     if corr_mode.literal_value in (2, 4):
@@ -484,17 +484,17 @@ def accumulate_jhj_jhr_factory(corr_mode):
     accumulator is a single flat tuple (the upper triangle of the real jhj
     element followed by jhr entries - see zero_jhj_jhr_factory).
 
-    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
-    loop (see solver_components.py). The chain rule uses the active-term gain
-    (drv = -1j*conj(g)), so the gain argument is consumed. The channel_coeffs argument is
-    the single-element tuple (coeff,) produced by the compute_channel_coeffs hook: coeff is at
-    channel_coeffs[0] in every corr mode. The offset parameter is frequency independent
-    (its Jacobian carries no coeff), while the delay parameter's Jacobian
-    carries the coeff. This yields the interleaved (offset, delay) accumulator
-    layout, with jhj entries scaled by 1, coeff or coeff**2 depending on which
-    parameter pair the entry couples. This accumulate hook recomputes its own
-    operator-based normalisation, exactly as the original array-buffer kernel
-    did.
+    The signature follows the unified accumulate_jhj_jhr contract of the shared
+    accumulation loop (see solver_components.py). The chain rule uses the
+    active-term gain (drv = -1j*conj(g)), so the gain argument is consumed. The
+    channel_coeffs argument is the single-element tuple (coeff,) produced by
+    the compute_channel_coeffs hook: coeff is at channel_coeffs[0] in every
+    corr mode. The offset parameter is frequency independent (its Jacobian
+    carries no coeff), while the delay parameter's Jacobian carries the coeff.
+    This yields the interleaved (offset, delay) accumulator layout, with jhj
+    entries scaled by 1, coeff or coeff**2 depending on which parameter pair
+    the entry couples. The normalisation applied to the residual is recomputed
+    here from the operators rather than being passed in from compute_residual.
     """
 
     if corr_mode.literal_value == 4:
@@ -563,9 +563,10 @@ def accumulate_jhj_jhr_factory(corr_mode):
             tmp_1 = (jhwj_03*gc_0*g_3).real
             tmp_2 = jhwj_33.real
 
-            # jhj upper triangle in row-major order followed by jhr entries in
-            # (offset, delay) order per correlation: the offset Jacobian carries
-            # no coeff, the delay Jacobian carries coeff (see zero_jhj_jhr).
+            # jhj upper triangle in row-major order followed by jhr entries
+            # in (offset, delay) order per correlation: the offset Jacobian
+            # carries no coeff, the delay Jacobian carries coeff (see
+            # zero_jhj_jhr).
             return (
                 jhj_jhr[0] + tmp_0,
                 jhj_jhr[1] + coeff*tmp_0,
@@ -609,8 +610,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
             upd_11 = (drv_23*r_1).real
 
             # jhwj element (block diagonal, real). The cross-correlation jhj
-            # entries (jhj_jhr[2], jhj_jhr[3], jhj_jhr[5], jhj_jhr[6]) are left untouched,
-            # matching the array kernel which never sets them.
+            # entries (jhj_jhr[2], jhj_jhr[3], jhj_jhr[5], jhj_jhr[6]) are
+            # never set, so they stay at the zero the accumulator was
+            # initialised with.
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
             jhj_11 = (rop_1*n_1*w[1]*rop_1.conjugate()).real
 
