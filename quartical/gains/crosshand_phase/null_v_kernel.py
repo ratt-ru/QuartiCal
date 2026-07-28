@@ -20,7 +20,7 @@ from quartical.gains.general.flagging import (flag_intermediaries,
 from quartical.gains.general.convenience import get_extents
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
-from quartical.gains.general.solver_components import compute_update  # noqa
+from quartical.gains.general.solver_components import compute_update
 # The null-V residual is a plain r - v (no amplitude normalisation), which is
 # exactly the complex term's residual hook.
 from quartical.gains.complex.kernel import compute_residual_factory

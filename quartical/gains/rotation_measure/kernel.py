@@ -8,7 +8,6 @@ from quartical.utils.numba import (coerce_literal,
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
-from quartical.gains.general.solver_components import compute_update  # noqa
 # Rotation measure's residual is the plain complex residual (r - v), so it
 # reuses the complex term's residual hook rather than duplicating it.
 from quartical.gains.complex.kernel import compute_residual_factory
