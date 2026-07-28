@@ -8,7 +8,6 @@ from quartical.utils.numba import (coerce_literal,
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
-from quartical.gains.general.solver_components import compute_update  # noqa
 
 
 def get_identity_params(corr_mode):
