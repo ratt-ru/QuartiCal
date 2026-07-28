@@ -133,7 +133,8 @@ def nb_compute_jhj_jhr(
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to phase terms. Phase's residual
     # normalises out amplitude. Phase has no per-channel coefficients, so there
-    # is no compute_channel_coeffs hook (the accumulate hook receives an empty channel_coeffs tuple).
+    # is no compute_channel_coeffs hook (the accumulate hook receives an empty
+    # channel_coeffs tuple).
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives phase a private on-disk
     # cache namespace - see the cache correctness constraint in
@@ -393,9 +394,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
     The signature follows the unified accumulate_jhj_jhr contract of the shared
     accumulation loop (see solver_components.py). The phase chain rule uses the
     active-term gain (drv = -1j*conj(g)), so the gain argument is consumed.
-    The channel_coeffs argument is empty (phase has no compute_channel_coeffs hook) and unused - this accumulate hook
-    recomputes its own operator-based normalisation, exactly as the original
-    array-buffer kernel did.
+    The channel_coeffs argument is empty (phase has no compute_channel_coeffs
+    hook) and unused; the normalisation applied to the residual is recomputed
+    here from the operators rather than being passed in from compute_residual.
     """
 
     if corr_mode.literal_value == 4:
@@ -487,8 +488,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
             upd_00 = (drv_00*r_0).real
             upd_11 = (drv_23*r_1).real
 
-            # jhwj element (diagonal, real). The off-diagonal (jhj_jhr[1]) is left
-            # untouched, matching the array kernel which never sets it.
+            # jhwj element (diagonal, real). The off-diagonal (jhj_jhr[1]) is
+            # never set, so it stays at the zero the accumulator was
+            # initialised with.
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
             jhj_11 = (rop_1*n_1*w[1]*rop_1.conjugate()).real
 

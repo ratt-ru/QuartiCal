@@ -51,9 +51,9 @@ def build_jhj_jhr_impl(
     specialised closures, so the indirection is free after inlining.
 
     CACHE CORRECTNESS CONSTRAINT: the built loop is returned as a
-    ``factories.qcjit`` (``inline="always"``) function and MUST be inlined into a
-    per-kernel-module trampoline (see any kernel's ``nb_compute_jhj_jhr``). Numba
-    keys its on-disk cache on the source location plus the argument type
+    ``factories.qcjit`` (``inline="always"``) function and MUST be inlined into
+    a per-kernel-module trampoline (see any kernel's ``nb_compute_jhj_jhr``).
+    Numba keys its on-disk cache on the source location plus the argument type
     signature of each separately-lowered function; the hook closures captured
     here only enter the key as a cloudpickle hash which numba itself documents
     as unstable across processes, so it cannot reliably distinguish kernels.
@@ -76,10 +76,10 @@ def build_jhj_jhr_impl(
         row_weights_type: Numba type of the ``ROW_WEIGHTS`` ms_inputs field,
             used to dispatch the (BDA) row-weight application.
         accumulate_jhj_jhr_factory: ``accumulate_jhj_jhr_factory(corr_mode) ->
-            accumulate_jhj_jhr(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr)
-            -> jhj_jhr``. Accumulates one weighted jhj/jhr element into the
-            register-resident flat accumulator tuple, which packs the jhj block
-            first and the jhr block after it.
+            accumulate_jhj_jhr(lop, rop, w, gain, channel_coeffs, wres,
+            jhj_jhr) -> jhj_jhr``. Accumulates one weighted jhj/jhr element
+            into the register-resident flat accumulator tuple, which packs the
+            jhj block first and the jhr block after it.
         zero_jhj_jhr_factory: ``zero_jhj_jhr_factory(corr_mode) ->
             zero_jhj_jhr(ref_elem) -> flat zero tuple``. Produces the zero
             accumulator tuple in the (promoted) dtype of the reference element.
@@ -316,12 +316,12 @@ def build_jhj_jhr_impl(
                             g_q = tuple_unpack(gain[a2_m, d_m])
                             lop_qp = tuple_v1ct_mul_v2(g_q, lop_qp)
 
-                        # The active-term gain for each antenna. The p-side gain
-                        # also builds the model visibility below; both are
-                        # passed to the respective accumulate call (parameterised
-                        # terms need them for the chain rule - the complex
-                        # accumulate hook ignores its gain argument and the fetch
-                        # is elided).
+                        # The active-term gain for each antenna. The p-side
+                        # gain also builds the model visibility below; both are
+                        # passed to the respective accumulate call
+                        # (parameterised terms need them for the chain rule -
+                        # the complex accumulate hook ignores its gain argument
+                        # and the fetch is elided).
                         active_gain_tifi = gains[active_term][
                             active_t_map[row_ind], active_f_map[f]
                         ]
@@ -346,8 +346,12 @@ def build_jhj_jhr_impl(
                             wr_qp, jhj_jhr_q
                         )
 
-                    flush_jhj_jhr(jhj_tifi[a1_m, 0], jhr_tifi[a1_m, 0], jhj_jhr_p)
-                    flush_jhj_jhr(jhj_tifi[a2_m, 0], jhr_tifi[a2_m, 0], jhj_jhr_q)
+                    flush_jhj_jhr(
+                        jhj_tifi[a1_m, 0], jhr_tifi[a1_m, 0], jhj_jhr_p
+                    )
+                    flush_jhj_jhr(
+                        jhj_tifi[a2_m, 0], jhr_tifi[a2_m, 0], jhj_jhr_q
+                    )
 
                     continue
 
@@ -486,8 +490,8 @@ def build_jhj_jhr_impl(
             mirror_jhj(jhj_tifi)
         return
 
-    # Return the loop as an inline="always" function so that it is never lowered
-    # as a standalone (and separately disk-cached) unit - see the cache
+    # Return the loop as an inline="always" function so that it is never
+    # lowered as a standalone (and separately disk-cached) unit - see the cache
     # correctness constraint in the docstring above. Each kernel inlines this
     # into a module-local trampoline, giving it a private cache namespace.
     return factories.qcjit(impl)

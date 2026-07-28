@@ -178,19 +178,18 @@ def nb_compute_jhj_jhr(
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to tec_and_offset. Its residual
     # normalises out amplitude exactly as delay's does. Like delay, it
-    # differentiates a frequency-dependent exponent, so it carries a per-channel
-    # coefficient computed by the compute_channel_coeffs hook; that coefficient is the channel_coeffs tuple
-    # consumed by the accumulate hook.
+    # differentiates a frequency-dependent exponent, so it carries a
+    # per-channel coefficient computed by the compute_channel_coeffs hook; that
+    # coefficient is the channel_coeffs tuple consumed by the accumulate hook.
     # The TEC exponent differs from delay's: its coefficient has the form
     # 2*pi*(bandwidth/chan_freq[f] + offset) with offset = log(cf_min/cf_max).
     # The offset parameter adds a second (frequency-independent) parameter per
     # correlation, so the accumulator carries a 4-parameter jhj/jhr. Aside from
     # the coefficient formula, every hook here is identical to
-    # delay_and_offset's.
-    # The shared loop is inlined into the module-local trampoline below
-    # rather than returned directly. This gives tec_and_offset a private on-disk
-    # cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # delay_and_offset's. The shared loop is inlined into the module-local
+    # trampoline below rather than returned directly. This gives tec_and_offset
+    # a private on-disk cache namespace - see the cache correctness constraint
+    # in solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
@@ -340,9 +339,10 @@ def compute_channel_coeffs_factory(corr_mode):
     with respect to the TEC parameter introduces a per-channel coefficient
     coeff = 2*pi*(bandwidth/chan_freq[f] + offset), where bandwidth is
     cf_max - cf_min and offset = log(cf_min/cf_max) (the same rescaling the
-    solver applies to the TEC parameters). The compute_channel_coeffs hook computes this once per
-    channel and returns it as a single-element flat tuple (coeff,) which is the
-    channel_coeffs tuple passed to the accumulate hook.
+    solver applies to the TEC parameters). The compute_channel_coeffs hook
+    computes this once per channel and returns it as a single-element flat
+    tuple (coeff,) which is the channel_coeffs tuple passed to the accumulate
+    hook.
     """
 
     def impl(ms_inputs, meta_inputs, f):
@@ -431,9 +431,9 @@ def flush_jhj_jhr_factory(corr_mode):
 
     The accumulator holds the upper triangle of the (n_param, n_param) jhj
     element in row-major order first, then the jhr entries. The lower triangle
-    is filled in by mirror_jhj once per solution interval. For the 2 correlation
-    case the cross-correlation jhj entries (0, 2), (0, 3), (1, 2), (1, 3) are
-    always zero, so mirroring them is a harmless no-op there.
+    is filled in by mirror_jhj once per solution interval. For the 2
+    correlation case the cross-correlation jhj entries (0, 2), (0, 3), (1, 2),
+    (1, 3) are always zero, so mirroring them is a harmless no-op there.
     """
 
     if corr_mode.literal_value in (2, 4):
@@ -511,18 +511,20 @@ def accumulate_jhj_jhr_factory(corr_mode):
     accumulator is a single flat tuple (the upper triangle of the real jhj
     element followed by the jhr entries - see zero_jhj_jhr_factory).
 
-    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
-    loop (see solver_components.py). The chain rule uses the active-term gain
-    (drv = -1j*conj(g)), so the gain argument is consumed. The channel_coeffs argument is
-    the single-element tuple (coeff,) produced by the compute_channel_coeffs hook: coeff is at
-    channel_coeffs[0] in every corr mode. The offset parameter is frequency independent
-    (its Jacobian carries no coeff), while the TEC parameter's Jacobian carries
-    the coeff. This yields the interleaved (offset, TEC) accumulator layout,
-    with jhj entries scaled by 1, coeff or coeff**2 depending on which parameter
-    pair the entry couples. The maths here is identical to delay_and_offset's
-    accumulate hook - only the value of coeff (supplied by the compute_channel_coeffs hook) differs. This
-    accumulate hook recomputes its own operator-based normalisation, exactly as the
-    original array-buffer kernel did.
+    The signature follows the unified accumulate_jhj_jhr contract of the shared
+    accumulation loop (see solver_components.py). The chain rule uses the
+    active-term gain (drv = -1j*conj(g)), so the gain argument is consumed. The
+    channel_coeffs argument is the single-element tuple (coeff,) produced by
+    the compute_channel_coeffs hook: coeff is at channel_coeffs[0] in every
+    corr mode. The offset parameter is frequency independent (its Jacobian
+    carries no coeff), while the TEC parameter's Jacobian carries the coeff.
+    This yields the interleaved (offset, TEC) accumulator layout, with jhj
+    entries scaled by 1, coeff or coeff**2 depending on which parameter pair
+    the entry couples. The maths here is identical to delay_and_offset's
+    accumulate hook - only the value of coeff (supplied by the
+    compute_channel_coeffs hook) differs. The normalisation applied to the
+    residual is recomputed here from the operators rather than being passed in
+    from compute_residual.
     """
 
     if corr_mode.literal_value == 4:
@@ -637,8 +639,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
             upd_11 = (drv_23*r_1).real
 
             # jhwj element (block diagonal, real). The cross-correlation jhj
-            # entries (jhj_jhr[2], jhj_jhr[3], jhj_jhr[5], jhj_jhr[6]) are left untouched,
-            # matching the array kernel which never sets them.
+            # entries (jhj_jhr[2], jhj_jhr[3], jhj_jhr[5], jhj_jhr[6]) are
+            # never set, so they stay at the zero the accumulator was
+            # initialised with.
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
             jhj_11 = (rop_1*n_1*w[1]*rop_1.conjugate()).real
 

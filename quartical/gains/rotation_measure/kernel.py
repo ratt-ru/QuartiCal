@@ -63,18 +63,20 @@ def nb_rm_solver_impl(
     identity_params = get_identity_params(corr_mode)
 
     # The outer solver loop is shared between parameterised kernels - only the
-    # hooks below are specific to rotation measure terms. Rotation measure solves
-    # on the parameter grid, does not support scalar mode, needs no referencing
-    # stage, and enters/leaves no scaled solver basis (no pre/post-solve
-    # stages). The shared loop is inlined into the module-local trampoline below
-    # rather than returned directly. This gives rotation_measure a private
-    # on-disk cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # hooks below are specific to rotation measure terms. Rotation measure
+    # solves on the parameter grid, does not support scalar mode, needs no
+    # referencing stage, and enters/leaves no scaled solver basis (no
+    # pre/post-solve stages). The shared loop is inlined into the module-local
+    # trampoline below rather than returned directly. This gives
+    # rotation_measure a private on-disk cache namespace - see the cache
+    # correctness constraint in solver_components.py.
     shared_impl = build_param_solver_impl(
         pre_solve=None,
         compute_jhj_jhr=compute_jhj_jhr,
         params_per_corr=None,
-        scalar_error_message="Scalar mode not supported for rotation measure terms.",
+        scalar_error_message=(
+            "Scalar mode not supported for rotation measure terms."
+        ),
         finalize_update=finalize_update,
         numbness=1e9,
         identity_params=identity_params,
@@ -131,17 +133,16 @@ def nb_compute_jhj_jhr(
 
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to rotation measure terms. Like
-    # rotation, its residual is the plain complex residual (r - v), so it reuses
-    # complex's residual hook. Unlike rotation, the rotation angle is frequency
-    # dependent (beta = lambda_sq*rm), so a per-channel lambda_sq coefficient is
-    # supplied by the compute_channel_coeffs hook as the channel_coeffs tuple consumed by the accumulate hook. Rotation
-    # measure solves a
-    # single parameter, so its jhj is (1, 1) and the mirror hook is a no-op
-    # (mirror_jhj_factory is None).
-    # The shared loop is inlined into the module-local trampoline below
-    # rather than returned directly. This gives rotation_measure a private on-disk
-    # cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # rotation, its residual is the plain complex residual (r - v), so it
+    # reuses complex's residual hook. Unlike rotation, the rotation angle is
+    # frequency dependent (beta = lambda_sq*rm), so a per-channel lambda_sq
+    # coefficient is supplied by the compute_channel_coeffs hook as the
+    # channel_coeffs tuple consumed by the accumulate hook. Rotation measure
+    # solves a single parameter, so its jhj is (1, 1) and the mirror hook is a
+    # no-op (mirror_jhj_factory is None). The shared loop is inlined into the
+    # module-local trampoline below rather than returned directly. This gives
+    # rotation_measure a private on-disk cache namespace - see the cache
+    # correctness constraint in solver_components.py.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
@@ -278,8 +279,9 @@ def compute_channel_coeffs_factory(corr_mode):
     Rotation measure's rotation angle is frequency dependent,
     beta = lambda_sq*rm with lambda_sq = (c/chan_freq)**2, so differentiating
     the model with respect to the parameter introduces the per-channel factor
-    lambda_sq. The compute_channel_coeffs hook computes this once per channel and returns it as a
-    single-element flat tuple (lsq,) which is the channel_coeffs tuple passed to the accumulate hook.
+    lambda_sq. The compute_channel_coeffs hook computes this once per channel
+    and returns it as a single-element flat tuple (lsq,) which is the
+    channel_coeffs tuple passed to the accumulate hook.
     """
 
     def impl(ms_inputs, meta_inputs, f):
@@ -337,17 +339,18 @@ def accumulate_jhj_jhr_factory(corr_mode):
     values) - the accumulator is only flushed to memory by flush_jhj_jhr.
     The accumulator is a flat tuple (jhj00, jhr0) - see zero_jhj_jhr_factory.
 
-    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
-    loop (see solver_components.py). This is rotation's accumulate hook with the per-channel
-    lambda squared factor folded into the derivative. The active-term gain IS
-    the rotation matrix [cos, -sin; sin, cos] (row-major XX, XY, YX, YY) with
-    argument beta = lambda_sq*rm, so cos_beta = gain[0].real and
-    sin_beta = gain[2].real are read directly from the gain tuple - bit-identical
-    to the original (which recomputed np.cos/np.sin(lambda_sq*rm) from the
-    parameters), because the gain entries were themselves set to those values,
-    and it avoids any arctan2 wrapping. The derivative of the model with respect
-    to rm carries the extra lambda_sq factor from the chain rule; lambda_sq is
-    supplied per channel by the compute_channel_coeffs hook as channel_coeffs[0].
+    The signature follows the unified accumulate_jhj_jhr contract of the shared
+    accumulation loop (see solver_components.py). This is rotation's accumulate
+    hook with the per-channel lambda squared factor folded into the derivative.
+    The active-term gain IS the rotation matrix [cos, -sin; sin, cos]
+    (row-major XX, XY, YX, YY) with argument beta = lambda_sq*rm, so cos_beta =
+    gain[0].real and sin_beta = gain[2].real are read directly from the gain
+    tuple - bit-identical to the original (which recomputed
+    np.cos/np.sin(lambda_sq*rm) from the parameters), because the gain entries
+    were themselves set to those values, and it avoids any arctan2 wrapping.
+    The derivative of the model with respect to rm carries the extra lambda_sq
+    factor from the chain rule; lambda_sq is supplied per channel by the
+    compute_channel_coeffs hook as channel_coeffs[0].
 
     The original array kernel built the full (4, 4) row-major kronecker product
     a_kron_bt(lop, rop) and contracted every column with dh. Here that temp

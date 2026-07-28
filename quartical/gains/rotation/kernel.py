@@ -67,8 +67,8 @@ def nb_rotation_solver_impl(
     # parameter grid, does not support scalar mode, needs no referencing stage,
     # and enters/leaves no scaled solver basis (no pre/post-solve stages). The
     # shared loop is inlined into the module-local trampoline below rather than
-    # returned directly. This gives rotation a private on-disk cache namespace -
-    # see the cache correctness constraint in solver_components.py.
+    # returned directly. This gives rotation a private on-disk cache namespace
+    # - see the cache correctness constraint in solver_components.py.
     shared_impl = build_param_solver_impl(
         pre_solve=None,
         compute_jhj_jhr=compute_jhj_jhr,
@@ -305,23 +305,24 @@ def accumulate_jhj_jhr_factory(corr_mode):
     values) - the accumulator is only flushed to memory by flush_jhj_jhr.
     The accumulator is a flat tuple (jhj00, jhr0) - see zero_jhj_jhr_factory.
 
-    The signature follows the unified accumulate_jhj_jhr contract of the shared accumulation
-    loop (see solver_components.py). The active-term gain IS the rotation matrix
-    [cos, -sin; sin, cos] (row-major XX, XY, YX, YY), so the derivative row
-    dh = [-sin, -cos, cos, -sin] is read directly from the gain tuple
-    (cos = gain[0].real, sin = gain[2].real) rather than recomputing sin/cos
-    from theta - this is bit-identical to the original (which used
+    The signature follows the unified accumulate_jhj_jhr contract of the shared
+    accumulation loop (see solver_components.py). The active-term gain IS the
+    rotation matrix [cos, -sin; sin, cos] (row-major XX, XY, YX, YY), so the
+    derivative row dh = [-sin, -cos, cos, -sin] is read directly from the gain
+    tuple (cos = gain[0].real, sin = gain[2].real) rather than recomputing
+    sin/cos from theta - this is bit-identical to the original (which used
     np.sin(theta)/np.cos(theta) with theta = params) because the gain entries
     were themselves set to np.cos(theta)/np.sin(theta), and it avoids any
-    arctan2 wrapping near theta = +/-pi. The channel_coeffs argument is unused (rotation
-    appends no auxiliary residual values).
+    arctan2 wrapping near theta = +/-pi. The channel_coeffs argument is empty
+    (rotation has no compute_channel_coeffs hook) and unused.
 
     The original array kernel built the full (4, 4) row-major kronecker product
     a_kron_bt(lop, rop) and contracted every column with dh. Here that temp
     array is eliminated: the four column contractions dhjh_j are inlined
     symbolically from the kronecker entries the dh contraction actually touches
-    (all 16, but expressed directly from lop/rop). jhr is dh . (lop @ wres @ rop)
-    and jhj sums w_j * |dhjh_j|^2 over the four correlations.
+    (all 16, but expressed directly from lop/rop). jhr is
+    dh . (lop @ wres @ rop) and jhj sums w_j * |dhjh_j|^2 over the four
+    correlations.
     """
 
     tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
@@ -340,8 +341,8 @@ def accumulate_jhj_jhr_factory(corr_mode):
             )
 
             # Derivative of the rotation matrix wrt theta, read straight from
-            # the gain: d/dtheta [cos, -sin; sin, cos] = [-sin, -cos; cos, -sin]
-            # (row-major XX, XY, YX, YY).
+            # the gain: d/dtheta [cos, -sin; sin, cos] is
+            # [-sin, -cos; cos, -sin] (row-major XX, XY, YX, YY).
             cos_theta = gain[0].real
             sin_theta = gain[2].real
 
