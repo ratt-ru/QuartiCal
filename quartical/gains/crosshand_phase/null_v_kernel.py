@@ -544,21 +544,24 @@ def accumulate_jhj_jhr_factory(corr_mode):
     if corr_mode.literal_value == 4:
         def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
-            # Project the residual onto the V-nulling combination.
-            r_1 = wres[1]
-            r_2 = wres[2]
+            # Project the residual onto the V-nulling combination. pres_* are
+            # the off-diagonal entries of the projected residual matrix
+            # [[0, pres_1], [pres_2, 0]]; they take the place the normalised
+            # residual occupies in the other crosshand hooks, but carry no
+            # weight or normalisation here (see the docstring).
+            v_res = -0.5j*wres[1] + 0.5j*wres[2]
 
-            v_res = -0.5j*r_1 + 0.5j*r_2
+            pres_1 = 0.5j*v_res
+            pres_2 = -0.5j*v_res
 
-            s_1 = 0.5j*v_res
-            s_2 = -0.5j*v_res
+            # The two row-major Kronecker entries of J^H that survive the
+            # projection (rop enters transposed, so rop[2] supplies column 1).
+            jh_01 = lop[0]*rop[2]
+            jh_02 = lop[1]*rop[0]
 
-            # jhwr element: lop @ [[0, s_1], [s_2, 0]] @ rop, keeping only
-            # the [0] (XX) entry.
-            mm_0 = s_1*rop[2]
-            mm_2 = s_2*rop[0]
-
-            r_0 = lop[0]*mm_0 + lop[1]*mm_2
+            # jhwr = J^H r: Kronecker row 0 contracted with the projected
+            # residual, keeping only the [0] (XX) entry.
+            r_0 = jh_01*pres_1 + jh_02*pres_2
 
             gc_0 = gain[0].conjugate()
 
@@ -566,12 +569,7 @@ def accumulate_jhj_jhr_factory(corr_mode):
 
             upd_00 = (drv_00*r_0).real
 
-            # jhwj element: no weights are applied (see the docstring).
-            # NOTE: rop is effectively transposed (rop[2] used as rop_01)
-            # relative to lop, matching the row-major kronecker convention.
-            jh_01 = lop[0]*rop[2]
-            jh_02 = lop[1]*rop[0]
-
+            # jhwj = J^H J, with no weights applied (see the docstring).
             jh_v = 0.5j*jh_01 - 0.5j*jh_02
             j_v = jh_v.conjugate()
 

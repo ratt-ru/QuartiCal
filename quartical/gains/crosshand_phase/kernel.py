@@ -329,46 +329,50 @@ def accumulate_jhj_jhr_factory(corr_mode):
             lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
             rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
 
-            # Normalisation factor: 1/|lop @ rop|^2 elementwise, with the same
-            # zero guard as the array kernel (iabsdivsq of the full 2x2
-            # product).
-            nf0 = lop_0*rop_0 + lop_1*rop_2
-            nf1 = lop_0*rop_1 + lop_1*rop_3
-            nf2 = lop_2*rop_0 + lop_3*rop_2
-            nf3 = lop_2*rop_1 + lop_3*rop_3
-            n_0 = 0 if nf0 == 0 else 1/(nf0.real**2 + nf0.imag**2)
-            n_1 = 0 if nf1 == 0 else 1/(nf1.real**2 + nf1.imag**2)
-            n_2 = 0 if nf2 == 0 else 1/(nf2.real**2 + nf2.imag**2)
-            n_3 = 0 if nf3 == 0 else 1/(nf3.real**2 + nf3.imag**2)
+            # Row-major Kronecker entries of J^H, matching a_kron_bt: rop
+            # enters transposed, which is why rop_2 supplies column 1. The
+            # derivative is with respect to a single crosshand phase, so only
+            # row 0 of the (4, 4) product is needed - but all four
+            # correlations of the residual contribute to it.
+            jh_00 = lop_0*rop_0
+            jh_01 = lop_0*rop_2
+            jh_02 = lop_1*rop_0
+            jh_03 = lop_1*rop_2
 
-            # jhwr element: lop @ (diag-normalised residual) @ rop, keeping
-            # only the [0] (XX) entry. The incoming residual is already
-            # weighted; the normalisation factor is applied here.
-            s_0 = wres[0]*n_0
-            s_1 = wres[1]*n_1
-            s_2 = wres[2]*n_2
-            s_3 = wres[3]*n_3
+            # The J^H element for each correlation: the entries of lop @ rop.
+            # Correlation 0 is Kronecker row 0 contracted over its
+            # diagonal-correlation columns; the other three would need rows
+            # 1-3, which this hook never forms, so they are written out from
+            # lop/rop directly. Each normalises its own residual entry and
+            # weight by the reciprocal squared modulus, guarded against a zero
+            # element.
+            jh_0 = jh_00 + jh_03
+            jh_1 = lop_0*rop_1 + lop_1*rop_3
+            jh_2 = lop_2*rop_0 + lop_3*rop_2
+            jh_3 = lop_2*rop_1 + lop_3*rop_3
+            n_0 = 0 if jh_0 == 0 else 1/(jh_0.real**2 + jh_0.imag**2)
+            n_1 = 0 if jh_1 == 0 else 1/(jh_1.real**2 + jh_1.imag**2)
+            n_2 = 0 if jh_2 == 0 else 1/(jh_2.real**2 + jh_2.imag**2)
+            n_3 = 0 if jh_3 == 0 else 1/(jh_3.real**2 + jh_3.imag**2)
 
-            mm_0 = s_0*rop_0 + s_1*rop_2
-            mm_2 = s_2*rop_0 + s_3*rop_2
-            r_0 = lop_0*mm_0 + lop_1*mm_2
+            nres_0 = wres[0]*n_0
+            nres_1 = wres[1]*n_1
+            nres_2 = wres[2]*n_2
+            nres_3 = wres[3]*n_3
+
+            # jhwr = J^H W r: Kronecker row 0 contracted with the normalised,
+            # already weighted residual. Only the [0] (XX) entry is retained.
+            r_0 = jh_00*nres_0 + jh_01*nres_1 + jh_02*nres_2 + jh_03*nres_3
 
             gc_0 = gain[0].conjugate()
             drv_00 = -1j*gc_0
             upd_00 = (drv_00*r_0).real
 
-            # jhwj element: the normalisation is folded into the weights.
-            # NOTE: rop is effectively transposed (rop[2] used as rop_01)
-            # relative to lop, matching the row-major kronecker convention.
+            # jhwj = J^H W J, with the normalisation folded into the weights.
             w_0 = n_0 * w[0]
             w_1 = n_1 * w[1]
             w_2 = n_2 * w[2]
             w_3 = n_3 * w[3]
-
-            jh_00 = lop_0 * rop_0
-            jh_01 = lop_0 * rop_2
-            jh_02 = lop_1 * rop_0
-            jh_03 = lop_1 * rop_2
 
             j_00 = jh_00.conjugate()
             j_01 = jh_01.conjugate()
