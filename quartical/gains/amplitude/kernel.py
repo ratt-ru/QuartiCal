@@ -408,30 +408,25 @@ def accumulate_jhj_jhr_factory(corr_mode):
             lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
             rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
 
-            # jhwr element: lop @ (diag(residual) @ rop), keeping the diagonal.
-            # The off-diagonal residual entries carry zero weight, so only
-            # wres[0] and wres[3] are used.
-            res_0 = wres[0]
-            res_3 = wres[3]
-            o0 = res_0*rop_0
-            o1 = res_0*rop_1
-            o2 = res_3*rop_2
-            o3 = res_3*rop_3
-            r_0 = lop_0*o0 + lop_1*o2
-            r_3 = lop_2*o1 + lop_3*o3
+            # Row-major Kronecker entries of J^H, matching a_kron_bt: rop
+            # enters transposed, which is why rop_1 and rop_2 appear swapped
+            # relative to lop. The off-diagonal residual entries carry zero
+            # weight, so rows 0 and 3 are needed in columns 0 and 3 only.
+            jh_00 = lop_0*rop_0
+            jh_03 = lop_1*rop_2
+            jh_30 = lop_2*rop_1
+            jh_33 = lop_3*rop_3
 
-            # jhwj element (upper triangle).
-            # NOTE: rop is effectively transposed (rop_1 <-> rop_2) relative
-            # to lop, matching the row-major kronecker convention.
-            jh_00 = lop_0 * rop_0
-            jh_03 = lop_1 * rop_2
+            # jhwr = J^H W r: each Kronecker row contracted with the already
+            # weighted residual. Unlike the phase family there is no
+            # normalisation to apply here - amplitude's residual arrives fully
+            # normalised from compute_residual.
+            r_0 = jh_00*wres[0] + jh_03*wres[3]
+            r_3 = jh_30*wres[0] + jh_33*wres[3]
 
+            # jhwj = J^H W J (upper triangle).
             j_00 = jh_00.conjugate()
             j_03 = jh_03.conjugate()
-
-            jh_30 = lop_2 * rop_1
-            jh_33 = lop_3 * rop_3
-
             j_30 = jh_30.conjugate()
             j_33 = jh_33.conjugate()
 

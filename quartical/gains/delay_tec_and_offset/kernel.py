@@ -587,33 +587,38 @@ def accumulate_jhj_jhr_factory(corr_mode):
 
             delay_coeff = channel_coeffs[0]
             tec_coeff = channel_coeffs[1]
-            dcsq = delay_coeff*delay_coeff
-            tcsq = tec_coeff*tec_coeff
-            dctc = delay_coeff*tec_coeff
+            delay_coeffsq = delay_coeff*delay_coeff
+            tec_coeffsq = tec_coeff*tec_coeff
+            delay_tec_coeff = delay_coeff*tec_coeff
 
             lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
             rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
 
-            # Normalisation factor: 1/|lop @ rop|^2 on the diagonal, with the
-            # same zero guard as the array kernel. The off-diagonal residual
-            # entries carry zero weight, so only the diagonal of the (2, 2)
-            # product is required.
-            m0 = lop_0*rop_0 + lop_1*rop_2
-            m3 = lop_2*rop_1 + lop_3*rop_3
-            n_0 = 0 if m0 == 0 else 1/(m0.real**2 + m0.imag**2)
-            n_3 = 0 if m3 == 0 else 1/(m3.real**2 + m3.imag**2)
+            # Row-major Kronecker entries of J^H, matching a_kron_bt: rop
+            # enters transposed, which is why rop_1 and rop_2 appear swapped
+            # relative to lop. The off-diagonal residual entries carry zero
+            # weight, so rows 0 and 3 are needed in columns 0 and 3 only.
+            jh_00 = lop_0*rop_0
+            jh_03 = lop_1*rop_2
+            jh_30 = lop_2*rop_1
+            jh_33 = lop_3*rop_3
 
-            # jhwr element: lop @ (diag(normalised residual) @ rop), keeping
-            # the diagonal. The off-diagonal residual entries are dropped by
-            # only forming res_0 and res_3 (i.e. zero weight off-diagonal).
-            res_0 = wres[0]*n_0
-            res_3 = wres[3]*n_3
-            o0 = res_0*rop_0
-            o1 = res_0*rop_1
-            o2 = res_3*rop_2
-            o3 = res_3*rop_3
-            r_0 = lop_0*o0 + lop_1*o2
-            r_3 = lop_2*o1 + lop_3*o3
+            # The J^H element for a correlation is its Kronecker row contracted
+            # over those two columns. Both the residual and the weights are
+            # normalised by its reciprocal squared modulus, guarded against a
+            # zero element.
+            jh_0 = jh_00 + jh_03
+            jh_3 = jh_30 + jh_33
+            n_0 = 0 if jh_0 == 0 else 1/(jh_0.real**2 + jh_0.imag**2)
+            n_3 = 0 if jh_3 == 0 else 1/(jh_3.real**2 + jh_3.imag**2)
+
+            nres_0 = wres[0]*n_0
+            nres_3 = wres[3]*n_3
+
+            # jhwr = J^H W r: each Kronecker row contracted with the
+            # normalised, already weighted residual.
+            r_0 = jh_00*nres_0 + jh_03*nres_3
+            r_3 = jh_30*nres_0 + jh_33*nres_3
 
             g_3 = gain[3]
             gc_0 = gain[0].conjugate()
@@ -625,21 +630,12 @@ def accumulate_jhj_jhr_factory(corr_mode):
             upd_00 = (drv_00*r_0).real
             upd_11 = (drv_13*r_3).real
 
-            # jhwj element: the normalisation is folded into the weights.
-            # NOTE: rop is effectively transposed (rop_1 <-> rop_2) relative
-            # to lop, matching the row-major kronecker convention.
+            # jhwj = J^H W J, with the normalisation folded into the weights.
             w_0 = n_0 * w[0]
             w_3 = n_3 * w[3]
 
-            jh_00 = lop_0 * rop_0
-            jh_03 = lop_1 * rop_2
-
             j_00 = jh_00.conjugate()
             j_03 = jh_03.conjugate()
-
-            jh_30 = lop_2 * rop_1
-            jh_33 = lop_3 * rop_3
-
             j_30 = jh_30.conjugate()
             j_33 = jh_33.conjugate()
 
@@ -662,21 +658,21 @@ def accumulate_jhj_jhr_factory(corr_mode):
                 jhj_jhr[3] + tmp_1,
                 jhj_jhr[4] + tec_coeff*tmp_1,
                 jhj_jhr[5] + delay_coeff*tmp_1,
-                jhj_jhr[6] + tcsq*tmp_0,
-                jhj_jhr[7] + dctc*tmp_0,
+                jhj_jhr[6] + tec_coeffsq*tmp_0,
+                jhj_jhr[7] + delay_tec_coeff*tmp_0,
                 jhj_jhr[8] + tec_coeff*tmp_1,
-                jhj_jhr[9] + tcsq*tmp_1,
-                jhj_jhr[10] + dctc*tmp_1,
-                jhj_jhr[11] + dcsq*tmp_0,
+                jhj_jhr[9] + tec_coeffsq*tmp_1,
+                jhj_jhr[10] + delay_tec_coeff*tmp_1,
+                jhj_jhr[11] + delay_coeffsq*tmp_0,
                 jhj_jhr[12] + delay_coeff*tmp_1,
-                jhj_jhr[13] + dctc*tmp_1,
-                jhj_jhr[14] + dcsq*tmp_1,
+                jhj_jhr[13] + delay_tec_coeff*tmp_1,
+                jhj_jhr[14] + delay_coeffsq*tmp_1,
                 jhj_jhr[15] + tmp_2,
                 jhj_jhr[16] + tec_coeff*tmp_2,
                 jhj_jhr[17] + delay_coeff*tmp_2,
-                jhj_jhr[18] + tcsq*tmp_2,
-                jhj_jhr[19] + dctc*tmp_2,
-                jhj_jhr[20] + dcsq*tmp_2,
+                jhj_jhr[18] + tec_coeffsq*tmp_2,
+                jhj_jhr[19] + delay_tec_coeff*tmp_2,
+                jhj_jhr[20] + delay_coeffsq*tmp_2,
                 jhj_jhr[21] + upd_00,
                 jhj_jhr[22] + tec_coeff*upd_00,
                 jhj_jhr[23] + delay_coeff*upd_00,
@@ -690,9 +686,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
 
             delay_coeff = channel_coeffs[0]
             tec_coeff = channel_coeffs[1]
-            dcsq = delay_coeff*delay_coeff
-            tcsq = tec_coeff*tec_coeff
-            dctc = delay_coeff*tec_coeff
+            delay_coeffsq = delay_coeff*delay_coeff
+            tec_coeffsq = tec_coeff*tec_coeff
+            delay_tec_coeff = delay_coeff*tec_coeff
 
             rop_0, rop_1 = rop[0], rop[1]
 
@@ -728,21 +724,21 @@ def accumulate_jhj_jhr_factory(corr_mode):
                 jhj_jhr[3],
                 jhj_jhr[4],
                 jhj_jhr[5],
-                jhj_jhr[6] + tcsq*jhj_00,
-                jhj_jhr[7] + dctc*jhj_00,
+                jhj_jhr[6] + tec_coeffsq*jhj_00,
+                jhj_jhr[7] + delay_tec_coeff*jhj_00,
                 jhj_jhr[8],
                 jhj_jhr[9],
                 jhj_jhr[10],
-                jhj_jhr[11] + dcsq*jhj_00,
+                jhj_jhr[11] + delay_coeffsq*jhj_00,
                 jhj_jhr[12],
                 jhj_jhr[13],
                 jhj_jhr[14],
                 jhj_jhr[15] + jhj_11,
                 jhj_jhr[16] + tec_coeff*jhj_11,
                 jhj_jhr[17] + delay_coeff*jhj_11,
-                jhj_jhr[18] + tcsq*jhj_11,
-                jhj_jhr[19] + dctc*jhj_11,
-                jhj_jhr[20] + dcsq*jhj_11,
+                jhj_jhr[18] + tec_coeffsq*jhj_11,
+                jhj_jhr[19] + delay_tec_coeff*jhj_11,
+                jhj_jhr[20] + delay_coeffsq*jhj_11,
                 jhj_jhr[21] + upd_00,
                 jhj_jhr[22] + tec_coeff*upd_00,
                 jhj_jhr[23] + delay_coeff*upd_00,
@@ -756,9 +752,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
 
             delay_coeff = channel_coeffs[0]
             tec_coeff = channel_coeffs[1]
-            dcsq = delay_coeff*delay_coeff
-            tcsq = tec_coeff*tec_coeff
-            dctc = delay_coeff*tec_coeff
+            delay_coeffsq = delay_coeff*delay_coeff
+            tec_coeffsq = tec_coeff*tec_coeff
+            delay_tec_coeff = delay_coeff*tec_coeff
 
             rop_0 = rop[0]
 
@@ -779,9 +775,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
                 jhj_jhr[0] + jhj_00,
                 jhj_jhr[1] + tec_coeff*jhj_00,
                 jhj_jhr[2] + delay_coeff*jhj_00,
-                jhj_jhr[3] + tcsq*jhj_00,
-                jhj_jhr[4] + dctc*jhj_00,
-                jhj_jhr[5] + dcsq*jhj_00,
+                jhj_jhr[3] + tec_coeffsq*jhj_00,
+                jhj_jhr[4] + delay_tec_coeff*jhj_00,
+                jhj_jhr[5] + delay_coeffsq*jhj_00,
                 jhj_jhr[6] + upd_00,
                 jhj_jhr[7] + tec_coeff*upd_00,
                 jhj_jhr[8] + delay_coeff*upd_00,
