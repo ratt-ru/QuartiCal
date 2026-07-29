@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-07-23
-last_verified_commit: 41ed4e7
+timestamp: 2026-07-29
+last_verified_commit: c150258
 ---
 
 # Solver Architecture
@@ -210,7 +210,9 @@ the same skeleton:
 - The shared solve body sets up flagging/solving intermediaries (`native_intermediaries`,
   `upsampled_itermediaries`, `flag_intermediaries`), then loops `for loop_idx in
   range(max_iter or 1)`: `compute_jhj_jhr` → optional `downsample_jhj_jhr` /
-  `per_array_jhj_jhr` / `scalar_jhj_jhr` → `compute_update` (matrix inversion via
+  `per_array_jhj_jhr` / the scalar collapse (`collapse_to_scalar_jhj_jhr` for a
+  non-parameterised term, the generic `scalar_jhj_jhr` for a parameterised one) →
+  `compute_update` (matrix inversion via
   `inversion.invert_factory`) → `finalize_update` → `update_gain_flags` (which also returns the
   converged percentage; parameterised terms then propagate flags via `update_param_flags`) →
   break at `conv_perc >= meta_inputs.stop_frac`.
@@ -219,14 +221,22 @@ the same skeleton:
   accumulating per-antenna JHJ and JHr from the residual in flat register-resident tuples.
   4-corr JHJ elements use algebraically expanded Kronecker forms in the per-term accumulate hooks
   (the old explicit `a_kron_bt` array temp survives only in comments and in
-  `general/generics.py`); gain-basis kernels accumulate only the upper triangle and mirror the
-  lower triangle once per solution interval via the mirror hook. The loop also has a fast path
+  `general/generics.py`). The expanded entries are named `jh_ij` after their position in
+  `a_kron_bt_factory`'s row-major product — remember it unpacks `rop` transposed — and both
+  contractions are written in terms of them: `jh_i = jh_i0 + jh_i3` is the per-correlation J^H
+  element (the Kronecker row contracted over the diagonal-correlation columns, used to normalise
+  the residual) and `r_i = sum_k jh_ik * nres_k` is the JHr contraction, with `nres_*` the
+  normalised weighted residual. Gain-basis kernels accumulate only the upper triangle and mirror
+  the lower triangle once per solution interval via the mirror hook. The loop also has a fast path
   for the single-direction case (`single_dir`) which accumulates each row's JHJ/JHr
   contributions in registers and flushes to memory once per row — valid because the antenna
   pair, and hence the accumulation target, is fixed along a row.
 - `compute_update` (the invert-over-intervals loop) exists exactly once, in
-  `quartical/gains/general/solver_components.py`; every kernel module re-exports the name so external
-  imports keep working.
+  `quartical/gains/general/solver_components.py`. The solver-loop builders in `solver_loop.py`
+  resolve it in their own module scope, so kernel modules do not import it at all — the twelve
+  dead `# noqa` re-export imports were removed 2026-07-28. The one exception is
+  `crosshand_phase/null_v_kernel.py`, which keeps a hand-written solver loop and so calls
+  `compute_update` directly.
 - Every solve returns `(native_imdry.jhj, loop_idx + 1, conv_perc)`.
 
 **The shared accumulation loop.** The tuple-based `compute_jhj_jhr` body lives once in
@@ -292,13 +302,18 @@ arguments** (a leading bare `*` in each signature); every kernel call site passe
 name, so the opaque positional `build_param_solver_impl(None, ..., 1e9, ..., None)`
 form is a `TypeError`:
 
-- `build_gain_solver_impl(*, get_jhj_dims, compute_jhj_jhr, scalar_jhj_jhr,
+- `build_gain_solver_impl(*, get_jhj_dims, compute_jhj_jhr, collapse_to_scalar_jhj_jhr,
   scalar_error_message, finalize_update, reference_gains)` — non-parameterised terms
   (complex, diag_complex, leakage). The body is complex's historic impl. diag_complex
   differs only via the builder inputs: `identity_dims` (its jhj is gain-shaped rather than
-  `get_jhj_dims_factory`'s block shape), its own one-arg `scalar_jhj_jhr` (scalar mode
-  supported; `None` means unsupported and raises `scalar_error_message`), and a
+  `get_jhj_dims_factory`'s block shape), its own one-arg `collapse_to_scalar_jhj_jhr` (scalar
+  mode supported; `None` means unsupported and raises `scalar_error_message`), and a
   `reference_gains(chain_inputs, meta_inputs, corr_mode)` stage after `finalize_gain_flags`.
+  That collapse hook is deliberately separate from the generic two-arg
+  `generics.scalar_jhj_jhr`: a gain-shaped jhj element is a flat correlation vector, so
+  collapsing it is a sum along the correlation axis, whereas the generic routine indexes the
+  `(n_param, n_param)` block a parameterised term carries and folds its halves together using
+  `values_per_correlation` as the stride.
 - `build_param_solver_impl(*, pre_solve, compute_jhj_jhr,
   params_per_corr, scalar_error_message, finalize_update, numbness, identity_params,
   reference_params, post_solve)` — the ten parameterised terms. The body is delay's

@@ -58,7 +58,7 @@ def build_gain_solver_impl(
     *,
     get_jhj_dims,
     compute_jhj_jhr,
-    scalar_jhj_jhr,
+    collapse_to_scalar_jhj_jhr,
     scalar_error_message,
     finalize_update,
     reference_gains,
@@ -89,12 +89,15 @@ def build_gain_solver_impl(
             ``identity_dims`` (jhj is gain-shaped).
         compute_jhj_jhr: The kernel module's @overload-ed compute_jhj_jhr;
             called at the top of each iteration to accumulate jhj and jhr.
-        scalar_jhj_jhr: Optional hook ``scalar_jhj_jhr(native_imdry)``
-            collapsing jhj/jhr to a scalar solve. ``None`` means scalar mode is
-            unsupported for this term, in which case ``scalar_error_message``
-            is raised.
+        collapse_to_scalar_jhj_jhr: Optional hook
+            ``collapse_to_scalar_jhj_jhr(native_imdry)`` collapsing jhj/jhr to
+            a scalar solve. Note that this is the term's own single-argument
+            routine, not the two-argument ``scalar_jhj_jhr`` imported from
+            generics for the parameterised builder. ``None`` means scalar mode
+            is unsupported for this term, in which case
+            ``scalar_error_message`` is raised.
         scalar_error_message: The constant message raised when scalar mode is
-            requested and ``scalar_jhj_jhr`` is ``None``.
+            requested and ``collapse_to_scalar_jhj_jhr`` is ``None``.
         finalize_update: The kernel module's @overload-ed finalize_update;
             called with the non-param 5-arg form after compute_update.
         reference_gains: Optional hook
@@ -107,18 +110,18 @@ def build_gain_solver_impl(
 
     # Scalar stage: select one of two prebuilt step closures at build time so
     # that the compiled body carries no branch on whether the term supports
-    # scalar mode. When scalar_jhj_jhr is None the term raises regardless of
-    # corr_mode - the complex and leakage terms have no scalar solve; otherwise
-    # it collapses jhj/jhr to a scalar solve, except in the already-scalar
-    # single-corr case.
-    if scalar_jhj_jhr is None:
+    # scalar mode. When collapse_to_scalar_jhj_jhr is None the term raises
+    # regardless of corr_mode - the complex and leakage terms have no scalar
+    # solve; otherwise it collapses jhj/jhr to a scalar solve, except in the
+    # already-scalar single-corr case.
+    if collapse_to_scalar_jhj_jhr is None:
         def scalar_step(native_imdry, scalar, corr_mode):
             if scalar:
                 raise ValueError(scalar_error_message)
     else:
         def scalar_step(native_imdry, scalar, corr_mode):
             if scalar and corr_mode != 1:
-                scalar_jhj_jhr(native_imdry)
+                collapse_to_scalar_jhj_jhr(native_imdry)
     scalar_step = factories.qcjit(scalar_step)
 
     # Optional reference-gains stage: a build-time no-op when absent, else the

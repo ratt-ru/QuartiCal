@@ -537,9 +537,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
 
             delay_coeff = channel_coeffs[0]
             tec_coeff = channel_coeffs[1]
-            dcsq = delay_coeff*delay_coeff
-            tcsq = tec_coeff*tec_coeff
-            dctc = delay_coeff*tec_coeff
+            delay_coeffsq = delay_coeff*delay_coeff
+            tec_coeffsq = tec_coeff*tec_coeff
+            delay_tec_coeff = delay_coeff*tec_coeff
 
             lop_0, lop_1, lop_2, lop_3 = lop[0], lop[1], lop[2], lop[3]
             rop_0, rop_1, rop_2, rop_3 = rop[0], rop[1], rop[2], rop[3]
@@ -601,18 +601,18 @@ def accumulate_jhj_jhr_factory(corr_mode):
             # (tec, delay) order per correlation: the tec Jacobian carries
             # tec_coeff, the delay Jacobian carries delay_coeff. The
             # (delay0, tec3) entry equals (tec0, delay3) by symmetry, so both
-            # carry dctc*tmp_1.
+            # carry delay_tec_coeff*tmp_1.
             return (
-                jhj_jhr[0] + tcsq*tmp_0,
-                jhj_jhr[1] + dctc*tmp_0,
-                jhj_jhr[2] + tcsq*tmp_1,
-                jhj_jhr[3] + dctc*tmp_1,
-                jhj_jhr[4] + dcsq*tmp_0,
-                jhj_jhr[5] + dctc*tmp_1,
-                jhj_jhr[6] + dcsq*tmp_1,
-                jhj_jhr[7] + tcsq*tmp_2,
-                jhj_jhr[8] + dctc*tmp_2,
-                jhj_jhr[9] + dcsq*tmp_2,
+                jhj_jhr[0] + tec_coeffsq*tmp_0,
+                jhj_jhr[1] + delay_tec_coeff*tmp_0,
+                jhj_jhr[2] + tec_coeffsq*tmp_1,
+                jhj_jhr[3] + delay_tec_coeff*tmp_1,
+                jhj_jhr[4] + delay_coeffsq*tmp_0,
+                jhj_jhr[5] + delay_tec_coeff*tmp_1,
+                jhj_jhr[6] + delay_coeffsq*tmp_1,
+                jhj_jhr[7] + tec_coeffsq*tmp_2,
+                jhj_jhr[8] + delay_tec_coeff*tmp_2,
+                jhj_jhr[9] + delay_coeffsq*tmp_2,
                 jhj_jhr[10] + tec_coeff*upd_00,
                 jhj_jhr[11] + delay_coeff*upd_00,
                 jhj_jhr[12] + tec_coeff*upd_11,
@@ -624,9 +624,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
 
             delay_coeff = channel_coeffs[0]
             tec_coeff = channel_coeffs[1]
-            dcsq = delay_coeff*delay_coeff
-            tcsq = tec_coeff*tec_coeff
-            dctc = delay_coeff*tec_coeff
+            delay_coeffsq = delay_coeff*delay_coeff
+            tec_coeffsq = tec_coeff*tec_coeff
+            delay_tec_coeff = delay_coeff*tec_coeff
 
             rop_0, rop_1 = rop[0], rop[1]
 
@@ -655,16 +655,16 @@ def accumulate_jhj_jhr_factory(corr_mode):
             jhj_11 = (rop_1*n_1*w[1]*rop_1.conjugate()).real
 
             return (
-                jhj_jhr[0] + tcsq*jhj_00,
-                jhj_jhr[1] + dctc*jhj_00,
+                jhj_jhr[0] + tec_coeffsq*jhj_00,
+                jhj_jhr[1] + delay_tec_coeff*jhj_00,
                 jhj_jhr[2],
                 jhj_jhr[3],
-                jhj_jhr[4] + dcsq*jhj_00,
+                jhj_jhr[4] + delay_coeffsq*jhj_00,
                 jhj_jhr[5],
                 jhj_jhr[6],
-                jhj_jhr[7] + tcsq*jhj_11,
-                jhj_jhr[8] + dctc*jhj_11,
-                jhj_jhr[9] + dcsq*jhj_11,
+                jhj_jhr[7] + tec_coeffsq*jhj_11,
+                jhj_jhr[8] + delay_tec_coeff*jhj_11,
+                jhj_jhr[9] + delay_coeffsq*jhj_11,
                 jhj_jhr[10] + tec_coeff*upd_00,
                 jhj_jhr[11] + delay_coeff*upd_00,
                 jhj_jhr[12] + tec_coeff*upd_11,
@@ -676,9 +676,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
 
             delay_coeff = channel_coeffs[0]
             tec_coeff = channel_coeffs[1]
-            dcsq = delay_coeff*delay_coeff
-            tcsq = tec_coeff*tec_coeff
-            dctc = delay_coeff*tec_coeff
+            delay_coeffsq = delay_coeff*delay_coeff
+            tec_coeffsq = tec_coeff*tec_coeff
+            delay_tec_coeff = delay_coeff*tec_coeff
 
             rop_0 = rop[0]
 
@@ -696,9 +696,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
             jhj_00 = (rop_0*n_0*w[0]*rop_0.conjugate()).real
 
             return (
-                jhj_jhr[0] + tcsq*jhj_00,
-                jhj_jhr[1] + dctc*jhj_00,
-                jhj_jhr[2] + dcsq*jhj_00,
+                jhj_jhr[0] + tec_coeffsq*jhj_00,
+                jhj_jhr[1] + delay_tec_coeff*jhj_00,
+                jhj_jhr[2] + delay_coeffsq*jhj_00,
                 jhj_jhr[3] + tec_coeff*upd_00,
                 jhj_jhr[4] + delay_coeff*upd_00,
             )

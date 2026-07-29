@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-07-23
-last_verified_commit: 41ed4e7
+timestamp: 2026-07-29
+last_verified_commit: c150258
 ---
 
 # Design Decisions
@@ -292,9 +292,11 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   elem/resid/etc. + the solver-loop bindings) plus its finalize/reference machinery;
   the iteration logic cannot drift per-kernel any more. The plan's assumption that
   diag_complex shared complex's solver object was false — it had its own near-identical
-  loop and was absorbed via two extra optional inputs (`scalar_jhj_jhr`,
-  `reference_gains`). Known variance-inventory correction: every parameterised kernel
-  passes `numbness=1e9` explicitly except amplitude (default 1e-6).
+  loop and was absorbed via two extra optional inputs (`collapse_to_scalar_jhj_jhr`
+  — named `scalar_jhj_jhr` until 2026-07-29, when it was renamed to stop it shadowing
+  the unrelated two-arg `generics.scalar_jhj_jhr` — and `reference_gains`). Known
+  variance-inventory correction: every parameterised kernel passes `numbness=1e9`
+  explicitly except amplitude (default 1e-6).
 - **Source:** branch kernel-unification, commits 2d9d8d2..ce9de22 (2026-07-17 to
   2026-07-20); verification numbers in
   `~/claude_artifacts/quaritcal_optimisation/results/UNIFICATION_LOG.md`

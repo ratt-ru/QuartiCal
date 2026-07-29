@@ -53,7 +53,8 @@ def nb_diag_complex_solver_impl(
     # The outer solver loop is shared between non-parameterised kernels - only
     # the hooks below are specific to diagonal complex terms. A diagonal term
     # stores jhj gain-shaped (so it passes the identity dims helper), supports
-    # scalar mode via its own scalar_jhj_jhr, and references its gains after
+    # scalar mode via its own collapse_to_scalar_jhj_jhr, and references its
+    # gains after
     # solving. The shared loop is inlined into the module-local trampoline
     # below rather than returned directly. This gives diag_complex a private
     # on-disk cache namespace - see the cache correctness constraint in
@@ -61,7 +62,7 @@ def nb_diag_complex_solver_impl(
     shared_impl = build_gain_solver_impl(
         get_jhj_dims=identity_dims,
         compute_jhj_jhr=compute_jhj_jhr,
-        scalar_jhj_jhr=scalar_jhj_jhr,
+        collapse_to_scalar_jhj_jhr=collapse_to_scalar_jhj_jhr,
         scalar_error_message=None,
         finalize_update=finalize_update,
         reference_gains=reference_gains,
@@ -472,10 +473,26 @@ def nb_reference_gains_impl(chain_inputs, meta_inputs, mode):
 
 
 @njit(**JIT_OPTIONS)
-def scalar_jhj_jhr(solver_imdry):
-    """This manipulates the entries of jhj and jhr to be scalar."""
+def collapse_to_scalar_jhj_jhr(solver_imdry):
+    """Sum jhj and jhr over correlation to give a scalar solve.
 
-    # NOTE: This differes from the generic implmenentation in generics.py.
+    This exists separately from generics.scalar_jhj_jhr because the two act on
+    differently shaped jhj arrays. A diagonal term stores jhj with the same
+    shape as its gains - a flat correlation vector per solution element, hence
+    the identity_dims helper - so collapsing it is a sum along the correlation
+    axis, broadcast back afterwards. The generic routine is for parameterised
+    terms, whose jhj element is a real (n_param, n_param) block; it indexes
+    jhj_sel[p0, p1] and folds the halves of that block together using
+    values_per_correlation as the stride, which has no meaning here and would
+    not even index correctly against a one-dimensional element.
+
+    diag_complex is the only non-parameterised term supporting a scalar solve
+    (complex and leakage pass ``collapse_to_scalar_jhj_jhr=None``), so this is
+    the sole caller.
+
+    Args:
+        solver_imdry: The native intermediaries holding jhj and jhr.
+    """
 
     jhj = solver_imdry.jhj
     jhr = solver_imdry.jhr
@@ -497,6 +514,6 @@ def scalar_jhj_jhr(solver_imdry):
                         jhj_sel[0] += jhj_sel[p]
                         jhj_sel[p] = 0
 
-                    # Repopluate appropriate zeroed values from scalar sum.
+                    # Repopulate appropriate zeroed values from scalar sum.
                     jhr_sel[-1] = jhr_sel[0]
                     jhj_sel[-1] = jhj_sel[0]
