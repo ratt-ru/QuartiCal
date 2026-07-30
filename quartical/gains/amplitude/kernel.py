@@ -272,9 +272,8 @@ def compute_residual_factory(corr_mode):
     The amplitude solver normalises the data to the model amplitude before
     forming the residual: the per-correlation factor is normf_i = |r_i| / |v_i|
     (zero where v_i is zero, matching absv1_idiv_absv2), and the residual is
-    normf_i*v_i - v_i. This reproduces the original array-buffer kernel exactly
-    (absv1_idiv_absv2(r, v, r); r *= v; r -= v). The returned tuple holds only
-    the per-correlation residual values.
+    normf_i*v_i - v_i. The returned tuple holds only the per-correlation
+    residual values.
     """
 
     tuple_normf = factories.tuple_normf_factory(corr_mode)

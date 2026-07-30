@@ -104,6 +104,19 @@ objects. Validation hooks live in `config_classes.py`.
 - `statistics/` — per-chunk chi-squared tracking and post-solve logging.
 - `apps/` — the auxiliary CLI entry points (backup/restore, summary, plotter).
 
+## Comments and docstrings
+
+Describe the code as it is, never as a delta against a previous version. No "the
+original did X", "bit-identical to the old kernel", "what the loop body previously
+performed". That framing is only meaningful to whoever made the change, and it loses its
+meaning the moment anyone else reads it — git holds the history, commit messages and
+`docs/wiki/design-decisions.md` hold the rationale.
+
+Keep them succinct. For a non-obvious constant, `# NB: enabling the trend flags for this
+term can cause problems.` beats a paragraph reconstructing the reasoning. Where a
+comparison against superseded code really is the clearest way to state a constraint, ask
+first — that call is mine in every case.
+
 ## LLM wiki
 
 `docs/wiki/` holds deep internal documentation written for LLM consumption, structured as

@@ -286,11 +286,10 @@ def nb_compute_jhj_jhr(
         n_row, n_chan, n_corr = data.shape
         n_dir = ms_inputs.MODEL_DATA.shape[2]
 
-        # The observed data becomes the per-direction "model" (the original
-        # kernel used data[row, f] for every direction); the data becomes
-        # zero (r = -v); the weights become unity and the row weights None,
-        # reproducing the original kernel's completely unweighted residual.
-        # All three are zero-copy broadcast views.
+        # The observed data becomes the "model" in every direction; the data
+        # becomes zero (so r = -v); the weights become unity and the row
+        # weights None, giving the completely unweighted residual this kernel
+        # requires. All three are zero-copy broadcast views.
         forged_model = np.broadcast_to(
             np.expand_dims(data, 2), (n_row, n_chan, n_dir, n_corr)
         )

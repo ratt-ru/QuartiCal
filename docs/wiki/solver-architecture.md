@@ -3,7 +3,7 @@ type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
 timestamp: 2026-07-29
-last_verified_commit: c150258
+last_verified_commit: 8ed2755
 ---
 
 # Solver Architecture
@@ -329,8 +329,17 @@ form is a `TypeError`:
   param grid, and rotation already solved on the param grid despite matching grids).
   `params_per_corr` is the width passed to the generic `scalar_jhj_jhr` collapse (`None`
   means scalar unsupported, raise); `numbness` forwards to `update_gain_flags` (1e9
-  everywhere except amplitude's default 1e-6); `identity_params` forwards to
-  `update_param_flags`; `reference_params(ms_inputs, mapping_inputs, chain_inputs,
+  everywhere except amplitude's default 1e-6). That 1e9 does more than switch off trend
+  flagging: the nine accumulate hooks which consume the `gain` (delay/tec families, phase,
+  crosshand_phase, rotation, rotation_measure) linearise about the gain, and `set_identity`
+  forces a hard-flagged gain element to the identity while `update_param_flags` only resets
+  a parameter interval whose contributing gain intervals are ALL flagged — so for the six
+  with a per-channel gain grid, one hard-flagged channel would contribute a derivative
+  linearised at the identity against a non-zero parameter. 1e9 is what keeps mid-solve hard
+  flagging (and hence that state) unreachable; full argument in the linearisation-point note
+  in `solver_components.py`.
+  `identity_params` forwards to `update_param_flags`; `reference_params(ms_inputs,
+  mapping_inputs, chain_inputs,
   meta_inputs)` runs after `finalize_gain_flags` where present (phase, delay/tec families).
   `pre_solve(ms_inputs, chain_inputs, meta_inputs)` and `post_solve(ms_inputs,
   chain_inputs, meta_inputs, native_imdry)` are opaque jitted closures owned by each

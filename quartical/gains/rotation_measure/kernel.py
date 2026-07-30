@@ -77,6 +77,12 @@ def nb_rm_solver_impl(
             "Scalar mode not supported for rotation measure terms."
         ),
         finalize_update=finalize_update,
+        # NB: 1e9 disables the trend (divergence) flagging, and enabling it for
+        # this term can cause problems - the accumulate hook below reads its
+        # derivative out of the per-channel gain, which hard flagging
+        # overwrites with the identity while the coarser parameter interval
+        # keeps its non-zero rm. See the linearisation-point note in
+        # solver_components.py.
         numbness=1e9,
         identity_params=identity_params,
         reference_params=None,
@@ -343,20 +349,26 @@ def accumulate_jhj_jhr_factory(corr_mode):
     hook with the per-channel lambda squared factor folded into the derivative.
     The active-term gain IS the rotation matrix [cos, -sin; sin, cos]
     (row-major XX, XY, YX, YY) with argument beta = lambda_sq*rm, so cos_beta =
-    gain[0].real and sin_beta = gain[2].real are read directly from the gain
-    tuple - bit-identical to the original (which recomputed
-    np.cos/np.sin(lambda_sq*rm) from the parameters), because the gain entries
-    were themselves set to those values, and it avoids any arctan2 wrapping.
-    The derivative of the model with respect to rm carries the extra lambda_sq
+    gain[0].real and sin_beta = gain[2].real are read straight out of the gain
+    tuple rather than costing two transcendental calls per visibility. The
+    derivative of the model with respect to rm carries the extra lambda_sq
     factor from the chain rule; lambda_sq is supplied per channel by the
     compute_channel_coeffs hook as channel_coeffs[0].
 
-    The original array kernel built the full (4, 4) row-major kronecker product
-    a_kron_bt(lop, rop) and contracted every column with dh. Here that temp
-    array is eliminated: the four column contractions dhjh_j are inlined
-    symbolically from the kronecker entries. jhr is dh . (lop @ wres @ rop) and
-    jhj sums w_j * |dhjh_j|^2 over the four correlations; both carry the
-    lambda_sq (jhr) and lambda_sq**2 (jhj) factors through dh.
+    Reading the gain means this hook linearises about the gain rather than
+    about the parameters. The two agree wherever the solve can reach, but not
+    by construction: set_identity overwrites a hard-flagged gain element with
+    the identity, leaving cos_beta = 1 and sin_beta = 0 whatever the parameters
+    hold. Rotation measure is one of the terms with no structural protection
+    here, since its gain is evaluated per channel while its parameter is solved
+    on a coarser frequency grid - see the linearisation-point note in
+    solver_components.py.
+
+    No (4, 4) kronecker temp is formed: the four column contractions dhjh_j of
+    a_kron_bt(lop, rop) are inlined symbolically from lop/rop. jhr is
+    dh . (lop @ wres @ rop) and jhj sums w_j * |dhjh_j|^2 over the four
+    correlations; both carry the lambda_sq (jhr) and lambda_sq**2 (jhj) factors
+    through dh.
     """
 
     tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
@@ -371,7 +383,7 @@ def accumulate_jhj_jhr_factory(corr_mode):
             w_0, w_1, w_2, w_3 = w[0], w[1], w[2], w[3]
 
             # jhwr element: r = lop @ (wres @ rop), where wres is the weighted
-            # residual. Matches the array kernel's in-place matmuls exactly.
+            # residual.
             r_0, r_1, r_2, r_3 = tuple_v1_mul_v2(
                 lop, tuple_v1_mul_v2(wres, rop)
             )
