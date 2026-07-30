@@ -74,6 +74,10 @@ def nb_rotation_solver_impl(
         params_per_corr=None,
         scalar_error_message="Scalar mode not supported for rotation terms.",
         finalize_update=finalize_update,
+        # NB: 1e9 disables the trend (divergence) flagging, and enabling it for
+        # this term can cause problems - the accumulate hook below reads its
+        # derivative out of the gain, which hard flagging overwrites with the
+        # identity. See the linearisation-point note in solver_components.py.
         numbness=1e9,
         identity_params=identity_params,
         reference_params=None,
@@ -307,19 +311,33 @@ def accumulate_jhj_jhr_factory(corr_mode):
     The signature follows the unified accumulate_jhj_jhr contract of the shared
     accumulation loop (see solver_components.py). The active-term gain IS the
     rotation matrix [cos, -sin; sin, cos] (row-major XX, XY, YX, YY), so the
-    derivative row dh = [-sin, -cos, cos, -sin] is read directly from the gain
-    tuple (cos = gain[0].real, sin = gain[2].real) rather than recomputing
-    sin/cos from theta - this is bit-identical to the original (which used
-    np.sin(theta)/np.cos(theta) with theta = params) because the gain entries
-    were themselves set to np.cos(theta)/np.sin(theta), and it avoids any
-    arctan2 wrapping near theta = +/-pi. The channel_coeffs argument is empty
-    (rotation has no compute_channel_coeffs hook) and unused.
+    derivative row dh = [-sin, -cos, cos, -sin] is read straight out of the
+    gain tuple (cos = gain[0].real, sin = gain[2].real) rather than costing two
+    transcendental calls per visibility.
 
-    The original array kernel built the full (4, 4) row-major kronecker product
-    a_kron_bt(lop, rop) and contracted every column with dh. Here that temp
-    array is eliminated: the four column contractions dhjh_j are inlined
-    symbolically from the kronecker entries the dh contraction actually touches
-    (all 16, but expressed directly from lop/rop). jhr is
+    Reading the gain means this hook linearises about the gain rather than
+    about the parameters. The two agree wherever the solve can reach, but not
+    by construction: set_identity overwrites a hard-flagged gain element with
+    the identity, leaving cos = 1 and sin = 0 whatever params holds. See the
+    linearisation-point note in solver_components.py for the reachability
+    argument and for which terms it protects.
+
+    Rotation is protected twice over. Its gain and parameter grids coincide
+    (both built from the same time_interval and freq_interval - see
+    calibration/mapping.py), so a hard-flagged gain interval is exactly one
+    fully-flagged parameter interval, which update_param_flags resets to
+    identity_params (0), matching the identity gain. Both hard-flag routes are
+    also individually unreachable: the divergence ladder needs a trend above
+    numbness, but that trend telescopes to a difference of |dg|^2 values which
+    cannot exceed 16 for a rotation matrix, and the degenerate branch needs
+    |g|^2 to be zero when a rotation matrix (and the identity replacing it)
+    always sums to 2.
+
+    The channel_coeffs argument is empty (rotation has no
+    compute_channel_coeffs hook) and unused.
+
+    No (4, 4) kronecker temp is formed: the four column contractions dhjh_j of
+    a_kron_bt(lop, rop) are inlined symbolically from lop/rop. jhr is
     dh . (lop @ wres @ rop) and jhj sums w_j * |dhjh_j|^2 over the four
     correlations.
     """
@@ -334,7 +352,7 @@ def accumulate_jhj_jhr_factory(corr_mode):
             w_0, w_1, w_2, w_3 = w[0], w[1], w[2], w[3]
 
             # jhwr element: r = lop @ (wres @ rop), where wres is the weighted
-            # residual. Matches the array kernel's in-place matmuls exactly.
+            # residual.
             r_0, r_1, r_2, r_3 = tuple_v1_mul_v2(
                 lop, tuple_v1_mul_v2(wres, rop)
             )

@@ -316,7 +316,10 @@ def build_param_solver_impl(
             passes 1e-6 (the update_gain_flags default); every other
             parameterised term passes 1e9, which is large enough that the
             divergence test can never trip, so points are never soft-flagged
-            for diverging.
+            for diverging. NB: for the nine terms whose accumulate hook
+            consumes the gain, 1e9 also suppresses mid-solve hard flagging,
+            which those hooks rely on - see the linearisation-point note in
+            solver_components.py before lowering it.
         identity_params: The per-corr identity parameter tuple forwarded to
             update_param_flags.
         reference_params: Optional @overload-ed referencing routine

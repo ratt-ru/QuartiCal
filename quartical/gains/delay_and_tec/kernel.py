@@ -51,8 +51,8 @@ def delay_and_tec_solver_impl(
 
 # The delay/tec family enters a scaled solver basis before the loop and leaves
 # it afterwards; these two module-local qcjit hooks fetch their inputs from the
-# standardised hook arguments, exactly mirroring the inline rescaling the loop
-# body previously performed.
+# standardised hook arguments and apply (respectively undo) the parameter
+# rescaling.
 @factories.qcjit
 def pre_solve(ms_inputs, chain_inputs, meta_inputs):
     active_params = chain_inputs.params[meta_inputs.active_term]
