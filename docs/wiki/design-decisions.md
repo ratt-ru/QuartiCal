@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-07-29
-last_verified_commit: c150258
+timestamp: 2026-07-31
+last_verified_commit: 0d70dcd
 ---
 
 # Design Decisions
@@ -301,6 +301,40 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   2026-07-20); verification numbers in
   `~/claude_artifacts/quaritcal_optimisation/results/UNIFICATION_LOG.md`
   ("Solver-loop unification").
+
+## Stock hook implementations in modules named for the hook, not the builder
+
+- **Context:** With both loops shared, the surviving duplication was in the hooks themselves.
+  `compute_residual_factory` was AST-identical across six kernels (phase and the delay/TEC
+  families), and the other two variants had already leaked into cross-kernel imports — `rotation`,
+  `rotation_measure` and `crosshand_phase_null_v` importing `complex.kernel`'s,
+  `crosshand_phase` importing `phase.kernel`'s. `get_identity_params` had 11 copies, 5 distinct.
+- **Decision:** Stock hook implementations live in `general/` modules named for the hook family:
+  `general/residuals.py` (`standard_residual_factory`, `phase_only_residual_factory`,
+  `amplitude_only_residual_factory` — between them they cover all 13 solvers) and
+  `general/parameters.py` (`get_identity_params(corr_mode, n_param, per_correlation=, fill=)`).
+  Placing them beside the builder that declares the hook — `solver_components.py` for the
+  residual, `solver_loop.py` for the identity params — was considered and REJECTED: it loads the
+  two loop modules with per-term maths, and it splits one concern across two files on an axis
+  (which builder consumes it) that a reader looking for "the residual hooks" does not think in.
+  The six `compute_channel_coeffs_factory` copies were deliberately LEFT in their kernels: only
+  two pairs are duplicates (48 lines, 23 of code), the other two are unique, and the
+  band-scaling convention they encode is restated in `pre_solve`/`post_solve` regardless — so
+  unifying them belongs with the JHJ-scaling decision, not here.
+- **Rationale:** Pure de-duplication, so the gate was exactness rather than performance: each
+  moved residual body is AST-identical (docstrings stripped) to all nine originals it replaces,
+  and the shared `get_identity_params` reproduces all 11 originals across corr modes 1, 2 and 4
+  including which combinations raise.
+- **Consequences:** No term takes a residual hook out of another term's kernel module (`leakage`
+  importing complex's `compute_jhj_jhr`, and `crosshand_phase_null_v` importing crosshand's
+  accumulator hooks, are unaffected). A new gain type names a residual hook and calls
+  `get_identity_params` with its parameter count, so that count is stated once per kernel instead
+  of appearing both as `params_per_corr` and as a hardcoded array length. The
+  `per_correlation=False` rule — one parameter set acting on the full 2x2, four correlations only
+  (crosshand_phase, rotation, rotation_measure) — is now an explicit argument rather than a
+  per-kernel `if corr_mode == 4` branch.
+- **Source:** branch kernel-unification-tidying-7-8 (2026-07-31), addressing items 7 and 8 of the
+  branch review.
 
 ## Chain regression tests behind a slow marker, asserted on the net gain
 

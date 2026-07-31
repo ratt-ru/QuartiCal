@@ -8,17 +8,8 @@ from quartical.utils.numba import (coerce_literal,
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
-# Rotation's residual is the plain complex residual (r - v), so it reuses the
-# complex term's residual hook rather than duplicating it.
-from quartical.gains.complex.kernel import compute_residual_factory
-
-
-def get_identity_params(corr_mode):
-
-    if corr_mode.literal_value == 4:
-        return np.zeros((1,), dtype=np.float64)
-    else:
-        raise ValueError("Unsupported number of correlations.")
+from quartical.gains.general.parameters import get_identity_params
+from quartical.gains.general.residuals import standard_residual_factory
 
 
 @njit(**JIT_OPTIONS)
@@ -59,7 +50,7 @@ def nb_rotation_solver_impl(
 
     coerce_literal(nb_rotation_solver_impl, ["corr_mode"])
 
-    identity_params = get_identity_params(corr_mode)
+    identity_params = get_identity_params(corr_mode, 1, per_correlation=False)
 
     # The outer solver loop is shared between parameterised kernels - only the
     # hooks below are specific to rotation terms. Rotation solves on the
@@ -148,7 +139,7 @@ def nb_compute_jhj_jhr(
         accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
         zero_jhj_jhr_factory=zero_jhj_jhr_factory,
         flush_jhj_jhr_factory=flush_jhj_jhr_factory,
-        compute_residual_factory=compute_residual_factory,
+        compute_residual_factory=standard_residual_factory,
         compute_channel_coeffs_factory=None,
         mirror_jhj_factory=None,
     )

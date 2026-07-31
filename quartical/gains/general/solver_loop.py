@@ -320,8 +320,8 @@ def build_param_solver_impl(
             consumes the gain, 1e9 also suppresses mid-solve hard flagging,
             which those hooks rely on - see the linearisation-point note in
             solver_components.py before lowering it.
-        identity_params: The per-corr identity parameter tuple forwarded to
-            update_param_flags.
+        identity_params: The identity parameter array forwarded to
+            update_param_flags, built by ``parameters.get_identity_params``.
         reference_params: Optional @overload-ed referencing routine
             ``reference_params(ms_inputs, mapping_inputs, chain_inputs,
             meta_inputs)`` run once after finalize_gain_flags. ``None`` yields

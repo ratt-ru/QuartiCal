@@ -113,7 +113,8 @@ def build_jhj_jhr_impl(
             accumulator into the jhj/jhr array slices.
         compute_residual_factory: ``compute_residual_factory(corr_mode) ->
             compute_residual(r, v) -> tuple`` of the per-correlation residual
-            values.
+            values. Every term uses one of the three implementations in
+            ``residuals.py``.
         compute_channel_coeffs_factory: Optional
             ``compute_channel_coeffs_factory(corr_mode) ->
             compute_channel_coeffs(ms_inputs, meta_inputs, f) -> flat coeff

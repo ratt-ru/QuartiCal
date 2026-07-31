@@ -10,6 +10,7 @@ import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import (build_gain_solver_impl,
                                                  identity_dims)
+from quartical.gains.general.residuals import standard_residual_factory
 
 
 @njit(**JIT_OPTIONS)
@@ -133,7 +134,7 @@ def nb_compute_jhj_jhr(
         accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
         zero_jhj_jhr_factory=zero_jhj_jhr_factory,
         flush_jhj_jhr_factory=flush_jhj_jhr_factory,
-        compute_residual_factory=compute_residual_factory,
+        compute_residual_factory=standard_residual_factory,
         compute_channel_coeffs_factory=None,
         mirror_jhj_factory=None,
     )
@@ -225,21 +226,6 @@ def nb_finalize_update(
                             g += upd
 
     return impl
-
-
-def compute_residual_factory(corr_mode):
-    """Produce the residual tuple for a diagonal complex term.
-
-    As with the (full) complex term the residual is simply r - v: the returned
-    tuple holds only the per-correlation residual values.
-    """
-
-    tuple_sub = factories.tuple_sub_factory(corr_mode)
-
-    def impl(r, v):
-        return tuple_sub(r, v)
-
-    return factories.qcjit(impl)
 
 
 def zero_jhj_jhr_factory(corr_mode):
