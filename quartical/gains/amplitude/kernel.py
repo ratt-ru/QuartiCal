@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import numpy as np
 from numba import njit
 from numba.extending import overload
 from quartical.utils.numba import (coerce_literal,
@@ -8,16 +7,8 @@ from quartical.utils.numba import (coerce_literal,
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
-
-
-def get_identity_params(corr_mode):
-
-    if corr_mode.literal_value in (2, 4):
-        return np.ones((2,), dtype=np.float64)
-    elif corr_mode.literal_value == 1:
-        return np.ones((1,), dtype=np.float64)
-    else:
-        raise ValueError("Unsupported number of correlations.")
+from quartical.gains.general.parameters import get_identity_params
+from quartical.gains.general.residuals import amplitude_only_residual_factory
 
 
 @njit(**JIT_OPTIONS)
@@ -58,7 +49,8 @@ def nb_amplitude_solver_impl(
 
     coerce_literal(nb_amplitude_solver_impl, ["corr_mode"])
 
-    identity_params = get_identity_params(corr_mode)
+    identity_params = get_identity_params(corr_mode, 1,
+                                          per_correlation=True, fill=1.0)
 
     # The outer solver loop is shared between parameterised kernels - only the
     # hooks below are specific to amplitude terms. Amplitude solves on the gain
@@ -144,7 +136,7 @@ def nb_compute_jhj_jhr(
         accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
         zero_jhj_jhr_factory=zero_jhj_jhr_factory,
         flush_jhj_jhr_factory=flush_jhj_jhr_factory,
-        compute_residual_factory=compute_residual_factory,
+        compute_residual_factory=amplitude_only_residual_factory,
         compute_channel_coeffs_factory=None,
         mirror_jhj_factory=mirror_jhj_factory,
     )
@@ -260,46 +252,6 @@ def param_to_gain_factory(corr_mode):
     elif corr_mode.literal_value == 1:
         def impl(params, gain):
             gain[0] = params[0]
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
-def compute_residual_factory(corr_mode):
-    """Produce the amplitude-normalised residual for an amplitude term.
-
-    The amplitude solver normalises the data to the model amplitude before
-    forming the residual: the per-correlation factor is normf_i = |r_i| / |v_i|
-    (zero where v_i is zero, matching absv1_idiv_absv2), and the residual is
-    normf_i*v_i - v_i. The returned tuple holds only the per-correlation
-    residual values.
-    """
-
-    tuple_normf = factories.tuple_normf_factory(corr_mode)
-
-    if corr_mode.literal_value == 4:
-        def impl(r, v):
-            f0, f1, f2, f3 = tuple_normf(r, v)
-            return (
-                f0*v[0] - v[0],
-                f1*v[1] - v[1],
-                f2*v[2] - v[2],
-                f3*v[3] - v[3],
-            )
-    elif corr_mode.literal_value == 2:
-        def impl(r, v):
-            f0, f1 = tuple_normf(r, v)
-            return (
-                f0*v[0] - v[0],
-                f1*v[1] - v[1],
-            )
-    elif corr_mode.literal_value == 1:
-        def impl(r, v):
-            f0, = tuple_normf(r, v)
-            return (
-                f0*v[0] - v[0],
-            )
     else:
         raise ValueError("Unsupported number of correlations.")
 

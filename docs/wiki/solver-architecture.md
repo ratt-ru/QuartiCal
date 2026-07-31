@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-07-29
-last_verified_commit: 8ed2755
+timestamp: 2026-07-31
+last_verified_commit: 0d70dcd
 ---
 
 # Solver Architecture
@@ -264,7 +264,11 @@ labelled hook table rather than a run of positional factories.
   accumulator into the JHJ/JHr array slices (once per row on the fast path, once per direction
   otherwise).
 - `compute_residual_factory(corr_mode) -> compute_residual(r, v)` — returns the per-correlation
-  residual tuple.
+  residual tuple. Three implementations in `general/residuals.py` cover every term:
+  `standard_residual_factory` (`r - v`: complex, diag_complex, rotation, rotation_measure,
+  crosshand_phase_null_v), `phase_only_residual_factory` (rescales `r` to `|v|`, so only phase
+  reaches the normal equations: phase, crosshand_phase and the delay/TEC families) and
+  `amplitude_only_residual_factory` (rescales `v` to `|r|`: amplitude).
 - `compute_channel_coeffs_factory(corr_mode) -> compute_channel_coeffs(ms_inputs, meta_inputs, f)`
   (optional) — the per-channel coefficient tuple for terms with a frequency-dependent parameter
   (delay/TEC families, rotation_measure); its output IS the `channel_coeffs` tuple passed to the
@@ -277,8 +281,8 @@ first consumer of the `channel_coeffs` (stage) hook. Its stage returns the singl
 tuple `(coeff,)` with `coeff = 2*pi*(chan_freq[f]/cf_mid - 1)` and `cf_mid = (MIN_FREQ + MAX_FREQ)/2`
 (the same band-midpoint rescaling the solver applies to the parameters). That tuple is the entire
 `channel_coeffs` passed to the accumulate hook, so `coeff` is at `channel_coeffs[0]` in every corr
-mode. Its residual (`compute_residual`) is byte-identical to phase's — the amplitude-normalised
-residual `r*normf - v` with `normf = |v|/|r|`. Delay's accumulate hook is phase's with the
+mode. For its residual it passes the shared `phase_only_residual_factory` — `r*normf - v` with
+`normf = |v|/|r|`. Delay's accumulate hook is phase's with the
 chain-rule coefficient folded in — it scales JHr by `coeff` and JHJ by `coeff**2` (from
 differentiating the frequency-dependent exponent) and, like phase, recomputes its own
 operator-based normalisation. This shows that a flat coefficient tuple from the channel-coefficient
@@ -338,7 +342,11 @@ form is a `TypeError`:
   linearised at the identity against a non-zero parameter. 1e9 is what keeps mid-solve hard
   flagging (and hence that state) unreachable; full argument in the linearisation-point note
   in `solver_components.py`.
-  `identity_params` forwards to `update_param_flags`; `reference_params(ms_inputs,
+  `identity_params` forwards to `update_param_flags` and comes from
+  `general/parameters.py:get_identity_params(corr_mode, n_param, per_correlation=, fill=)` —
+  `per_correlation=False` is the four-correlation-only case where one parameter set acts on the
+  full 2x2 (crosshand_phase, rotation, rotation_measure), and `fill=1.0` is amplitude's
+  multiplicative identity. `reference_params(ms_inputs,
   mapping_inputs, chain_inputs,
   meta_inputs)` runs after `finalize_gain_flags` where present (phase, delay/tec families).
   `pre_solve(ms_inputs, chain_inputs, meta_inputs)` and `post_solve(ms_inputs,
@@ -422,8 +430,9 @@ single-compute design and the `Blocker`.
    [config-system.md](config-system.md) (stub) for how the schema materialises into per-term
    dataclasses.
 4. **Write the kernel** following the factory + `@overload` skeleton above; reuse
-   `quartical/gains/general/factories.py`, `.../flagging.py`, `.../inversion.py`,
-   `.../convenience.py`, and `.../generics.py` rather than reimplementing correlation dispatch.
+   `quartical/gains/general/factories.py`, `.../residuals.py`, `.../parameters.py`,
+   `.../flagging.py`, `.../inversion.py`, `.../convenience.py`, and `.../generics.py` rather than
+   reimplementing correlation dispatch.
 5. **Add a per-type test** `testing/tests/gains/test_<type>.py`, mirroring an existing one (e.g.
    `test_delay.py` for parameterised, `test_complex.py` for plain). These parametrise over
    `select_corr`, set `solver.terms=['G']` with `G.type=<type>`, run `add_calibration_graph`, and

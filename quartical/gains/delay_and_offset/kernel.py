@@ -14,16 +14,8 @@ from quartical.gains.general.flagging import (
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
-
-
-def get_identity_params(corr_mode):
-
-    if corr_mode.literal_value in (2, 4):
-        return np.zeros((4,), dtype=np.float64)
-    elif corr_mode.literal_value == 1:
-        return np.zeros((2,), dtype=np.float64)
-    else:
-        raise ValueError("Unsupported number of correlations.")
+from quartical.gains.general.parameters import get_identity_params
+from quartical.gains.general.residuals import phase_only_residual_factory
 
 
 @njit(**JIT_OPTIONS)
@@ -87,7 +79,7 @@ def nb_delay_and_offset_solver_impl(
 
     coerce_literal(nb_delay_and_offset_solver_impl, ["corr_mode"])
 
-    identity_params = get_identity_params(corr_mode)
+    identity_params = get_identity_params(corr_mode, 2, per_correlation=True)
 
     # The outer solver loop is shared between parameterised kernels - only the
     # hooks below are specific to delay_and_offset terms. It solves on the
@@ -175,7 +167,7 @@ def nb_compute_jhj_jhr(
         accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
         zero_jhj_jhr_factory=zero_jhj_jhr_factory,
         flush_jhj_jhr_factory=flush_jhj_jhr_factory,
-        compute_residual_factory=compute_residual_factory,
+        compute_residual_factory=phase_only_residual_factory,
         compute_channel_coeffs_factory=compute_channel_coeffs_factory,
         mirror_jhj_factory=mirror_jhj_factory,
     )
@@ -325,46 +317,6 @@ def compute_channel_coeffs_factory(corr_mode):
         cf_mid = (ms_inputs.MIN_FREQ + ms_inputs.MAX_FREQ) / 2
         coeff = 2 * np.pi * (chan_freq[f] / cf_mid - 1)
         return (coeff,)
-
-    return factories.qcjit(impl)
-
-
-def compute_residual_factory(corr_mode):
-    """Produce the amplitude-normalised residual for a delay_and_offset term.
-
-    The residual is identical to delay's (and phase's): it normalises out
-    amplitude before forming the residual. The per-correlation factor is
-    normf_i = |v_i| / |r_i| (zero where r_i is zero, matching
-    absv1_idiv_absv2), and the residual is r_i*normf_i - v_i, returned as the
-    per-correlation residual tuple.
-    """
-
-    tuple_normf = factories.tuple_normf_factory(corr_mode)
-
-    if corr_mode.literal_value == 4:
-        def impl(r, v):
-            f0, f1, f2, f3 = tuple_normf(v, r)
-            return (
-                r[0]*f0 - v[0],
-                r[1]*f1 - v[1],
-                r[2]*f2 - v[2],
-                r[3]*f3 - v[3],
-            )
-    elif corr_mode.literal_value == 2:
-        def impl(r, v):
-            f0, f1 = tuple_normf(v, r)
-            return (
-                r[0]*f0 - v[0],
-                r[1]*f1 - v[1],
-            )
-    elif corr_mode.literal_value == 1:
-        def impl(r, v):
-            f0, = tuple_normf(v, r)
-            return (
-                r[0]*f0 - v[0],
-            )
-    else:
-        raise ValueError("Unsupported number of correlations.")
 
     return factories.qcjit(impl)
 
