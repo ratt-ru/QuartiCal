@@ -23,12 +23,14 @@ from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_components import compute_update
 from quartical.gains.general.parameters import get_identity_params
 from quartical.gains.general.residuals import standard_residual_factory
-# The accumulator/flush hooks are identical to the crosshand phase term's -
-# both solve a single parameter with a (1, 1) jhj element.
-from quartical.gains.crosshand_phase.kernel import (
-    zero_jhj_jhr_factory,
-    flush_jhj_jhr_factory
+from quartical.gains.general.accumulator import (
+    triangular_accumulator_factories
 )
+
+
+PARAMS_PER_CORR = None
+
+accumulator = triangular_accumulator_factories(PARAMS_PER_CORR)
 
 
 @njit(**JIT_OPTIONS)
@@ -69,7 +71,7 @@ def nb_null_v_crosshand_phase_solver_impl(
 
     coerce_literal(nb_null_v_crosshand_phase_solver_impl, ["corr_mode"])
 
-    identity_params = get_identity_params(corr_mode, 1, per_correlation=False)
+    identity_params = get_identity_params(corr_mode, PARAMS_PER_CORR)
 
     def impl(
         ms_inputs,
@@ -383,11 +385,11 @@ def nb_shared_compute_jhj_jhr(
 
     # The accumulation loop itself is shared between kernels - only the hooks
     # below (the per-term maths) are specific to the null-V crosshand term.
-    # The residual is a plain r - v (complex's residual hook, no auxiliary
-    # values); the accumulator/flush hooks are crosshand phase's (single
-    # parameter, (1, 1) jhj, so the mirror hook is a no-op); the accumulate
-    # hook is the null-V projection defined below. There are no per-channel
-    # coefficients, so there is no compute_channel_coeffs hook.
+    # The residual is the standard r - v (no auxiliary values); the accumulator
+    # layout is the shared single-parameter one, so its (1, 1) jhj leaves the
+    # mirror hook a no-op; the accumulate hook is the null-V projection defined
+    # below. There are no per-channel coefficients, so there is no
+    # compute_channel_coeffs hook.
     # The shared loop is inlined into the module-local trampoline below
     # rather than returned directly. This gives the null-V crosshand term a
     # private on-disk cache namespace - see the cache correctness constraint
@@ -396,8 +398,8 @@ def nb_shared_compute_jhj_jhr(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
         accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
-        zero_jhj_jhr_factory=zero_jhj_jhr_factory,
-        flush_jhj_jhr_factory=flush_jhj_jhr_factory,
+        zero_jhj_jhr_factory=accumulator.zero,
+        flush_jhj_jhr_factory=accumulator.flush,
         compute_residual_factory=standard_residual_factory,
         compute_channel_coeffs_factory=None,
         mirror_jhj_factory=None,
@@ -512,9 +514,8 @@ def accumulate_jhj_jhr_factory(corr_mode):
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhj_jhr.
-    The accumulator is a flat tuple (jhj00, jhr0) - see zero_jhj_jhr_factory
-    in the crosshand phase kernel, from which both the zeros and flush hooks
-    are imported.
+    The accumulator is a flat tuple (jhj00, jhr0) - see
+    general/accumulator.py.
 
     The signature follows the unified accumulate_jhj_jhr contract of the shared
     accumulation loop (see solver_components.py). The chain rule uses the

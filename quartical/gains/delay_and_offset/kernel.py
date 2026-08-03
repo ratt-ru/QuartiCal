@@ -16,6 +16,14 @@ from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
 from quartical.gains.general.parameters import get_identity_params
 from quartical.gains.general.residuals import phase_only_residual_factory
+from quartical.gains.general.accumulator import (
+    triangular_accumulator_factories
+)
+
+
+PARAMS_PER_CORR = 2
+
+accumulator = triangular_accumulator_factories(PARAMS_PER_CORR)
 
 
 @njit(**JIT_OPTIONS)
@@ -79,7 +87,7 @@ def nb_delay_and_offset_solver_impl(
 
     coerce_literal(nb_delay_and_offset_solver_impl, ["corr_mode"])
 
-    identity_params = get_identity_params(corr_mode, 2, per_correlation=True)
+    identity_params = get_identity_params(corr_mode, PARAMS_PER_CORR)
 
     # The outer solver loop is shared between parameterised kernels - only the
     # hooks below are specific to delay_and_offset terms. It solves on the
@@ -93,7 +101,7 @@ def nb_delay_and_offset_solver_impl(
     shared_impl = build_param_solver_impl(
         pre_solve=pre_solve,
         compute_jhj_jhr=compute_jhj_jhr,
-        params_per_corr=2,
+        params_per_corr=PARAMS_PER_CORR,
         scalar_error_message=None,
         finalize_update=finalize_update,
         numbness=1e9,
@@ -165,11 +173,11 @@ def nb_compute_jhj_jhr(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
         accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
-        zero_jhj_jhr_factory=zero_jhj_jhr_factory,
-        flush_jhj_jhr_factory=flush_jhj_jhr_factory,
+        zero_jhj_jhr_factory=accumulator.zero,
+        flush_jhj_jhr_factory=accumulator.flush,
         compute_residual_factory=phase_only_residual_factory,
         compute_channel_coeffs_factory=compute_channel_coeffs_factory,
-        mirror_jhj_factory=mirror_jhj_factory,
+        mirror_jhj_factory=accumulator.mirror,
     )
 
     def impl(
@@ -321,119 +329,13 @@ def compute_channel_coeffs_factory(corr_mode):
     return factories.qcjit(impl)
 
 
-def zero_jhj_jhr_factory(corr_mode):
-    """Produce the zero jhj/jhr accumulator tuple for a given corr mode.
-
-    The accumulator is a single flat tuple holding the upper triangle of the
-    (n_param, n_param) real jhj element in row-major order followed by the
-    (real) jhr entries. For the 2 and 4 correlation cases n_param is 4, giving
-    10 upper-triangle jhj entries and 4 jhr entries (14 slots). For the single
-    correlation case n_param is 2, giving 3 upper-triangle jhj entries and 2
-    jhr entries (5 slots). The reference element is a jhr slice, whose dtype is
-    real, so every accumulator value is a real zero.
-    """
-
-    if corr_mode.literal_value in (2, 4):
-        def impl(invec):
-            z = invec[0]*0
-            return (
-                z, z, z, z,
-                z, z, z, z, z, z, z, z, z, z,
-            )
-    elif corr_mode.literal_value == 1:
-        def impl(invec):
-            z = invec[0]*0
-            return z, z, z, z, z
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
-def flush_jhj_jhr_factory(corr_mode):
-    """Add a register-accumulated jhj/jhr accumulator into the arrays.
-
-    The accumulator holds the upper triangle of the (n_param, n_param) jhj
-    element in row-major order followed by the jhr entries. The lower triangle
-    is filled in by mirror_jhj once per solution interval. For the 2
-    correlation case the cross-correlation jhj entries (0, 2), (0, 3), (1, 2),
-    (1, 3) are always zero, so mirroring them is a harmless no-op there.
-    """
-
-    if corr_mode.literal_value in (2, 4):
-        def impl(jhj, jhr, jhj_jhr):
-
-            jhj[0, 0] += jhj_jhr[0]
-            jhj[0, 1] += jhj_jhr[1]
-            jhj[0, 2] += jhj_jhr[2]
-            jhj[0, 3] += jhj_jhr[3]
-            jhj[1, 1] += jhj_jhr[4]
-            jhj[1, 2] += jhj_jhr[5]
-            jhj[1, 3] += jhj_jhr[6]
-            jhj[2, 2] += jhj_jhr[7]
-            jhj[2, 3] += jhj_jhr[8]
-            jhj[3, 3] += jhj_jhr[9]
-
-            jhr[0] += jhj_jhr[10]
-            jhr[1] += jhj_jhr[11]
-            jhr[2] += jhj_jhr[12]
-            jhr[3] += jhj_jhr[13]
-    elif corr_mode.literal_value == 1:
-        def impl(jhj, jhr, jhj_jhr):
-
-            jhj[0, 0] += jhj_jhr[0]
-            jhj[0, 1] += jhj_jhr[1]
-            jhj[1, 1] += jhj_jhr[2]
-
-            jhr[0] += jhj_jhr[3]
-            jhr[1] += jhj_jhr[4]
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
-def mirror_jhj_factory(corr_mode):
-    """Fill in the lower triangle of the per-interval (n_param, n_param) jhj.
-
-    Accumulation in accumulate_jhj_jhr only writes the upper triangle of
-    each real, symmetric jhj element. The lower triangle is a straight copy
-    (jhj is real) done once per solution interval rather than once per
-    visibility. For the 2 and 4 correlation cases jhj is (4, 4); for the single
-    correlation case jhj is (2, 2).
-    """
-
-    if corr_mode.literal_value in (2, 4):
-        def impl(jhj_tifi):
-            n_ant, n_gdir = jhj_tifi.shape[:2]
-            for a in range(n_ant):
-                for d in range(n_gdir):
-                    jhj = jhj_tifi[a, d]
-                    jhj[1, 0] = jhj[0, 1]
-                    jhj[2, 0] = jhj[0, 2]
-                    jhj[2, 1] = jhj[1, 2]
-                    jhj[3, 0] = jhj[0, 3]
-                    jhj[3, 1] = jhj[1, 3]
-                    jhj[3, 2] = jhj[2, 3]
-    elif corr_mode.literal_value == 1:
-        def impl(jhj_tifi):
-            n_ant, n_gdir = jhj_tifi.shape[:2]
-            for a in range(n_ant):
-                for d in range(n_gdir):
-                    jhj_tifi[a, d, 1, 0] = jhj_tifi[a, d, 0, 1]
-    else:
-        raise ValueError("Unsupported number of correlations.")
-
-    return factories.qcjit(impl)
-
-
 def accumulate_jhj_jhr_factory(corr_mode):
     """Accumulate a jhj/jhr element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhj_jhr. The
     accumulator is a single flat tuple (the upper triangle of the real jhj
-    element followed by jhr entries - see zero_jhj_jhr_factory).
+    element followed by jhr entries - see general/accumulator.py).
 
     The signature follows the unified accumulate_jhj_jhr contract of the shared
     accumulation loop (see solver_components.py). The chain rule uses the
