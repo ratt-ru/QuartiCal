@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-07-31
-last_verified_commit: 5c3aa3a
+timestamp: 2026-08-03
+last_verified_commit: f53a2cb
 ---
 
 # Solver Architecture
