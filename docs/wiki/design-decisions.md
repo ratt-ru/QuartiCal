@@ -3,7 +3,7 @@ type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
 timestamp: 2026-07-31
-last_verified_commit: 0d70dcd
+last_verified_commit: 5c3aa3a
 ---
 
 # Design Decisions
@@ -312,7 +312,7 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Decision:** Stock hook implementations live in `general/` modules named for the hook family:
   `general/residuals.py` (`standard_residual_factory`, `phase_only_residual_factory`,
   `amplitude_only_residual_factory` — between them they cover all 13 solvers) and
-  `general/parameters.py` (`get_identity_params(corr_mode, n_param, per_correlation=, fill=)`).
+  `general/parameters.py` (`get_identity_params(corr_mode, params_per_corr, fill=)`).
   Placing them beside the builder that declares the hook — `solver_components.py` for the
   residual, `solver_loop.py` for the identity params — was considered and REJECTED: it loads the
   two loop modules with per-term maths, and it splits one concern across two files on an axis
@@ -326,15 +326,85 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   and the shared `get_identity_params` reproduces all 11 originals across corr modes 1, 2 and 4
   including which combinations raise.
 - **Consequences:** No term takes a residual hook out of another term's kernel module (`leakage`
-  importing complex's `compute_jhj_jhr`, and `crosshand_phase_null_v` importing crosshand's
-  accumulator hooks, are unaffected). A new gain type names a residual hook and calls
+  importing complex's `compute_jhj_jhr` is unaffected). A new gain type names a residual hook and
+  calls
   `get_identity_params` with its parameter count, so that count is stated once per kernel instead
   of appearing both as `params_per_corr` and as a hardcoded array length. The
-  `per_correlation=False` rule — one parameter set acting on the full 2x2, four correlations only
-  (crosshand_phase, rotation, rotation_measure) — is now an explicit argument rather than a
-  per-kernel `if corr_mode == 4` branch.
+  whole-2x2 rule — one parameter set acting on the full 2x2, four correlations only
+  (crosshand_phase, rotation, rotation_measure) — is now carried by `params_per_corr=None` rather
+  than a per-kernel `if corr_mode == 4` branch.
 - **Source:** branch kernel-unification-tidying-7-8 (2026-07-31), addressing items 7 and 8 of the
   branch review.
+
+## Accumulator layout generated from n_param, with literal slot indices
+
+- **Context:** The three hooks describing the flat JHJ/JHr accumulator —
+  `zero_jhj_jhr_factory`, `flush_jhj_jhr_factory`, `mirror_jhj_factory` — were hand-written per
+  term: 12, 12 and 8 copies. They are not maths. For a parameterised term the layout is fixed by
+  one number, how many real parameters the term solves per element, because JHJ is then a real
+  symmetric `(n_param, n_param)` matrix. `delay_tec_and_offset`'s three copies alone were 137
+  lines, of which 21 `jhj[i, j] += jhj_jhr[k]` lines and 15 mirror lines were a hand-typed
+  triangular index table — the class of table a previous commit had already had to correct.
+- **Decision:** `general/accumulator.py:triangular_accumulator_factories(params_per_corr)`
+  returns the trio for the 11 parameterised solvers. Each kernel declares the count once as a
+  module-level `PARAMS_PER_CORR`, feeding the accumulator, `get_identity_params` and
+  `build_param_solver_impl`'s own `params_per_corr` from one statement; before this the same fact
+  was written out separately for each consumer. `parameters.py:get_n_param(corr_mode,
+  params_per_corr)` turns it into the flat parameter count, so the accumulator dimension and the
+  identity vector cannot disagree, and `testing/tests/gains/test_parameters.py` pins that count
+  against each gain class's `make_param_names`. `None` marks the whole-2x2 terms and is the same
+  `None` `build_param_solver_impl` already took, since a scalar collapse is possible exactly when
+  there is a parameter set per correlation. `complex` and `diag_complex` keep their own
+  trio: their JHJ is a correlation-space block with mixed real and complex slots and a Hermitian
+  (conjugating) mirror, none of which follows from a parameter count.
+- **Rationale:** The generated hooks must not merely be correct but compile to the same machine
+  code, and the obvious implementation does not. Writing `flush` as the natural loop over the
+  triangle — constant trip counts, `jhj_jhr[slot]` with a loop-carried `slot` — measured **21%
+  slower on `phase`** (accumulation pass 42.1 -> 50.9 ms, corr 4, single direction) while
+  `delay_tec_and_offset` stayed at parity. Numba lowers a computed index into a homogeneous tuple
+  through memory, so the accumulator stops being register-resident, and the cost lands on every
+  visibility in the accumulate loop rather than on the flush. Terms with a large accumulator
+  already spill and so hide it; the small ones do not. `zero` meets the same constraint from the
+  other side: nothing writable in nopython mode builds a tuple whose length is only known at
+  compile time — tuple repetition is unsupported and a tuple cannot be grown in a loop.
+
+  So both tuple-facing hooks are built as `@intrinsic`s, which is what makes the layout expressible
+  as an ordinary loop: `codegen` is plain python running at compile time, so a flat `for` over the
+  triangle emits fully-unrolled statements that each name their slot by a literal. The alternative,
+  composing one inlined single-slot closure per entry, works and was measured at parity, but it
+  expresses code generation as runtime function composition — a reader has to simulate a closure
+  tree to know what is emitted, and the emitted form is neither flat nor a direct statement of
+  intent. The intrinsic form also compiles the largest hook (27 slots) in 0.045s against 0.468s,
+  and is 10x cheaper across the whole trio. `mirror` stays an ordinary jitted loop — it only
+  indexes arrays, and `complex`'s hand-written mirror was already a loop.
+
+  Generating the flat source and `exec`ing it — the one option that would give literally the code
+  the kernels used to carry — is not available: `qcjit` sets `cache=True` and numba refuses to
+  cache a function with no real source file (`no locator available for file '<flush n=6>'`).
+
+  With all of this, every measured term/correlation/direction configuration is within 1% of the
+  hand-written versions and every checksum is bitwise identical.
+- **Consequences:** A new parameterised gain type states its parameter count once and inherits the
+  layout, and `flush`'s typing phase now polices it: an accumulator of the wrong length, or one
+  holding anything but real slots, fails to compile with a message naming both counts instead of
+  silently writing the wrong entries. That check has no equivalent in the hand-written kernels.
+
+  Three prices. `cgutils.get_item_pointer` and `context.make_tuple` are numba internals rather
+  than public API. `make_tuple` increfs nothing and `flush` emits `fadd` directly, both safe only
+  while every accumulator slot is a real scalar — hence the typing guards. And an intrinsic cannot
+  execute in pure python, so the hooks can no longer be driven by a harness that stubs
+  `factories.qcjit` to the identity; `zero` and `flush` are instead verified by compiling them,
+  flushing an accumulator of distinct values, and reading the index table back off the arrays,
+  which tests the compiled artefact rather than a python simulation of it.
+
+  The upper-triangle packing convention (JHJ block row-major, then JHr) is now defined in
+  exactly one place, which the per-term `accumulate_jhj_jhr` hooks must agree with — those hooks
+  are still hand-written maths and still name their slots by hand, so the convention has to be
+  read out of `accumulator.py` when writing one. The general rule this entry establishes: inside
+  the accumulation loop, an accumulator slot must be named by a literal, never by a computed
+  index.
+- **Source:** branch kernel-unification-tidying-10 (2026-07-31), addressing item 10 of the branch
+  review.
 
 ## Chain regression tests behind a slow marker, asserted on the net gain
 

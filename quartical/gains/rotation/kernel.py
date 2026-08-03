@@ -10,6 +10,14 @@ from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
 from quartical.gains.general.parameters import get_identity_params
 from quartical.gains.general.residuals import standard_residual_factory
+from quartical.gains.general.accumulator import (
+    triangular_accumulator_factories
+)
+
+
+PARAMS_PER_CORR = None
+
+accumulator = triangular_accumulator_factories(PARAMS_PER_CORR)
 
 
 @njit(**JIT_OPTIONS)
@@ -50,7 +58,7 @@ def nb_rotation_solver_impl(
 
     coerce_literal(nb_rotation_solver_impl, ["corr_mode"])
 
-    identity_params = get_identity_params(corr_mode, 1, per_correlation=False)
+    identity_params = get_identity_params(corr_mode, PARAMS_PER_CORR)
 
     # The outer solver loop is shared between parameterised kernels - only the
     # hooks below are specific to rotation terms. Rotation solves on the
@@ -62,7 +70,7 @@ def nb_rotation_solver_impl(
     shared_impl = build_param_solver_impl(
         pre_solve=None,
         compute_jhj_jhr=compute_jhj_jhr,
-        params_per_corr=None,
+        params_per_corr=PARAMS_PER_CORR,
         scalar_error_message="Scalar mode not supported for rotation terms.",
         finalize_update=finalize_update,
         # NB: 1e9 disables the trend (divergence) flagging, and enabling it for
@@ -123,9 +131,8 @@ def nb_compute_jhj_jhr(
     row_weights_type = ms_inputs[row_weights_idx]
 
     # The accumulation loop itself is shared between kernels - only the hooks
-    # below (the per-term maths) are specific to rotation terms. Rotation's
-    # residual is the plain complex residual (r - v), so it reuses complex's
-    # residual hook.
+    # below (the per-term maths) are specific to rotation terms. Rotation
+    # constrains a real angle, so it takes the standard residual (r - v).
     # Rotation solves a single parameter, so its jhj is (1, 1) and the mirror
     # hook is a no-op (mirror_jhj_factory is None). There are no per-channel
     # coefficients, so there is no compute_channel_coeffs hook.
@@ -137,8 +144,8 @@ def nb_compute_jhj_jhr(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
         accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
-        zero_jhj_jhr_factory=zero_jhj_jhr_factory,
-        flush_jhj_jhr_factory=flush_jhj_jhr_factory,
+        zero_jhj_jhr_factory=accumulator.zero,
+        flush_jhj_jhr_factory=accumulator.flush,
         compute_residual_factory=standard_residual_factory,
         compute_channel_coeffs_factory=None,
         mirror_jhj_factory=None,
@@ -252,52 +259,13 @@ def nb_finalize_update(
     return impl
 
 
-def zero_jhj_jhr_factory(corr_mode):
-    """Produce the zero jhj/jhr accumulator tuple for a given corr mode.
-
-    Rotation solves a single parameter, so the accumulator is a flat tuple
-    holding the single (1, 1) jhj element followed by the one real jhr entry:
-    (jhj00, jhr0). The reference element is a jhr slice, whose dtype is real,
-    so both accumulator values are real zeros.
-    """
-
-    if corr_mode.literal_value == 4:
-        def impl(invec):
-            z = invec[0]*0
-            return z, z
-    else:
-        raise ValueError("Rotation can only be solved for with four "
-                         "correlation data.")
-
-    return factories.qcjit(impl)
-
-
-def flush_jhj_jhr_factory(corr_mode):
-    """Add a register-accumulated jhj/jhr accumulator into the arrays.
-
-    Rotation's jhj is (1, 1), so there is no upper triangle to mirror - the
-    mirror hook is a no-op (see nb_compute_jhj_jhr).
-    """
-
-    if corr_mode.literal_value == 4:
-        def impl(jhj, jhr, jhj_jhr):
-
-            jhj[0, 0] += jhj_jhr[0]
-
-            jhr[0] += jhj_jhr[1]
-    else:
-        raise ValueError("Rotation can only be solved for with four "
-                         "correlation data.")
-
-    return factories.qcjit(impl)
-
-
 def accumulate_jhj_jhr_factory(corr_mode):
     """Accumulate a jhj/jhr element into a register-resident accumulator.
 
     All inputs and the returned accumulator are tuples (register-resident
     values) - the accumulator is only flushed to memory by flush_jhj_jhr.
-    The accumulator is a flat tuple (jhj00, jhr0) - see zero_jhj_jhr_factory.
+    The accumulator is a flat tuple (jhj00, jhr0) - see
+    general/accumulator.py.
 
     The signature follows the unified accumulate_jhj_jhr contract of the shared
     accumulation loop (see solver_components.py). The active-term gain IS the

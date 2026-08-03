@@ -3,7 +3,7 @@ type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
 timestamp: 2026-07-31
-last_verified_commit: 0d70dcd
+last_verified_commit: 5c3aa3a
 ---
 
 # Solver Architecture
@@ -276,6 +276,37 @@ labelled hook table rather than a run of positional factories.
 - `mirror_jhj_factory(corr_mode) -> mirror(jhj_tifi)` (optional) — fills the lower triangle of the
   per-interval JHJ elements; `None` yields a no-op.
 
+Every parameterised kernel declares one module-level constant, `PARAMS_PER_CORR` — the number of
+parameters the term solves per diagonal correlation, or `None` for a term whose single parameter set
+acts on the full 2x2. That one constant feeds all three consumers in the kernel:
+`accumulator.py:triangular_accumulator_factories(PARAMS_PER_CORR)` at module scope (bound as
+`accumulator` and passed as `accumulator.zero` / `.flush` / `.mirror`),
+`parameters.py:get_identity_params(corr_mode, PARAMS_PER_CORR)`, and `params_per_corr=` on
+`build_param_solver_impl`. It is also the stride `generics.py:scalar_jhj_jhr` uses when collapsing
+to a scalar solve.
+
+`parameters.py:get_n_param(corr_mode, params_per_corr)` turns it into `n_param`, the flat
+parameter-vector length: `2 * params_per_corr` at 2 or 4 correlations, `params_per_corr` at 1, and 1
+when `params_per_corr` is `None` (four correlations only). `None` covers exactly crosshand_phase,
+crosshand_phase_null_v, rotation and rotation_measure, and it is the same `None` those kernels pass
+to `build_param_solver_impl` — collapsing JHJ/JHr to a scalar solve is possible if and only if there
+is a parameter set per correlation to collapse, so the two uses cannot diverge. Their `(1, 1)` JHJ
+has no triangle, so they also pass `mirror_jhj_factory=None`.
+
+`n_param` is both the accumulator's JHJ dimension and the identity vector's length, so neither can
+drift from the other, and `testing/tests/gains/test_parameters.py` pins it against each gain class's
+own `make_param_names` for every term and correlation mode. JHJ is a real symmetric
+`(n_param, n_param)` matrix whose upper triangle is packed row-major ahead of the `n_param` JHr
+entries. `complex` and `diag_complex` are not covered: their JHJ is a correlation-space block with a
+mix of real and complex slots and a Hermitian mirror, so they keep hand-written hooks.
+
+`zero` and `flush` are built as numba `@intrinsic`s so that the layout can be walked by a plain
+python loop at compile time while every emitted access still names its accumulator slot by a literal
+index — a computed index there costs the loop its register-resident accumulator, which is measured
+in [design-decisions.md](design-decisions.md). A useful side effect: `flush`'s typing phase rejects
+an accumulator of the wrong length or dtype, so an `accumulate_jhj_jhr` hook whose tuple disagrees
+with the term's `n_param` fails to compile rather than writing the wrong entries.
+
 Worked example — delay's staged-coeff hook (`quartical/gains/delay/kernel.py`). Delay is the
 first consumer of the `channel_coeffs` (stage) hook. Its stage returns the single-element flat
 tuple `(coeff,)` with `coeff = 2*pi*(chan_freq[f]/cf_mid - 1)` and `cf_mid = (MIN_FREQ + MAX_FREQ)/2`
@@ -343,10 +374,10 @@ form is a `TypeError`:
   flagging (and hence that state) unreachable; full argument in the linearisation-point note
   in `solver_components.py`.
   `identity_params` forwards to `update_param_flags` and comes from
-  `general/parameters.py:get_identity_params(corr_mode, n_param, per_correlation=, fill=)` —
-  `per_correlation=False` is the four-correlation-only case where one parameter set acts on the
-  full 2x2 (crosshand_phase, rotation, rotation_measure), and `fill=1.0` is amplitude's
-  multiplicative identity. `reference_params(ms_inputs,
+  `general/parameters.py:get_identity_params(corr_mode, PARAMS_PER_CORR, fill=)` — sized by
+  `get_n_param`, so `params_per_corr=None` gives the single parameter of the four-correlation-only
+  whole-2x2 terms, and `fill=1.0` is amplitude's multiplicative identity.
+  `reference_params(ms_inputs,
   mapping_inputs, chain_inputs,
   meta_inputs)` runs after `finalize_gain_flags` where present (phase, delay/tec families).
   `pre_solve(ms_inputs, chain_inputs, meta_inputs)` and `post_solve(ms_inputs,
@@ -431,6 +462,7 @@ single-compute design and the `Blocker`.
    dataclasses.
 4. **Write the kernel** following the factory + `@overload` skeleton above; reuse
    `quartical/gains/general/factories.py`, `.../residuals.py`, `.../parameters.py`,
+   `.../accumulator.py`,
    `.../flagging.py`, `.../inversion.py`, `.../convenience.py`, and `.../generics.py` rather than
    reimplementing correlation dispatch.
 5. **Add a per-type test** `testing/tests/gains/test_<type>.py`, mirroring an existing one (e.g.
