@@ -276,6 +276,11 @@ labelled hook table rather than a run of positional factories.
 - `mirror_jhj_factory(corr_mode) -> mirror(jhj_tifi)` (optional) — fills the lower triangle of the
   per-interval JHJ elements; `None` yields a no-op.
 
+"Optional" above means the hook may be `None`, not that the argument may be omitted. All three
+builders (`build_jhj_jhr_impl`, `build_gain_solver_impl`, `build_param_solver_impl`) are
+keyword-only with no defaults, so every kernel spells out its whole hook contract and adding a hook
+forces every kernel to be visited rather than silently defaulting.
+
 Every parameterised kernel declares one module-level constant, `PARAMS_PER_CORR` — the number of
 parameters the term solves per diagonal correlation, or `None` for a term whose single parameter set
 acts on the full 2x2. That one constant feeds all three consumers in the kernel:

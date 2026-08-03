@@ -32,8 +32,8 @@ def build_jhj_jhr_impl(
     zero_jhj_jhr_factory,
     flush_jhj_jhr_factory,
     compute_residual_factory,
-    compute_channel_coeffs_factory=None,
-    mirror_jhj_factory=None,
+    compute_channel_coeffs_factory,
+    mirror_jhj_factory,
 ):
     """Return the shared compute_jhj_jhr impl closure, specialised per term.
 
