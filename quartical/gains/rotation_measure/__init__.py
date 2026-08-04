@@ -90,7 +90,7 @@ class RotationMeasure(ParameterizedGain):
         )
 
         # Apply flags to gains and parameters.
-        apply_param_flags_to_params(param_flags, params, 1)
+        apply_param_flags_to_params(param_flags, params, 0)
         apply_gain_flags_to_gains(gain_flags, gains)
 
         return gains, gain_flags, params, param_flags
