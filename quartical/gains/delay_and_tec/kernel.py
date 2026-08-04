@@ -5,12 +5,13 @@ from numba.extending import overload
 from quartical.utils.numba import (coerce_literal,
                                    JIT_OPTIONS,
                                    PARALLEL_JIT_OPTIONS)
-from quartical.gains.general.flagging import (apply_gain_flags_to_gains,
-                                              apply_param_flags_to_params)
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
-from quartical.gains.general.parameters import get_identity_params
+from quartical.gains.general.parameters import (
+    get_identity_params,
+    reference_params_factory
+)
 from quartical.gains.general.residuals import phase_only_residual_factory
 from quartical.gains.general.accumulator import (
     triangular_accumulator_factories
@@ -618,48 +619,6 @@ def delay_and_tec_params_to_gains(
                         g[-1] = np.exp(1j*(delay_coeff*p[3] + tec_coeff*p[2]))
 
 
-@njit(**JIT_OPTIONS)
-def reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs):
-
-    chan_freq = ms_inputs.CHAN_FREQ
-
-    active_term = meta_inputs.active_term
-    ref_ant = meta_inputs.reference_antenna
-
-    gains = chain_inputs.gains[active_term]
-    gain_flags = chain_inputs.gain_flags[active_term]
-    params = chain_inputs.params[active_term]
-    param_flags = chain_inputs.param_flags[active_term]
-
-    param_freq_map = mapping_inputs.param_freq_maps[active_term]
-
-    n_ti, n_fi, n_ant, n_dir, n_corr = params.shape
-
-    ref_params = params[:, :, ref_ant: ref_ant + 1, :, :].copy()
-
-    for t in range(n_ti):
-        for f in range(n_fi):
-            for a in range(n_ant):
-                for d in range(n_dir):
-
-                    p = params[t, f, a, d]
-                    rp = ref_params[t, f, 0, d]
-
-                    if param_flags[t, f, a, d] == 1:
-                        continue
-                    else:
-                        p -= rp
-
-    delay_and_tec_params_to_gains(
-        params,
-        gains,
-        chan_freq,
-        ms_inputs.MIN_FREQ,
-        ms_inputs.MAX_FREQ,
-        param_freq_map,
-        rescaled=True
-    )
-
-    # Referencing may move flagged gains/params from identity.
-    apply_param_flags_to_params(param_flags, params, 0)
-    apply_gain_flags_to_gains(gain_flags, gains)
+reference_params = reference_params_factory(
+    params_to_gains=delay_and_tec_params_to_gains,
+)

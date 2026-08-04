@@ -406,6 +406,29 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Source:** branch kernel-unification-tidying-10 (2026-07-31), addressing item 10 of the branch
   review.
 
+## Referencing shared for the frequency-dependent parameterised terms
+
+- **Context:** `reference_params` — the stage which subtracts the reference antenna's parameters to
+  fix the per-antenna gauge freedom — was written out six times, 258 lines. Five of the six (delay,
+  delay_and_offset, delay_and_tec, tec_and_offset, delay_tec_and_offset) were identical in every
+  character but the `*_params_to_gains` symbol they call. The branch review's item 11 recorded a
+  second axis of variation, an extra zero-mean step in the two offset terms; that is wrong —
+  `apply_zero_mean_correction` is only ever called from `pre_solve`/`post_solve`.
+- **Decision:** `general/parameters.py:reference_params_factory(params_to_gains)` returns the hook
+  for those five, which each bind it at module level in one statement. It is a `qcjit` closure
+  rather than its own `@njit` cache unit: five kernels binding a different `params_to_gains` at one
+  shared source location is the aliasing the per-kernel namespace rule exists to prevent, and
+  inlining into each kernel's solver trampoline avoids it without needing a second trampoline.
+  `phase` keeps its own copy, because `phase_params_to_gains(params, gains)` takes no frequency
+  arguments; an adapter discarding four of them would have made phase's kernel advertise a band
+  dependence it does not have.
+- **Consequences:** Referencing is stated once for the terms that share it, and the single remaining
+  copy in `phase` is not duplication. The hook is no longer separately cached, so it compiles as
+  part of each kernel's solver rather than once on its own. A new frequency-dependent parameterised
+  term inherits referencing by giving its `params_to_gains` the shared signature.
+- **Source:** branch kernel-unification-tidying-11 (2026-08-04), addressing item 11 of the branch
+  review.
+
 ## Chain regression tests behind a slow marker, asserted on the net gain
 
 - **Context:** Until 2026-07, no test ever *computed* a multi-term chain solve: every

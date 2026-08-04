@@ -382,9 +382,11 @@ form is a `TypeError`:
   `general/parameters.py:get_identity_params(corr_mode, PARAMS_PER_CORR, fill=)` — sized by
   `get_n_param`, so `params_per_corr=None` gives the single parameter of the four-correlation-only
   whole-2x2 terms, and `fill=1.0` is amplitude's multiplicative identity.
-  `reference_params(ms_inputs,
-  mapping_inputs, chain_inputs,
-  meta_inputs)` runs after `finalize_gain_flags` where present (phase, delay/tec families).
+  `reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs)` runs after
+  `finalize_gain_flags` where present (phase, delay/tec families). The five delay/tec members
+  come from `general/parameters.py:reference_params_factory(params_to_gains=)`, which works
+  because their `*_params_to_gains` share one signature; phase states its own, as
+  `phase_params_to_gains` takes no frequency arguments.
   `pre_solve(ms_inputs, chain_inputs, meta_inputs)` and `post_solve(ms_inputs,
   chain_inputs, meta_inputs, native_imdry)` are opaque jitted closures owned by each
   kernel module — deliberately NOT a declarative rescaling abstraction — used to enter and
