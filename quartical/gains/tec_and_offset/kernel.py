@@ -60,19 +60,22 @@ def pre_solve(ms_inputs, chain_inputs, meta_inputs):
     active_params = chain_inputs.params[meta_inputs.active_term]
     active_param_flags = chain_inputs.param_flags[meta_inputs.active_term]
 
-    # We actually solve for TEC' = TEC/bandwidth. This helps avoid
-    # numerical issues, but requires some scaling of the parameters.
     min_freq = ms_inputs.MIN_FREQ
     max_freq = ms_inputs.MAX_FREQ
     bandwidth = max_freq - min_freq
-    active_params[..., 1::2] /= bandwidth
 
     # This alters the offset parameter to be consistent with the zero mean
     # corrections used in the solver. QuartiCal now removes this factor
-    # when returning from this solver.
+    # when returning from this solver. The correction factor is defined on the
+    # TEC in native units, so it has to be applied before the rescaling below -
+    # post_solve likewise unscales before removing it.
     apply_zero_mean_correction(
         min_freq, max_freq, active_params, active_param_flags
     )
+
+    # We actually solve for TEC' = TEC/bandwidth. This helps avoid
+    # numerical issues, but requires some scaling of the parameters.
+    active_params[..., 1::2] /= bandwidth
 
 
 @factories.qcjit

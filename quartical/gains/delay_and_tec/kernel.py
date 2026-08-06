@@ -80,7 +80,7 @@ def post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry):
 
     # Undo rescaling so that quantities are in native units.
     active_params[..., 1::2] /= mid_freq
-    native_imdry.jhj[..., 1::2] *= mid_freq ** 2
+    native_imdry.jhj[..., 1::2, 1::2] *= mid_freq ** 2
     active_params[..., 0::2] *= bandwidth
     native_imdry.jhj[..., 0::2, 0::2] /= bandwidth ** 2
 

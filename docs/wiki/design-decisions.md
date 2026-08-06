@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-08-03
-last_verified_commit: f53a2cb
+timestamp: 2026-08-05
+last_verified_commit: 9c968f8
 ---
 
 # Design Decisions
@@ -429,6 +429,57 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Source:** branch kernel-unification-tidying-11 (2026-08-04), addressing item 11 of the branch
   review.
 
+## The zero-mean ordering fix carried on the refactor branch, not the release branch
+
+- **Context:** `tec_and_offset`'s `pre_solve` rescaled the TEC by the bandwidth before applying
+  `apply_zero_mean_correction`, whose coefficient is defined on the TEC in native units. The
+  forward correction was therefore under-applied by a factor of the bandwidth while `post_solve`'s
+  inverse was applied in full, so the two were not inverses and the offset handed to the solver was
+  short by `2*pi*tec_factor*TEC` - of order a radian at a TEC contributing a radian across the band.
+  A converged solve was unaffected, since the solver converges on the gains regardless of where the
+  offset starts and the inverse is correct; the cost was a worse starting point and the attendant
+  phase-wrap risk. `delay_tec_and_offset` already ordered the two correctly.
+- **Decision:** fix it on the branch that restructures the code rather than on `v0.2.8-dev`.
+- **Rationale:** the fix moves two statements and adds no net lines. On `v0.2.8-dev` they live inline
+  in the solver body; here they live in an extracted `pre_solve` hook. Merging the release branch in
+  conflicts on the whole deleted solver body against the four-line trampoline that replaced it, and
+  the natural resolution - take the refactored side - discards the fix silently, because the reorder
+  reads as a comment edit. Landing it here also makes the regression test able to drive the real
+  hooks, which is impossible while the statements are buried in the solver body.
+- **Consequences:** this branch is no longer output-neutral for `tec_and_offset`: a solve starting
+  from non-zero parameters, which includes the default path since the term makes an initial TEC
+  estimate, now begins from the correct offset. Converged results move only within solver tolerance.
+  The wider basis inconsistency this uncovered is recorded under Known debt and is not addressed.
+- **Source:** branch kernel-unification-tidying-9 (2026-08-05), arising from item 9 of the branch
+  review.
+
+## One jhj unscaling convention, correct on the diagonal only
+
+- **Context:** the five frequency-dependent parameterised terms unscaled jhj in `post_solve` two
+  different ways — `jhj[..., i::ppc]` in delay_and_offset and delay_and_tec, `jhj[..., i::ppc,
+  i::ppc]` in tec_and_offset and delay_tec_and_offset, with delay_and_tec using both two lines
+  apart. The branch review's item 9 asked which is right. Neither is, in full: a term solving in
+  the basis `p' = Sp` has `jhj = S jhj' S`, so an element needs the product of its two indices'
+  factors, and both forms leave the blocks coupling rescaled to unrescaled parameters in the solver
+  basis. Measured against `S jhj' S`, delay is exact; the other four are wrong in 8 to 24 entries
+  per correlation pair. Both forms are exact on the diagonal, and `calibration/solver.py` reduces a
+  6-dim jhj to its diagonal before storing it.
+- **Decision:** state the two-axis form everywhere it applies and record why the rest is not scaled,
+  rather than compute the full `S jhj' S`. delay keeps `jhj[:] *= mid_freq ** 2`: every one of its
+  parameters carries the same factor, so the whole array genuinely wants `mid_freq ** 2` and
+  striding it would say less.
+- **Rationale:** the off-diagonal blocks have no consumer, so making them correct would buy nothing
+  observable. It would also cost bit-identity — the honest form scales by a product of per-slot
+  factors, and `x * (1/bw) * (1/bw)` is not `x / bw ** 2` — and would need a per-slot multiplier and
+  divisor recipe to avoid that. If a caller ever needs the full matrix, the relation above is the
+  specification, and the reduction in `calibration/solver.py` is the place to start.
+- **Consequences:** the stored jhj is unchanged to the bit, since the diagonal and the operation
+  applied to it are the same in both forms. The divergence a reader would otherwise have to
+  adjudicate is gone. jhj remains a diagnostic, not a covariance: its off-diagonal entries are not
+  in native units.
+- **Source:** branch kernel-unification-tidying-9 (2026-08-05), addressing item 9 of the branch
+  review.
+
 ## Chain regression tests behind a slow marker, asserted on the net gain
 
 - **Context:** Until 2026-07, no test ever *computed* a multi-term chain solve: every
@@ -672,6 +723,20 @@ treat these as scars, not patterns to replicate:
   `compute_update` lives once in `gains/general/solver_components.py`. What stays per-kernel is
   the per-term maths (elem/flush/resid/stage hooks and `finalize_update`) — which is the
   part that *should* vary. New gain types should bind the shared loop, not copy one.
+- **The offset parameter does not mean the same thing in every term.** `params_to_gains`
+  builds a zero-mean basis for every frequency-dependent part it models, in both `rescaled`
+  modes. `delay_and_offset` stores its `phase_offset` in that basis — the phase at band
+  centre — and so needs no conversion. `tec_and_offset` and `delay_tec_and_offset` store a
+  plain-basis offset instead and bridge the two with `apply_zero_mean_correction`, whose
+  coefficients are defined on parameters in native units. The commented-out `- band_centre`
+  at `testing/tests/gains/test_delay_tec_and_offset.py:112` is where that divergence was
+  introduced. Each term is self-consistent and its tests assert against its own convention,
+  but the three offsets are not comparable, and a reader should not assume an offset means
+  the same thing as it did in the term above. Two things still stand between this and a
+  shared `pre_solve`/`post_solve`: the conventions themselves, and the two copies of
+  `apply_zero_mean_correction`, which differ in parameter stride and in whether they carry a
+  delay term. The ordering constraint the correction imposes is now pinned by
+  `testing/tests/gains/test_zero_mean_correction.py`, which drives each term's real hooks.
 - **Dask itself.** No longer improving upstream and largely fallen out of favour; the
   project will almost certainly move away from it at some point. Avoid deepening dask
   coupling in new code where a scheduler-agnostic seam is possible.
