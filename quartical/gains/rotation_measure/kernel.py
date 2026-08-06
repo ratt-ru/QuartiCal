@@ -64,10 +64,8 @@ def nb_rm_solver_impl(
     # hooks below are specific to rotation measure terms. Rotation measure
     # solves on the parameter grid, does not support scalar mode, needs no
     # referencing stage, and enters/leaves no scaled solver basis (no
-    # pre/post-solve stages). The shared loop is inlined into the module-local
-    # trampoline below rather than returned directly. This gives
-    # rotation_measure a private on-disk cache namespace - see the cache
-    # correctness constraint in solver_components.py.
+    # pre/post-solve stages).
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_param_solver_impl(
         pre_solve=None,
         compute_jhj_jhr=compute_jhj_jhr,
@@ -143,10 +141,8 @@ def nb_compute_jhj_jhr(
     # coefficient is supplied by the compute_channel_coeffs hook as the
     # channel_coeffs tuple consumed by the accumulate hook. Rotation measure
     # solves a single parameter, so its jhj is (1, 1) and the mirror hook is a
-    # no-op (mirror_jhj_factory is None). The shared loop is inlined into the
-    # module-local trampoline below rather than returned directly. This gives
-    # rotation_measure a private on-disk cache namespace - see the cache
-    # correctness constraint in solver_components.py.
+    # no-op (mirror_jhj_factory is None).
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,

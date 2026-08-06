@@ -93,10 +93,7 @@ def nb_delay_and_offset_solver_impl(
     # parameter grid, supports scalar mode (two parameters per correlation - a
     # delay and an offset), has a referencing stage, and enters/leaves a scaled
     # solver basis (the pre/post-solve stages rescale its delay parameters).
-    # The shared loop is inlined into the module-local trampoline below rather
-    # than returned directly. This gives delay_and_offset a private on-disk
-    # cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_param_solver_impl(
         pre_solve=pre_solve,
         compute_jhj_jhr=compute_jhj_jhr,
@@ -164,10 +161,8 @@ def nb_compute_jhj_jhr(
     # coefficient is the channel_coeffs tuple consumed by the accumulate hook.
     # The offset parameter adds a second (frequency-independent) parameter per
     # correlation, so the accumulator carries a 4-parameter jhj/jhr instead of
-    # delay's 2-parameter one. The shared loop is inlined into the module-local
-    # trampoline below rather than returned directly. This gives
-    # delay_and_offset a private on-disk cache namespace - see the cache
-    # correctness constraint in solver_components.py.
+    # delay's 2-parameter one.
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,

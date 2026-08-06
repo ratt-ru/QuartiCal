@@ -66,10 +66,8 @@ def nb_phase_solver_impl(
     # hooks below are specific to phase terms. Phase solves on the gain grid,
     # supports scalar mode (one parameter per correlation), has a referencing
     # stage, and enters/leaves no scaled solver basis (no pre/post-solve
-    # stages). The shared loop is inlined into the module-local trampoline
-    # below rather than returned directly. This gives phase a private on-disk
-    # cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # stages).
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_param_solver_impl(
         pre_solve=None,
         compute_jhj_jhr=compute_jhj_jhr,
@@ -134,10 +132,7 @@ def nb_compute_jhj_jhr(
     # normalises out amplitude. Phase has no per-channel coefficients, so there
     # is no compute_channel_coeffs hook (the accumulate hook receives an empty
     # channel_coeffs tuple).
-    # The shared loop is inlined into the module-local trampoline below
-    # rather than returned directly. This gives phase a private on-disk
-    # cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,

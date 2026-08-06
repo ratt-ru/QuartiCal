@@ -121,11 +121,8 @@ def nb_delay_tec_and_offset_solver_impl(
     # parameter grid, supports scalar mode (three parameters per correlation -
     # a delay, a TEC and an offset), has a referencing stage, and enters/leaves
     # a scaled solver basis (the pre/post-solve stages rescale its delay and
-    # TEC parameters and apply the zero-mean correction). The shared loop is
-    # inlined into the module-local trampoline below rather than returned
-    # directly. This gives delay_tec_and_offset a private on-disk cache
-    # namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # TEC parameters and apply the zero-mean correction).
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_param_solver_impl(
         pre_solve=pre_solve,
         compute_jhj_jhr=compute_jhj_jhr,
@@ -196,10 +193,7 @@ def nb_compute_jhj_jhr(
     # parameters per correlation the jhj element is (6, 6), so the flat
     # accumulator carries the 21-entry upper triangle plus 6 jhr entries (27
     # slots), and the mirror hook fills the 15 off-diagonals once per interval.
-    # The shared loop is inlined into the module-local trampoline below rather
-    # than returned directly. This gives delay_tec_and_offset a private
-    # on-disk cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,

@@ -90,10 +90,8 @@ def nb_delay_solver_impl(
     # hooks below are specific to delay terms. Delay solves on the parameter
     # grid, supports scalar mode (one parameter per correlation), has a
     # referencing stage, and enters/leaves a scaled solver basis (the pre/post-
-    # solve stages rescale its parameters). The shared loop is inlined into the
-    # module-local trampoline below rather than returned directly. This gives
-    # delay a private on-disk cache namespace - see the cache correctness
-    # constraint in solver_components.py.
+    # solve stages rescale its parameters).
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_param_solver_impl(
         pre_solve=pre_solve,
         compute_jhj_jhr=compute_jhj_jhr,
@@ -159,9 +157,7 @@ def nb_compute_jhj_jhr(
     # differentiates a frequency-dependent exponent, so it carries a
     # per-channel coefficient computed by the compute_channel_coeffs hook; that
     # coefficient is the channel_coeffs tuple consumed by the accumulate hook.
-    # The shared loop is inlined into the module-local trampoline below rather
-    # than returned directly. This gives delay a private on-disk cache
-    # namespace - see the cache correctness constraint in solver_components.py.
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
