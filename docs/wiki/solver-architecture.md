@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-08-03
-last_verified_commit: f53a2cb
+timestamp: 2026-08-05
+last_verified_commit: 9c968f8
 ---
 
 # Solver Architecture
@@ -392,6 +392,12 @@ form is a `TypeError`:
   kernel module — deliberately NOT a declarative rescaling abstraction — used to enter and
   leave a scaled solver basis: the delay/tec families' mid_freq/bandwidth strided rescales
   (and, for the offset terms, `apply_zero_mean_correction`) relocated verbatim.
+  A term solving in the basis `p' = Sp` has `jhj = S jhj' S`. Every `post_solve` unscales
+  the diagonal blocks of its rescaled parameters (`jhj[..., i::ppc, i::ppc]`) and leaves
+  the blocks coupling those to unrescaled parameters in the solver basis; `delay` scales
+  the whole array because every one of its parameters carries the same factor. Only the
+  jhj diagonal survives `calibration/solver.py`, so the untouched blocks never reach a
+  caller — see the ledger entry on the jhj unscaling convention.
 
 `None` hooks resolve at build time (an empty `qcjit` closure or the raising scalar variant
 is substituted when the builder runs), so the compiled body carries no runtime branch for an

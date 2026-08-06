@@ -332,6 +332,12 @@ def build_param_solver_impl(
             basis by unscaling params and jhj in place). ``None`` yields a
             build-time no-op.
 
+            A term solving in the basis p' = Sp has jhj = S jhj' S, so the
+            hooks unscale the diagonal blocks of the rescaled parameters and
+            leave the blocks coupling those to unrescaled parameters in the
+            solver basis. Only the jhj diagonal is consumed - see the reduction
+            in calibration/solver.py - so those blocks never reach a caller.
+
     Returns:
         The ``impl`` closure, wrapped as an inline="always" function.
     """

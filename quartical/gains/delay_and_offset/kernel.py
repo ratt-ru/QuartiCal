@@ -72,7 +72,7 @@ def post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry):
     mid_freq = (ms_inputs.MIN_FREQ + ms_inputs.MAX_FREQ) / 2
     # Undo rescaling so that quantities are in native units.
     active_params[..., 1::2] /= mid_freq
-    native_imdry.jhj[..., 1::2] *= mid_freq ** 2
+    native_imdry.jhj[..., 1::2, 1::2] *= mid_freq ** 2
 
 
 @overload(delay_and_offset_solver_impl, jit_options=JIT_OPTIONS)

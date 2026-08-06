@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-08-03
-last_verified_commit: f53a2cb
+timestamp: 2026-08-05
+last_verified_commit: 9c968f8
 ---
 
 # Design Decisions
@@ -427,6 +427,33 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   part of each kernel's solver rather than once on its own. A new frequency-dependent parameterised
   term inherits referencing by giving its `params_to_gains` the shared signature.
 - **Source:** branch kernel-unification-tidying-11 (2026-08-04), addressing item 11 of the branch
+  review.
+
+## One jhj unscaling convention, correct on the diagonal only
+
+- **Context:** the five frequency-dependent parameterised terms unscaled jhj in `post_solve` two
+  different ways — `jhj[..., i::ppc]` in delay_and_offset and delay_and_tec, `jhj[..., i::ppc,
+  i::ppc]` in tec_and_offset and delay_tec_and_offset, with delay_and_tec using both two lines
+  apart. The branch review's item 9 asked which is right. Neither is, in full: a term solving in
+  the basis `p' = Sp` has `jhj = S jhj' S`, so an element needs the product of its two indices'
+  factors, and both forms leave the blocks coupling rescaled to unrescaled parameters in the solver
+  basis. Measured against `S jhj' S`, delay is exact; the other four are wrong in 8 to 24 entries
+  per correlation pair. Both forms are exact on the diagonal, and `calibration/solver.py` reduces a
+  6-dim jhj to its diagonal before storing it.
+- **Decision:** state the two-axis form everywhere it applies and record why the rest is not scaled,
+  rather than compute the full `S jhj' S`. delay keeps `jhj[:] *= mid_freq ** 2`: every one of its
+  parameters carries the same factor, so the whole array genuinely wants `mid_freq ** 2` and
+  striding it would say less.
+- **Rationale:** the off-diagonal blocks have no consumer, so making them correct would buy nothing
+  observable. It would also cost bit-identity — the honest form scales by a product of per-slot
+  factors, and `x * (1/bw) * (1/bw)` is not `x / bw ** 2` — and would need a per-slot multiplier and
+  divisor recipe to avoid that. If a caller ever needs the full matrix, the relation above is the
+  specification, and the reduction in `calibration/solver.py` is the place to start.
+- **Consequences:** the stored jhj is unchanged to the bit, since the diagonal and the operation
+  applied to it are the same in both forms. The divergence a reader would otherwise have to
+  adjudicate is gone. jhj remains a diagnostic, not a covariance: its off-diagonal entries are not
+  in native units.
+- **Source:** branch kernel-unification-tidying-9 (2026-08-05), addressing item 9 of the branch
   review.
 
 ## Chain regression tests behind a slow marker, asserted on the net gain
