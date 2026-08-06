@@ -50,10 +50,8 @@ def nb_complex_solver_impl(
 
     # The outer solver loop is shared between non-parameterised kernels - only
     # the hooks below are specific to complex terms. Complex has full-block jhj
-    # dims, does not support scalar mode, and needs no referencing stage. The
-    # shared loop is inlined into the module-local trampoline below rather than
-    # returned directly. This gives complex a private on-disk cache namespace -
-    # see the cache correctness constraint in solver_components.py.
+    # dims, does not support scalar mode, and needs no referencing stage.
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_gain_solver_impl(
         get_jhj_dims=get_jhj_dims_factory(corr_mode),
         compute_jhj_jhr=compute_jhj_jhr,
@@ -115,10 +113,7 @@ def nb_compute_jhj_jhr(
     # complex residual has no per-channel coefficients, so there is no
     # channel-coefficient hook (the accumulate hook receives an empty
     # channel_coeffs tuple).
-    # The shared loop is inlined into the module-local trampoline below
-    # rather than returned directly. This gives complex a private on-disk
-    # cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
         row_weights_type=row_weights_type,
