@@ -249,8 +249,14 @@ def solver_wrapper(
                 corr_mode
             )
         else:
-            pshape, gshape = active_spec.pshape, active_spec.shape
-            jhj = np.zeros(pshape if term.is_parameterized else gshape)
+            # A term with no solver contributes an empty jhj. Its shape and
+            # dtype have to match the output declared for the term in
+            # calibration/constructor.py, which differs between parameterised
+            # and unparameterised terms.
+            if term.is_parameterized:
+                jhj = np.zeros(active_spec.pshape, dtype=np.float64)
+            else:
+                jhj = np.zeros(active_spec.shape, dtype=np.complex128)
             conv_iter, conv_perc = 0, 1
 
         # If reweighting is enabled, do it when the epoch changes, except
