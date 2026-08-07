@@ -1,9 +1,17 @@
 from copy import deepcopy
+import numpy as np
 import pytest
 
 
+@pytest.fixture(scope="module", params=["parallactic_angle", "feed_flip"])
+def unsolvable_type(request):
+    # The term types with no solver. For these, solver_wrapper allocates jhj
+    # itself rather than receiving it from a solver.
+    return request.param
+
+
 @pytest.fixture(scope="module")
-def opts(base_opts):
+def opts(base_opts, unsolvable_type):
 
     # Don't overwrite base config - instead create a copy and update.
 
@@ -15,11 +23,9 @@ def opts(base_opts):
     _opts.solver.iter_recipe = [0, 0]
     _opts.solver.threads = 2
 
-    # A parallactic angle term has no solver, so it takes the branch in
-    # solver_wrapper which sizes jhj from the term spec rather than from a
-    # solver return value. Placing it ahead of another term is what makes the
+    # Placing the unsolvable term ahead of another term is what makes the
     # active term differ from the last term in the chain.
-    _opts.G.type = "parallactic_angle"
+    _opts.G.type = unsolvable_type
     _opts.B.type = "complex"
 
     return _opts
@@ -37,10 +43,9 @@ def raw_xds_list(read_xds_list_output):
 def test_jhj_matches_term_spec(cmp_gain_xds_lod, term_name):
     """Each term's jhj is sized from that term's own spec.
 
-    A term without a solver gets an empty jhj sized from its spec. Sizing it
-    from the wrong term's spec goes unnoticed for the last term in the chain
-    and for single-term chains, so this uses a two-term chain whose first term
-    is the unsolvable one.
+    Sizing it from the wrong term's spec goes unnoticed for the last term in
+    the chain and for single-term chains, hence the two-term chain whose first
+    term is the unsolvable one.
     """
 
     for term_dict in cmp_gain_xds_lod:
@@ -48,3 +53,19 @@ def test_jhj_matches_term_spec(cmp_gain_xds_lod, term_name):
         reference = term_xds.params if "params" in term_xds else term_xds.gains
 
         assert term_xds.jhj.shape == reference.shape
+
+
+@pytest.mark.parametrize("term_name", ["G", "B"])
+def test_jhj_dtype_matches_term_spec(cmp_gain_xds_lod, term_name):
+    """Each term's jhj carries the dtype declared for it.
+
+    A parameterised term's jhj is real and an unparameterised term's is
+    complex, mirroring the two output declarations in
+    calibration/constructor.py.
+    """
+
+    for term_dict in cmp_gain_xds_lod:
+        term_xds = term_dict[term_name]
+        expected = np.float64 if "params" in term_xds else np.complex128
+
+        assert term_xds.jhj.dtype == expected
