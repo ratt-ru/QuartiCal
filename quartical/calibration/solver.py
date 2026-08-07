@@ -192,7 +192,7 @@ def solver_wrapper(
     for ind, (term, iters) in enumerate(zip(cycle(chain), iter_recipe)):
 
         active_term = chain.index(term)
-        active_spec = term_spec_list[term_ind]
+        active_spec = term_spec_list[active_term]
 
         ms_fields = term.ms_inputs._fields
         ms_inputs = term.ms_inputs(
