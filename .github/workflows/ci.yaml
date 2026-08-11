@@ -86,10 +86,11 @@ jobs:
       - name: Run QuartiCal
         run: goquartical
 
-      # Run the test cases. Slow tests (e.g. the chain tests, which compile
-      # additional kernels) are excluded by default.
+      # Run the test cases. This includes the slow tests (e.g. the chain
+      # tests, which compile additional kernels) - the multi-term chain is
+      # only covered there, so the extra compile time is worth paying.
       - name: Testing Step
-        run: pytest -v -m "not slow" testing/tests
+        run: pytest -v testing/tests
 
   deploy:
     needs: [test]

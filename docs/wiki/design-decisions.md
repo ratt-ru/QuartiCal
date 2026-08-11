@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-08-05
-last_verified_commit: 9c968f8
+timestamp: 2026-08-11
+last_verified_commit: f862630
 ---
 
 # Design Decisions
@@ -492,8 +492,9 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   chain composition compiles fresh and the suite already compiles for ages from scratch;
   (2) effects bleed between terms (e.g. a sufficiently resolved complex term absorbs a
   delay), so per-term truth assertions are ill-posed in a chain.
-- **Decision:** One `@pytest.mark.slow` module, `testing/tests/gains/test_chain.py`,
-  excluded from CI by default (`pytest -m "not slow"` in `ci.yaml`). It solves a single
+- **Decision:** One `@pytest.mark.slow` module, `testing/tests/gains/test_chain.py`, run by
+  CI along with everything else; the marker exists so a *local* run can skip the compile
+  cost (`pytest -m "not slow"`). It solves a single
   three-term chain (complex G + delay K + diag_complex B) at one correlation mode, in two
   variants (DI, and DD via a two-direction synthetic model with B direction-dependent)
   that deliberately share the same chain signature — one extra set of chain compilations
@@ -511,14 +512,15 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   frequency-constant, otherwise only the sum over directions is constrained and the
   per-direction net is not unique. Chain solves also need many one-term-at-a-time
   cycles (20 in the test; converged terms exit immediately, so cycles are cheap — the
-  module runs in ~100 s cold / ~20 s with a warm numba cache). The slow marker keeps
-  the compile cost out of the default CI matrix while leaving the coverage one
-  `-m slow` away.
+  module runs in ~100 s cold / ~20 s with a warm numba cache). Chain coverage is the
+  coverage most worth having in CI, so the compile cost is paid there and the marker
+  serves the local iteration loop instead.
 - **Consequences:** Chain mechanics regressions (operator products, per-term
-  time/freq/dir maps, DD stacking) are now caught by an opt-in test instead of ad-hoc A/B
-  probes. CI no longer runs anything marked slow — genuinely slow future tests can use
-  the marker freely, but a periodic/manual slow run is needed for their coverage to
-  count. Fixing this test also surfaced a latent `n_dir > 1` bug in
+  time/freq/dir maps, DD stacking) are caught by CI instead of ad-hoc A/B probes, at the
+  cost of the chain compilations on every run. A future test marked slow is therefore
+  opting out of local runs, not out of CI. Markers are registered in `pyproject.toml`
+  with `strict_markers`, so a marker typo fails collection rather than quietly
+  mis-selecting tests. Fixing this test also surfaced a latent `n_dir > 1` bug in
   `testing/utils/gains.py:reference_gains` (antenna loop outside the direction loop —
   the same stale-direction shape as the legacy kernel bug).
 - **Source:** chain-mechanics A/B probe and design discussion 2026-07-16
