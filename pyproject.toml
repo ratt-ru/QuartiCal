@@ -60,7 +60,7 @@ goquartical-plot = "quartical.apps.plotter:plot"
 
 [dependency-groups]
 dev = [
-    "pytest>=7.3.1,<=9.0.3",
+    "pytest>=9.0.0,<=9.0.3",  # strict_markers is a pytest >= 9 ini option.
     "pytest-xdist>=3.5.0,<=3.8.0",
     "tbump>=6.10.0,<=6.11.0",
 ]
@@ -71,3 +71,17 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["quartical"]
+
+[tool.pytest.ini_options]
+# Turn an unregistered marker into a collection error. Marker expressions
+# (-m) select what runs, so a typo would otherwise silently change the set
+# of tests rather than failing.
+strict_markers = true
+markers = [
+    "slow: marks tests as slow, typically due to additional kernel compilation.",
+    "data_handling: marks tests of the data handling functionality.",
+    "preprocess: marks tests of the preprocessing functionality.",
+    "predict: marks tests of the predict functionality.",
+    "model_handler: marks tests of the model handling functionality.",
+    "calibrate: marks tests of the calibration functionality.",
+]
