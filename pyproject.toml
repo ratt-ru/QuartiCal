@@ -85,3 +85,6 @@ markers = [
     "model_handler: marks tests of the model handling functionality.",
     "calibrate: marks tests of the calibration functionality.",
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
