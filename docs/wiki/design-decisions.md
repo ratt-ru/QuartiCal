@@ -3,7 +3,7 @@ type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
 timestamp: 2026-08-11
-last_verified_commit: f862630
+last_verified_commit: 343e884
 ---
 
 # Design Decisions
@@ -494,8 +494,9 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   delay), so per-term truth assertions are ill-posed in a chain.
 - **Decision:** One `@pytest.mark.slow` module, `testing/tests/gains/test_chain.py`, run by
   CI along with everything else; the marker exists so a *local* run can skip the compile
-  cost (`pytest -m "not slow"`). It solves a single
-  three-term chain (complex G + delay K + diag_complex B) at one correlation mode, in two
+  cost (`pytest -m "not slow"`). It solves a single three-term chain mirroring a real
+  setup - diag_complex G (time-dependent gain) + delay K + complex B (bandpass and
+  leakage) - at one correlation mode, in two
   variants (DI, and DD via a two-direction synthetic model with B direction-dependent)
   that deliberately share the same chain signature — one extra set of chain compilations
   total. Assertions target the **net gain product** (via `output.net_gains`) against the
@@ -527,6 +528,41 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   (`~/claude_artifacts/quaritcal_optimisation/results/UNIFICATION_LOG.md`, "Chain-mechanics
   A/B probe"); user requirement that compilation cost stay bounded and per-term
   assertions be avoided.
+
+## A diagonal term's X-Y phase is gauge, so a chain truth must hold it constant in time
+
+- **Context:** Giving the chain test a realistic split (diag_complex G for the
+  time-dependent gain, complex B for the bandpass *and leakage*) made it fail: the solve
+  settled at ~1% residual power having recovered only ~36% of the true leakage. The
+  fraction was invariant to the iteration budget (2, 20 and 60 epochs; 25 and 200
+  iterations per term-turn all agreed to six figures), to the bandpass phase range (down
+  to exactly zero), and to the leakage amplitude - while the same B alone, at the same
+  resolution against the same model, recovered its truth in 11 iterations.
+- **Decision:** The truth's G carries a per-antenna X-Y phase difference which is
+  **constant in time**. Its overall phase still varies per time interval.
+- **Rationale:** Parallel-hand visibilities constrain only `phiX_p - phiX_q` and
+  `phiY_p - phiY_q`; the per-antenna difference `phiX_p - phiY_p` appears solely in the
+  cross-hands, which a diagonal term discards by construction (off-diagonal weights are
+  treated as zero - see the accumulate hook in `complex/diag_kernel.py`). That difference
+  is therefore gauge to the term, and `reference_gains` re-fixes it - zeroing the
+  reference antenna's X and Y phases - independently in *every* solution interval. The
+  solved chain consequently differs from the truth by `diag(exp(i*psi0(t)), 1)`, where
+  `psi0` is the truth's reference-antenna X-Y phase. When `psi0` varies with time nothing
+  in the chain can represent the leftover: G treats it as gauge and B is time-constant, so
+  B fits the time average and the leakage is scaled by `|E[exp(i*psi0)]|` - the measured
+  ~0.36, coherent in phase. Holding `psi0` constant lets B absorb it and the net is
+  recovered to machine precision.
+- **Consequences:** The chain test asserts the cross-hand residual and the net leakage,
+  not just the parallel hands. Any chain needing a genuinely time-variable X-Y phase needs
+  a term varying on that timescale (a crosshand phase term); a time-constant leakage term
+  cannot stand in for one. Two dead ends are worth not repeating: propagating the
+  cross-hand residual into the diagonal kernel's accumulation does not help (the extra
+  terms were verified algebraically equivalent to the complex kernel's own factorisation
+  for those entries, and the leftover remains unrepresentable), and an unpolarised model
+  removes the *residual* - the leftover becomes a unitary, data-invariant gauge - but
+  still leaves the net leakage unidentifiable.
+- **Source:** investigation of the chain test's leakage recovery, 2026-08-12; minimal
+  reproducer was a two-term `[diag_complex, complex]` chain.
 
 ## Dask for parallelism and distribution
 

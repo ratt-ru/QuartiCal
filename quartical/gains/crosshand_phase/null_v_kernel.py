@@ -306,24 +306,26 @@ def nb_compute_jhj_jhr(
             TIME=ms_inputs.TIME,
         )
 
-        # Reverse the (inverse) gains and their mappings; the active term
-        # index is likewise reversed. The param mappings are not used by the
-        # shared loop and pass through unchanged.
+        # Every field of these two namedtuples is indexed by term, so every
+        # one is reversed and the active term index with them. The shared
+        # loop reads only the gains and the time/freq/dir maps, but a field
+        # which is already in chain order cannot become wrong if the loop
+        # starts reading it. Tuple reversal is a compile-time operation.
         forged_mapping_inputs = mapping_inputs_cls(
-            time_bins=mapping_inputs.time_bins,
+            time_bins=mapping_inputs.time_bins[::-1],
             time_maps=mapping_inputs.time_maps[::-1],
             freq_maps=mapping_inputs.freq_maps[::-1],
             dir_maps=mapping_inputs.dir_maps[::-1],
-            param_time_bins=mapping_inputs.param_time_bins,
-            param_time_maps=mapping_inputs.param_time_maps,
-            param_freq_maps=mapping_inputs.param_freq_maps,
+            param_time_bins=mapping_inputs.param_time_bins[::-1],
+            param_time_maps=mapping_inputs.param_time_maps[::-1],
+            param_freq_maps=mapping_inputs.param_freq_maps[::-1],
         )
 
         forged_chain_inputs = chain_inputs_cls(
             gains=inverse_gains[::-1],
-            gain_flags=chain_inputs.gain_flags,
-            params=chain_inputs.params,
-            param_flags=chain_inputs.param_flags,
+            gain_flags=chain_inputs.gain_flags[::-1],
+            params=chain_inputs.params[::-1],
+            param_flags=chain_inputs.param_flags[::-1],
         )
 
         forged_meta_inputs = meta_inputs_cls(
