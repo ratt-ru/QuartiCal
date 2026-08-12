@@ -113,7 +113,15 @@ def build_gain_solver_impl(
     # scalar mode. When collapse_to_scalar_jhj_jhr is None the term raises
     # regardless of corr_mode - the complex and leakage terms have no scalar
     # solve; otherwise it collapses jhj/jhr to a scalar solve, except in the
-    # already-scalar single-corr case.
+    # already-scalar single-corr case. The message is the only thing the user
+    # sees when they ask an unsupporting term for a scalar solve, so a term
+    # which omits it is caught here rather than raising ValueError(None) from
+    # inside a compiled kernel.
+    if collapse_to_scalar_jhj_jhr is None and scalar_error_message is None:
+        raise ValueError(
+            "A term with no scalar collapse must state a message."
+        )
+
     if collapse_to_scalar_jhj_jhr is None:
         def scalar_step(native_imdry, scalar, corr_mode):
             if scalar:
@@ -367,6 +375,11 @@ def build_param_solver_impl(
     # the non-param builder for the rationale). When params_per_corr is None
     # the term raises regardless of corr_mode; otherwise it collapses jhj/jhr
     # to a scalar solve, except in the already-scalar single-corr case.
+    if params_per_corr is None and scalar_error_message is None:
+        raise ValueError(
+            "A term with no scalar collapse must state a message."
+        )
+
     if params_per_corr is None:
         def scalar_step(native_imdry, scalar, corr_mode):
             if scalar:
