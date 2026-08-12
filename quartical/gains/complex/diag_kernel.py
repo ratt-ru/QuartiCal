@@ -55,11 +55,10 @@ def nb_diag_complex_solver_impl(
     # the hooks below are specific to diagonal complex terms. A diagonal term
     # stores jhj gain-shaped (so it passes the identity dims helper), supports
     # scalar mode via its own collapse_to_scalar_jhj_jhr, and references its
-    # gains after
-    # solving. The shared loop is inlined into the module-local trampoline
-    # below rather than returned directly. This gives diag_complex a private
-    # on-disk cache namespace - see the cache correctness constraint in
-    # solver_components.py.
+    # gains after solving. The shared loop is inlined into the module-local
+    # trampoline below rather than returned directly, which gives diag_complex
+    # a private on-disk cache namespace - see the cache correctness constraint
+    # in solver_components.py.
     shared_impl = build_gain_solver_impl(
         get_jhj_dims=identity_dims,
         compute_jhj_jhr=compute_jhj_jhr,

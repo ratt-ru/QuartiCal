@@ -393,9 +393,9 @@ def accumulate_jhj_jhr_factory(corr_mode):
 
             return (
                 jhj_jhr[0] + w[0]*(jh_00.real*jh_00.real +
-                               jh_00.imag*jh_00.imag),
+                                   jh_00.imag*jh_00.imag),
                 jhj_jhr[1] + w[1]*(jh_11.real*jh_11.real +
-                               jh_11.imag*jh_11.imag),
+                                   jh_11.imag*jh_11.imag),
                 jhj_jhr[2] + upd[0],
                 jhj_jhr[3] + upd[1],
             )
@@ -410,7 +410,7 @@ def accumulate_jhj_jhr_factory(corr_mode):
 
             return (
                 jhj_jhr[0] + w[0]*(jh_00.real*jh_00.real +
-                               jh_00.imag*jh_00.imag),
+                                   jh_00.imag*jh_00.imag),
                 jhj_jhr[1] + upd[0],
             )
     else:

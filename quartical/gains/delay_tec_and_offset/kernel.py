@@ -60,10 +60,6 @@ def pre_solve(ms_inputs, chain_inputs, meta_inputs):
     active_params = chain_inputs.params[meta_inputs.active_term]
     active_param_flags = chain_inputs.param_flags[meta_inputs.active_term]
 
-    # We actually solve for D' = (D(nu_min + nu_max))/2. This helps avoid
-    # numerical issues, but requires some scaling of the parameters.
-    # We actually solve for TEC' = TEC/bandwidth. This helps avoid
-    # numerical issues, but requires some scaling of the parameters.
     min_freq = ms_inputs.MIN_FREQ
     max_freq = ms_inputs.MAX_FREQ
     mid_freq = (min_freq + max_freq) / 2
@@ -75,6 +71,9 @@ def pre_solve(ms_inputs, chain_inputs, meta_inputs):
         min_freq, max_freq, active_params, active_param_flags
     )
 
+    # We actually solve for D' = (D(nu_min + nu_max))/2 and TEC' =
+    # TEC/bandwidth. This helps avoid numerical issues, but requires the
+    # parameters to be scaled into that basis here and back out in post_solve.
     active_params[..., 2::3] *= mid_freq
     bandwidth = max_freq - min_freq
     active_params[..., 1::3] /= bandwidth
