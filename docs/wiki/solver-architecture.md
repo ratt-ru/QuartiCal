@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-08-05
-last_verified_commit: 9c968f8
+timestamp: 2026-08-12
+last_verified_commit: 364cbb2
 ---
 
 # Solver Architecture
@@ -347,7 +347,8 @@ form is a `TypeError`:
   (complex, diag_complex, leakage). The body is complex's historic impl. diag_complex
   differs only via the builder inputs: `identity_dims` (its jhj is gain-shaped rather than
   `get_jhj_dims_factory`'s block shape), its own one-arg `collapse_to_scalar_jhj_jhr` (scalar
-  mode supported; `None` means unsupported and raises `scalar_error_message`), and a
+  mode supported; `None` means unsupported and raises `scalar_error_message`, which the builder
+  requires to be non-`None` in that case), and a
   `reference_gains(chain_inputs, meta_inputs, corr_mode)` stage after `finalize_gain_flags`.
   That collapse hook is deliberately separate from the generic two-arg
   `generics.scalar_jhj_jhr`: a gain-shaped jhj element is a flat correlation vector, so
@@ -368,7 +369,8 @@ form is a `TypeError`:
   dead: no term needed the gain-grid path (the three that set it never differed from the
   param grid, and rotation already solved on the param grid despite matching grids).
   `params_per_corr` is the width passed to the generic `scalar_jhj_jhr` collapse (`None`
-  means scalar unsupported, raise); `numbness` forwards to `update_gain_flags` (1e9
+  means scalar unsupported, raise — and a term which says so without supplying
+  `scalar_error_message` fails to build); `numbness` forwards to `update_gain_flags` (1e9
   everywhere except amplitude's default 1e-6). That 1e9 does more than switch off trend
   flagging: the nine accumulate hooks which consume the `gain` (delay/tec families, phase,
   crosshand_phase, rotation, rotation_measure) linearise about the gain, and `set_identity`
@@ -444,6 +446,14 @@ by term name), assembled in `construct_solver`. Data variables on a solved term 
 (dims `PARAM_AXES`). The scaffold (coords/attrs incl. `NAME`, `TYPE`, `GAIN_SPEC`, `GAIN_AXES`, and
 for parameterised terms `PARAM_SPEC`, `PARAM_AXES`, `param_name`) is built by
 `quartical/gains/datasets.py:scaffold_from_data_xds`.
+
+`jhj` is declared per term in `construct_solver`, and the declaration differs by family: a
+parameterised term gets `("row", "chan", "ant", "dir", "param")` chunked by its own `PARAM_SPEC`
+with dtype `float64`, everything else `("row", "chan", "ant", "dir", "corr")` chunked by its
+`GAIN_SPEC` with dtype `complex128`. Both facts matter to `solver_wrapper`, because a term with no
+solver (`parallactic_angle`, `feed_flip`) still has to produce an array: it allocates zeros from
+*its own* `term_spec` (`pshape` or `shape`) in the declared dtype, since the declaration is
+per term and a chunk holds one spec per term rather than one shared shape.
 
 `quartical/gains/datasets.py:write_gain_datasets` rechunks each term's xds list to sensible
 (<2 GB, regular) chunks and writes to zarr via `daskms.experimental.zarr.xds_to_zarr` at
