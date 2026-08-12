@@ -84,9 +84,10 @@ def build_gain_solver_impl(
 
     Args:
         get_jhj_dims: A qcjit closure ``get_jhj_dims(upsample_shape) -> dims``
-            giving the jhj allocation shape. Full terms pass their per-corr
-            dims factory's product; diagonal terms pass the module-level
-            ``identity_dims`` (jhj is gain-shaped).
+            giving the jhj allocation shape. Full terms pass the closure
+            returned by their per-corr ``get_jhj_dims_factory``; diagonal terms
+            pass the module-level ``identity_dims`` closure directly, as their
+            jhj is gain-shaped.
         compute_jhj_jhr: The kernel module's @overload-ed compute_jhj_jhr;
             called at the top of each iteration to accumulate jhj and jhr.
         collapse_to_scalar_jhj_jhr: Optional hook
