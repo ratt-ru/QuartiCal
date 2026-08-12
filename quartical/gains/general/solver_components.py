@@ -96,6 +96,14 @@ def build_jhj_jhr_impl(
     by ``numbness``, which every gain-consuming term sets to 1e9. Lowering
     ``numbness`` for any of the six terms above would expose the disagreement.
 
+    INPUT FIELDS READ: ``ms_inputs.{DATA, MODEL_DATA, WEIGHT, FLAG, ANTENNA1,
+    ANTENNA2, ROW_MAP, ROW_WEIGHTS}``, ``mapping_inputs.{time, freq,
+    dir}_maps``, ``chain_inputs.gains`` and ``meta_inputs.active_term``. This
+    set is not private: ``crosshand_phase/null_v_kernel.py`` reuses this loop
+    by forging the input namedtuples, substituting the visibilities and
+    reversing the chain, so anything read here has to be something it supplies
+    correctly. It reverses every per-term field, not only those read today.
+
     Args:
         corr_mode: Numba literal carrying ``corr_mode.literal_value`` (1/2/4).
         row_weights_type: Numba type of the ``ROW_WEIGHTS`` ms_inputs field,
