@@ -37,19 +37,11 @@ from quartical.gains.general.solver_components import compute_update
 
 @factories.qcjit
 def identity_dims(shape):
-    """Return the jhj shape unchanged.
+    """Return the upsampled solver shape unchanged.
 
-    Diagonal terms store jhj with the same shape as the gains (a flat
-    correlation vector rather than a (corr, corr) block), so their jhj-dims
-    helper is the identity. It is provided as a module-level qcjit closure so
-    that a diagonal kernel can pass it as the ``get_jhj_dims`` argument of
-    build_gain_solver_impl in place of a per-term dims factory.
-
-    Args:
-        shape: The upsampled solver shape (a tuple).
-
-    Returns:
-        The shape unchanged.
+    A diagonal term stores jhj with the gain shape (a flat correlation vector
+    rather than a (corr, corr) block), so its ``get_jhj_dims`` hook is the
+    identity.
     """
     return shape
 
