@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-08-11
-last_verified_commit: 343e884
+timestamp: 2026-08-13
+last_verified_commit: d9bc461
 ---
 
 # Design Decisions
@@ -742,6 +742,30 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Consequences:** Autocorrelations remain in the data, silently down-weighted to zero;
   nothing in the read path may reintroduce TAQL without breaking the zarr backend.
 - **Source:** commit 291f7c5 (#117); interview 2026-07-07.
+
+## An in-repo LLM wiki with no supporting tooling
+
+- **Context:** The knowledge needed to work on QuartiCal safely — the maths the code
+  assumes, why the kernels are shaped as they are, which surprises are deliberate — was
+  recoverable only by reading source or asking the lead developer. Every fresh agent
+  session paid that cost again.
+- **Decision:** Commit a wiki of markdown pages under `docs/wiki/`, written for an agent
+  reader, indexed from `index.md` and wired into `CLAUDE.md`. Build no tooling for it: no
+  generation, no CI staleness check, no Sphinx integration. Pages carry a
+  `last_verified_commit` stamp and are kept current by the update-as-you-touch rule in
+  `CLAUDE.md`.
+- **Rationale:** The expensive part is the knowledge, not the plumbing, and doc tooling
+  tends to acquire maintenance cost faster than it repays it. A stamp plus a rule that
+  fires while the author is already in the relevant code is the cheapest thing that makes
+  staleness visible. Keeping the pages in-repo means they are reviewed and versioned with
+  the code they describe. The user-facing docs under `docs/source/` are a separate
+  audience and stay untouched.
+- **Consequences:** Staleness is detectable but not enforced — a stamp is only as good as
+  the session that refreshed it, and refreshing one without re-verifying the page is worse
+  than leaving it stale. Coverage grows organically: stubs state their scope and are
+  filled in by whoever next works in that subsystem, never speculatively.
+- **Source:** the wiki design, 2026-07-07; conventions now stated in
+  [index.md](index.md).
 
 ## Known debt (do not entrench)
 
