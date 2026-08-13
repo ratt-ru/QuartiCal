@@ -37,19 +37,11 @@ from quartical.gains.general.solver_components import compute_update
 
 @factories.qcjit
 def identity_dims(shape):
-    """Return the jhj shape unchanged.
+    """Return the upsampled solver shape unchanged.
 
-    Diagonal terms store jhj with the same shape as the gains (a flat
-    correlation vector rather than a (corr, corr) block), so their jhj-dims
-    helper is the identity. It is provided as a module-level qcjit closure so
-    that a diagonal kernel can pass it as the ``get_jhj_dims`` argument of
-    build_gain_solver_impl in place of a per-term dims factory.
-
-    Args:
-        shape: The upsampled solver shape (a tuple).
-
-    Returns:
-        The shape unchanged.
+    A diagonal term stores jhj with the gain shape (a flat correlation vector
+    rather than a (corr, corr) block), so its ``get_jhj_dims`` hook is the
+    identity.
     """
     return shape
 
@@ -84,9 +76,10 @@ def build_gain_solver_impl(
 
     Args:
         get_jhj_dims: A qcjit closure ``get_jhj_dims(upsample_shape) -> dims``
-            giving the jhj allocation shape. Full terms pass their per-corr
-            dims factory's product; diagonal terms pass the module-level
-            ``identity_dims`` (jhj is gain-shaped).
+            giving the jhj allocation shape. Full terms pass the closure
+            returned by their per-corr ``get_jhj_dims_factory``; diagonal terms
+            pass the module-level ``identity_dims`` closure directly, as their
+            jhj is gain-shaped.
         compute_jhj_jhr: The kernel module's @overload-ed compute_jhj_jhr;
             called at the top of each iteration to accumulate jhj and jhr.
         collapse_to_scalar_jhj_jhr: Optional hook
@@ -350,19 +343,6 @@ def build_param_solver_impl(
         The ``impl`` closure, wrapped as an inline="always" function.
     """
 
-    # Parameterised terms always solve on the parameter grid. The parameter
-    # frequency map is the base binned map
-    # (ParameterizedGain._make_param_freq_map delegates to
-    # Gain._make_freq_map), whereas the gain frequency map may be
-    # overridden per term - e.g. delay/tec/rotation_measure solve in every
-    # channel. jhj/jhr/update are allocated on the parameter shape, so the
-    # extents must come from the parameter grid; the gain grid is only ever
-    # equal to it (phase, amplitude, ...) or inconsistent with it (delay, ...).
-    # See docs/wiki/solver-architecture.md.
-    def get_active_f_map(mapping_inputs, active_term):
-        return mapping_inputs.param_freq_maps[active_term]
-    get_active_f_map = factories.qcjit(get_active_f_map)
-
     # Optional pre-solve stage: a build-time no-op when absent.
     if pre_solve is None:
         def pre_solve_step(ms_inputs, chain_inputs, meta_inputs):
@@ -444,7 +424,17 @@ def build_param_solver_impl(
         param_shape = active_params.shape
 
         active_t_map_g = mapping_inputs.time_maps[active_term]
-        active_f_map_p = get_active_f_map(mapping_inputs, active_term)
+
+        # Parameterised terms always solve on the parameter grid. The parameter
+        # frequency map is the base binned map
+        # (ParameterizedGain._make_param_freq_map delegates to
+        # Gain._make_freq_map), whereas the gain frequency map may be
+        # overridden per term - e.g. delay/tec/rotation_measure solve in every
+        # channel. jhj/jhr/update are allocated on the parameter shape, so the
+        # extents must come from the parameter grid; the gain grid is only ever
+        # equal to it (phase, amplitude, ...) or inconsistent with it
+        # (delay, ...). See docs/wiki/solver-architecture.md.
+        active_f_map_p = mapping_inputs.param_freq_maps[active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, param_shape, n_thread)

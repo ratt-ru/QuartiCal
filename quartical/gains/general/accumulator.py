@@ -44,8 +44,12 @@ class AccumulatorFactories(NamedTuple):
         zero: The ``zero_jhj_jhr_factory`` hook factory.
         flush: The ``flush_jhj_jhr_factory`` hook factory.
         mirror: The ``mirror_jhj_factory`` hook factory. A term whose jhj is
-            (1, 1) has no triangle to mirror and should pass ``None`` to the
-            builder instead.
+            (1, 1) in every correlation mode - i.e. one with no parameter set
+            per correlation - has no triangle to mirror and passes ``None`` to
+            the builder instead. That is not the only way to reach a (1, 1)
+            jhj, so the factory handles ``n_param == 1`` as well: a term with
+            one parameter per correlation hits it in the single-correlation
+            case, and it selects the hook once per term, not per mode.
     """
 
     zero: Callable

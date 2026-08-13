@@ -257,8 +257,13 @@ def build_jhj_jhr_impl(
             jhr_tifi = jhr[ti, fi]
             jhj_tifi = jhj[ti, fi]
 
-            # Zero/identity tuples in the compute (gain) dtype. Adding the
-            # zero tuple is also used to promote lower precision inputs.
+            # Zero/identity tuples in the jhr dtype: complex for the gain-basis
+            # terms, real for the parameterised ones, whose jhr is a
+            # parameter-space vector. Either way these only ever meet the
+            # operators and the model, so numba unifies them up to the complex
+            # accumulation dtype. That is also why the model is read through
+            # tuple_add against the zero tuple - it promotes a lower precision
+            # input rather than letting it set the dtype of the chain product.
             zero_vec = tuple_zeros(jhr_tifi[0, 0])
             identity_vec = tuple_identity(jhr_tifi[0, 0])
             jhj_jhr_zero = zero_jhj_jhr(jhr_tifi[0, 0])
