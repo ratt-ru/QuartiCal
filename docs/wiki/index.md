@@ -44,3 +44,27 @@ commit against which the page's claims were last checked).
   when:* working under `quartical/statistics/`.
 - [apps.md](apps.md) — backup/restore, summary, plotter CLIs. *Read when:* working under
   `quartical/apps/`.
+
+## Writing conventions
+
+The reader is an agent with no other context, so pages are written for retrieval rather
+than for narrative:
+
+- Dense factual prose. Facts over story, no marketing language, no restating what the
+  page is about to say.
+- Real symbol names and `path/to/file.py` anchors instead of vague description — a claim
+  the reader cannot locate in source is a claim they cannot check.
+- Invariants and non-obvious behaviour stated outright, including the reason. A page
+  earns its keep on what is expensive to re-derive from source, not on what is
+  rediscoverable by reading one function.
+- A stub carries its scope statement and nothing else. Never fabricate content to fill
+  one out.
+
+A page is verified by checking every claim against source, and can be tested by handing
+a fresh agent nothing but `CLAUDE.md` and the single page, then asking it the questions
+the page exists to answer. Wrong answers are page defects.
+
+There is deliberately no tooling here: no doc generation, no CI staleness check, no
+Sphinx integration (the user-facing docs under `docs/source/` are separate and
+untouched). The `last_verified_commit` stamp makes staleness visible and the
+update-as-you-touch rule in CLAUDE.md is what keeps it honest.
