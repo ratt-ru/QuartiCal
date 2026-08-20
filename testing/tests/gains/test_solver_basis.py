@@ -27,6 +27,21 @@ import numpy as np
 import pytest
 from numba import njit
 
+from quartical.gains.delay.kernel import (
+    delay_params_to_gains,
+    post_solve as delay_post_solve,
+    pre_solve as delay_pre_solve
+)
+from quartical.gains.delay_and_offset.kernel import (
+    delay_and_offset_params_to_gains,
+    post_solve as delay_and_offset_post_solve,
+    pre_solve as delay_and_offset_pre_solve
+)
+from quartical.gains.delay_and_tec.kernel import (
+    delay_and_tec_params_to_gains,
+    post_solve as delay_and_tec_post_solve,
+    pre_solve as delay_and_tec_pre_solve
+)
 from quartical.gains.delay_tec_and_offset.kernel import (
     delay_tec_and_offset_params_to_gains,
     post_solve as delay_tec_and_offset_post_solve,
@@ -63,8 +78,28 @@ MetaInputs = namedtuple("MetaInputs", ("active_term",))
 NativeImdry = namedtuple("NativeImdry", ("jhj",))
 
 # Per term: the native parameter values of one correlation, the term's
-# pre/post-solve hooks, and its parameters-to-gains routine.
+# pre/post-solve hooks, and its parameters-to-gains routine. The values follow
+# each term's own slot order, fixed by its make_param_names: an offset first
+# where the term has one, then a TEC, then a delay.
 TERMS = {
+    "delay": (
+        (DELAY,),
+        delay_pre_solve,
+        delay_post_solve,
+        delay_params_to_gains
+    ),
+    "delay_and_offset": (
+        (OFFSET, DELAY),
+        delay_and_offset_pre_solve,
+        delay_and_offset_post_solve,
+        delay_and_offset_params_to_gains
+    ),
+    "delay_and_tec": (
+        (TEC, DELAY),
+        delay_and_tec_pre_solve,
+        delay_and_tec_post_solve,
+        delay_and_tec_params_to_gains
+    ),
     "tec_and_offset": (
         (OFFSET, TEC),
         tec_and_offset_pre_solve,
