@@ -1,26 +1,24 @@
-"""The zero-mean correction bridges the stored and solver parameter bases.
+"""The stored and solver parameter bases must describe the same gains.
 
-QuartiCal stores the parameters of the TEC-like terms in a plain basis, in
-which a term's phase is its offset plus its frequency-dependent parts:
+The delay/tec family solves in a rescaled parameter basis: a delay is scaled by
+the band midpoint and a TEC by the bandwidth, which keeps the parameters and
+their derivatives at comparable magnitudes. ``pre_solve`` enters that basis and
+``post_solve`` leaves it, so the parameters written to disk are always in
+native units.
 
-    phase(nu) = offset + 2 pi TEC / nu + 2 pi delay nu.
-
-The solvers instead work in a basis where each frequency-dependent part has
-zero mean across the band, which lifts the near-degeneracy between the offset
-and the rest. ``params_to_gains`` implements that basis in both of its
-``rescaled`` modes, so a stored offset has to be shifted on the way into a
-solve and shifted back on the way out. ``apply_zero_mean_correction`` is that
-shift.
-
-Its coefficients - ``mid_freq`` for a delay and
-``log(nu_min/nu_max)/bandwidth`` for a TEC - are defined on parameters in
-native units, which fixes where it sits relative to the solver's parameter
-rescaling: after the unscaling in post_solve, and before the rescaling in
-pre_solve.
+That rescaling is a change of *units* and nothing else. In particular it does
+not move the reference point of a term's frequency-dependent coefficients -
+subtracting the band's mean frequency from a delay's coefficient, or the band's
+mean of ``1/nu`` from a TEC's, is what decorrelates those parameters from the
+offset, and it belongs to the term's model. ``params_to_gains`` therefore
+carries it in both of its ``rescaled`` modes, and the two modes describe
+identical gains.
 
 These tests drive each kernel's own ``pre_solve`` and ``post_solve`` hooks, so
-they constrain the order of the statements inside them and not merely the
-arithmetic of the correction.
+they constrain the statements inside them and not merely the arithmetic of the
+rescaling. Both oracles are ``params_to_gains``, so a term whose native and
+rescaled maps drift apart fails here rather than passing against a hand-written
+formula that encodes one of the two.
 """
 from collections import namedtuple
 
@@ -46,9 +44,10 @@ CHAN_FREQ = np.linspace(8.5e8, 1.7e9, N_CHAN)
 MIN_FREQ, MAX_FREQ = CHAN_FREQ[0], CHAN_FREQ[-1]
 
 # A TEC and a delay which each contribute of order a radian of phase across the
-# band. The correction applied to a rescaled rather than a native parameter is
-# wrong by a factor of the bandwidth (TEC) or the band midpoint (delay), so
-# realistic magnitudes make the difference unmistakable.
+# band, and an offset of the same order. A rescaling applied to the wrong
+# parameter slot, or in the wrong direction, is wrong by a factor of the
+# bandwidth (TEC) or the band midpoint (delay), so realistic magnitudes make
+# the difference unmistakable.
 TEC = 1e9 / (2 * np.pi)
 DELAY = 1e-9 / (2 * np.pi)
 OFFSET = 0.5
@@ -61,36 +60,17 @@ ChainInputs = namedtuple("ChainInputs", ("params", "param_flags"))
 MetaInputs = namedtuple("MetaInputs", ("active_term",))
 NativeImdry = namedtuple("NativeImdry", ("jhj",))
 
-
-def tec_and_offset_phase(p, chan_freq):
-    """Stored-basis phase of an (offset, TEC) parameter pair."""
-
-    return p[0] + 2 * np.pi * p[1] / chan_freq
-
-
-def delay_tec_and_offset_phase(p, chan_freq):
-    """Stored-basis phase of an (offset, TEC, delay) parameter triple."""
-
-    return (
-        p[0]
-        + 2 * np.pi * p[1] / chan_freq
-        + 2 * np.pi * p[2] * chan_freq
-    )
-
-
-# Per term: the native parameter values of one correlation, the phase they
-# imply, the term's pre/post-solve hooks, and its parameters-to-gains routine.
+# Per term: the native parameter values of one correlation, the term's
+# pre/post-solve hooks, and its parameters-to-gains routine.
 TERMS = {
     "tec_and_offset": (
         (OFFSET, TEC),
-        tec_and_offset_phase,
         tec_and_offset_pre_solve,
         tec_and_offset_post_solve,
         tec_and_offset_params_to_gains
     ),
     "delay_tec_and_offset": (
         (OFFSET, TEC, DELAY),
-        delay_tec_and_offset_phase,
         delay_tec_and_offset_pre_solve,
         delay_tec_and_offset_post_solve,
         delay_tec_and_offset_params_to_gains
@@ -101,7 +81,7 @@ TERMS = {
 def make_params(native_corr):
     """Return native parameters which differ per antenna and per correlation.
 
-    The second correlation is negated so that a correction applied to the wrong
+    The second correlation is negated so that a rescaling applied to the wrong
     parameter slot cannot pass by symmetry.
     """
 
@@ -133,15 +113,20 @@ def make_hook_inputs(params):
     )
 
 
-def make_truth_gains(params, params_per_corr, phase):
-    """Return the gains the native parameters imply in the stored basis."""
+def make_gains(params_to_gains, params, rescaled):
+    """Return the gains a parameter array implies in the requested basis."""
 
     gains = np.zeros((1, N_CHAN, N_ANT, 1, N_CORR), dtype=np.complex128)
 
-    for a in range(N_ANT):
-        for corr, start in ((0, 0), (-1, params_per_corr)):
-            p = params[0, 0, a, 0, start:start + params_per_corr]
-            gains[0, :, a, 0, corr] = np.exp(1j * phase(p, CHAN_FREQ))
+    params_to_gains(
+        params,
+        gains,
+        CHAN_FREQ,
+        MIN_FREQ,
+        MAX_FREQ,
+        np.zeros(N_CHAN, dtype=np.int64),
+        rescaled=rescaled
+    )
 
     return gains
 
@@ -154,35 +139,25 @@ def term(request):
 def test_pre_solve_preserves_gains(term):
     """pre_solve must not change the gains a solution describes.
 
-    This is the contract which fixes the correction's position: the parameters
-    handed to the solver have to describe the same gains as the stored
-    parameters they came from, read through params_to_gains in the solver's
-    rescaled basis. It only holds if the correction sees native units.
+    This is the contract which makes the rescaling a change of units: the
+    parameters handed to the solver, read through params_to_gains in the
+    rescaled basis, have to describe the same gains as the native parameters
+    they came from read in the native basis.
     """
 
-    native_corr, phase, pre_solve, _, params_to_gains = TERMS[term]
-    params_per_corr = len(native_corr)
+    native_corr, pre_solve, _, params_to_gains = TERMS[term]
 
     params = make_params(native_corr)
-    truth_gains = make_truth_gains(params, params_per_corr, phase)
+    native_gains = make_gains(params_to_gains, params.copy(), False)
 
     ms_inputs, chain_inputs, meta_inputs, _ = make_hook_inputs(params)
     pre_solve(ms_inputs, chain_inputs, meta_inputs)
 
-    solver_gains = np.zeros_like(truth_gains)
-    params_to_gains(
-        params,
-        solver_gains,
-        CHAN_FREQ,
-        MIN_FREQ,
-        MAX_FREQ,
-        np.zeros(N_CHAN, dtype=np.int64),
-        rescaled=True
-    )
+    solver_gains = make_gains(params_to_gains, params, True)
 
-    assert np.any(truth_gains[..., (0, -1)]), "All gains are zero!"
+    assert np.any(native_gains[..., (0, -1)]), "All gains are zero!"
     np.testing.assert_allclose(
-        solver_gains[..., (0, -1)], truth_gains[..., (0, -1)], rtol=1e-10
+        solver_gains[..., (0, -1)], native_gains[..., (0, -1)], rtol=1e-10
     )
 
 
@@ -193,7 +168,7 @@ def test_pre_solve_post_solve_round_trip(term):
     between them, so it has to return the parameters it was given.
     """
 
-    native_corr, _, pre_solve, post_solve, _ = TERMS[term]
+    native_corr, pre_solve, post_solve, _ = TERMS[term]
 
     params = make_params(native_corr)
     native_params = params.copy()
