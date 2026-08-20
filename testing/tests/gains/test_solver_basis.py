@@ -14,16 +14,18 @@ offset, and it belongs to the term's model. ``params_to_gains`` therefore
 carries it in both of its ``rescaled`` modes, and the two modes describe
 identical gains.
 
-These tests drive each kernel's own ``pre_solve`` and ``post_solve`` hooks, so
-they constrain the statements inside them and not merely the arithmetic of the
-rescaling. Both oracles are ``params_to_gains``, so a term whose native and
-rescaled maps drift apart fails here rather than passing against a hand-written
-formula that encodes one of the two.
+These tests drive each kernel's own ``pre_solve`` and ``post_solve`` hooks from
+a jitted caller, as the solver loop does, so they constrain the statements
+inside them and not merely the arithmetic of the rescaling. Both oracles are
+``params_to_gains``, so a term whose native and rescaled maps drift apart fails
+here rather than passing against a hand-written formula that encodes one of the
+two.
 """
 from collections import namedtuple
 
 import numpy as np
 import pytest
+from numba import njit
 
 from quartical.gains.delay_tec_and_offset.kernel import (
     delay_tec_and_offset_params_to_gains,
@@ -75,6 +77,41 @@ TERMS = {
         delay_tec_and_offset_post_solve,
         delay_tec_and_offset_params_to_gains
     )
+}
+
+
+def make_hook_drivers(pre_solve, post_solve):
+    """Return jitted drivers for a term's pre-solve and post-solve hooks.
+
+    The hooks are cached, so calling one from Python makes numba pickle the
+    argument types - and with them the module declaring the namedtuples above -
+    into the hook's on-disk cache index. Nothing on ``sys.path`` guarantees a
+    test module, and the index unpickles as a whole, so a failure to import it
+    makes every signature of that hook unloadable.
+
+    Binding the hooks as freevars of an uncached jitted caller is how the
+    solver loop reaches them: ``qcjit``'s ``inline="always"`` means they are
+    never lowered as their own cache unit, and no cache index records anything
+    about this module.
+    """
+
+    @njit
+    def drive_pre_solve(ms_inputs, chain_inputs, meta_inputs):
+        pre_solve(ms_inputs, chain_inputs, meta_inputs)
+
+    @njit
+    def drive_round_trip(ms_inputs, chain_inputs, meta_inputs, native_imdry):
+        pre_solve(ms_inputs, chain_inputs, meta_inputs)
+        post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry)
+
+    return drive_pre_solve, drive_round_trip
+
+
+# Built at import time, which costs nothing - numba compiles a driver on its
+# first call - so each term's hooks are compiled once for the whole module.
+DRIVERS = {
+    name: make_hook_drivers(pre_solve, post_solve)
+    for name, (_, pre_solve, post_solve, _) in TERMS.items()
 }
 
 
@@ -145,13 +182,14 @@ def test_pre_solve_preserves_gains(term):
     they came from read in the native basis.
     """
 
-    native_corr, pre_solve, _, params_to_gains = TERMS[term]
+    native_corr, _, _, params_to_gains = TERMS[term]
+    drive_pre_solve, _ = DRIVERS[term]
 
     params = make_params(native_corr)
     native_gains = make_gains(params_to_gains, params.copy(), False)
 
     ms_inputs, chain_inputs, meta_inputs, _ = make_hook_inputs(params)
-    pre_solve(ms_inputs, chain_inputs, meta_inputs)
+    drive_pre_solve(ms_inputs, chain_inputs, meta_inputs)
 
     solver_gains = make_gains(params_to_gains, params, True)
 
@@ -168,7 +206,8 @@ def test_pre_solve_post_solve_round_trip(term):
     between them, so it has to return the parameters it was given.
     """
 
-    native_corr, pre_solve, post_solve, _ = TERMS[term]
+    native_corr, *_ = TERMS[term]
+    _, drive_round_trip = DRIVERS[term]
 
     params = make_params(native_corr)
     native_params = params.copy()
@@ -176,7 +215,6 @@ def test_pre_solve_post_solve_round_trip(term):
     ms_inputs, chain_inputs, meta_inputs, native_imdry = \
         make_hook_inputs(params)
 
-    pre_solve(ms_inputs, chain_inputs, meta_inputs)
-    post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry)
+    drive_round_trip(ms_inputs, chain_inputs, meta_inputs, native_imdry)
 
     np.testing.assert_allclose(params, native_params, rtol=1e-12, atol=1e-12)
