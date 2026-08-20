@@ -5,7 +5,6 @@ from numba.extending import overload
 from quartical.utils.numba import (coerce_literal,
                                    JIT_OPTIONS,
                                    PARALLEL_JIT_OPTIONS)
-from quartical.gains.general.flagging import apply_param_flags_to_params
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
@@ -54,24 +53,14 @@ def tec_and_offset_solver_impl(
 # The delay/tec family enters a scaled solver basis before the loop and leaves
 # it afterwards; these two module-local qcjit hooks fetch their inputs from the
 # standardised hook arguments and apply (respectively undo) the parameter
-# rescaling and the zero-mean offset correction.
+# rescaling. They change units only - the band-centred reference frequency
+# which decorrelates the TEC from the offset belongs to the term's model and is
+# carried by params_to_gains in both of its bases.
 @factories.qcjit
 def pre_solve(ms_inputs, chain_inputs, meta_inputs):
     active_params = chain_inputs.params[meta_inputs.active_term]
-    active_param_flags = chain_inputs.param_flags[meta_inputs.active_term]
 
-    min_freq = ms_inputs.MIN_FREQ
-    max_freq = ms_inputs.MAX_FREQ
-    bandwidth = max_freq - min_freq
-
-    # This alters the offset parameter to be consistent with the zero mean
-    # corrections used in the solver. QuartiCal now removes this factor
-    # when returning from this solver. The correction factor is defined on the
-    # TEC in native units, so it has to be applied before the rescaling below -
-    # post_solve likewise unscales before removing it.
-    apply_zero_mean_correction(
-        min_freq, max_freq, active_params, active_param_flags
-    )
+    bandwidth = ms_inputs.MAX_FREQ - ms_inputs.MIN_FREQ
 
     # We actually solve for TEC' = TEC/bandwidth. This helps avoid
     # numerical issues, but requires some scaling of the parameters.
@@ -81,21 +70,12 @@ def pre_solve(ms_inputs, chain_inputs, meta_inputs):
 @factories.qcjit
 def post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry):
     active_params = chain_inputs.params[meta_inputs.active_term]
-    active_param_flags = chain_inputs.param_flags[meta_inputs.active_term]
-    min_freq = ms_inputs.MIN_FREQ
-    max_freq = ms_inputs.MAX_FREQ
-    bandwidth = max_freq - min_freq
+
+    bandwidth = ms_inputs.MAX_FREQ - ms_inputs.MIN_FREQ
 
     # Undo rescaling so that quantities are in native units.
     active_params[..., 1::2] *= bandwidth
     native_imdry.jhj[..., 1::2, 1::2] /= bandwidth ** 2
-
-    # This alters the offset parameter to be consistent with the zero mean
-    # corrections used in the solver. QuartiCal now removes this factor
-    # when returning from this solver.
-    apply_zero_mean_correction(
-        min_freq, max_freq, active_params, active_param_flags, inverse=True
-    )
 
 
 @overload(tec_and_offset_solver_impl, jit_options=JIT_OPTIONS)
@@ -115,8 +95,7 @@ def nb_tec_and_offset_solver_impl(
     # hooks below are specific to tec_and_offset terms. It solves on the
     # parameter grid, supports scalar mode (two parameters per correlation - a
     # TEC and an offset), has a referencing stage, and enters/leaves a scaled
-    # solver basis (the pre/post-solve stages rescale its TEC parameters and
-    # apply the zero-mean correction).
+    # solver basis (the pre/post-solve stages rescale its TEC parameters).
     # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_param_solver_impl(
         pre_solve=pre_solve,
@@ -590,18 +569,3 @@ def tec_and_offset_params_to_gains(
 reference_params = reference_params_factory(
     params_to_gains=tec_and_offset_params_to_gains,
 )
-
-
-@njit(**JIT_OPTIONS)
-def apply_zero_mean_correction(
-    min_freq, max_freq, params, param_flags, inverse=False
-):
-    sign = -1 if inverse else 1
-    # Set the starting value of the offset to be consistent with the
-    # zero-mean correction factor. This is important if we are loading
-    # a term.
-    tec_factor = np.log(min_freq/max_freq)/(max_freq - min_freq)
-    params[..., 0::2] += -sign * 2 * np.pi * tec_factor * params[..., 1::2]
-
-    # Ensure that the values of flagged parameters remain zero.
-    apply_param_flags_to_params(param_flags, params, 0)

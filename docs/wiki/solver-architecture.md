@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-08-12
-last_verified_commit: 364cbb2
+timestamp: 2026-08-20
+last_verified_commit: 5b39871
 ---
 
 # Solver Architecture
@@ -392,8 +392,11 @@ form is a `TypeError`:
   `pre_solve(ms_inputs, chain_inputs, meta_inputs)` and `post_solve(ms_inputs,
   chain_inputs, meta_inputs, native_imdry)` are opaque jitted closures owned by each
   kernel module — deliberately NOT a declarative rescaling abstraction — used to enter and
-  leave a scaled solver basis: the delay/tec families' mid_freq/bandwidth strided rescales
-  (and, for the offset terms, `apply_zero_mean_correction`) relocated verbatim.
+  leave a scaled solver basis: the delay/tec families' mid_freq/bandwidth strided rescales.
+  They change units only; the band-referenced coefficients that decorrelate a delay or a TEC
+  from an offset belong to each term's model and are carried by `params_to_gains` in both of
+  its `rescaled` modes, so the two modes describe identical gains
+  (`testing/tests/gains/test_solver_basis.py`).
   A term solving in the basis `p' = Sp` has `jhj = S jhj' S`. Every `post_solve` unscales
   the diagonal blocks of its rescaled parameters (`jhj[..., i::ppc, i::ppc]`) and leaves
   the blocks coupling those to unrescaled parameters in the solver basis; `delay` scales

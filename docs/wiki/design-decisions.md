@@ -413,7 +413,8 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   delay_and_offset, delay_and_tec, tec_and_offset, delay_tec_and_offset) were identical in every
   character but the `*_params_to_gains` symbol they call. The branch review's item 11 recorded a
   second axis of variation, an extra zero-mean step in the two offset terms; that is wrong —
-  `apply_zero_mean_correction` is only ever called from `pre_solve`/`post_solve`.
+  the step it meant was only ever called from `pre_solve`/`post_solve`, and has since been
+  deleted outright.
 - **Decision:** `general/parameters.py:reference_params_factory(params_to_gains)` returns the hook
   for those five, which each bind it at module level in one statement. It is a `qcjit` closure
   rather than its own `@njit` cache unit: five kernels binding a different `params_to_gains` at one
@@ -452,6 +453,8 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   The wider basis inconsistency this uncovered is recorded under Known debt and is not addressed.
 - **Source:** branch kernel-unification-tidying-9 (2026-08-05), arising from item 9 of the branch
   review.
+- **Superseded** by "The zero-mean offset shear removed from the delay/tec pre/post-solve hooks"
+  below, which deletes the correction whose ordering this entry fixed.
 
 ## One jhj unscaling convention, correct on the diagonal only
 
@@ -767,6 +770,49 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Source:** the wiki design, 2026-07-07; conventions now stated in
   [index.md](index.md).
 
+## The zero-mean offset shear removed from the delay/tec pre/post-solve hooks
+
+- **Context:** `tec_and_offset` and `delay_tec_and_offset` ran an `apply_zero_mean_correction`
+  step in `pre_solve`/`post_solve` which shifted the offset parameter by `2*pi*mid_freq*delay`
+  and `-2*pi*log(nu_min/nu_max)/bandwidth*TEC`. It was described as making the offset
+  consistent with the solver's zero-mean corrections, but those corrections are already part of
+  each term's model: `params_to_gains` subtracts the band's mean frequency from a delay's
+  coefficient and the band's mean of `1/nu` from a TEC's, in **both** `rescaled` modes. The step
+  therefore applied the shift a second time, so `params_to_gains` in its native mode - the mode
+  `init_term` calls - described gains that differed from the solver's by that constant, of order
+  a radian at parameters contributing a radian across the band. `delay`, `delay_and_offset` and
+  `delay_and_tec` never had the step and were self-consistent throughout.
+- **Decision:** delete the step and both copies of the function. `pre_solve`/`post_solve` in all
+  five frequency-dependent terms now change units and nothing else.
+- **Rationale:** the shift is a shear, not a scaling — it mixes two parameters rather than
+  rescaling one — and it was living in a hook whose job is units. Naming what it actually did
+  settles where it belongs. Referencing a frequency-dependent coefficient to the band is what
+  decorrelates it from the offset: for a delay the Jacobian columns `1` and `2*pi*(nu - nu_c)`
+  are exactly orthogonal on an unflagged uniform grid, against a column correlation of 0.982 for
+  `2*pi*nu` over MeerKAT L-band. That decorrelation is a property of the model the term fits, so
+  it belongs in `params_to_gains` and the accumulate hooks, which is where it already was. The
+  offset consequently means the phase at the band reference point in every offset term — the
+  quantity the data constrains, rather than an extrapolation to zero frequency which for
+  realistic delays is not even determined modulo 2*pi.
+- **Consequences:** the value written to `phase_offset` changes for these two terms; the gains do
+  not. A `load_from` of a gain zarr written before this reads its offsets in the new basis, which
+  for a stored solution differs by the shift; both terms carry an experimental warning in
+  `docs/source/gain_types.rst`. `init_term`'s gains now agree with the parameters beside them, so
+  `load_from` and `initial_estimate` no longer displace the offset before iteration 0.
+  `testing/tests/gains/test_{tec,delay_tec}_and_offset.py` truth gains carry the band-referenced
+  coefficients, matching what `test_delay.py`, `test_delay_and_offset.py` and
+  `test_delay_and_tec.py` already wrote, and `docs/source/gain_types.rst` needed no change
+  because it already published this convention.
+- **Not done:** centring on the *weighted sample* mean rather than the analytic band mean would
+  make the decorrelation exact under flagging (at 30% edge flagging the column correlation is
+  0.60 rather than 0). Rejected for now: the centring constant would become data-dependent per
+  antenna and per interval and would drift as mid-solve flagging fires, which would make stored
+  offsets incomparable across antennas and break parameter interpolation in `interpolation/`.
+  The residual correlation costs conditioning, which `compute_update`'s exact block inversion
+  already absorbs.
+- **Source:** branch followups/zero-mean-shear (2026-08-20), addressing item 1 of the second
+  branch review.
+
 ## Known debt (do not entrench)
 
 Testimony from the lead developer (interview 2026-07-07). An LLM extending QuartiCal should
@@ -785,20 +831,15 @@ treat these as scars, not patterns to replicate:
   `compute_update` lives once in `gains/general/solver_components.py`. What stays per-kernel is
   the per-term maths (elem/flush/resid/stage hooks and `finalize_update`) — which is the
   part that *should* vary. New gain types should bind the shared loop, not copy one.
-- **The offset parameter does not mean the same thing in every term.** `params_to_gains`
-  builds a zero-mean basis for every frequency-dependent part it models, in both `rescaled`
-  modes. `delay_and_offset` stores its `phase_offset` in that basis — the phase at band
-  centre — and so needs no conversion. `tec_and_offset` and `delay_tec_and_offset` store a
-  plain-basis offset instead and bridge the two with `apply_zero_mean_correction`, whose
-  coefficients are defined on parameters in native units. The commented-out `- band_centre`
-  at `testing/tests/gains/test_delay_tec_and_offset.py:112` is where that divergence was
-  introduced. Each term is self-consistent and its tests assert against its own convention,
-  but the three offsets are not comparable, and a reader should not assume an offset means
-  the same thing as it did in the term above. Two things still stand between this and a
-  shared `pre_solve`/`post_solve`: the conventions themselves, and the two copies of
-  `apply_zero_mean_correction`, which differ in parameter stride and in whether they carry a
-  delay term. The ordering constraint the correction imposes is now pinned by
-  `testing/tests/gains/test_zero_mean_correction.py`, which drives each term's real hooks.
+- **The offset parameter means the same thing in every term. Resolved 2026-08-20** — see
+  "The zero-mean offset shear removed from the delay/tec pre/post-solve hooks". All three
+  offset terms now store the phase at their band reference point, `pre_solve`/`post_solve`
+  are pure unit changes in all five frequency-dependent terms, and
+  `testing/tests/gains/test_solver_basis.py` pins the two bases against each other.
+  What remains is the `jhj` treatment: `post_solve` unscales only the diagonal blocks, so
+  the exported parameter precisions for the blocks coupling rescaled to unrescaled
+  parameters stay in the solver basis. That is a reporting gap, not a solve error, and is
+  untouched here.
 - **Dask itself.** No longer improving upstream and largely fallen out of favour; the
   project will almost certainly move away from it at some point. Avoid deepening dask
   coupling in new code where a scheduler-agnostic seam is possible.

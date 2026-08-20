@@ -5,7 +5,6 @@ from numba.extending import overload
 from quartical.utils.numba import (coerce_literal,
                                    JIT_OPTIONS,
                                    PARALLEL_JIT_OPTIONS)
-from quartical.gains.general.flagging import apply_param_flags_to_params
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_param_solver_impl
@@ -54,35 +53,29 @@ def delay_tec_and_offset_solver_impl(
 # The delay/tec family enters a scaled solver basis before the loop and leaves
 # it afterwards; these two module-local qcjit hooks fetch their inputs from the
 # standardised hook arguments and apply (respectively undo) the parameter
-# rescaling and the zero-mean offset correction.
+# rescaling. They change units only - the band-centred reference frequencies
+# which decorrelate the delay and the TEC from the offset belong to the term's
+# model and are carried by params_to_gains in both of its bases.
 @factories.qcjit
 def pre_solve(ms_inputs, chain_inputs, meta_inputs):
     active_params = chain_inputs.params[meta_inputs.active_term]
-    active_param_flags = chain_inputs.param_flags[meta_inputs.active_term]
 
     min_freq = ms_inputs.MIN_FREQ
     max_freq = ms_inputs.MAX_FREQ
     mid_freq = (min_freq + max_freq) / 2
-
-    # This alters the offset parameter to be consistent with the zero mean
-    # corrections used in the solver. QuartiCal now removes this factor
-    # when returning from this solver.
-    apply_zero_mean_correction(
-        min_freq, max_freq, active_params, active_param_flags
-    )
+    bandwidth = max_freq - min_freq
 
     # We actually solve for D' = (D(nu_min + nu_max))/2 and TEC' =
     # TEC/bandwidth. This helps avoid numerical issues, but requires the
     # parameters to be scaled into that basis here and back out in post_solve.
     active_params[..., 2::3] *= mid_freq
-    bandwidth = max_freq - min_freq
     active_params[..., 1::3] /= bandwidth
 
 
 @factories.qcjit
 def post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry):
     active_params = chain_inputs.params[meta_inputs.active_term]
-    active_param_flags = chain_inputs.param_flags[meta_inputs.active_term]
+
     min_freq = ms_inputs.MIN_FREQ
     max_freq = ms_inputs.MAX_FREQ
     mid_freq = (min_freq + max_freq) / 2
@@ -93,13 +86,6 @@ def post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry):
     native_imdry.jhj[..., 2::3, 2::3] *= mid_freq ** 2
     active_params[..., 1::3] *= bandwidth
     native_imdry.jhj[..., 1::3, 1::3] /= bandwidth ** 2
-
-    # This alters the offset parameter to be consistent with the zero mean
-    # corrections used in the solver. QuartiCal now removes this factor
-    # when returning from this solver.
-    apply_zero_mean_correction(
-        min_freq, max_freq, active_params, active_param_flags, inverse=True
-    )
 
 
 @overload(delay_tec_and_offset_solver_impl, jit_options=JIT_OPTIONS)
@@ -120,7 +106,7 @@ def nb_delay_tec_and_offset_solver_impl(
     # parameter grid, supports scalar mode (three parameters per correlation -
     # a delay, a TEC and an offset), has a referencing stage, and enters/leaves
     # a scaled solver basis (the pre/post-solve stages rescale its delay and
-    # TEC parameters and apply the zero-mean correction).
+    # TEC parameters).
     # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_param_solver_impl(
         pre_solve=pre_solve,
@@ -665,22 +651,3 @@ def delay_tec_and_offset_params_to_gains(
 reference_params = reference_params_factory(
     params_to_gains=delay_tec_and_offset_params_to_gains,
 )
-
-
-@njit(**JIT_OPTIONS)
-def apply_zero_mean_correction(
-    min_freq, max_freq, params, param_flags, inverse=False
-):
-
-    mid_freq = (min_freq + max_freq) / 2
-    sign = -1 if inverse else 1
-    # Set the starting value of the offset to be consistent with the
-    # zero-mean correction factor. This is important if we are loading
-    # a term.
-    delay_factor = mid_freq
-    params[..., 0::3] += sign * 2 * np.pi * delay_factor * params[..., 2::3]
-    tec_factor = np.log(min_freq/max_freq)/(max_freq - min_freq)
-    params[..., 0::3] += -sign * 2 * np.pi * tec_factor * params[..., 1::3]
-
-    # Ensure that the values of flagged parameters remain zero.
-    apply_param_flags_to_params(param_flags, params, 0)
