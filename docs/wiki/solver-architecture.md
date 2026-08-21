@@ -3,7 +3,7 @@ type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
 timestamp: 2026-08-21
-last_verified_commit: d5d34a6
+last_verified_commit: 5788087
 ---
 
 # Solver Architecture
@@ -278,7 +278,8 @@ labelled hook table rather than a run of positional factories.
   (delay/TEC families, rotation_measure); its output IS the `channel_coeffs` tuple passed to the
   accumulate hook. `None` yields an empty tuple.
 - `mirror_jhj_factory(corr_mode) -> mirror(jhj_tifi)` (optional) — fills the lower triangle of the
-  per-interval JHJ elements; `None` yields a no-op.
+  per-interval JHJ elements; `None` yields a no-op. Every kernel which builds an accumulator binds
+  `accumulator.mirror`; `None` is for those which build none (`diag_complex`).
 
 "Optional" above means the hook may be `None`, not that the argument may be omitted. All three
 builders (`build_jhj_jhr_impl`, `build_gain_solver_impl`, `build_param_solver_impl`) are
@@ -303,7 +304,8 @@ pass to `build_param_solver_impl` — collapsing JHJ/JHr to a scalar solve is po
 there is a parameter set per correlation to collapse, so the two uses cannot diverge.
 crosshand_phase_null_v hand-rolls its solver loop and so calls no builder: its constant reaches
 `get_identity_params` and `triangular_accumulator_factories` only. All four have a `(1, 1)` JHJ
-with no triangle, so all four also pass `mirror_jhj_factory=None`.
+with no triangle, so `accumulator.mirror` resolves to a no-op hook for them — the presence of a
+triangle follows `PARAMS_PER_CORR` and is not restated at the binding.
 
 `n_param` is both the accumulator's JHJ dimension and the identity vector's length, so neither can
 drift from the other, and `testing/tests/gains/test_parameters.py` pins it against each gain class's

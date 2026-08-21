@@ -131,9 +131,8 @@ def nb_compute_jhj_jhr(
     # below (the per-term maths) are specific to crosshand phase terms. The
     # loop body is phase's verbatim, so crosshand reuses phase's amplitude-
     # normalised residual hook. Crosshand solves a single parameter, so its jhj
-    # is (1, 1) and the mirror hook is a no-op (mirror_jhj_factory is None).
-    # There are no per-channel coefficients, so there is no
-    # compute_channel_coeffs hook.
+    # is (1, 1) and the mirror hook is a no-op. There are no per-channel
+    # coefficients, so there is no compute_channel_coeffs hook.
     # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
@@ -143,7 +142,7 @@ def nb_compute_jhj_jhr(
         flush_jhj_jhr_factory=accumulator.flush,
         compute_residual_factory=phase_only_residual_factory,
         compute_channel_coeffs_factory=None,
-        mirror_jhj_factory=None,
+        mirror_jhj_factory=accumulator.mirror,
     )
 
     def impl(

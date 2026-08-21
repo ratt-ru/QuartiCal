@@ -404,7 +404,7 @@ def nb_shared_compute_jhj_jhr(
         flush_jhj_jhr_factory=accumulator.flush,
         compute_residual_factory=standard_residual_factory,
         compute_channel_coeffs_factory=None,
-        mirror_jhj_factory=None,
+        mirror_jhj_factory=accumulator.mirror,
     )
 
     def impl(
