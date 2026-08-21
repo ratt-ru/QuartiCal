@@ -205,12 +205,12 @@ def build_jhj_jhr_impl(
         jhj = upsampled_imdry.jhj
         jhr = upsampled_imdry.jhr
 
-        n_row, n_chan, n_dir, n_corr = model.shape
+        _, _, n_dir, _ = model.shape
 
         jhj[:] = 0
         jhr[:] = 0
 
-        n_tint, n_fint, n_ant, n_gdir, n_corr = jhr.shape
+        n_tint, n_fint, _, n_gdir, _ = jhr.shape
         n_int = n_tint*n_fint
 
         # In the (very common) single direction case the per-direction
