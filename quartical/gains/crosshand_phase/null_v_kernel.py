@@ -112,14 +112,14 @@ def nb_null_v_crosshand_phase_solver_impl(
         param_shape = active_params.shape
 
         active_t_map_g = mapping_inputs.time_maps[active_term]
-        active_f_map_g = mapping_inputs.freq_maps[active_term]
+        active_f_map_p = mapping_inputs.param_freq_maps[active_term]
 
         # Create more work to do in paralllel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, param_shape, n_thread)
 
         # Determine the starts and stops of the rows and channels associated
         # with each solution interval.
-        extents = get_extents(resampler.upsample_t_map, active_f_map_g)
+        extents = get_extents(resampler.upsample_t_map, active_f_map_p)
 
         upsample_shape = resampler.upsample_shape
         upsampled_jhj = np.empty(upsample_shape + (upsample_shape[-1],),
