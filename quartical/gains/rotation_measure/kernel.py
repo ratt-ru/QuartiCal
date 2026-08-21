@@ -19,6 +19,11 @@ PARAMS_PER_CORR = None
 
 accumulator = triangular_accumulator_factories(PARAMS_PER_CORR)
 
+# Speed of light in m/s. lambda_sq = (LIGHTSPEED/chan_freq)**2 must be
+# identical in the accumulate derivative, finalize_update and init_term,
+# or they linearise about different lambda_sq.
+LIGHTSPEED = 299792458.0
+
 
 @njit(**JIT_OPTIONS)
 def rm_solver(
@@ -229,7 +234,7 @@ def nb_finalize_update(
             # of the rotation angle when mapping parameters back onto gains.
             # This is negligible work relative to the loop below.
             chan_freqs = ms_inputs.CHAN_FREQ
-            lambda_sq = (299792458/chan_freqs)**2
+            lambda_sq = (LIGHTSPEED/chan_freqs)**2
 
             update = native_imdry.update
 
@@ -286,7 +291,7 @@ def compute_channel_coeffs_factory(corr_mode):
 
     def impl(ms_inputs, meta_inputs, f):
         chan_freq = ms_inputs.CHAN_FREQ
-        lsq = (299792458/chan_freq[f])**2
+        lsq = (LIGHTSPEED/chan_freq[f])**2
         return (lsq,)
 
     return factories.qcjit(impl)

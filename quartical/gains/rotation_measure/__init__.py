@@ -3,6 +3,7 @@ from collections import namedtuple
 from quartical.gains.conversion import no_op
 from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.rotation_measure.kernel import (
+    LIGHTSPEED,
     rm_solver,
     rm_params_to_gains
 )
@@ -53,7 +54,7 @@ class RotationMeasure(ParameterizedGain):
         )
 
         chan_freq = ms_kwargs["CHAN_FREQ"]
-        lambda_sq = (299792458 / chan_freq) ** 2
+        lambda_sq = (LIGHTSPEED / chan_freq) ** 2
 
         # Convert the parameters into gains.
         rm_params_to_gains(
