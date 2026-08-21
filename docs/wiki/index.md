@@ -1,5 +1,10 @@
 ---
 okf_version: "0.1"
+type: index
+title: LLM Wiki Index
+description: "Map of the QuartiCal LLM wiki — which page answers which task, plus the writing and verification conventions every page follows."
+timestamp: 2026-08-20
+last_verified_commit: f6e2376
 ---
 
 # QuartiCal LLM Wiki — Index
