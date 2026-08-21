@@ -128,11 +128,11 @@ def nb_compute_jhj_jhr(
     row_weights_type = ms_inputs[row_weights_idx]
 
     # The accumulation loop itself is shared between kernels - only the hooks
-    # below (the per-term maths) are specific to crosshand phase terms. The
-    # loop body is phase's verbatim, so crosshand reuses phase's amplitude-
-    # normalised residual hook. Crosshand solves a single parameter, so its jhj
-    # is (1, 1) and the mirror hook is a no-op. There are no per-channel
-    # coefficients, so there is no compute_channel_coeffs hook.
+    # below (the per-term maths) are specific to crosshand phase terms.
+    # Crosshand solves for a phase, so it takes the shared amplitude-normalised
+    # residual hook. It solves a single parameter, so its jhj is (1, 1) and the
+    # mirror hook is a no-op. There are no per-channel coefficients, so there
+    # is no compute_channel_coeffs hook.
     # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
