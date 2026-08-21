@@ -303,9 +303,8 @@ def compute_channel_coeffs_factory(corr_mode):
     model with respect to the parameter introduces a per-channel coefficient
     coeff = 2*pi*(chan_freq[f]/cf_mid - 1), where cf_mid is the midpoint of the
     band (the same rescaling the solver applies to the parameters). The
-    compute_channel_coeffs hook computes this once per channel and returns it
-    as a single-element flat tuple (coeff,) which is the channel_coeffs tuple
-    passed to the accumulate hook.
+    compute_channel_coeffs hook returns it as a single-element flat tuple
+    (coeff,) which is the channel_coeffs tuple passed to the accumulate hook.
     """
 
     def impl(ms_inputs, meta_inputs, f):

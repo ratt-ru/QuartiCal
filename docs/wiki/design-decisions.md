@@ -820,6 +820,38 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Source:** branch followups/zero-mean-shear (2026-08-20), addressing item 1 of the second
   branch review.
 
+## Band constants left inline in the channel-coefficient hooks
+
+- **Context:** the shared solver loop calls `compute_channel_coeffs(ms_inputs, meta_inputs, f)`
+  from inside the row/channel loop, after the flag check, so once per unflagged visibility. The
+  hook receives only the channel index, so the five frequency-dependent terms build their band
+  constants in the hook body: `bandwidth = cf_max - cf_min`, `cf_mid = (cf_min + cf_max)/2` and,
+  for the three TEC terms, `np.log(cf_min/cf_max)`. Before the loop was extracted these lived
+  once per `compute_jhj_jhr` call, above the `prange`. The second branch review's item 8 asked
+  whether the move costs a libm call per visibility, which at the benchmark dimensions
+  (759k unflagged visibilities, 20 iterations) would be 15.2M `log` evaluations per solve.
+- **Decision:** leave the hooks as they are. Do not add a per-chunk precompute hook, and do not
+  thread the invariants in as extra arguments.
+- **Rationale:** measured, not assumed. LLVM's LICM hoists every one of these out of the entire
+  loop nest inside the parfor body, into the preheader of the interval loop — one evaluation per
+  thread per call, which is the pre-extraction placement. Verified by dumping the
+  `compute_jhj_jhr` parfor gufunc IR for `delay`, `delay_and_tec`, `tec_and_offset` and
+  `delay_tec_and_offset` and classifying each block as loop-carried or not: exactly one
+  `llvm.log.f64`, in the outer loop's preheader, none in any loop. It also beats a hand-hoist:
+  for the four terms dividing by `cf_mid`, LLVM hoists a reciprocal (`fdiv 1.0, cf_mid`) and
+  leaves a multiply in the loop, so writing the invariants out by hand would keep a division
+  per visibility that the compiler removes. `rotation_measure` has nothing to hoist —
+  `(c/chan_freq[f])**2` is per-channel in full.
+- **Consequences:** the hook signature stays at three arguments and the seven kernels binding
+  `compute_channel_coeffs_factory=None` stay untouched. The cost is a dependency on an optimiser
+  pass: a numba or LLVM bump could stop hoisting and reintroduce the per-visibility libm call,
+  worth roughly 10% of a `tec_and_offset` solve. `build_jhj_jhr_impl`'s docstring states the
+  guarantee and the IR check that confirms it, so the recipe is in the tree rather than only
+  here. No regression test guards it: the check needs a cold kernel compile (~45 s) and asserts
+  on LLVM block naming, which is too brittle a thing to fail CI on for a performance property.
+- **Source:** branch followups/channel-coeff-invariants (2026-08-21), addressing item 8 of the
+  second branch review.
+
 ## Known debt (do not entrench)
 
 Testimony from the lead developer (interview 2026-07-07). An LLM extending QuartiCal should
