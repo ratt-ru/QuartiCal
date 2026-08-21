@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-08-20
-last_verified_commit: f6e2376
+timestamp: 2026-08-21
+last_verified_commit: d5d34a6
 ---
 
 # Solver Architecture
@@ -376,18 +376,19 @@ call site passes them by name, so the opaque positional
   means scalar unsupported, raise — and a term which says so without supplying
   `scalar_error_message` fails to build); `numbness` forwards to `update_gain_flags` (1e9
   everywhere except amplitude's default 1e-6). That 1e9 does more than switch off trend
-  flagging: the nine accumulate hooks which consume the `gain` (delay/tec families, phase,
-  crosshand_phase, rotation, rotation_measure) linearise about the gain, and `set_identity`
-  forces a hard-flagged gain element to the identity while `update_param_flags` only resets
-  a parameter interval whose contributing gain intervals are ALL flagged — so for the six
-  with a per-channel gain grid, one hard-flagged channel would contribute a derivative
-  linearised at the identity against a non-zero parameter. 1e9 is what keeps mid-solve hard
-  flagging (and hence that state) unreachable; full argument in the linearisation-point note
-  in `solver_components.py`.
+  flagging: the ten accumulate hooks which consume the `gain` (delay/tec families, phase,
+  crosshand_phase, crosshand_phase_null_v, rotation, rotation_measure) linearise about the
+  gain, and `set_identity` forces a hard-flagged gain element to the identity while
+  `update_param_flags` only resets a parameter interval whose contributing gain intervals
+  are ALL flagged — so for the six whose param grid is coarser than their gain grid, one
+  hard-flagged channel would contribute a derivative linearised at the identity against a
+  non-zero parameter. 1e9 is what keeps mid-solve hard flagging (and hence that state)
+  unreachable; full argument in the linearisation-point note in `solver_components.py`.
   `identity_params` forwards to `update_param_flags` and comes from
   `general/parameters.py:get_identity_params(corr_mode, PARAMS_PER_CORR, fill=)` — sized by
   `get_n_param`, so `params_per_corr=None` gives the single parameter of the four-correlation-only
-  whole-2x2 terms, and `fill=1.0` is amplitude's multiplicative identity.
+  whole-2x2 terms, and `fill=amplitude/kernel.py:IDENTITY_FILL` (1.0) is amplitude's
+  multiplicative identity, the one term whose identity parameter is not zero.
   `reference_params(ms_inputs, mapping_inputs, chain_inputs, meta_inputs)` runs after
   `finalize_gain_flags` where present (phase, delay/tec families). The five delay/tec members
   come from `general/parameters.py:reference_params_factory(params_to_gains=)`, which works

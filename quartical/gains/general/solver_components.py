@@ -71,23 +71,24 @@ def build_jhj_jhr_impl(
     per-channel coefficient tuple produced by ``compute_channel_coeffs`` (an
     empty tuple for terms with no channel-coefficient hook).
 
-    LINEARISATION POINT AND FLAGGED GAINS: nine parameterised accumulate hooks
+    LINEARISATION POINT AND FLAGGED GAINS: ten parameterised accumulate hooks
     consume the ``gain`` argument, because their chain rule differentiates the
-    active-term gain itself - the delay/tec families and crosshand_phase via
-    ``-1j*conj(g)``, rotation and rotation_measure by reading cos/sin out of
-    the rotation matrix. Those hooks therefore linearise about the gain rather
-    than about the parameters, and the two part company at hard-flagged
-    elements: ``set_identity`` forces a hard-flagged gain to the identity (each
-    kernel's finalize_update, plus ``update_gain_flags`` and
-    ``apply_gain_flags_to_gains`` in general/flagging.py), while
-    ``update_param_flags`` only resets a parameter interval whose contributing
-    gain intervals are ALL flagged. Where the two grids coincide (phase,
-    crosshand_phase, rotation) that reset always fires, so the linearisation
-    points agree. The six terms which evaluate their gain in every channel but
-    solve on a coarser frequency grid (delay, delay_and_offset, delay_and_tec,
-    delay_tec_and_offset, tec_and_offset, rotation_measure) have no such
-    protection: one hard-flagged channel would contribute a derivative
-    linearised at the identity against a non-zero parameter.
+    active-term gain itself - the delay/tec families, phase, crosshand_phase
+    and crosshand_phase_null_v via ``-1j*conj(g)``, rotation and
+    rotation_measure by reading cos/sin out of the rotation matrix. Those
+    hooks therefore linearise about the gain rather than about the parameters,
+    and the two part company at hard-flagged elements: ``set_identity`` forces
+    a hard-flagged gain to the identity (each kernel's finalize_update, plus
+    ``update_gain_flags`` and ``apply_gain_flags_to_gains`` in
+    general/flagging.py), while ``update_param_flags`` only resets a parameter
+    interval whose contributing gain intervals are ALL flagged. Where the two
+    grids coincide (phase, crosshand_phase, crosshand_phase_null_v, rotation)
+    that reset always fires, so the linearisation points agree. The six terms
+    which evaluate their gain in every channel but solve on a coarser frequency
+    grid (delay, delay_and_offset, delay_and_tec, delay_tec_and_offset,
+    tec_and_offset, rotation_measure) have no such protection: one hard-flagged
+    channel would contribute a derivative linearised at the identity against a
+    non-zero parameter.
 
     Nothing reaches that state, but the guard is not local. Initial gain flags
     are the AND of the flag column over every contributing visibility
