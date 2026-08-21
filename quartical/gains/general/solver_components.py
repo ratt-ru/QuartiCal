@@ -260,6 +260,13 @@ def build_jhj_jhr_impl(
             # intermediaries which need to live in memory (a direction loop
             # may accumulate several model directions into one gain
             # direction). Everything else is a tuple i.e. register-resident.
+            # They are allocated unconditionally, above a single_dir fast path
+            # which never reads them, because numba's parfor loop-invariant
+            # code motion hoists all four out of the interval loop - one
+            # allocation each per thread per call. Guarding them on single_dir
+            # would make them loop-variant and defeat that, costing four
+            # allocations per interval to save a 64 byte payload. Confirm with
+            # NUMBA_PARALLEL_DIAGNOSTICS=4, which reports the hoists.
             lop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
             rop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
             lop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
