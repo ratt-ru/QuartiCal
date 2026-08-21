@@ -2,6 +2,7 @@ import numpy as np
 from quartical.gains.conversion import no_op
 from quartical.gains.parameterized_gain import ParameterizedGain
 from quartical.gains.amplitude.kernel import (
+    IDENTITY_FILL,
     amplitude_solver,
     amplitude_params_to_gains
 )
@@ -46,13 +47,14 @@ class Amplitude(ParameterizedGain):
         )
 
         if not self.load_from:
-            params[...] = 1  # Amplitudes start at unity unless loaded.
+            # Amplitudes start at the identity unless loaded.
+            params[...] = IDENTITY_FILL
 
         # Convert the parameters into gains.
         amplitude_params_to_gains(params, gains)
 
         # Apply flags to gains and parameters.
-        apply_param_flags_to_params(param_flags, params, 1)
+        apply_param_flags_to_params(param_flags, params, IDENTITY_FILL)
         apply_gain_flags_to_gains(gain_flags, gains)
 
         return gains, gain_flags, params, param_flags

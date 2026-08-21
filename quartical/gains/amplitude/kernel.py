@@ -16,6 +16,11 @@ from quartical.gains.general.accumulator import (
 
 PARAMS_PER_CORR = 1
 
+# An amplitude of unity is the identity, not zero. Amplitude is the only term
+# whose identity parameter differs from zero, so the solver's flagged-interval
+# fill and init_term's both read it from here rather than restating it.
+IDENTITY_FILL = 1.0
+
 accumulator = triangular_accumulator_factories(PARAMS_PER_CORR)
 
 
@@ -58,7 +63,7 @@ def nb_amplitude_solver_impl(
     coerce_literal(nb_amplitude_solver_impl, ["corr_mode"])
 
     identity_params = get_identity_params(
-        corr_mode, PARAMS_PER_CORR, fill=1.0
+        corr_mode, PARAMS_PER_CORR, fill=IDENTITY_FILL
     )
 
     # The outer solver loop is shared between parameterised kernels - only the
