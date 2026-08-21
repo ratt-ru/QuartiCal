@@ -3,7 +3,7 @@ type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
 timestamp: 2026-08-21
-last_verified_commit: 5788087
+last_verified_commit: d8403cb
 ---
 
 # Solver Architecture
@@ -276,7 +276,11 @@ labelled hook table rather than a run of positional factories.
 - `compute_channel_coeffs_factory(corr_mode) -> compute_channel_coeffs(ms_inputs, meta_inputs, f)`
   (optional) — the per-channel coefficient tuple for terms with a frequency-dependent parameter
   (delay/TEC families, rotation_measure); its output IS the `channel_coeffs` tuple passed to the
-  accumulate hook. `None` yields an empty tuple.
+  accumulate hook. `None` yields an empty tuple. Called once per unflagged visibility, which is
+  why the hooks compute band constants (`bandwidth`, `cf_mid`, `log(cf_min/cf_max)`) inline: they
+  are loop invariant and LLVM hoists them out of the loop nest. See
+  [design-decisions.md](design-decisions.md) for the IR evidence and the check to repeat if these
+  terms ever get slower.
 - `mirror_jhj_factory(corr_mode) -> mirror(jhj_tifi)` (optional) — fills the lower triangle of the
   per-interval JHJ elements; `None` yields a no-op. Every kernel which builds an accumulator binds
   `accumulator.mirror`; `None` is for those which build none (`diag_complex`).

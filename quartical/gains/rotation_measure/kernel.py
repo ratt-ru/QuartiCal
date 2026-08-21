@@ -279,9 +279,9 @@ def compute_channel_coeffs_factory(corr_mode):
     Rotation measure's rotation angle is frequency dependent,
     beta = lambda_sq*rm with lambda_sq = (c/chan_freq)**2, so differentiating
     the model with respect to the parameter introduces the per-channel factor
-    lambda_sq. The compute_channel_coeffs hook computes this once per channel
-    and returns it as a single-element flat tuple (lsq,) which is the
-    channel_coeffs tuple passed to the accumulate hook.
+    lambda_sq. The compute_channel_coeffs hook returns it as a single-element
+    flat tuple (lsq,) which is the channel_coeffs tuple passed to the
+    accumulate hook.
     """
 
     def impl(ms_inputs, meta_inputs, f):

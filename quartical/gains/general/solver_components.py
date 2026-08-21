@@ -69,7 +69,17 @@ def build_jhj_jhr_impl(
     The residual hook returns the per-correlation residual tuple. The
     ``channel_coeffs`` tuple passed to the accumulate hook is exactly the
     per-channel coefficient tuple produced by ``compute_channel_coeffs`` (an
-    empty tuple for terms with no channel-coefficient hook).
+    empty tuple for terms with no channel-coefficient hook). That hook is
+    called once per unflagged visibility, but the band constants the
+    frequency-dependent terms build out of ``MIN_FREQ``/``MAX_FREQ``
+    (bandwidth, band midpoint, ``log(cf_min/cf_max)``) do not depend on the
+    channel, and LLVM hoists them - libm call included - out of the whole loop
+    nest into the preheader of the interval loop, so each costs one evaluation
+    per thread per call. Hooks may therefore compute band constants inline.
+    Confirm by dumping the ``compute_jhj_jhr`` parfor gufunc IR
+    (``solver.inspect_llvm()``) and checking that no ``llvm.log`` or band
+    arithmetic sits in a loop-carried block; the terms to check are delay,
+    delay_and_offset, delay_and_tec, tec_and_offset and delay_tec_and_offset.
 
     LINEARISATION POINT AND FLAGGED GAINS: ten parameterised accumulate hooks
     consume the ``gain`` argument, because their chain rule differentiates the

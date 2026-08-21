@@ -345,9 +345,9 @@ def compute_channel_coeffs_factory(corr_mode):
     the TEC coefficient is tec_coeff = 2*pi*(bandwidth/chan_freq[f] + offset)
     with bandwidth = cf_max - cf_min and offset = log(cf_min/cf_max) (matching
     the rescaling the solver applies to each parameter). The
-    compute_channel_coeffs hook computes both once per channel and returns them
-    as a flat tuple (delay_coeff, tec_coeff) which is the channel_coeffs tuple
-    passed to the accumulate hook.
+    compute_channel_coeffs hook returns them as a flat tuple (delay_coeff,
+    tec_coeff) which is the channel_coeffs tuple passed to the accumulate
+    hook.
     """
 
     def impl(ms_inputs, meta_inputs, f):
