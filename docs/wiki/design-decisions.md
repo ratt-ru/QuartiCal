@@ -280,7 +280,11 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   module-local trampoline (previous entry). `crosshand_phase_null_v` keeps a private
   loop: its inverse-gains machinery (typed-List build before the loop, extra leading
   compute_jhj_jhr argument, per-iteration refresh) is not expressible as verbatim code
-  motion through the hooks.
+  motion through the hooks. `build_param_solver_impl` takes its solution-interval extents from
+  `param_freq_maps` unconditionally, since jhj/jhr/update are allocated on the parameter shape; a
+  `solve_on_param_grid` build flag able to select `freq_maps` instead was dropped as dead, no term
+  having needed the gain-grid path (the three that set it never differed from the param grid, and
+  rotation already solved on the param grid despite matching grids).
 - **Rationale:** Pure maintainability refactor — the hot loops did not move, so the
   gate was exactness and parity rather than speedup: checksums bitwise-identical to
   kernel-propagation (4b022f4) for every ported term and supported corr mode (full and

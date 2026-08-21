@@ -3,7 +3,7 @@ type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
 timestamp: 2026-08-20
-last_verified_commit: 5b39871
+last_verified_commit: f6e2376
 ---
 
 # Solver Architecture
@@ -189,12 +189,17 @@ single-thread speedup, and the rewrite was then propagated to every other solvab
 the shared accumulation loop (below) for measured 1.4-2.8x speedups (see design-decisions.md,
 "Tuple-based kernel maths" and "Shared hook-parameterised accumulation loop"). The original
 **array-buffer style** (`iunpack_factory`, `v1_imul_v2_factory`, `valloc_factory`, ...) writes
-results into small array buffers; it is legacy for accumulation loops — no kernel's
-`compute_jhj_jhr` uses it any more — but survives outside them (residual computation in
-`general/generics.py`, inversion buffers, `finalize_update` bodies, and the flagging kernels).
-The tuple style always returns tuples even in the
-1-correlation case (unlike `unpack_factory`, which returns a bare scalar) so results can be fed
-back into other tuple helpers. One hard-won constraint: **never return nested tuples from an
+results into small array buffers. The tuple style displaced it from the per-visibility maths but
+did not retire it: the shared accumulation loop still `valloc`s the four per-direction operator
+buffers (`lop_pq_arr`/`rop_pq_arr`/`lop_qp_arr`/`rop_qp_arr`, `solver_components.py:252-255`) and
+writes them with `iunpack`/`iadd` (`:481-485`), because a direction loop may accumulate several
+model directions into one gain direction — they are the only per-visibility intermediaries that
+have to live in memory rather than in registers. The single-direction fast path skips them
+entirely. Outside the accumulation loops the array-buffer style remains the norm: residual
+computation in `general/generics.py`, inversion buffers, `finalize_update` bodies, and the
+flagging kernels. The tuple style always returns tuples even in the 1-correlation case (unlike
+`unpack_factory`, which returns a bare scalar) so results can be fed back into other tuple
+helpers. One hard-won constraint: **never return nested tuples from an
 inlined (`qcjit`) helper called inside a `prange` body** — numba's parfor array analysis misreads
 tuple-of-tuples returns as array shapes and dies with `AssertionError: Dimension mismatch`.
 Return flat tuples and slice by literal index instead (this is why the jhj/jhr accumulator in
@@ -233,10 +238,9 @@ the same skeleton:
   pair, and hence the accumulation target, is fixed along a row.
 - `compute_update` (the invert-over-intervals loop) exists exactly once, in
   `quartical/gains/general/solver_components.py`. The solver-loop builders in `solver_loop.py`
-  resolve it in their own module scope, so kernel modules do not import it at all — the twelve
-  dead `# noqa` re-export imports were removed 2026-07-28. The one exception is
-  `crosshand_phase/null_v_kernel.py`, which keeps a hand-written solver loop and so calls
-  `compute_update` directly.
+  resolve it in their own module scope, so kernel modules do not import it at all. The one
+  exception is `crosshand_phase/null_v_kernel.py`, which keeps a hand-written solver loop and so
+  calls `compute_update` directly.
 - Every solve returns `(native_imdry.jhj, loop_idx + 1, conv_perc)`.
 
 **The shared accumulation loop.** The tuple-based `compute_jhj_jhr` body lives once in
@@ -283,7 +287,8 @@ forces every kernel to be visited rather than silently defaulting.
 
 Every parameterised kernel declares one module-level constant, `PARAMS_PER_CORR` — the number of
 parameters the term solves per diagonal correlation, or `None` for a term whose single parameter set
-acts on the full 2x2. That one constant feeds all three consumers in the kernel:
+acts on the full 2x2. That one constant feeds all three consumers in the kernel (two in
+`crosshand_phase_null_v`, which binds no builder):
 `accumulator.py:triangular_accumulator_factories(PARAMS_PER_CORR)` at module scope (bound as
 `accumulator` and passed as `accumulator.zero` / `.flush` / `.mirror`),
 `parameters.py:get_identity_params(corr_mode, PARAMS_PER_CORR)`, and `params_per_corr=` on
@@ -293,10 +298,12 @@ to a scalar solve.
 `parameters.py:get_n_param(corr_mode, params_per_corr)` turns it into `n_param`, the flat
 parameter-vector length: `2 * params_per_corr` at 2 or 4 correlations, `params_per_corr` at 1, and 1
 when `params_per_corr` is `None` (four correlations only). `None` covers exactly crosshand_phase,
-crosshand_phase_null_v, rotation and rotation_measure, and it is the same `None` those kernels pass
-to `build_param_solver_impl` — collapsing JHJ/JHr to a scalar solve is possible if and only if there
-is a parameter set per correlation to collapse, so the two uses cannot diverge. Their `(1, 1)` JHJ
-has no triangle, so they also pass `mirror_jhj_factory=None`.
+crosshand_phase_null_v, rotation and rotation_measure. For three of them it is the same `None` they
+pass to `build_param_solver_impl` — collapsing JHJ/JHr to a scalar solve is possible if and only if
+there is a parameter set per correlation to collapse, so the two uses cannot diverge.
+crosshand_phase_null_v hand-rolls its solver loop and so calls no builder: its constant reaches
+`get_identity_params` and `triangular_accumulator_factories` only. All four have a `(1, 1)` JHJ
+with no triangle, so all four also pass `mirror_jhj_factory=None`.
 
 `n_param` is both the accumulator's JHJ dimension and the identity vector's length, so neither can
 drift from the other, and `testing/tests/gains/test_parameters.py` pins it against each gain class's
@@ -335,12 +342,11 @@ distinct overload symbol (`quartical/gains/phase/kernel.py` is a representative 
 
 **The shared solver loop.** One level up from the accumulation loop, the outer solver
 iteration (each kernel's `*_solver_impl` body) also lives once, in
-`quartical/gains/general/solver_loop.py`, as two hook-parameterised builders (extracted
-2026-07-20 as pure code motion: checksums bitwise-identical per term and corr mode vs the
-pre-extraction tree, timing at parity). Both builders take their hooks as **keyword-only
-arguments** (a leading bare `*` in each signature); every kernel call site passes them by
-name, so the opaque positional `build_param_solver_impl(None, ..., 1e9, ..., None)`
-form is a `TypeError`:
+`quartical/gains/general/solver_loop.py`, as two hook-parameterised builders — pure code motion,
+with the exactness evidence in the ledger entry on the shared solver loop. Both builders take
+their hooks as **keyword-only arguments** (a leading bare `*` in each signature); every kernel
+call site passes them by name, so the opaque positional
+`build_param_solver_impl(None, ..., 1e9, ..., None)` form is a `TypeError`:
 
 - `build_gain_solver_impl(*, get_jhj_dims, compute_jhj_jhr, collapse_to_scalar_jhj_jhr,
   scalar_error_message, finalize_update, reference_gains)` — non-parameterised terms
@@ -361,13 +367,11 @@ form is a `TypeError`:
   historic impl. Extents always come from `param_freq_maps`: jhj/jhr/update are allocated
   on the parameter shape, so the parameter grid is the only consistent source. The gain
   grid (`freq_maps`) is either bit-identical to it — for terms that don't override
-  `_make_freq_map` (phase, amplitude, crosshand_phase, rotation), since
+  `_make_freq_map` (phase, amplitude, crosshand_phase, crosshand_phase_null_v, rotation), since
   `ParameterizedGain._make_param_freq_map` delegates to `Gain._make_freq_map` with the same
   args — or deliberately finer (delay/tec families and rotation_measure solve in every
-  channel), which would be inconsistent with the parameter shape. A former
-  `solve_on_param_grid` build flag that could select `freq_maps` was removed 2026-07-20 as
-  dead: no term needed the gain-grid path (the three that set it never differed from the
-  param grid, and rotation already solved on the param grid despite matching grids).
+  channel), which would be inconsistent with the parameter shape. There is no build flag to
+  select the gain grid instead — see the ledger entry on the shared solver loop.
   `params_per_corr` is the width passed to the generic `scalar_jhj_jhr` collapse (`None`
   means scalar unsupported, raise — and a term which says so without supplying
   `scalar_error_message` fails to build); `numbness` forwards to `update_gain_flags` (1e9
