@@ -527,8 +527,11 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   time/freq/dir maps, DD stacking) are caught by CI instead of ad-hoc A/B probes, at the
   cost of the chain compilations on every run. A future test marked slow is therefore
   opting out of local runs, not out of CI. Markers are registered in `pyproject.toml`
-  with `strict_markers`, so a marker typo fails collection rather than quietly
-  mis-selecting tests. Fixing this test also surfaced a latent `n_dir > 1` bug in
+  with `strict_markers`, so a marker misspelt on a test fails collection instead of
+  leaving that test unmarked and silently selected by an `-m` expression meant to exclude
+  it. That option is read by pytest >= 9 only, and it does not check the `-m` expression
+  itself, which pytest matches against each test's own marks; CI resolves the top of the
+  dev pin and so enforces it. Fixing this test also surfaced a latent `n_dir > 1` bug in
   `testing/utils/gains.py:reference_gains` (antenna loop outside the direction loop —
   the same stale-direction shape as the legacy kernel bug).
 - **Source:** chain-mechanics A/B probe and design discussion 2026-07-16
