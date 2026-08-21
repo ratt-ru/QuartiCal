@@ -852,6 +852,35 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Source:** branch followups/channel-coeff-invariants (2026-08-21), addressing item 8 of the
   second branch review.
 
+## Per-direction operator buffers allocated unconditionally
+
+- **Context:** the shared solver loop `valloc`s four per-direction operator accumulators
+  (`lop_pq_arr`, `rop_pq_arr`, `lop_qp_arr`, `rop_qp_arr`) at the top of each interval's
+  `prange` body, above the `single_dir` branch that never reads them. Only the multi-direction
+  path writes them, through `iunpack`/`iadd`; the single-direction fast path keeps its
+  accumulation in registers and flushes once per row. The second branch review's item 9 read
+  that as four wasted heap allocations per solution interval per solver iteration in the common
+  direction-independent case.
+- **Decision:** allocate all four unconditionally, outside any `single_dir` guard.
+- **Rationale:** numba's parfor loop-invariant code motion already hoists all four out of the
+  interval loop, so the cost is one allocation each per thread per `compute_jhj_jhr` call, not
+  per interval. Verified with `NUMBA_PARALLEL_DIAGNOSTICS=4` over the bench harness for
+  `complex` (corr 4) and `delay` (corr 4, parameterised and frequency-dependent): four
+  "hoisted out of the parallel loop labelled #0 ... and reused inside the loop" reports against
+  `valloc`'s `np.empty` in each. Hoisting cannot be circumvented by specialisation either —
+  `n_dir` is a runtime dimension, so the DI and DD paths compile to one function. Guarding the
+  allocations on `single_dir` would make their shape branch-dependent, defeat the hoist and pay
+  four allocations per interval to save a 64 byte payload, since a zero leading dimension still
+  costs a full NRT meminfo. Sinking them into the multi-direction path is worse again: that
+  branch sits inside the row loop, so they would be allocated per row.
+- **Consequences:** reuse across intervals is safe only because the multi-direction path zeroes
+  all four before every visibility; anything added to that path must keep writing them before
+  reading. As with the band constants above, this depends on an optimiser pass, and a numba bump
+  could stop hoisting — the site comment carries the diagnostic recipe. No regression test
+  guards it: the check needs a cold kernel compile and asserts on numba's diagnostic text.
+- **Source:** branch followups/valloc-hoisting (2026-08-21), addressing item 9 of the second
+  branch review.
+
 ## Known debt (do not entrench)
 
 Testimony from the lead developer (interview 2026-07-07). An LLM extending QuartiCal should
