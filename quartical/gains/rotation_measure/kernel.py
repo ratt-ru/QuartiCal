@@ -141,7 +141,7 @@ def nb_compute_jhj_jhr(
     # coefficient is supplied by the compute_channel_coeffs hook as the
     # channel_coeffs tuple consumed by the accumulate hook. Rotation measure
     # solves a single parameter, so its jhj is (1, 1) and the mirror hook is a
-    # no-op (mirror_jhj_factory is None).
+    # no-op.
     # Inlined into the trampoline below for a private cache namespace.
     shared_impl = build_jhj_jhr_impl(
         corr_mode=corr_mode,
@@ -151,7 +151,7 @@ def nb_compute_jhj_jhr(
         flush_jhj_jhr_factory=accumulator.flush,
         compute_residual_factory=standard_residual_factory,
         compute_channel_coeffs_factory=compute_channel_coeffs_factory,
-        mirror_jhj_factory=None,
+        mirror_jhj_factory=accumulator.mirror,
     )
 
     def impl(

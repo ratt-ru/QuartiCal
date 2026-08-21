@@ -43,13 +43,15 @@ class AccumulatorFactories(NamedTuple):
     Attributes:
         zero: The ``zero_jhj_jhr_factory`` hook factory.
         flush: The ``flush_jhj_jhr_factory`` hook factory.
-        mirror: The ``mirror_jhj_factory`` hook factory. A term whose jhj is
-            (1, 1) in every correlation mode - i.e. one with no parameter set
-            per correlation - has no triangle to mirror and passes ``None`` to
-            the builder instead. That is not the only way to reach a (1, 1)
-            jhj, so the factory handles ``n_param == 1`` as well: a term with
-            one parameter per correlation hits it in the single-correlation
-            case, and it selects the hook once per term, not per mode.
+        mirror: The ``mirror_jhj_factory`` hook factory. Every term which
+            builds an accumulator binds this member, so whether there is a
+            triangle to mirror follows ``params_per_corr`` rather than being
+            decided a second time at the call site. The factory selects a
+            no-op whenever ``n_param == 1``, which covers both routes to a
+            (1, 1) jhj: a term with no parameter set per correlation, and a
+            term with one parameter per correlation in the single-correlation
+            case. The builder's ``mirror_jhj_factory=None`` is for terms which
+            build no accumulator at all.
     """
 
     zero: Callable
