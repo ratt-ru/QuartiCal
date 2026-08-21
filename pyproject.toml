@@ -60,7 +60,7 @@ goquartical-plot = "quartical.apps.plotter:plot"
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.0,<=9.0.3",  # strict_markers is a pytest >= 9 ini option.
+    "pytest>=7.3.1,<=9.0.3",
     "pytest-xdist>=3.5.0,<=3.8.0",
     "tbump>=6.10.0,<=6.11.0",
 ]
@@ -73,9 +73,19 @@ build-backend = "hatchling.build"
 packages = ["quartical"]
 
 [tool.pytest.ini_options]
-# Turn an unregistered marker into a collection error. Marker expressions
-# (-m) select what runs, so a typo would otherwise silently change the set
-# of tests rather than failing.
+# Turn a marker applied to a test but absent from the list below into a
+# collection error rather than a warning, so a mistyped @pytest.mark fails
+# loudly instead of leaving the test silently unmarked - and thus selected by
+# an -m expression that was meant to exclude it. This does not validate the
+# -m expression itself: pytest matches it against each test's own marks and
+# never consults the list, so `-m slwo` deselects everything without
+# complaint.
+#
+# NB: only pytest >= 9 reads this as an ini option; older versions ignore the
+# unknown key and fall back to warning. The CLI spelling is no substitute,
+# because pytest 9 makes --strict-markers an ini override with no effect once
+# addopts are applied. Enforcement is therefore version-conditional. CI
+# installs the dev group unpinned and so resolves a pytest that honours it.
 strict_markers = true
 markers = [
     "slow: marks tests as slow, typically due to additional kernel compilation.",
@@ -88,3 +98,7 @@ markers = [
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+# The suite lives entirely under testing/tests; testing/fixtures and
+# testing/utils hold importable helpers, not tests. Naming the tree keeps a
+# bare `pytest` from the repo root equivalent to the documented invocation.
+testpaths = ["testing/tests"]
