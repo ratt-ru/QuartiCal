@@ -78,11 +78,19 @@ def test_n_param_matches_param_names(term_type, basis, n_corr):
 
 
 @pytest.mark.parametrize("term_type", PARAMETERISED_TERMS)
-def test_identity_params_length_matches_n_param(term_type):
+@pytest.mark.parametrize("n_corr", [1, 2, 4])
+def test_identity_params_length_matches_n_param(term_type, n_corr):
     """The identity vector is sized by the same rule as the accumulator."""
 
     declared = params_per_corr(term_type)
-    corr_mode = types.literal(4)
+    corr_mode = types.literal(n_corr)
+
+    if declared is None and n_corr != 4:
+        # A term whose single parameter set acts on the full 2x2 sizes nothing
+        # outside four correlations.
+        with pytest.raises(ValueError):
+            get_identity_params(corr_mode, declared)
+        return
 
     identity_params = get_identity_params(corr_mode, declared)
 
@@ -91,12 +99,18 @@ def test_identity_params_length_matches_n_param(term_type):
 
 
 def test_amplitude_identity_params_are_unity():
-    """Amplitude is the one term whose identity parameters are not zero."""
+    """Amplitude is the one term whose identity parameters are not zero.
 
+    The fill comes from the kernel's own ``IDENTITY_FILL``, which is also what
+    ``init_term`` writes into flagged parameters, so a term declaring the wrong
+    identity fails here rather than silently writing it to the gain dataset.
+    """
+
+    module = importlib.import_module(PARAMETERISED_TERMS["amplitude"])
     declared = params_per_corr("amplitude")
 
     identity_params = get_identity_params(
-        types.literal(4), declared, fill=1.0
+        types.literal(4), declared, fill=module.IDENTITY_FILL
     )
 
     assert np.all(identity_params == 1.0)
