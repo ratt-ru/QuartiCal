@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-08-21
-last_verified_commit: d8403cb
+timestamp: 2026-08-24
+last_verified_commit: 8582ea0
 ---
 
 # Solver Architecture
@@ -213,7 +213,7 @@ the same skeleton:
   one of the two shared solver-loop builders (see "The shared solver loop" below) with its
   module-local hooks, and returns a module-local trampoline that inlines the built loop.
 - The shared solve body sets up flagging/solving intermediaries (`native_intermediaries`,
-  `upsampled_itermediaries`, `flag_intermediaries`), then loops `for loop_idx in
+  `upsampled_intermediaries`, `flag_intermediaries`), then loops `for loop_idx in
   range(max_iter or 1)`: `compute_jhj_jhr` → optional `downsample_jhj_jhr` /
   `per_array_jhj_jhr` / the scalar collapse (`collapse_to_scalar_jhj_jhr` for a
   non-parameterised term, the generic `scalar_jhj_jhr` for a parameterised one) →

@@ -3,7 +3,7 @@ import numpy as np
 import quartical.gains.general.factories as factories
 from quartical.gains.general.generics import (
     native_intermediaries,
-    upsampled_itermediaries,
+    upsampled_intermediaries,
     per_array_jhj_jhr,
     resample_solints,
     downsample_jhj_jhr,
@@ -155,7 +155,7 @@ def build_gain_solver_impl(
         active_gain = gains[active_term]
         active_gain_flags = gain_flags[active_term]
 
-        # Set up some intemediaries used for flagging. TODO: Move?
+        # Set up some intermediaries used for flagging. TODO: Move?
         km1_gain = active_gain.copy()
         km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
         abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
@@ -163,14 +163,14 @@ def build_gain_solver_impl(
             km1_gain, km1_abs2_diffs, abs2_diffs_trend
         )
 
-        # Set up some intemediaries used for solving.
+        # Set up some intermediaries used for solving.
         complex_dtype = active_gain.dtype
         gain_shape = active_gain.shape
 
         active_t_map_g = mapping_inputs.time_maps[active_term]
         active_f_map_g = mapping_inputs.freq_maps[active_term]
 
-        # Create more work to do in paralllel when needed, else no-op.
+        # Create more work to do in parallel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, gain_shape, n_thread)
 
         # Determine the starts and stops of the rows and channels associated
@@ -185,7 +185,9 @@ def build_gain_solver_impl(
         jhr = upsampled_jhr[:gain_shape[0]]
         update = np.zeros(gain_shape, dtype=complex_dtype)
 
-        upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
+        upsampled_imdry = upsampled_intermediaries(
+            upsampled_jhj, upsampled_jhr
+        )
         native_imdry = native_intermediaries(jhj, jhr, update)
 
         for loop_idx in range(max_iter or 1):
@@ -249,7 +251,7 @@ def build_gain_solver_impl(
         # Optional referencing stage (build-time no-op when absent).
         reference_gains_step(chain_inputs, meta_inputs, corr_mode)
 
-        # Call this one last time to ensure points flagged by finialize are
+        # Call this one last time to ensure points flagged by finalize are
         # propagated (in the DI case).
         if not dd_term:
             apply_gain_flags_to_flag_col(
@@ -412,14 +414,14 @@ def build_param_solver_impl(
         active_gain_flags = gain_flags[active_term]
         active_params = chain_inputs.params[active_term]
 
-        # Set up some intemediaries used for flagging.
+        # Set up some intermediaries used for flagging.
         km1_gain = active_gain.copy()
         km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
         abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
         flag_imdry = \
             flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
 
-        # Set up some intemediaries used for solving.
+        # Set up some intermediaries used for solving.
         real_dtype = active_gain.real.dtype
         param_shape = active_params.shape
 
@@ -436,7 +438,7 @@ def build_param_solver_impl(
         # (delay, ...). See docs/wiki/solver-architecture.md.
         active_f_map_p = mapping_inputs.param_freq_maps[active_term]
 
-        # Create more work to do in paralllel when needed, else no-op.
+        # Create more work to do in parallel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, param_shape, n_thread)
 
         # Determine the starts and stops of the rows and channels associated
@@ -451,7 +453,9 @@ def build_param_solver_impl(
         jhr = upsampled_jhr[:param_shape[0]]
         update = np.zeros(param_shape, dtype=real_dtype)
 
-        upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
+        upsampled_imdry = upsampled_intermediaries(
+            upsampled_jhj, upsampled_jhr
+        )
         native_imdry = native_intermediaries(jhj, jhr, update)
 
         # Optional pre-solve stage, e.g. entering a scaled solver basis by
@@ -535,7 +539,7 @@ def build_param_solver_impl(
             meta_inputs,
         )
 
-        # Call this one last time to ensure points flagged by finialize are
+        # Call this one last time to ensure points flagged by finalize are
         # propagated (in the DI case).
         if not dd_term:
             apply_gain_flags_to_flag_col(

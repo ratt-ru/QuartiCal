@@ -27,7 +27,7 @@ solver_intermediaries = namedtuple(
     )
 )
 
-upsampled_itermediaries = namedtuple(
+upsampled_intermediaries = namedtuple(
     "upsampled_intermediaries",
     (
         "jhj",
