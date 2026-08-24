@@ -57,7 +57,7 @@ class TecAndOffset(ParameterizedGain):
 
         param_corr = [c for c in correlations if c in parameterisable]
 
-        template = ("phase_offset_{}", "TEC_{}")
+        template = ("phase_offset_{}", "tec_{}")
 
         return [n.format(c) for c in param_corr for n in template]
 
