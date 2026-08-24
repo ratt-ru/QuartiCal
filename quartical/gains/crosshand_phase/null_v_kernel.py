@@ -7,7 +7,7 @@ from quartical.utils.numba import (coerce_literal,
                                    JIT_OPTIONS,
                                    PARALLEL_JIT_OPTIONS)
 from quartical.gains.general.generics import (native_intermediaries,
-                                              upsampled_itermediaries,
+                                              upsampled_intermediaries,
                                               per_array_jhj_jhr,
                                               resample_solints,
                                               downsample_jhj_jhr,
@@ -100,21 +100,21 @@ def nb_null_v_crosshand_phase_solver_impl(
         active_gain_flags = gain_flags[active_term]
         active_params = chain_inputs.params[active_term]
 
-        # Set up some intemediaries used for flagging.
+        # Set up some intermediaries used for flagging.
         km1_gain = active_gain.copy()
         km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
         abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
         flag_imdry = \
             flag_intermediaries(km1_gain, km1_abs2_diffs, abs2_diffs_trend)
 
-        # Set up some intemediaries used for solving.
+        # Set up some intermediaries used for solving.
         real_dtype = active_gain.real.dtype
         param_shape = active_params.shape
 
         active_t_map_g = mapping_inputs.time_maps[active_term]
         active_f_map_p = mapping_inputs.param_freq_maps[active_term]
 
-        # Create more work to do in paralllel when needed, else no-op.
+        # Create more work to do in parallel when needed, else no-op.
         resampler = resample_solints(active_t_map_g, param_shape, n_thread)
 
         # Determine the starts and stops of the rows and channels associated
@@ -129,7 +129,9 @@ def nb_null_v_crosshand_phase_solver_impl(
         jhr = upsampled_jhr[:param_shape[0]]
         update = np.zeros(param_shape, dtype=real_dtype)
 
-        upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
+        upsampled_imdry = upsampled_intermediaries(
+            upsampled_jhj, upsampled_jhr
+        )
         native_imdry = native_intermediaries(jhj, jhr, update)
 
         for loop_idx in range(max_iter or 1):
@@ -206,7 +208,7 @@ def nb_null_v_crosshand_phase_solver_impl(
             corr_mode
         )
 
-        # Call this one last time to ensure points flagged by finialize are
+        # Call this one last time to ensure points flagged by finalize are
         # propagated (in the DI case).
         if not dd_term:
             apply_gain_flags_to_flag_col(
