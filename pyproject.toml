@@ -81,11 +81,14 @@ packages = ["quartical"]
 # never consults the list, so `-m slwo` deselects everything without
 # complaint.
 #
-# NB: only pytest >= 9 reads this as an ini option; older versions ignore the
-# unknown key and fall back to warning. The CLI spelling is no substitute,
-# because pytest 9 makes --strict-markers an ini override with no effect once
-# addopts are applied. Enforcement is therefore version-conditional. CI
-# installs the dev group unpinned and so resolves a pytest that honours it.
+# NB: both spellings are needed, because each only covers half of the
+# supported pytest range. pytest < 9 does not know the strict_markers ini
+# option and ignores it (noisily, as a PytestConfigWarning), so the flag does
+# the work there; pytest >= 9 reads the ini option but treats --strict-markers
+# as an ini override, which has no effect when it arrives via addopts. Neither
+# alone enforces across the whole of the pytest range declared in
+# dependency-groups.
+addopts = ["--strict-markers"]
 strict_markers = true
 markers = [
     "slow: marks tests as slow, typically due to additional kernel compilation.",
