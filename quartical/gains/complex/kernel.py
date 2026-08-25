@@ -1,24 +1,13 @@
 # -*- coding: utf-8 -*-
-import numpy as np
-from numba import prange, njit
+from numba import njit
 from numba.extending import overload
 from quartical.utils.numba import (coerce_literal,
                                    JIT_OPTIONS,
                                    PARALLEL_JIT_OPTIONS)
-from quartical.gains.general.generics import (native_intermediaries,
-                                              upsampled_itermediaries,
-                                              per_array_jhj_jhr,
-                                              resample_solints,
-                                              downsample_jhj_jhr)
-from quartical.gains.general.flagging import (flag_intermediaries,
-                                              update_gain_flags,
-                                              finalize_gain_flags,
-                                              apply_gain_flags_to_flag_col)
-from quartical.gains.general.convenience import (get_row,
-                                                 get_extents)
 import quartical.gains.general.factories as factories
-from quartical.gains.general.inversion import (invert_factory,
-                                               inversion_buffer_factory)
+from quartical.gains.general.solver_components import build_jhj_jhr_impl
+from quartical.gains.general.solver_loop import build_gain_solver_impl
+from quartical.gains.general.residuals import standard_residual_factory
 
 
 @njit(**JIT_OPTIONS)
@@ -59,7 +48,18 @@ def nb_complex_solver_impl(
 
     coerce_literal(nb_complex_solver_impl, ["corr_mode"])
 
-    get_jhj_dims = get_jhj_dims_factory(corr_mode)
+    # The outer solver loop is shared between non-parameterised kernels - only
+    # the hooks below are specific to complex terms. Complex has full-block jhj
+    # dims, does not support scalar mode, and needs no referencing stage.
+    # Inlined into the trampoline below for a private cache namespace.
+    shared_impl = build_gain_solver_impl(
+        get_jhj_dims=get_jhj_dims_factory(corr_mode),
+        compute_jhj_jhr=compute_jhj_jhr,
+        collapse_to_scalar_jhj_jhr=None,
+        scalar_error_message="Scalar mode not supported for complex terms.",
+        finalize_update=finalize_update,
+        reference_gains=None,
+    )
 
     def impl(
         ms_inputs,
@@ -68,122 +68,13 @@ def nb_complex_solver_impl(
         meta_inputs,
         corr_mode
     ):
-
-        gains = chain_inputs.gains
-        gain_flags = chain_inputs.gain_flags
-
-        active_term = meta_inputs.active_term
-        max_iter = meta_inputs.iters
-        solve_per = meta_inputs.solve_per
-        scalar = meta_inputs.scalar
-        dd_term = meta_inputs.dd_term
-        n_thread = meta_inputs.threads
-
-        active_gain = gains[active_term]
-        active_gain_flags = gain_flags[active_term]
-
-        # Set up some intemediaries used for flagging. TODO: Move?
-        km1_gain = active_gain.copy()
-        km1_abs2_diffs = np.zeros_like(active_gain_flags, dtype=np.float64)
-        abs2_diffs_trend = np.zeros_like(active_gain_flags, dtype=np.float64)
-        flag_imdry = flag_intermediaries(
-            km1_gain, km1_abs2_diffs, abs2_diffs_trend
-        )
-
-        # Set up some intemediaries used for solving.
-        complex_dtype = active_gain.dtype
-        gain_shape = active_gain.shape
-
-        active_t_map_g = mapping_inputs.time_maps[active_term]
-        active_f_map_g = mapping_inputs.freq_maps[active_term]
-
-        # Create more work to do in paralllel when needed, else no-op.
-        resampler = resample_solints(active_t_map_g, gain_shape, n_thread)
-
-        # Determine the starts and stops of the rows and channels associated
-        # with each solution interval.
-        extents = get_extents(resampler.upsample_t_map, active_f_map_g)
-
-        upsample_shape = resampler.upsample_shape
-        upsampled_jhj = np.empty(get_jhj_dims(upsample_shape),
-                                 dtype=complex_dtype)
-        upsampled_jhr = np.empty(upsample_shape, dtype=complex_dtype)
-        jhj = upsampled_jhj[:gain_shape[0]]
-        jhr = upsampled_jhr[:gain_shape[0]]
-        update = np.zeros(gain_shape, dtype=complex_dtype)
-
-        upsampled_imdry = upsampled_itermediaries(upsampled_jhj, upsampled_jhr)
-        native_imdry = native_intermediaries(jhj, jhr, update)
-
-        for loop_idx in range(max_iter or 1):
-
-            compute_jhj_jhr(
-                ms_inputs,
-                mapping_inputs,
-                chain_inputs,
-                meta_inputs,
-                upsampled_imdry,
-                extents,
-                corr_mode
-            )
-
-            if resampler.active:
-                downsample_jhj_jhr(upsampled_imdry, resampler.downsample_t_map)
-
-            if solve_per == "array":
-                per_array_jhj_jhr(native_imdry)
-
-            if scalar:
-                raise ValueError("Scalar mode not supported for complex terms.")
-
-            if not max_iter:  # Non-solvable term, we just want jhj.
-                conv_perc = 0  # Didn't converge.
-                loop_idx = -1  # Did zero iterations.
-                break
-
-            compute_update(native_imdry, corr_mode)
-
-            finalize_update(
-                chain_inputs,
-                meta_inputs,
-                native_imdry,
-                loop_idx,
-                corr_mode
-            )
-
-            # Check for gain convergence. Produced as a side effect of
-            # flagging. The converged percentage is based on unflagged
-            # intervals.
-            conv_perc = update_gain_flags(
-                chain_inputs,
-                meta_inputs,
-                flag_imdry,
-                loop_idx,
-                corr_mode
-            )
-
-            if conv_perc >= meta_inputs.stop_frac:
-                break
-
-        # NOTE: Removes soft flags and flags points which have bad trends.
-        finalize_gain_flags(
+        return shared_impl(
+            ms_inputs,
+            mapping_inputs,
             chain_inputs,
             meta_inputs,
-            flag_imdry,
             corr_mode
         )
-
-        # Call this one last time to ensure points flagged by finialize are
-        # propagated (in the DI case).
-        if not dd_term:
-            apply_gain_flags_to_flag_col(
-                ms_inputs,
-                mapping_inputs,
-                chain_inputs,
-                meta_inputs
-            )
-
-        return native_imdry.jhj, loop_idx + 1, conv_perc
 
     return impl
 
@@ -217,19 +108,22 @@ def nb_compute_jhj_jhr(
     row_weights_idx = ms_inputs.fields.index('ROW_WEIGHTS')
     row_weights_type = ms_inputs[row_weights_idx]
 
-    imul_rweight = factories.imul_rweight_factory(corr_mode, row_weights_type)
-    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    v1_imul_v2ct = factories.v1_imul_v2ct_factory(corr_mode)
-    v1ct_imul_v2 = factories.v1ct_imul_v2_factory(corr_mode)
-    iunpack = factories.iunpack_factory(corr_mode)
-    iunpackct = factories.iunpackct_factory(corr_mode)
-    imul = factories.imul_factory(corr_mode)
-    iadd = factories.iadd_factory(corr_mode)
-    isub = factories.isub_factory(corr_mode)
-    valloc = factories.valloc_factory(corr_mode)
-    make_loop_vars = factories.loop_var_factory(corr_mode)
-    set_identity = factories.set_identity_factory(corr_mode)
-    compute_jhwj_jhwr_elem = compute_jhwj_jhwr_elem_factory(corr_mode)
+    # The accumulation loop itself is shared between kernels - only the
+    # hooks below (the per-term maths) are specific to complex terms. The
+    # complex residual has no per-channel coefficients, so there is no
+    # channel-coefficient hook (the accumulate hook receives an empty
+    # channel_coeffs tuple).
+    # Inlined into the trampoline below for a private cache namespace.
+    shared_impl = build_jhj_jhr_impl(
+        corr_mode=corr_mode,
+        row_weights_type=row_weights_type,
+        accumulate_jhj_jhr_factory=accumulate_jhj_jhr_factory,
+        zero_jhj_jhr_factory=zero_jhj_jhr_factory,
+        flush_jhj_jhr_factory=flush_jhj_jhr_factory,
+        compute_residual_factory=standard_residual_factory,
+        compute_channel_coeffs_factory=None,
+        mirror_jhj_factory=mirror_jhj_factory,
+    )
 
     def impl(
         ms_inputs,
@@ -240,236 +134,15 @@ def nb_compute_jhj_jhr(
         extents,
         corr_mode
     ):
-
-        active_term = meta_inputs.active_term
-
-        data = ms_inputs.DATA
-        model = ms_inputs.MODEL_DATA
-        weights = ms_inputs.WEIGHT
-        flags = ms_inputs.FLAG
-        antenna1 = ms_inputs.ANTENNA1
-        antenna2 = ms_inputs.ANTENNA2
-        row_map = ms_inputs.ROW_MAP
-        row_weights = ms_inputs.ROW_WEIGHTS
-
-        time_maps = mapping_inputs.time_maps
-        freq_maps = mapping_inputs.freq_maps
-        dir_maps = mapping_inputs.dir_maps
-
-        gains = chain_inputs.gains
-
-        jhj = upsampled_imdry.jhj
-        jhr = upsampled_imdry.jhr
-
-        n_row, n_chan, n_dir, n_corr = model.shape
-
-        jhj[:] = 0
-        jhr[:] = 0
-
-        n_tint, n_fint, n_ant, n_gdir, n_corr = jhr.shape
-        n_int = n_tint*n_fint
-
-        complex_dtype = gains[active_term].dtype
-        weight_dtype = weights.dtype
-
-        n_gains = len(gains)
-
-        row_starts = extents.row_starts
-        row_stops = extents.row_stops
-        chan_starts = extents.chan_starts
-        chan_stops = extents.chan_stops
-
-        # Determine loop variables based on where we are in the chain.
-        # gt means greater than (n>j) and lt means less than (n<j).
-        all_terms, gt_active, lt_active = make_loop_vars(n_gains, active_term)
-
-        # Parallel over all solution intervals.
-        for i in prange(n_int):
-
-            ti = i//n_fint
-            fi = i - ti*n_fint
-
-            rs = row_starts[ti]
-            re = row_stops[ti]
-            fs = chan_starts[fi]
-            fe = chan_stops[fi]
-
-            rop_pq = valloc(complex_dtype)  # Right-multiply operator for pq.
-            rop_qp = valloc(complex_dtype)  # Right-multiply operator for qp.
-            lop_pq = valloc(complex_dtype)  # Left-multiply operator for pq.
-            lop_qp = valloc(complex_dtype)  # Left-multiply operator for qp.
-
-            w = valloc(weight_dtype)
-            r_pq = valloc(complex_dtype)
-            wr_pq = valloc(complex_dtype)
-            wr_qp = valloc(complex_dtype)
-            v_pqd = valloc(complex_dtype)
-            v_pq = valloc(complex_dtype)
-
-            gains_p = valloc(complex_dtype, leading_dims=(n_gains,))
-            gains_q = valloc(complex_dtype, leading_dims=(n_gains,))
-
-            lop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-            rop_pq_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-            lop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-            rop_qp_arr = valloc(complex_dtype, leading_dims=(n_gdir,))
-
-            tmp_kprod = np.zeros((4, 4), dtype=complex_dtype)
-            jhr_tifi = jhr[ti, fi]
-            jhj_tifi = jhj[ti, fi]
-
-            for row_ind in range(rs, re):
-
-                row = get_row(row_ind, row_map)
-                a1_m, a2_m = antenna1[row], antenna2[row]
-
-                for f in range(fs, fe):
-
-                    if flags[row, f]:  # Skip flagged data points.
-                        continue
-
-                    # Apply row weights in the BDA case, otherwise a no-op.
-                    imul_rweight(weights[row, f], w, row_weights, row_ind)
-                    iunpack(r_pq, data[row, f])
-
-                    lop_pq_arr[:] = 0
-                    rop_pq_arr[:] = 0
-                    lop_qp_arr[:] = 0
-                    rop_qp_arr[:] = 0
-                    v_pq[:] = 0
-
-                    for d in range(n_dir):
-
-                        set_identity(lop_pq)
-                        set_identity(lop_qp)
-
-                        # Construct a small contiguous gain array. This makes
-                        # the single term case fractionally slower.
-                        for gi in range(n_gains):
-                            d_m = dir_maps[gi][d]  # Broadcast dir.
-                            t_m = time_maps[gi][row_ind]
-                            f_m = freq_maps[gi][f]
-
-                            gain = gains[gi][t_m, f_m]
-
-                            iunpack(gains_p[gi], gain[a1_m, d_m])
-                            iunpack(gains_q[gi], gain[a2_m, d_m])
-
-                        m = model[row, f, d]
-                        iunpack(rop_qp, m)
-                        iunpackct(rop_pq, rop_qp)
-
-                        for g in all_terms:
-
-                            g_q = gains_q[g]
-                            v1_imul_v2(g_q, rop_pq, rop_pq)
-
-                            g_p = gains_p[g]
-                            v1_imul_v2(g_p, rop_qp, rop_qp)
-
-                        for g in gt_active:
-
-                            g_p = gains_p[g]
-                            v1_imul_v2ct(rop_pq, g_p, rop_pq)
-
-                            g_q = gains_q[g]
-                            v1_imul_v2ct(rop_qp, g_q, rop_qp)
-
-                        for g in lt_active:
-
-                            g_p = gains_p[g]
-                            v1ct_imul_v2(g_p, lop_pq, lop_pq)
-
-                            g_q = gains_q[g]
-                            v1ct_imul_v2(g_q, lop_qp, lop_qp)
-
-                        out_d = dir_maps[active_term][d]
-
-                        iunpack(lop_pq_arr[out_d], lop_pq)
-                        iadd(rop_pq_arr[out_d], rop_pq)
-
-                        iunpack(lop_qp_arr[out_d], lop_qp)
-                        iadd(rop_qp_arr[out_d], rop_qp)
-
-                        v1ct_imul_v2(lop_pq, gains_p[active_term], v_pqd)
-                        v1_imul_v2ct(v_pqd, rop_pq, v_pqd)
-                        iadd(v_pq, v_pqd)
-
-                    isub(r_pq, v_pq)
-
-                    for d in range(n_gdir):
-
-                        iunpack(wr_pq, r_pq)
-                        imul(wr_pq, w)
-                        iunpackct(wr_qp, wr_pq)
-
-                        lop_pq_d = lop_pq_arr[d]
-                        rop_pq_d = rop_pq_arr[d]
-
-                        compute_jhwj_jhwr_elem(lop_pq_d,
-                                               rop_pq_d,
-                                               w,
-                                               tmp_kprod,
-                                               wr_pq,
-                                               jhr_tifi[a1_m, d],
-                                               jhj_tifi[a1_m, d])
-
-                        lop_qp_d = lop_qp_arr[d]
-                        rop_qp_d = rop_qp_arr[d]
-
-                        compute_jhwj_jhwr_elem(lop_qp_d,
-                                               rop_qp_d,
-                                               w,
-                                               tmp_kprod,
-                                               wr_qp,
-                                               jhr_tifi[a2_m, d],
-                                               jhj_tifi[a2_m, d])
-        return
-    return impl
-
-
-def compute_update(native_imdry, corr_mode):
-    raise NotImplementedError
-
-
-@overload(compute_update, jit_options=PARALLEL_JIT_OPTIONS)
-def nb_compute_update(native_imdry, corr_mode):
-
-    coerce_literal(nb_compute_update, ["corr_mode"])
-
-    # We want to dispatch based on this field so we need its type.
-    jhj = native_imdry[native_imdry.fields.index('jhj')]
-
-    generalised = jhj.ndim == 6
-    inversion_buffer = inversion_buffer_factory(generalised=generalised)
-    invert = invert_factory(corr_mode, generalised=generalised)
-
-    def impl(native_imdry, corr_mode):
-
-        jhj = native_imdry.jhj
-        jhr = native_imdry.jhr
-        update = native_imdry.update
-
-        n_tint, n_fint, n_ant, n_dir, n_param = jhr.shape
-
-        n_int = n_tint * n_fint
-
-        result_dtype = jhr.dtype
-
-        for i in prange(n_int):
-
-            t = i // n_fint
-            f = i - t * n_fint
-
-            buffers = inversion_buffer(n_param, result_dtype)
-
-            for a in range(n_ant):
-                for d in range(n_dir):
-
-                    invert(jhj[t, f, a, d],
-                           jhr[t, f, a, d],
-                           update[t, f, a, d],
-                           buffers)
+        return shared_impl(
+            ms_inputs,
+            mapping_inputs,
+            chain_inputs,
+            meta_inputs,
+            upsampled_imdry,
+            extents,
+            corr_mode
+        )
 
     return impl
 
@@ -541,21 +214,108 @@ def nb_finalize_update(
     return impl
 
 
-def compute_jhwj_jhwr_elem_factory(corr_mode):
+def zero_jhj_jhr_factory(corr_mode):
+    """Produce the zero jhwj/jhwr accumulator tuple for a given corr mode.
 
-    iadd = factories.iadd_factory(corr_mode)
-    v1_imul_v2 = factories.v1_imul_v2_factory(corr_mode)
-    a_kron_bt = factories.a_kron_bt_factory(corr_mode)
-    unpack = factories.unpack_factory(corr_mode)
-    unpackc = factories.unpackc_factory(corr_mode)
+    The accumulator is a single flat tuple holding the (upper triangle,
+    row-major, in the 4 correlation case) jhwj element followed by the jhwr
+    element. A flat tuple is used deliberately - returning nested tuples
+    from inlined functions inside a prange trips a numba parfor array
+    analysis bug. In the diagonal cases the jhwj entries are real, as
+    w|rop|^2 has no imaginary part, so those leading slots hold real zeros
+    while the trailing jhwr slots hold complex zeros.
+    """
 
     if corr_mode.literal_value == 4:
-        def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
+        def impl(invec):
+            z = invec[0]*0
+            return z, z, z, z, z, z, z, z, z, z, z, z, z, z
+    elif corr_mode.literal_value == 2:
+        def impl(invec):
+            z = invec[0]*0
+            zr = invec[0].real*0
+            return zr, zr, z, z
+    elif corr_mode.literal_value == 1:
+        def impl(invec):
+            return invec[0].real*0, invec[0]*0
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return factories.qcjit(impl)
+
+
+def flush_jhj_jhr_factory(corr_mode):
+    """Add a register-accumulated jhwr/jhwj accumulator into the arrays.
+
+    In the 4 correlation case the jhj part of the accumulator holds the
+    upper triangle of the (4, 4) jhj element in row-major order - the lower
+    triangle is filled in by mirror_jhj once per solution interval.
+    """
+
+    if corr_mode.literal_value == 4:
+        def impl(jhj, jhr, jhj_jhr):
+
+            jhj[0, 0] += jhj_jhr[0]
+            jhj[0, 1] += jhj_jhr[1]
+            jhj[0, 2] += jhj_jhr[2]
+            jhj[0, 3] += jhj_jhr[3]
+            jhj[1, 1] += jhj_jhr[4]
+            jhj[1, 2] += jhj_jhr[5]
+            jhj[1, 3] += jhj_jhr[6]
+            jhj[2, 2] += jhj_jhr[7]
+            jhj[2, 3] += jhj_jhr[8]
+            jhj[3, 3] += jhj_jhr[9]
+
+            jhr[0] += jhj_jhr[10]
+            jhr[1] += jhj_jhr[11]
+            jhr[2] += jhj_jhr[12]
+            jhr[3] += jhj_jhr[13]
+    elif corr_mode.literal_value == 2:
+        def impl(jhj, jhr, jhj_jhr):
+
+            jhj[0] += jhj_jhr[0]
+            jhj[1] += jhj_jhr[1]
+
+            jhr[0] += jhj_jhr[2]
+            jhr[1] += jhj_jhr[3]
+    elif corr_mode.literal_value == 1:
+        def impl(jhj, jhr, jhj_jhr):
+
+            jhj[0] += jhj_jhr[0]
+
+            jhr[0] += jhj_jhr[1]
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return factories.qcjit(impl)
+
+
+def accumulate_jhj_jhr_factory(corr_mode):
+    """Accumulate a jhwr/jhwj element into a register-resident accumulator.
+
+    All inputs and the returned accumulator are tuples (register-resident
+    values) - the accumulator is only flushed to memory by flush_jhj_jhr.
+    The accumulator is a single flat tuple (jhwj followed by jhwr - see
+    zero_jhj_jhr_factory). In the 4 correlation case only the upper
+    triangle of the (4, 4) jhj element is accumulated (in row-major order) -
+    the lower triangle is filled in once per solution interval by
+    mirror_jhj.
+
+    The signature follows the unified accumulate_jhj_jhr contract of the
+    shared accumulation loop (see solver_components.py). Complex terms have no
+    chain rule beyond the operators themselves, so the gain and channel_coeffs
+    arguments are unused - the compiler eliminates them entirely after
+    inlining.
+    """
+
+    tuple_v1_mul_v2 = factories.tuple_v1_mul_v2_factory(corr_mode)
+
+    if corr_mode.literal_value == 4:
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             # Accumulate an element of jhwr.
-            v1_imul_v2(lop, res, res)
-            v1_imul_v2(res, rop, res)
-            iadd(jhr, res)
+            upd = tuple_v1_mul_v2(lop, wres)
+            upd = tuple_v1_mul_v2(upd, rop)
 
             # Accumulate an element of jhwj.
 
@@ -565,56 +325,122 @@ def compute_jhwj_jhwr_elem_factory(corr_mode):
             # whereas the standard maths assumes column-major ordering
             # (XX, YX, XY, YY). This subtle change means we can use the MS
             # data directly without worrying about swapping elements around.
-            a_kron_bt(lop, rop, tmp_kprod)
+            #
+            # Row (2i + j), column (2p + q) of J^H is a_ip*b_jq, so an
+            # element of J^HWJ factorises as
+            #   jhj[2i+j, 2k+l] = sum_pq w_pq (a_ip b_jq) conj(a_kp b_lq)
+            #                   = sum_p a_ip conj(a_kp) C_jl^p,
+            #   C_jl^p = w_p0 B_jl^0 + w_p1 B_jl^1,  B_jl^q = b_jq conj(b_lq).
+            # Exploiting this (and hermitian symmetry, i.e. only computing
+            # the upper triangle - see mirror_jhj) roughly halves the number
+            # of multiplications relative to forming the kronecker product
+            # rows explicitly.
+            a00, a01, a10, a11 = lop[0], lop[1], lop[2], lop[3]
+            b00, b10, b01, b11 = rop[0], rop[1], rop[2], rop[3]  # Transpose.
 
-            w_0, w_1, w_2, w_3 = unpack(w)  # NOTE: XX, XY, YX, YY
+            w_0, w_1, w_2, w_3 = w[0], w[1], w[2], w[3]  # NOTE: XX XY YX YY
 
-            for i in range(4):
+            # A_ik^p = a_ip conj(a_kp); A_10^p = conj(A_01^p) is not needed
+            # as only the upper triangle is accumulated. The diagonal (in ik)
+            # entries are |a_ip|^2 i.e. real - keeping them as real scalars
+            # (likewise for B and C below) roughly halves the flops relative
+            # to treating every factor as complex.
+            a00_0 = a00.real*a00.real + a00.imag*a00.imag
+            a00_1 = a01.real*a01.real + a01.imag*a01.imag
+            a01_0, a01_1 = a00*a10.conjugate(), a01*a11.conjugate()
+            a11_0 = a10.real*a10.real + a10.imag*a10.imag
+            a11_1 = a11.real*a11.real + a11.imag*a11.imag
 
-                jh_0, jh_1, jh_2, jh_3 = unpack(tmp_kprod[i])
+            # B_jl^q = b_jq conj(b_lq).
+            b00_0 = b00.real*b00.real + b00.imag*b00.imag
+            b00_1 = b01.real*b01.real + b01.imag*b01.imag
+            b01_0, b01_1 = b00*b10.conjugate(), b01*b11.conjugate()
+            b11_0 = b10.real*b10.real + b10.imag*b10.imag
+            b11_1 = b11.real*b11.real + b11.imag*b11.imag
 
-                jhw_0 = jh_0*w_0  # XX
-                jhw_1 = jh_1*w_1  # XY
-                jhw_2 = jh_2*w_2  # YX
-                jhw_3 = jh_3*w_3  # YY
+            # C_jl^p; the weights are real so C_10^p = conj(C_01^p) and the
+            # diagonal (in jl) entries remain real.
+            c00_0, c00_1 = w_0*b00_0 + w_1*b00_1, w_2*b00_0 + w_3*b00_1
+            c01_0, c01_1 = w_0*b01_0 + w_1*b01_1, w_2*b01_0 + w_3*b01_1
+            c10_0, c10_1 = c01_0.conjugate(), c01_1.conjugate()
+            c11_0, c11_1 = w_0*b11_0 + w_1*b11_1, w_2*b11_0 + w_3*b11_1
 
-                for j in range(i):
-                    jhj[i, j] = jhj[j, i].conjugate()
-
-                for j in range(i, 4):
-                    j_0, j_1, j_2, j_3 = unpackc(tmp_kprod[j])
-                    jhj[i, j] += (jhw_0*j_0 + jhw_1*j_1 +
-                                  jhw_2*j_2 + jhw_3*j_3)
+            return (
+                jhj_jhr[0] + (a00_0*c00_0 + a00_1*c00_1),
+                jhj_jhr[1] + (a00_0*c01_0 + a00_1*c01_1),
+                jhj_jhr[2] + (a01_0*c00_0 + a01_1*c00_1),
+                jhj_jhr[3] + (a01_0*c01_0 + a01_1*c01_1),
+                jhj_jhr[4] + (a00_0*c11_0 + a00_1*c11_1),
+                jhj_jhr[5] + (a01_0*c10_0 + a01_1*c10_1),
+                jhj_jhr[6] + (a01_0*c11_0 + a01_1*c11_1),
+                jhj_jhr[7] + (a11_0*c00_0 + a11_1*c00_1),
+                jhj_jhr[8] + (a11_0*c01_0 + a11_1*c01_1),
+                jhj_jhr[9] + (a11_0*c11_0 + a11_1*c11_1),
+                jhj_jhr[10] + upd[0],
+                jhj_jhr[11] + upd[1],
+                jhj_jhr[12] + upd[2],
+                jhj_jhr[13] + upd[3],
+            )
 
     elif corr_mode.literal_value == 2:
-        def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             # Accumulate an element of jhwr.
-            v1_imul_v2(res, rop, res)
-            iadd(jhr, res)
+            upd = tuple_v1_mul_v2(wres, rop)
 
-            # Accumulate an element of jhwj.
-            jh_00, jh_11 = unpack(rop)
-            j_00, j_11 = unpackc(rop)
-            w_00, w_11 = unpack(w)
+            # Accumulate an element of jhwj: w|rop|^2, which is real.
+            jh_00, jh_11 = rop[0], rop[1]
 
-            jhj[0] += jh_00*w_00*j_00
-            jhj[1] += jh_11*w_11*j_11
+            return (
+                jhj_jhr[0] + w[0]*(jh_00.real*jh_00.real +
+                                   jh_00.imag*jh_00.imag),
+                jhj_jhr[1] + w[1]*(jh_11.real*jh_11.real +
+                                   jh_11.imag*jh_11.imag),
+                jhj_jhr[2] + upd[0],
+                jhj_jhr[3] + upd[1],
+            )
     elif corr_mode.literal_value == 1:
-        def impl(lop, rop, w, tmp_kprod, res, jhr, jhj):
+        def impl(lop, rop, w, gain, channel_coeffs, wres, jhj_jhr):
 
             # Accumulate an element of jhwr.
-            v1_imul_v2(res, rop, res)
-            iadd(jhr, res)
+            upd = tuple_v1_mul_v2(wres, rop)
 
-            # Accumulate an element of jhwj.
-            jh_00 = unpack(rop)
-            j_00 = unpackc(rop)
-            w_00 = unpack(w)
+            # Accumulate an element of jhwj: w|rop|^2, which is real.
+            jh_00 = rop[0]
 
-            jhj[0] += jh_00*w_00*j_00
+            return (
+                jhj_jhr[0] + w[0]*(jh_00.real*jh_00.real +
+                                   jh_00.imag*jh_00.imag),
+                jhj_jhr[1] + upd[0],
+            )
     else:
         raise ValueError("Unsupported number of correlations.")
+
+    return factories.qcjit(impl)
+
+
+def mirror_jhj_factory(corr_mode):
+    """Fill in the lower triangle of the per-interval jhj elements.
+
+    In the 4 correlation case, accumulation in accumulate_jhj_jhr only
+    writes the upper triangle of each (4, 4) jhj element. As jhj is Hermitian,
+    the lower triangle is the conjugate of the upper triangle and can be
+    filled in once per solution interval rather than once per visibility.
+    This is a no-op in the 1/2 correlation (diagonal) cases.
+    """
+
+    if corr_mode.literal_value == 4:
+        def impl(jhj_tifi):
+            n_ant, n_gdir = jhj_tifi.shape[:2]
+            for a in range(n_ant):
+                for d in range(n_gdir):
+                    jhj_ad = jhj_tifi[a, d]
+                    for i in range(1, 4):
+                        for j in range(i):
+                            jhj_ad[i, j] = jhj_ad[j, i].conjugate()
+    else:
+        def impl(jhj_tifi):
+            pass
 
     return factories.qcjit(impl)
 

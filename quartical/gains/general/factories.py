@@ -800,6 +800,250 @@ def a_kron_bt_factory(corr_mode):
     return qcjit(impl)
 
 
+# ---------------------------------------------------------------------------
+# Tuple-based helpers.
+#
+# The tuple_* factories below operate on (and return) tuples of correlation
+# values rather than writing into small array buffers. Tuples are immutable
+# SSA values inside jitted code, so per-visibility intermediaries expressed
+# this way stay in registers instead of round-tripping through memory. This
+# is essential for producing efficient machine code in the solver hot loops.
+# Unlike some of the array-based factories above, these always return tuples
+# (even in the single correlation case) so that results can be fed back into
+# other tuple helpers. Inputs may be arrays or tuples - both support the
+# literal indexing used here.
+# ---------------------------------------------------------------------------
+
+
+def tuple_unpack_factory(mode):
+    """Load a correlation vector (array or tuple) into a tuple."""
+
+    if mode.literal_value == 1:
+        def impl(invec):
+            return (invec[0],)
+        return qcjit(impl)
+
+    return unpack_factory(mode)
+
+
+def tuple_unpackct_factory(mode):
+    """Load the conjugate transpose of a correlation vector into a tuple."""
+
+    if mode.literal_value == 1:
+        def impl(invec):
+            return (np.conjugate(invec[0]),)
+        return qcjit(impl)
+
+    return unpackct_factory(mode)
+
+
+def tuple_unpack_rweight_factory(mode, weight):
+    """Load a weight vector into a tuple, applying row weights (BDA)."""
+
+    if isinstance(weight, types.NoneType):
+        if mode.literal_value == 4:
+            def impl(invec, weight, ind):
+                return invec[0], invec[1], invec[2], invec[3]
+        elif mode.literal_value == 2:
+            def impl(invec, weight, ind):
+                return invec[0], invec[1]
+        elif mode.literal_value == 1:
+            def impl(invec, weight, ind):
+                return (invec[0],)
+        else:
+            raise ValueError("Unsupported number of correlations.")
+    else:
+        if mode.literal_value == 4:
+            def impl(invec, weight, ind):
+                w = weight[ind]
+                return w*invec[0], w*invec[1], w*invec[2], w*invec[3]
+        elif mode.literal_value == 2:
+            def impl(invec, weight, ind):
+                w = weight[ind]
+                return w*invec[0], w*invec[1]
+        elif mode.literal_value == 1:
+            def impl(invec, weight, ind):
+                w = weight[ind]
+                return (w*invec[0],)
+        else:
+            raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def tuple_zeros_factory(mode):
+    """Produce a zero tuple with the (promoted) dtype of the input vector."""
+
+    if mode.literal_value == 4:
+        def impl(invec):
+            z = invec[0]*0
+            return z, z, z, z
+    elif mode.literal_value == 2:
+        def impl(invec):
+            z = invec[0]*0
+            return z, z
+    elif mode.literal_value == 1:
+        def impl(invec):
+            return (invec[0]*0,)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def tuple_identity_factory(mode):
+    """Produce an identity tuple with the dtype of the input vector."""
+
+    if mode.literal_value == 4:
+        def impl(invec):
+            z = invec[0]*0
+            o = z + 1
+            return o, z, z, o
+    elif mode.literal_value == 2:
+        def impl(invec):
+            o = invec[0]*0 + 1
+            return o, o
+    elif mode.literal_value == 1:
+        def impl(invec):
+            return (invec[0]*0 + 1,)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def tuple_add_factory(mode):
+
+    if mode.literal_value == 4:
+        def impl(v1, v2):
+            return v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2], v1[3] + v2[3]
+    elif mode.literal_value == 2:
+        def impl(v1, v2):
+            return v1[0] + v2[0], v1[1] + v2[1]
+    elif mode.literal_value == 1:
+        def impl(v1, v2):
+            return (v1[0] + v2[0],)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def tuple_sub_factory(mode):
+
+    if mode.literal_value == 4:
+        def impl(v1, v2):
+            return v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2], v1[3] - v2[3]
+    elif mode.literal_value == 2:
+        def impl(v1, v2):
+            return v1[0] - v2[0], v1[1] - v2[1]
+    elif mode.literal_value == 1:
+        def impl(v1, v2):
+            return (v1[0] - v2[0],)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def tuple_wmul_factory(mode):
+    """Elementwise multiply of a correlation tuple by a weight tuple."""
+
+    if mode.literal_value == 4:
+        def impl(v1, w1):
+            return v1[0]*w1[0], v1[1]*w1[1], v1[2]*w1[2], v1[3]*w1[3]
+    elif mode.literal_value == 2:
+        def impl(v1, w1):
+            return v1[0]*w1[0], v1[1]*w1[1]
+    elif mode.literal_value == 1:
+        def impl(v1, w1):
+            return (v1[0]*w1[0],)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
+def tuple_v1_mul_v2_factory(mode):
+    """As v1_mul_v2_factory, but returns a tuple in the 1 correlation case."""
+
+    if mode.literal_value == 1:
+        def impl(v1, v2):
+            return (v1[0]*v2[0],)
+        return qcjit(impl)
+
+    return v1_mul_v2_factory(mode)
+
+
+def tuple_v1_mul_v2ct_factory(mode):
+    """As v1_mul_v2ct_factory, but returns a tuple in the 1 corr case."""
+
+    if mode.literal_value == 1:
+        def impl(v1, v2):
+            return (v1[0]*np.conjugate(v2[0]),)
+        return qcjit(impl)
+
+    return v1_mul_v2ct_factory(mode)
+
+
+def tuple_v1ct_mul_v2_factory(mode):
+    """As v1ct_mul_v2_factory, but returns a tuple in the 1 corr case."""
+
+    if mode.literal_value == 1:
+        def impl(v1, v2):
+            return (np.conjugate(v1[0])*v2[0],)
+        return qcjit(impl)
+
+    return v1ct_mul_v2_factory(mode)
+
+
+def tuple_normf_factory(mode):
+    """Per-correlation |v1|/|v2| with a zero guard on the denominator.
+
+    This is the tuple (register-resident) counterpart of
+    absv1_idiv_absv2_factory: it returns a flat tuple whose element i is 0
+    when v2[i] is zero, else sqrt(|v1[i]|^2 / |v2[i]|^2). The zero-guard
+    semantics match absv1_idiv_absv2_factory exactly (guard on the
+    denominator v2), so it can be used to build normalised residuals in the
+    tuple-based accumulation loop without changing the maths.
+    """
+
+    if mode.literal_value == 4:
+        def impl(v1, v2):
+            f0 = 0 if v2[0] == 0 else np.sqrt(
+                (v1[0].real**2 + v1[0].imag**2)/(v2[0].real**2 + v2[0].imag**2)
+            )
+            f1 = 0 if v2[1] == 0 else np.sqrt(
+                (v1[1].real**2 + v1[1].imag**2)/(v2[1].real**2 + v2[1].imag**2)
+            )
+            f2 = 0 if v2[2] == 0 else np.sqrt(
+                (v1[2].real**2 + v1[2].imag**2)/(v2[2].real**2 + v2[2].imag**2)
+            )
+            f3 = 0 if v2[3] == 0 else np.sqrt(
+                (v1[3].real**2 + v1[3].imag**2)/(v2[3].real**2 + v2[3].imag**2)
+            )
+            return f0, f1, f2, f3
+    elif mode.literal_value == 2:
+        def impl(v1, v2):
+            f0 = 0 if v2[0] == 0 else np.sqrt(
+                (v1[0].real**2 + v1[0].imag**2)/(v2[0].real**2 + v2[0].imag**2)
+            )
+            f1 = 0 if v2[1] == 0 else np.sqrt(
+                (v1[1].real**2 + v1[1].imag**2)/(v2[1].real**2 + v2[1].imag**2)
+            )
+            return f0, f1
+    elif mode.literal_value == 1:
+        def impl(v1, v2):
+            f0 = 0 if v2[0] == 0 else np.sqrt(
+                (v1[0].real**2 + v1[0].imag**2)/(v2[0].real**2 + v2[0].imag**2)
+            )
+            return (f0,)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
 def rotation_factory(corr_mode, feed_type):
 
     if feed_type.literal_value == "circular":

@@ -71,3 +71,37 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["quartical"]
+
+[tool.pytest.ini_options]
+# Turn a marker applied to a test but absent from the list below into a
+# collection error rather than a warning, so a mistyped @pytest.mark fails
+# loudly instead of leaving the test silently unmarked - and thus selected by
+# an -m expression that was meant to exclude it. This does not validate the
+# -m expression itself: pytest matches it against each test's own marks and
+# never consults the list, so `-m slwo` deselects everything without
+# complaint.
+#
+# NB: both spellings are needed, because each only covers half of the
+# supported pytest range. pytest < 9 does not know the strict_markers ini
+# option and ignores it (noisily, as a PytestConfigWarning), so the flag does
+# the work there; pytest >= 9 reads the ini option but treats --strict-markers
+# as an ini override, which has no effect when it arrives via addopts. Neither
+# alone enforces across the whole of the pytest range declared in
+# dependency-groups.
+addopts = ["--strict-markers"]
+strict_markers = true
+markers = [
+    "slow: marks tests as slow, typically due to additional kernel compilation.",
+    "data_handling: marks tests of the data handling functionality.",
+    "preprocess: marks tests of the preprocessing functionality.",
+    "predict: marks tests of the predict functionality.",
+    "model_handler: marks tests of the model handling functionality.",
+    "calibrate: marks tests of the calibration functionality.",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+# The suite lives entirely under testing/tests; testing/fixtures and
+# testing/utils hold importable helpers, not tests. Naming the tree keeps a
+# bare `pytest` from the repo root equivalent to the documented invocation.
+testpaths = ["testing/tests"]

@@ -87,10 +87,13 @@ def nb_reference_gains_impl(gains, mode):
                     det = compute_det(ref_gain)
                     iinverse(ref_gain, det, inv_ref_gain)
 
-                for a in range(n_ant):
+                    # NOTE: This loop must be per-direction - hoisting it
+                    # out would reference all directions using the last
+                    # direction's reference gain.
+                    for a in range(n_ant):
 
-                    gain = gains[t, f, a, d]
-                    v1_imul_v2(gain, inv_ref_gain, gain)
+                        gain = gains[t, f, a, d]
+                        v1_imul_v2(gain, inv_ref_gain, gain)
 
         return gains
 

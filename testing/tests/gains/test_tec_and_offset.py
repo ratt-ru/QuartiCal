@@ -98,12 +98,14 @@ def true_gain_list(predicted_xds_list, scalar_mode):
             amp[..., 1] = 0
             amp[..., 2] = 0
 
-        origin_chan_freq = chan_freq # - band_centre
-        origin_chan_freq = origin_chan_freq[None, :, None, None, None]
-        phase = (
-            2 * np.pi * tec * (1 / origin_chan_freq) +
-            offsets
-        )
+        # The TEC coefficient is referenced to the band so that it is
+        # decorrelated from the offset - the offset is consequently the phase
+        # at the band's reference point rather than at zero frequency.
+        tec_offset = np.log(min_freq/max_freq)/(max_freq - min_freq)
+        tec_coeff = \
+            2*np.pi*(1/chan_freq[None, :, None, None, None] + tec_offset)
+
+        phase = tec*tec_coeff + offsets
         gains = amp*da.exp(1j*phase)
 
         if n_corr == 1:

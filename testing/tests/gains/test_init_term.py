@@ -4,34 +4,33 @@
 A parameter interval with no unflagged data backing it is never solved for, so
 init_term fills it with the parameter value which produces an identity gain.
 That value is term-specific - zero for every phase-like parameter, one for an
-amplitude - and each kernel states it independently as ``get_identity_params``.
-The two have to agree: a flagged interval holding anything else is written to
-the output gain dataset and read back by ``load_from`` interpolation.
+amplitude - and the solvers obtain it from ``get_identity_params``, to which
+each kernel supplies its own fill. init_term has to agree: a flagged interval
+holding anything else is written to the output gain dataset and read back by
+``load_from`` interpolation.
 """
-import importlib
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from numba import types
 
 from quartical.calibration.constructor import term_spec_tup
 from quartical.gains import TERM_TYPES
 
-# Term type -> the kernel module stating its identity parameter. Excludes
+# Term type -> the parameter value which produces an identity gain. Excludes
 # parallactic_angle, whose init_term overwrites params with angles computed via
 # casacore measures and so cannot be driven from synthetic inputs.
-PARAMETERISED_TERMS = {
-    "amplitude": "quartical.gains.amplitude.kernel",
-    "phase": "quartical.gains.phase.kernel",
-    "delay": "quartical.gains.delay.kernel",
-    "delay_and_offset": "quartical.gains.delay_and_offset.kernel",
-    "delay_and_tec": "quartical.gains.delay_and_tec.kernel",
-    "tec_and_offset": "quartical.gains.tec_and_offset.kernel",
-    "delay_tec_and_offset": "quartical.gains.delay_tec_and_offset.kernel",
-    "crosshand_phase": "quartical.gains.crosshand_phase.kernel",
-    "rotation": "quartical.gains.rotation.kernel",
-    "rotation_measure": "quartical.gains.rotation_measure.kernel",
+IDENTITY_PARAM = {
+    "amplitude": 1.0,
+    "phase": 0.0,
+    "delay": 0.0,
+    "delay_and_offset": 0.0,
+    "delay_and_tec": 0.0,
+    "tec_and_offset": 0.0,
+    "delay_tec_and_offset": 0.0,
+    "crosshand_phase": 0.0,
+    "rotation": 0.0,
+    "rotation_measure": 0.0,
 }
 
 # Terms whose init_term branches on initial_estimate, filling flags on either
@@ -141,7 +140,7 @@ def synthetic_inputs(n_param):
 # the estimating terms, the single path for the rest.
 CASES = [
     (term_type, initial_estimate)
-    for term_type in PARAMETERISED_TERMS
+    for term_type in IDENTITY_PARAM
     for initial_estimate in (
         (False, True) if term_type in ESTIMATING_TERMS else (False,)
     )
@@ -178,11 +177,11 @@ def init_term_output(case):
 
 @pytest.fixture(scope="module")
 def identity_params(term_type):
-    """The kernel's own statement of the identity parameter vector."""
+    """The identity parameter vector this term is expected to fill with."""
 
-    module = importlib.import_module(PARAMETERISED_TERMS[term_type])
+    n_param = len(TERM_TYPES[term_type].make_param_names(CORRELATIONS))
 
-    return module.get_identity_params(types.literal(N_CORR))
+    return np.full(n_param, IDENTITY_PARAM[term_type])
 
 
 def test_flagged_interval_exists(init_term_output):
