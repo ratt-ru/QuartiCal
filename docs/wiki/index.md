@@ -23,8 +23,8 @@ commit against which the page's claims were last checked).
   optimisation background the code assumes.
 - [solver-architecture.md](solver-architecture.md) — TERM_TYPES registry,
   Gain/ParameterizedGain contracts, calibration graph construction, interval mappings,
-  numba factory pattern. *Read when:* working on anything under `quartical/gains/` or
-  `quartical/calibration/`.
+  chain collapsing, numba factory pattern. *Read when:* working on anything under
+  `quartical/gains/` or `quartical/calibration/`.
 - [dask-machinery.md](dask-machinery.md) — chunking model, Blocker, single-compute design,
   AutoRestrictor, dependency pins. *Read when:* working on graph construction, scheduling,
   or performance.

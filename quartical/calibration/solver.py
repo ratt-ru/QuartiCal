@@ -330,8 +330,13 @@ def get_collapsed_inputs(
     net_f_map = np.arange(n_f, dtype=np.int32)
 
     n_a = max([s.shape[2] for s in term_spec_list])
-    n_d = max([s.shape[3] for s in term_spec_list])
     n_c = max([s.shape[4] for s in term_spec_list])
+
+    # The synthesised chain-half direction maps are indexed by the model's
+    # direction, which is what the active term's own map already spans. The
+    # gains they point into may have fewer directions - resolving that is the
+    # map's job.
+    n_model_d = mapping_kwargs["dir_maps"][active_term].size
 
     l_terms = term_spec_list[:active_term] or None
     r_terms = term_spec_list[active_term + 1:] or None
@@ -355,7 +360,7 @@ def get_collapsed_inputs(
     if l_terms:
         n_l_d = max([s.shape[3] for s in l_terms])
         dir_map_func = np.arange if n_l_d > 1 else np.zeros
-        l_dir_map = dir_map_func(n_d, dtype=np.int32)
+        l_dir_map = dir_map_func(n_model_d, dtype=np.int32)
 
         # TODO: Cache array to avoid allocation?
         l_gain = combine_gains(
@@ -381,7 +386,7 @@ def get_collapsed_inputs(
     if r_terms:
         n_r_d = max([s.shape[3] for s in r_terms])
         dir_map_func = np.arange if n_r_d > 1 else np.zeros
-        r_dir_map = dir_map_func(n_d, dtype=np.int32)
+        r_dir_map = dir_map_func(n_model_d, dtype=np.int32)
 
         r_gain = combine_gains(
             chain_kwargs["gains"][active_term + 1:],
