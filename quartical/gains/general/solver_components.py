@@ -37,18 +37,16 @@ def build_jhj_jhr_impl(
 ):
     """Return the shared compute_jhj_jhr impl closure, specialised per term.
 
-    This is the register-resident, tuple-based accumulation loop first written
-    for the complex kernel (see the c5c1d2a rewrite). It is parameterised by a
-    small set of per-term hooks so that every gain solver can share a single
-    copy of the (otherwise near-identical) prange over solution intervals, the
-    chain-product operator construction, the single-direction fast path, and
-    the general multi-direction path. The per-term maths lives entirely in the
-    hook closures.
+    This is the register-resident, tuple-based accumulation loop. It is
+    parameterised by a small set of per-term hooks so that every gain solver
+    can share a single copy of the (otherwise near-identical) prange over
+    solution intervals, the chain-product operator construction, the
+    single-direction fast path, and the general multi-direction path. The
+    per-term maths lives entirely in the hook closures.
 
-    All hook factories are plain-Python compile-time compositions (the same way
-    the complex kernel composes its factories): they take ``corr_mode`` and
-    return a ``qcjit``-wrapped closure. Numba only ever sees the final
-    specialised closures, so the indirection is free after inlining.
+    All hook factories are plain-Python compile-time compositions: they take
+    ``corr_mode`` and return a ``qcjit``-wrapped closure. Numba only ever sees
+    the final specialised closures, so the indirection is free after inlining.
 
     CACHE CORRECTNESS CONSTRAINT: the built loop is returned as a
     ``factories.qcjit`` (``inline="always"``) function and MUST be inlined into
