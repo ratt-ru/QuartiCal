@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-08-24
-last_verified_commit: 8582ea0
+timestamp: 2026-08-25
+last_verified_commit: b0dc5c5
 ---
 
 # Solver Architecture
@@ -162,6 +162,33 @@ Invariants: gain-array shape along time/freq equals `time_bins.max()+1` / `freq_
 element and `freq_map` one per channel; `dir_map` length equals model `n_dir` and its max+1 equals
 the gain's stored direction count. For parameterised terms `Delay` forces
 `freq_map = arange(n_chan)` (gains evaluated per channel) while `param_freq_map` may bin coarsely.
+
+## Chain collapsing
+
+`solver.collapse_chain` (default on) makes `solver_wrapper` hand the kernels a chain of at most
+three terms instead of the full chain: the accumulated product of everything to the left of the
+active term, the active term itself, and the accumulated product of everything to its right.
+`get_collapsed_inputs` (`quartical/calibration/solver.py`) builds those inputs;
+`solver.collapse_chain=false` passes the whole chain and applies every term on the fly, which costs
+less memory and more arithmetic per iteration.
+
+Each half is evaluated by `combine_gains`/`combine_flags`
+(`quartical/gains/general/generics.py`) onto a *net* solution grid — one time bin per unique time,
+one freq bin per channel — so the halves come with synthesised identity mappings (`net_t_bins`,
+`net_t_map`, `net_f_map`) rather than the interval mappings of the terms they absorb. Only the
+active term keeps its own maps.
+
+Fewer than three slots are needed when the active term sits at either end of the chain, or when the
+chain has length one; `sel` trims every mapping and chain tuple accordingly, and `collapsed_term`
+is the active term's index in what survives (0 or 1). That index, not `active_term`, is what goes
+into `meta_args_nt.active_term`.
+
+A half's combined gain has as many directions as the widest term it absorbs, but its direction map
+is indexed by the *model's* direction, exactly as a real term's is. The map is therefore sized from
+the active term's own `dir_map` — which already spans the model — and is `arange` when the half is
+direction dependent and all-zeros when it is not. Sizing it from the gains instead makes it shorter
+than the kernels' `n_dir` loop whenever no term in the chain is direction dependent, breaking the
+`dir_map` invariant above.
 
 ## Numba kernel conventions
 
