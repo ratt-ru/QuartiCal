@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-08-13
-last_verified_commit: d9bc461
+timestamp: 2026-08-25
+last_verified_commit: b0dc5c5
 ---
 
 # Design Decisions
@@ -649,6 +649,34 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Consequences:** A non-standard format whose interoperability depends on adoption
   (pfb-imaging already consumes it). Loading machinery lives in `quartical/interpolation/`.
 - **Source:** interview 2026-07-07; Kenyon et al. 2025, Sections 3.3 and 4.4.
+
+## Antenna alignment on load, with missing antennas flagged rather than interpolated
+
+- **Context:** Solutions are transferred between observations whose `ANTENNA` subtables
+  need not agree — a subarray, a dish added or dropped between epochs. The gain axis is
+  labelled with antenna names, so the loaded and target antenna axes can differ in
+  content and in order.
+- **Decision:** `interpolation/interpolate.py:align_antennas` reindexes the loaded
+  datasets onto the target antenna names, discarding antennas which the target does not
+  have and adding those it does with a raised flag. `flag_missing_antennas` then fully
+  flags the added antennas on both the gain and parameter grids, and `init_term` merges
+  those flags into the ones derived from the data.
+- **Rationale:** A label-based reindex is the only alignment that is correct when the axes
+  differ in order as well as in content; positional alignment silently transposed
+  solutions between antennas. An antenna with no loaded solutions cannot be interpolated
+  from anything, and the alternative fills — the interpolation's "no information" zero (a
+  null Jones matrix) or a bare identity — are both applied to real data without saying so.
+  Flagging is the only outcome that propagates: gain flags reach the MS `FLAG` column
+  through `apply_gain_flags_to_flag_col`, which the solver loop runs even for a
+  zero-iteration (apply-only) term.
+- **Consequences:** Loaded gain datasets now carry flags into the solve, which needed two
+  new `Blocker` inputs per term (`{term}_initial_gain_flags`,
+  `{term}_initial_param_flags`) and made `Gain.init_term` a consumer of loaded flags. Only
+  whole-antenna absence is honoured; the loaded flags are otherwise still discarded, so an
+  antenna which was flagged *everywhere* in the input (as opposed to absent) is still
+  filled with the "no information" zero and left unflagged. See
+  [interpolation.md](interpolation.md).
+- **Source:** this repository, 2026-08-25.
 
 ## Zarr-backed Measurement Sets as a CTDS escape hatch
 

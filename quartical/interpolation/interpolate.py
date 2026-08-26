@@ -73,9 +73,33 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
             f"this behaviour is not supported. Please check {term.name}.type."
         )
 
+        # Solutions may be transferred between observations which do not span
+        # the same antennas. Antennas which are absent from the target are
+        # discarded and antennas which are absent from the loaded solutions
+        # are added, fully flagged.
+        antennas = term_xds_list[0].antenna.values  # Consistent over datasets.
+
+        loaded_antennas = np.unique(
+            np.concatenate([xds.antenna.values for xds in load_xds_list])
+        )
+        missing_antennas = np.setdiff1d(antennas, loaded_antennas)
+
+        if missing_antennas.size:
+            logger.warning(
+                f"Antennas {list(missing_antennas)} are missing from the "
+                f"solutions loaded for {term_name}. They will be flagged."
+            )
+
+        data_field, flag_field = term.interpolation_targets
+
+        load_xds_list = [
+            align_antennas(xds, antennas, data_field, flag_field)
+            for xds in load_xds_list
+        ]
+
         try:
             merged_xds = xarray.combine_by_coords(
-                [xds[term.interpolation_targets] for xds in load_xds_list],
+                load_xds_list,
                 combine_attrs='drop_conflicts'
             )
         except ValueError:
@@ -118,6 +142,11 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
             for ixds, rxds in zip(interpolated_xds_list, term_xds_list)
         ]
 
+        interpolated_xds_list = [
+            flag_missing_antennas(ixds, rxds, missing_antennas)
+            for ixds, rxds in zip(interpolated_xds_list, term_xds_list)
+        ]
+
         # This triggers an early compute and replaces the complicated
         # interpolation graph with simple reads from disk. NOTE: We do this
         # interpolated term - we could in fact do this once at the end but
@@ -140,6 +169,74 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
     ]
 
     return interpolated_xds_lod
+
+
+def align_antennas(xds, antennas, data_field, flag_field):
+    """Align the antenna axis of a loaded dataset with the target antennas.
+
+    Args:
+        xds: An xarray.Dataset containing loaded solutions.
+        antennas: An array of antenna names present in the target datasets.
+        data_field: Name of the data variable containing the solutions.
+        flag_field: Name of the data variable containing the flags.
+
+    Returns:
+        An xarray.Dataset containing the solutions on the target antenna axis.
+        Antennas which were absent from the input are fully flagged, as there
+        is nothing from which to interpolate them.
+    """
+
+    return xds[[data_field, flag_field]].reindex(
+        {"antenna": antennas},
+        fill_value={data_field: 0, flag_field: 1}
+    )
+
+
+def flag_missing_antennas(interpolated_xds, reference_xds, missing_antennas):
+    """Add flags which fully flag antennas absent from the loaded solutions.
+
+    The interpolation machinery discards the loaded flags - values which
+    cannot be interpolated are simply zeroed. Antennas which were absent from
+    the loaded solutions carry no information whatsoever, so they are flagged
+    explicitly. The flags are assigned whether or not any antennas are
+    missing, as Gain.init_term expects them on every loaded term.
+
+    Args:
+        interpolated_xds: An xarray.Dataset containing interpolated solutions.
+        reference_xds: The xarray.Dataset onto which the interpolation was
+            performed. Supplies the axes and chunking of the flags.
+        missing_antennas: An array of antenna names which were absent from the
+            loaded solutions.
+
+    Returns:
+        The interpolated xarray.Dataset with flags assigned.
+    """
+
+    missing = np.isin(reference_xds.antenna.values, missing_antennas)
+
+    # A missing antenna is missing on every grid, so a parameterised term is
+    # flagged on both its gain and its parameter grid.
+    grids = [("GAIN_SPEC", "GAIN_AXES", "gain_flags")]
+
+    if hasattr(reference_xds, "PARAM_SPEC"):
+        grids.append(("PARAM_SPEC", "PARAM_AXES", "param_flags"))
+
+    flag_vars = {}
+
+    for spec_field, axes_field, field in grids:
+
+        spec = getattr(reference_xds, spec_field)
+        axes = getattr(reference_xds, axes_field)[:-1]  # Omit the last axis.
+        chunks = (spec.tchunk, spec.fchunk, spec.achunk, spec.dchunk)
+
+        flags = np.zeros(
+            tuple(reference_xds.sizes[ax] for ax in axes), dtype=np.int8
+        )
+        flags[:, :, missing] = 1
+
+        flag_vars[field] = (axes, da.from_array(flags, chunks=chunks))
+
+    return interpolated_xds.assign(flag_vars)
 
 
 def convert_native_to_interp(xds, converter):

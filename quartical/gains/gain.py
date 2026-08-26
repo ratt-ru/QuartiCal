@@ -368,6 +368,9 @@ class Gain:
             ms_kwargs["ROW_MAP"]
         )
 
+        if self.load_from:
+            gain_flags |= term_kwargs[f"{self.name}_initial_gain_flags"]
+
         apply_gain_flags_to_gains(gain_flags, gains)
 
         return gains, gain_flags

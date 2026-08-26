@@ -97,7 +97,9 @@ def construct_solver(
         blocker.add_input("chain", chain)
 
         # If the gain dataset already has a gain variable, we want to pass
-        # it in to initialize the solver.
+        # it in to initialize the solver. Flags accompanying loaded solutions
+        # describe intervals which could not be interpolated and are folded
+        # into the initial flags - see Gain.init_term.
         for term_name, term_xds in gain_terms.items():
             if "gains" in term_xds.data_vars:
                 blocker.add_input(
@@ -110,6 +112,18 @@ def construct_solver(
                     f"{term_name}_initial_params",
                     term_xds.params.data,
                     ("row", "chan", "ant", "dir", "param")
+                )
+            if "gain_flags" in term_xds.data_vars:
+                blocker.add_input(
+                    f"{term_name}_initial_gain_flags",
+                    term_xds.gain_flags.data,
+                    ("row", "chan", "ant", "dir")
+                )
+            if "param_flags" in term_xds.data_vars:
+                blocker.add_input(
+                    f"{term_name}_initial_param_flags",
+                    term_xds.param_flags.data,
+                    ("row", "chan", "ant", "dir")
                 )
 
         # Add relevant outputs to blocker object.

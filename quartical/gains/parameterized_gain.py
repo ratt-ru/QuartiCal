@@ -196,6 +196,9 @@ class ParameterizedGain(Gain):
             ms_kwargs["ROW_MAP"]
         )
 
+        if self.load_from:
+            param_flags |= term_kwargs[f"{self.name}_initial_param_flags"]
+
         gains = np.ones(gain_shape, dtype=np.complex128)
         if gain_shape[-1] == 4:
             gains[..., (1, 2)] = 0  # 2-by-2 identity.
@@ -210,5 +213,8 @@ class ParameterizedGain(Gain):
             ms_kwargs["ANTENNA2"],
             ms_kwargs["ROW_MAP"]
         )
+
+        if self.load_from:
+            gain_flags |= term_kwargs[f"{self.name}_initial_gain_flags"]
 
         return gains, gain_flags, params, param_flags

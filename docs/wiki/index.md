@@ -3,8 +3,8 @@ okf_version: "0.1"
 type: index
 title: LLM Wiki Index
 description: "Map of the QuartiCal LLM wiki — which page answers which task, plus the writing and verification conventions every page follows."
-timestamp: 2026-08-20
-last_verified_commit: f6e2376
+timestamp: 2026-08-25
+last_verified_commit: b0dc5c5
 ---
 
 # QuartiCal LLM Wiki — Index
@@ -31,6 +31,10 @@ commit against which the page's claims were last checked).
 - [design-decisions.md](design-decisions.md) — decision ledger (context, decision,
   rationale, consequences) plus known debt and recurring gotchas. *Read when:* before
   proposing structural changes or "fixing" something surprising.
+- [interpolation.md](interpolation.md) — transfer calibration: loading solved gains,
+  interpolating them onto the current grid, grid mismatch handling, how loaded values and
+  flags reach the solver. *Read when:* working under `quartical/interpolation/` or on
+  anything driven by `load_from`.
 
 ## Stubs
 
@@ -43,8 +47,6 @@ commit against which the page's claims were last checked).
 - [flagging.md](flagging.md) — flag init/propagation, MAD flagging, gain flagging vs data
   flagging. *Read when:* working under `quartical/flagging/` or
   `quartical/gains/general/flagging.py`.
-- [interpolation.md](interpolation.md) — loading solved gains, interpolating onto new
-  grids. *Read when:* working under `quartical/interpolation/`.
 - [statistics.md](statistics.md) — chi-squared tracking and post-solve logging. *Read
   when:* working under `quartical/statistics/`.
 - [apps.md](apps.md) — backup/restore, summary, plotter CLIs. *Read when:* working under

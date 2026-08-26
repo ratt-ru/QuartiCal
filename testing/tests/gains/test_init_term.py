@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Check that init_term leaves flagged parameters at the identity.
+"""Check what init_term does with flags.
 
 A parameter interval with no unflagged data backing it is never solved for, so
 init_term fills it with the parameter value which produces an identity gain.
@@ -8,6 +8,11 @@ amplitude - and the solvers obtain it from ``get_identity_params``, to which
 each kernel supplies its own fill. init_term has to agree: a flagged interval
 holding anything else is written to the output gain dataset and read back by
 ``load_from`` interpolation.
+
+init_term is also where the flags accompanying loaded solutions enter the
+solve. They describe intervals which the interpolation could not fill - most
+importantly antennas which were absent from the loaded solutions altogether -
+and are merged with the flags derived from the data.
 """
 from types import SimpleNamespace
 
@@ -57,7 +62,7 @@ N_CORR = len(CORRELATIONS)
 FLAGGED_TIME = 1
 
 
-def term_options(term_type, initial_estimate):
+def term_options(term_type, initial_estimate, load_from=None):
     """Build the minimal options object the Gain constructor reads."""
 
     return SimpleNamespace(
@@ -70,7 +75,7 @@ def term_options(term_type, initial_estimate):
         freq_interval=1,
         respect_scan_boundaries=False,
         initial_estimate=initial_estimate,
-        load_from=None,
+        load_from=load_from,
         interp_mode="reim",
         interp_method="2dlinear",
     )
@@ -204,3 +209,78 @@ def test_flagged_params_hold_identity(init_term_output, identity_params):
     np.testing.assert_array_equal(
         flagged, np.broadcast_to(identity_params, flagged.shape)
     )
+
+
+# ---------------------------------loaded flags--------------------------------
+
+# The antenna which is missing from the loaded solutions and is consequently
+# flagged for every interval.
+MISSING_ANTENNA = 2
+
+# Any path will do - init_term only checks that load_from is set.
+LOAD_PATH = "loads.qc/G"
+
+
+def loaded_flags(shape):
+    """Flags in which a single antenna is flagged for every interval."""
+
+    flags = np.zeros(shape[:-1], dtype=np.int8)
+    flags[:, :, MISSING_ANTENNA] = 1
+
+    return flags
+
+
+@pytest.fixture(params=["complex", "delay"], scope="module")
+def loaded_term_type(request):
+    return request.param
+
+
+@pytest.fixture(scope="module")
+def loaded_init_term_output(loaded_term_type):
+    """Drive init_term with loaded solutions containing flags of their own."""
+
+    term_class = TERM_TYPES[loaded_term_type]
+    term = term_class("G", term_options(loaded_term_type, False, LOAD_PATH))
+
+    if term.is_parameterized:
+        n_param = len(term_class.make_param_names(CORRELATIONS))
+    else:
+        n_param = 1  # Unused - unparameterised terms have no parameters.
+
+    spec, ms_kwargs, term_kwargs = synthetic_inputs(n_param)
+
+    term_kwargs["G_initial_gain"] = np.ones(spec.shape, dtype=np.complex128)
+    term_kwargs["G_initial_gain_flags"] = loaded_flags(spec.shape)
+    term_kwargs["G_initial_params"] = np.zeros(spec.pshape, dtype=np.float64)
+    term_kwargs["G_initial_param_flags"] = loaded_flags(spec.pshape)
+
+    return term.init_term(spec, 0, ms_kwargs, term_kwargs)
+
+
+def test_loaded_gain_flags_merged(loaded_init_term_output):
+    """An antenna missing from the loaded solutions is fully flagged."""
+
+    _, gain_flags, *_ = loaded_init_term_output
+
+    assert gain_flags[:, :, MISSING_ANTENNA].all()
+
+
+def test_loaded_gain_flags_are_additional(loaded_init_term_output):
+    """The loaded flags do not flag intervals which the data supports."""
+
+    _, gain_flags, *_ = loaded_init_term_output
+
+    remaining = np.delete(gain_flags, MISSING_ANTENNA, axis=2)
+
+    assert not remaining[1 - FLAGGED_TIME].any()
+
+
+def test_loaded_param_flags_merged(loaded_init_term_output):
+    """A missing antenna is flagged on the parameter grid too."""
+
+    if len(loaded_init_term_output) == 2:
+        pytest.skip("Term is not parameterised.")
+
+    *_, param_flags = loaded_init_term_output
+
+    assert param_flags[:, :, MISSING_ANTENNA].all()

@@ -35,11 +35,17 @@ def mock_gain_xds_list(start_time,
                        start_freq,
                        n_freq,
                        gap_freq,
-                       n_xds_freq):
+                       n_xds_freq,
+                       antennas=None,
+                       amplitudes=None):
 
-    n_ant = 3
+    antennas = np.arange(3) if antennas is None else np.asarray(antennas)
+    n_ant = antennas.size
     n_dir = 1
     n_corr = 4
+
+    # Scaling the identity per antenna makes the antenna axis identifiable.
+    amplitudes = np.ones(n_ant) if amplitudes is None else amplitudes
 
     _gain_xds_list = []
 
@@ -54,7 +60,7 @@ def mock_gain_xds_list(start_time,
         coords = {
             "gain_time": time_range,
             "gain_freq": freq_range,
-            "antenna": np.arange(n_ant),
+            "antenna": antennas,
             "direction": np.arange(n_dir),
             "correlation": np.arange(n_corr)
         }
@@ -62,6 +68,7 @@ def mock_gain_xds_list(start_time,
         gains = da.zeros((n_time, n_freq, n_ant, n_dir, n_corr),
                          dtype=np.complex128)
         gains += da.array([1, 0, 0, 1])
+        gains *= da.array(amplitudes)[None, None, :, None, None]
 
         flags = da.zeros((n_time, n_freq, n_ant, n_dir),
                          dtype=np.int8)
@@ -220,3 +227,107 @@ def test_cixl_gains_ident(compute_interpolated_xds_lod):
                for xds in xds_dict.values())
 
 # -----------------------------------------------------------------------------
+
+# -------------------------------antenna alignment-----------------------------
+
+# Solutions may be transferred between observations which do not span the same
+# antennas. Each case gives the antennas of the loaded solutions and of the
+# datasets they are interpolated onto.
+ALIGNMENT_CASES = {
+    "identical": ([0, 1, 2], [0, 1, 2]),
+    "dropped": ([0, 1, 2], [0, 2]),
+    "added": ([0, 2], [0, 1, 2]),
+    "reordered": ([2, 1, 0], [0, 1, 2]),
+}
+
+
+@pytest.fixture(scope="function")
+def alignment_opts(base_opts, tmp_path_factory):
+
+    _opts = deepcopy(base_opts)
+
+    _opts.solver.terms = ["G"]
+    _opts.output.gain_directory = str(tmp_path_factory.mktemp("writes.qc"))
+    _opts.G.load_from = str(tmp_path_factory.mktemp("loads.qc")) + "/G"
+    _opts.G.interp_method = "2dlinear"
+    _opts.G.interp_mode = "reim"
+
+    return _opts
+
+
+@pytest.fixture(
+    scope="function",
+    params=ALIGNMENT_CASES.values(),
+    ids=ALIGNMENT_CASES.keys()
+)
+def alignment_case(request):
+    return request.param
+
+
+@pytest.fixture(scope="function")
+def alignment_xds(alignment_case, alignment_opts):
+
+    load_antennas, target_antennas = alignment_case
+    load_params, gain_params = GAIN_PROPERTIES["aligned"]
+
+    # The gains of the nth loaded antenna are n + 1 times the identity, which
+    # makes the interpolated antenna axis verifiable.
+    load_xds_list = mock_gain_xds_list(
+        *load_params,
+        antennas=load_antennas,
+        amplitudes=np.arange(len(load_antennas)) + 1
+    )
+
+    path = '::'.join(alignment_opts.G.load_from.rsplit('/', maxsplit=1))
+    da.compute(xds_to_zarr(load_xds_list, path))
+
+    gain_xds_lod = [
+        {"G": xds} for xds in
+        mock_gain_xds_list(*gain_params, antennas=target_antennas)
+    ]
+
+    interpolated_xds_lod = load_and_interpolate_gains(
+        gain_xds_lod,
+        gains_to_chain(alignment_opts),
+        alignment_opts.output.gain_directory
+    )
+
+    return da.compute(interpolated_xds_lod)[0][0]["G"]
+
+
+def test_alignment_antennas(alignment_xds, alignment_case):
+    """The interpolated antenna axis is that of the target datasets."""
+
+    _, target_antennas = alignment_case
+
+    assert list(alignment_xds.antenna.values) == target_antennas
+
+
+def test_alignment_gains(alignment_xds, alignment_case):
+    """Antennas common to both datasets retain their loaded gains."""
+
+    load_antennas, target_antennas = alignment_case
+
+    common = [(i, a) for i, a in enumerate(target_antennas)
+              if a in load_antennas]
+
+    assert all(
+        np.allclose(
+            alignment_xds.gains.values[:, :, i],
+            (load_antennas.index(a) + 1) * np.array([1, 0, 0, 1])
+        )
+        for i, a in common
+    )
+
+
+def test_alignment_flags(alignment_xds, alignment_case):
+    """Antennas absent from the loaded solutions are fully flagged."""
+
+    load_antennas, target_antennas = alignment_case
+
+    flags = alignment_xds.gain_flags.values
+
+    assert all(
+        flags[:, :, i].all() == (a not in load_antennas)
+        for i, a in enumerate(target_antennas)
+    )
