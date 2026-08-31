@@ -41,13 +41,23 @@ def _antenna_table():
     ]
 
 
-def _field_table(n_field=2):
-    """A minimal FIELD subtable with one PHASE_DIR per field."""
-    # PHASE_DIR has shape (field, poly, radec); a single polynomial coefficient.
+def _field_table(n_field=2, reference_dirs=None):
+    """A minimal FIELD subtable with one direction per field.
+
+    The direction columns have shape (field, poly, radec); a single polynomial
+    coefficient. REFERENCE_DIR is only present when supplied, mimicking the
+    writers which do not populate it.
+    """
     phase_dirs = np.arange(n_field * 2, dtype=float).reshape(n_field, 1, 2)
-    return [
-        xarray.Dataset({"PHASE_DIR": (("field", "poly", "radec"), phase_dirs)})
-    ]
+    data_vars = {"PHASE_DIR": (("field", "poly", "radec"), phase_dirs)}
+
+    if reference_dirs is not None:
+        reference_dirs = np.array(reference_dirs, dtype=float)
+        data_vars["REFERENCE_DIR"] = (
+            ("field", "poly", "radec"), reference_dirs.reshape(n_field, 1, 2)
+        )
+
+    return [xarray.Dataset(data_vars)]
 
 
 def _feed_group(spw_id, receptor_angle):
@@ -69,7 +79,7 @@ def _feed_group(spw_id, receptor_angle):
     )
 
 
-def _patch_tables(monkeypatch, feed_groups, n_field=2):
+def _patch_tables(monkeypatch, feed_groups, n_field=2, reference_dirs=None):
     """Patch xds_from_storage_table to serve in-memory subtables."""
 
     def fake_xds_from_storage_table(path, columns=None, group_cols=None):
@@ -78,7 +88,7 @@ def _patch_tables(monkeypatch, feed_groups, n_field=2):
         if path.endswith("::FEED"):
             return feed_groups
         if path.endswith("::FIELD"):
-            return _field_table(n_field)
+            return _field_table(n_field, reference_dirs)
         raise ValueError(f"Unexpected table request: {path}")
 
     monkeypatch.setattr(
@@ -149,6 +159,31 @@ def test_assign_parangle_data_missing_spw_raises(monkeypatch):
 
     with pytest.raises(ValueError, match="No FEED table entry"):
         assign_parangle_data("fake.ms", [_data_xds(spw_id=3, field_id=0)])
+
+
+def test_assign_parangle_data_uses_pointing(monkeypatch):
+    """The field centre is the pointing, which a rephase leaves in place.
+
+    The parallactic angles describe antenna orientation, so they must follow
+    REFERENCE_DIR rather than the freely-shiftable PHASE_DIR.
+    """
+    feed_groups = [_feed_group(0, 0.0)]
+    reference_dirs = [(0.5, 0.6), (0.7, 0.8)]
+    _patch_tables(monkeypatch, feed_groups, reference_dirs=reference_dirs)
+
+    [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=0, field_id=1)])
+
+    assert xds.attrs["FIELD_CENTRE"] == (0.7, 0.8)
+
+
+def test_assign_parangle_data_pointing_falls_back(monkeypatch):
+    """With no REFERENCE_DIR, PHASE_DIR remains the field centre."""
+    feed_groups = [_feed_group(0, 0.0)]
+    _patch_tables(monkeypatch, feed_groups)
+
+    [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=0, field_id=1)])
+
+    assert xds.attrs["FIELD_CENTRE"] == tuple(np.arange(2, 4, dtype=float))
 
 
 def test_assign_parangle_data_flags_multi_field(monkeypatch):

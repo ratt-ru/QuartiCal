@@ -2,6 +2,7 @@ from collections import defaultdict
 from functools import lru_cache
 import weakref
 
+from astropy.coordinates import angular_separation
 from astropy.io import fits
 import dask.array as da
 import dask
@@ -14,10 +15,13 @@ import Tigger
 
 from africanus.util.casa_types import STOKES_ID_MAP
 from africanus.util.beams import beam_filenames, beam_grids
+from africanus.coordinates.dask import radec_to_lm
 
 from africanus.experimental.rime.fused import RimeSpecification
 from africanus.experimental.rime.fused.dask import rime
+from africanus.experimental.rime.fused.terms.cube_dde import BeamCubeDDE
 
+from quartical.data_handling.pointing import get_pointing_dir
 from quartical.utils.collections import freeze_default_dict
 
 _empty_spectrum = object()
@@ -332,6 +336,57 @@ def get_support_tables(ms_path):
     return lazy_tables
 
 
+class PointedBeamCubeDDE(BeamCubeDDE):
+    """A beam cube term which samples the beam about its own centre.
+
+    The lm coordinates produced by africanus' LMTransformer are relative to
+    FIELD.PHASE_DIR, which is where the fringes are referenced rather than
+    where the dishes point; the two differ on a rephased measurement set. This
+    term consumes a beam_lm input in place of lm, allowing the beam to be
+    centred on the pointing while the phase term remains referenced to the
+    phase centre. See ratt-ru/QuartiCal#439.
+    """
+
+    def dask_schema(self, beam, beam_lm_extents, beam_freq_map, beam_lm,
+                    beam_parangle, chan_freq, beam_point_errors=None,
+                    beam_antenna_scaling=None):
+
+        schema = super().dask_schema(beam, beam_lm_extents, beam_freq_map,
+                                     beam_lm, beam_parangle, chan_freq,
+                                     beam_point_errors, beam_antenna_scaling)
+
+        schema["beam_lm"] = schema.pop("lm")
+
+        return schema
+
+    def init_fields(self, typingctx, init_state, beam, beam_lm_extents,
+                    beam_freq_map, beam_lm, beam_parangle, chan_freq,
+                    beam_point_errors=None, beam_antenna_scaling=None):
+
+        fields, constructor = super().init_fields(
+            typingctx, init_state, beam, beam_lm_extents, beam_freq_map,
+            beam_lm, beam_parangle, chan_freq, beam_point_errors,
+            beam_antenna_scaling
+        )
+
+        # africanus supplies the constructor's arguments positionally, but
+        # requires that its signature match the inputs declared above. Renaming
+        # the parameter in the code object of the constructor - which is
+        # created afresh by each call to init_fields - satisfies that check
+        # without duplicating the beam sampling implementation.
+        code = constructor.__code__
+        names = list(code.co_varnames)
+        names[names.index("lm")] = "beam_lm"
+        constructor.__code__ = code.replace(co_varnames=tuple(names))
+
+        return fields, constructor
+
+    def sampler(self):
+        # The Term metaclass requires that this method be present on every
+        # subclass, even when the implementation is inherited.
+        return super().sampler()
+
+
 def build_rime_spec(stokes, corrs, source_type, model_opts):
     left, middle, right = [], ["Kpq", "Bpq"], []
     terms = {}
@@ -351,6 +406,7 @@ def build_rime_spec(stokes, corrs, source_type, model_opts):
     if model_opts.beam:
         left.insert(0, "Ep")
         right.append("Eq")
+        terms["E"] = PointedBeamCubeDDE
 
     onion = ",".join(left + middle + right)
     bits = ["(", onion, "): ",
@@ -415,9 +471,37 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
         stokes_schema = ["I", "Q", "U", "V"]
         chan_freq = da.from_array(spw_xds.CHAN_FREQ.data[0],
                                   chunks=data_xds.chunks['chan'])
-        phase_dir = da.from_array(field_xds.PHASE_DIR.data[0][0])  # row, poly
+        phase_dir = np.asarray(field_xds.PHASE_DIR.values[0][0])  # row, poly
+        pointing_column, pointing_dir = get_pointing_dir(field_xds)
+
+        # A non-zero separation means that the measurement set has been
+        # rephased and that the pointing is no longer the phase centre. Report
+        # it, as getting this wrong is otherwise silent.
+        referenced = (
+            "beam and parallactic angles" if model_opts.beam
+            else "parallactic angles"
+        )
+        separation = np.rad2deg(
+            angular_separation(*pointing_dir, *phase_dir)
+        ) * 60
+
+        messages.add(
+            f"Referencing the {referenced} to FIELD.{pointing_column}, "
+            f"{separation:.2f} arcminutes from the phase centre."
+        )
+
+        # africanus derives the lm coordinates of the sources from phase_dir
+        # and uses them both to compute the fringe and to sample the beam. We
+        # supply the lm coordinates ourselves, below, so that each can be
+        # referenced to the direction it belongs to. That leaves phase_dir
+        # consumed only by africanus' parallactic angle machinery, which
+        # belongs at the pointing rather than at the phase centre.
+        phase_dir = da.from_array(phase_dir, chunks=-1)
+        pointing_dir = da.from_array(pointing_dir, chunks=-1)
+
         extras = {
-            "phase_dir": clone(phase_dir),
+            # NB: this is the pointing, not the phase centre - see above.
+            "phase_dir": clone(pointing_dir),
             "chan_freq": clone(chan_freq),
             "antenna_position": clone(ant_xds.POSITION.data),
             "receptor_angle": clone(feed_xds.RECEPTOR_ANGLE.data),
@@ -446,6 +530,21 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
                 for source_type, sky_model in group_sources.items():
                     spec = build_rime_spec(stokes_schema, corr_schema,
                                            source_type, model_opts)
+
+                    # The fringe is referenced to the phase centre while the
+                    # beam is sampled about the pointing, so each gets its own
+                    # lm coordinates.
+                    radec = sky_model.radec.data
+                    lm_vars = {
+                        "lm": (("source", "lm"),
+                               radec_to_lm(radec, phase_dir))
+                    }
+
+                    if model_opts.beam:
+                        lm_vars["beam_lm"] = (("source", "lm"),
+                                              radec_to_lm(radec, pointing_dir))
+
+                    sky_model = sky_model.assign(lm_vars)
 
                     messages.add(
                         f"Predicting {source_type} sources using {spec}."
