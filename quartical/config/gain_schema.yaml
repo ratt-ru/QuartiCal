@@ -103,3 +103,16 @@ gain:
     info: Controls whether or not a term will be populated with an initial
           estimiate where applicable. Currently only supported for delay
           terms.
+
+  referenced:
+    dtype: bool
+    default: true
+    info: Controls whether the term is referenced to solver.reference_antenna
+          i.e. whether the reference antenna's phases are pinned to zero.
+          Terms which have no referencing stage ignore this option. As well as
+          making a solution reproducible, referencing a two-by-two term keeps
+          the cross-hand phase out of it, so that a dedicated crosshand_phase
+          term can carry it. Set this to false when the term should carry the
+          cross-hand phase itself, and whenever a two-by-two term is solved
+          against a model with cross-hand coherency, where pinning that phase
+          moves the solution off the fit and leaves non-zero residuals.

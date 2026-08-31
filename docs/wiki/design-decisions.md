@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-08-13
-last_verified_commit: d9bc461
+timestamp: 2026-08-26
+last_verified_commit: 2cc9557
 ---
 
 # Design Decisions
@@ -880,6 +880,71 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   guards it: the check needs a cold kernel compile and asserts on numba's diagnostic text.
 - **Source:** branch followups/valloc-hoisting (2026-08-21), addressing item 9 of the second
   branch review.
+
+## Referencing made a per-term option, and extended to the 2x2 complex term
+
+- **Context:** referencing was wired in at build time and could not be turned off: `diag_complex`
+  and the parameterised phase/delay/tec terms always referenced, and the full 2x2 `complex` term
+  never did. There is no reason the gauge fix should be a property of the term type rather than of
+  the run: referencing is what a chain wants nearly always, and the exceptions are properties of
+  the run, not of the type.
+- **Decision:** `referenced` is a per-term option (`gain_schema.yaml`, default `true`), read into
+  `Gain.referenced`, carried into `meta_args_nt` and checked at runtime by the two solver-loop
+  builders. `complex` now passes `general/referencing.py:reference_gains`, the hook `diag_complex`
+  already used, which is hoisted out of `complex/diag_kernel.py` so both bind the same routine.
+  Terms with no referencing stage still resolve to a build-time no-op and discard the option
+  silently.
+- **Rationale:** the gauge freedom is `G_p -> G_p X` for a constant X, and V_pq = G_p M_pq G_q^H is
+  unchanged exactly when `X M_pq X^H = M_pq` for every baseline. Which X satisfy that is a property
+  of the *model*, not of the term, and the count is easy to get wrong. When the model is one
+  constant coherency on every baseline - an unresolved calibrator at phase centre - the stabiliser
+  is the M-unitary group `X = M^(1/2) U M^(-1/2)`, `U` in U(2), which is **four** real parameters
+  for any positive-definite M, not one. Only a model whose `M_pq` vary enough between baselines
+  narrows it towards `e^{i phi} I`. What matters here is not the size of that group but whether a
+  *diagonal unitary* lies in it: `diag(a, b) M diag(a, b)^H = M` needs `a b* M01 = M01`, so the
+  answer is yes exactly when `M01 = 0`, and otherwise only for `a = b`. Referencing is therefore
+  free whenever the model has no cross-hand coherency - every Stokes I model - and moves the fit
+  whenever it does, independent of how degenerate the solve already was.
+  The shared hook uses the conjugated unit-modulus diagonal of the reference antenna's gain, which
+  spends exactly those two parameters and no more. Three constraints follow and are worth stating
+  because each rules
+  out a plausible alternative. X must be a pure phase: `X = cI` with `|c| != 1` scales `M` by
+  `|c|^2`, and amplitude is fixed by the model, never gauge. X must discard the reference gain's
+  off-diagonal elements, because fixing the two remaining SU(2) directions is legitimate only for
+  an exactly unpolarised model, which is precisely the case where a full-Jones solve cannot
+  determine leakage at all. And X must not be the reference gain's inverse: polar decomposition
+  gives `G^-1 = H^-1 U^H`, whose Hermitian factor is not a symmetry of any model.
+  `testing/utils/gains.py:reference_gains` does use the inverse, but applies it to truth and
+  solution alike purely as a comparison device.
+
+  Referencing the 2x2 term is a deliberate choice, not a concession to the Stokes I case: pinning
+  both diagonal phases forces the cross-hand phase *out* of the complex term, which is what a real
+  chain wants, because that phase belongs to a dedicated `crosshand_phase` term rather than being
+  absorbed by G or B. `referenced=false` exists for the run that genuinely wants the complex term
+  to carry it. The two properties are mutually exclusive and no implementation reconciles them:
+  zeroing both reference-antenna phases is exactly the choice that makes `X = diag(a, b)` have
+  `a != b`, and `X M X^H = M` for a model with cross-hand power requires `a = b`. Forcing the
+  phase out is therefore the same act as moving the fit, whenever `M01 != 0`.
+- **Consequences:** `complex` solves are referenced by default, which changes their output - the
+  gauge is now pinned rather than wherever the iteration stopped, so results are reproducible
+  between runs. `solve_per="array"` needs no special case: the stabiliser condition does not
+  mention the antenna index, so an array-wide term's diagonal phases are gauge under exactly the
+  same condition and driving them real is the correct fix, not a loss.
+  `testing/tests/gains/test_complex.py` had to change its model from `[1, 0.1, 0.1, 1]` to
+  `[1, 0, 0, 0.8]` - still non-singular, which is all the original scaling was for, but now
+  diagonal, so the referencing transform is a symmetry of it and the residuals stay at zero. The
+  gains keep their leakage, so the module still tests full-Jones recovery, and it now does so on
+  the default referenced path. Two dead ends are worth not repeating. Setting the *truth's*
+  reference-antenna cross-hand phase to zero does not work: with a constant coherency the fit is
+  degenerate over that four-parameter group, the solve lands at an arbitrary point in it, and the
+  *solved* reference-antenna cross-hand phase was measured wandering up to 0.86 rad across
+  solution intervals regardless of the truth. Nor is scalar-phase referencing for the 2x2 term the
+  answer - it would keep every model safe, but it leaves the cross-hand phase in the term, which
+  is the thing referencing exists to remove. `test_diag_complex.py` needed no change: its model is
+  already diagonal, and a diagonal term discards cross-hand data by construction anyway. Covered by
+  `testing/tests/gains/test_referencing.py`, which asserts the reference antenna is pinned with
+  the option on and free with it off, for one gain-referenced and one parameter-referenced term.
+- **Source:** branch add-per-term-referenced-option (2026-08-26).
 
 ## Known debt (do not entrench)
 

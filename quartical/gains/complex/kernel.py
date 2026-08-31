@@ -7,6 +7,7 @@ from quartical.utils.numba import (coerce_literal,
 import quartical.gains.general.factories as factories
 from quartical.gains.general.solver_components import build_jhj_jhr_impl
 from quartical.gains.general.solver_loop import build_gain_solver_impl
+from quartical.gains.general.referencing import reference_gains
 from quartical.gains.general.residuals import standard_residual_factory
 
 
@@ -50,15 +51,16 @@ def nb_complex_solver_impl(
 
     # The outer solver loop is shared between non-parameterised kernels - only
     # the hooks below are specific to complex terms. Complex has full-block jhj
-    # dims, does not support scalar mode, and needs no referencing stage.
-    # Inlined into the trampoline below for a private cache namespace.
+    # dims, does not support scalar mode, and shares the gain-space referencing
+    # stage with diag_complex. Inlined into the trampoline below for a private
+    # cache namespace.
     shared_impl = build_gain_solver_impl(
         get_jhj_dims=get_jhj_dims_factory(corr_mode),
         compute_jhj_jhr=compute_jhj_jhr,
         collapse_to_scalar_jhj_jhr=None,
         scalar_error_message="Scalar mode not supported for complex terms.",
         finalize_update=finalize_update,
-        reference_gains=None,
+        reference_gains=reference_gains,
     )
 
     def impl(

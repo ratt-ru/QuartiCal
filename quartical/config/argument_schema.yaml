@@ -405,7 +405,8 @@ solver:
     default: 0
     info:
       A reference antenna to use for terms which require one. QuartiCal will
-      also guarantee zero phase on the specified antenna for diagonal terms.
+      also guarantee zero phase on the specified antenna for every term which
+      has a referencing stage, unless that term sets referenced to false.
       Specify as the integer index of the antenna - antenna names are not
       currently supported.
 

@@ -342,6 +342,7 @@ def nb_compute_jhj_jhr(
             dd_term=meta_inputs.dd_term,
             pinned_directions=meta_inputs.pinned_directions,
             solve_per=meta_inputs.solve_per,
+            referenced=meta_inputs.referenced,
         )
 
         _shared_compute_jhj_jhr(

@@ -95,7 +95,9 @@ def build_gain_solver_impl(
             called with the non-param 5-arg form after compute_update.
         reference_gains: Optional hook
             ``reference_gains(chain_inputs, meta_inputs, corr_mode)`` run once
-            after finalize_gain_flags. ``None`` yields a build-time no-op.
+            after finalize_gain_flags, and only when ``meta_inputs.referenced``
+            is set. ``None`` yields a build-time no-op, so a term with no
+            referencing stage discards that option silently.
 
     Returns:
         The ``impl`` closure, wrapped as an inline="always" function.
@@ -125,14 +127,17 @@ def build_gain_solver_impl(
                 collapse_to_scalar_jhj_jhr(native_imdry)
     scalar_step = factories.qcjit(scalar_step)
 
-    # Optional reference-gains stage: a build-time no-op when absent, else the
-    # term's own referencing routine (already jitted and callable in-loop).
+    # Optional reference-gains stage: a build-time no-op for a term with no
+    # referencing routine, else that routine behind the per-term referenced
+    # switch. A term without the stage discards the option silently.
     if reference_gains is None:
         def reference_gains_step(chain_inputs, meta_inputs, corr_mode):
             pass
-        reference_gains_step = factories.qcjit(reference_gains_step)
     else:
-        reference_gains_step = reference_gains
+        def reference_gains_step(chain_inputs, meta_inputs, corr_mode):
+            if meta_inputs.referenced:
+                reference_gains(chain_inputs, meta_inputs, corr_mode)
+    reference_gains_step = factories.qcjit(reference_gains_step)
 
     def impl(
         ms_inputs,
@@ -327,8 +332,10 @@ def build_param_solver_impl(
             update_param_flags, built by ``parameters.get_identity_params``.
         reference_params: Optional @overload-ed referencing routine
             ``reference_params(ms_inputs, mapping_inputs, chain_inputs,
-            meta_inputs)`` run once after finalize_gain_flags. ``None`` yields
-            a build-time no-op.
+            meta_inputs)`` run once after finalize_gain_flags, and only when
+            ``meta_inputs.referenced`` is set. ``None`` yields a build-time
+            no-op, so a term with no referencing stage discards that option
+            silently.
         post_solve: Optional hook
             ``post_solve(ms_inputs, chain_inputs, meta_inputs, native_imdry)``
             run last, just before the return (e.g. exiting a scaled solver
@@ -372,15 +379,23 @@ def build_param_solver_impl(
                 scalar_jhj_jhr(native_imdry, params_per_corr)
     scalar_step = factories.qcjit(scalar_step)
 
-    # Optional referencing stage: a build-time no-op when absent.
+    # Optional referencing stage: a build-time no-op for a term with no
+    # referencing routine, else that routine behind the per-term referenced
+    # switch. A term without the stage discards the option silently.
     if reference_params is None:
         def reference_params_step(
             ms_inputs, mapping_inputs, chain_inputs, meta_inputs
         ):
             pass
-        reference_params_step = factories.qcjit(reference_params_step)
     else:
-        reference_params_step = reference_params
+        def reference_params_step(
+            ms_inputs, mapping_inputs, chain_inputs, meta_inputs
+        ):
+            if meta_inputs.referenced:
+                reference_params(
+                    ms_inputs, mapping_inputs, chain_inputs, meta_inputs
+                )
+    reference_params_step = factories.qcjit(reference_params_step)
 
     # Optional post-solve stage: a build-time no-op when absent.
     if post_solve is None:
