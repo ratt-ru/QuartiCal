@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-08-25
-last_verified_commit: b0dc5c5
+timestamp: 2026-08-26
+last_verified_commit: 2cc9557
 ---
 
 # Solver Architecture
@@ -56,7 +56,8 @@ scalar delay per correlation and maps that to a phase-slope gain.
 `Gain` (`quartical/gains/gain.py`) is the base class. It holds per-term config on `__init__`
 (`name`, `type`, `solve_per`, `scalar`, `direction_dependent`, `pinned_directions`,
 `time_interval`, `freq_interval`, `respect_scan_boundaries`, `initial_estimate`, `load_from`,
-`interp_mode`, `interp_method`) and provides the classmethods that build the time/freq/direction
+`interp_mode`, `interp_method`, `referenced`) and provides the classmethods that build the
+time/freq/direction
 mappings (`make_time_bins`, `make_time_map`, `make_freq_map`, `make_dir_map`, and the `_make_*`
 numpy internals plus `make_*_chunks`/`make_*_coords`). It defines `gain_axes = ("gain_time",
 "gain_freq", "antenna", "direction", "correlation")`, `is_parameterized = False`, and the
@@ -385,10 +386,16 @@ call site passes them by name, so the opaque positional
   scalar_error_message, finalize_update, reference_gains)` — non-parameterised terms
   (complex, diag_complex, leakage). The body is complex's historic impl. diag_complex
   differs only via the builder inputs: `identity_dims` (its jhj is gain-shaped rather than
-  `get_jhj_dims_factory`'s block shape), its own one-arg `collapse_to_scalar_jhj_jhr` (scalar
-  mode supported; `None` means unsupported and raises `scalar_error_message`, which the builder
-  requires to be non-`None` in that case), and a
-  `reference_gains(chain_inputs, meta_inputs, corr_mode)` stage after `finalize_gain_flags`.
+  `get_jhj_dims_factory`'s block shape) and its own one-arg `collapse_to_scalar_jhj_jhr`
+  (scalar mode supported; `None` means unsupported and raises `scalar_error_message`, which
+  the builder requires to be non-`None` in that case). The
+  `reference_gains(chain_inputs, meta_inputs, corr_mode)` stage after `finalize_gain_flags`
+  is shared by complex and diag_complex, which both pass
+  `general/referencing.py:reference_gains`; leakage passes `None`. Referencing right-multiplies
+  every antenna's gain by the conjugated unit-modulus diagonal of the reference antenna's gain,
+  discarding that gain's off-diagonal elements, so the reference antenna's diagonal ends up real
+  and positive and no gain modulus moves. See the ledger entry on the per-term referenced option
+  for why the transformation has to be unitary and diagonal.
   That collapse hook is deliberately separate from the generic two-arg
   `generics.scalar_jhj_jhr`: a gain-shaped jhj element is a flat correlation vector, so
   collapsing it is a sum along the correlation axis, whereas the generic routine indexes the
@@ -427,6 +434,14 @@ call site passes them by name, so the opaque positional
   come from `general/parameters.py:reference_params_factory(params_to_gains=)`, which works
   because their `*_params_to_gains` share one signature; phase states its own, as
   `phase_params_to_gains` takes no frequency arguments.
+
+Both referencing stages are gated at runtime on `meta_args_nt.referenced`, which carries the
+term's `referenced` config option (`gain_schema.yaml`, default `true`) through
+`Gain.__init__` and `calibration/solver.py`. The gate lives in the two builders, wrapped around
+the supplied hook — a term which passes `None` still gets a build-time no-op, so the option is
+discarded silently by every term with no referencing stage (amplitude, rotation,
+rotation_measure, crosshand_phase, crosshand_phase_null_v, leakage, and the solverless
+parallactic_angle and feed_flip).
   `pre_solve(ms_inputs, chain_inputs, meta_inputs)` and `post_solve(ms_inputs,
   chain_inputs, meta_inputs, native_imdry)` are opaque jitted closures owned by each
   kernel module — deliberately NOT a declarative rescaling abstraction — used to enter and

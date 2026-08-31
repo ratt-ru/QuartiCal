@@ -23,6 +23,7 @@ meta_args_nt = namedtuple(
         "dd_term",
         "pinned_directions",
         "solve_per",
+        "referenced",
     )
 )
 
@@ -237,7 +238,8 @@ def solver_wrapper(
             term.scalar,
             term.direction_dependent,
             term.pinned_directions,
-            term.solve_per
+            term.solve_per,
+            term.referenced
         )
 
         if term.solver:

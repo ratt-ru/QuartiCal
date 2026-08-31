@@ -90,10 +90,18 @@ def corrupted_data_xds_list(predicted_xds_list, true_gain_list):
 
         model = da.ones(xds.MODEL_DATA.data.shape, dtype=np.complex128)
 
-        # TODO: Commenting out the below breaks tests. Why?
-
-        if n_corr == 4:  # Decrease magnitude of off-diagonal elements.
-            model *= da.array([1, 0.1, 0.1, 1])
+        # An all-ones coherency is singular, hence the scaling. Keeping it
+        # diagonal is what lets this module solve a referenced two-by-two term:
+        # referencing right multiplies by a diagonal unitary built from the
+        # reference antenna, which is a symmetry of a diagonal coherency, so
+        # the fit is untouched. Give the model cross-hand power and it stops
+        # being one, and pinning the reference antenna's cross-hand phase
+        # leaves the residuals non-zero. Keeping it off the identity matters
+        # too - a scalar coherency would leave the gains' leakage entirely
+        # unconstrained. The gains carry leakage either way, so full-Jones
+        # recovery is what is under test.
+        if n_corr == 4:
+            model *= da.array([1, 0, 0, 0.8])
 
         data = da.blockwise(apply_gains, ("rfc"),
                             model, ("rfdc"),

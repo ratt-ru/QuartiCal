@@ -3,8 +3,8 @@ okf_version: "0.1"
 type: index
 title: LLM Wiki Index
 description: "Map of the QuartiCal LLM wiki — which page answers which task, plus the writing and verification conventions every page follows."
-timestamp: 2026-08-20
-last_verified_commit: f6e2376
+timestamp: 2026-08-26
+last_verified_commit: 2cc9557
 ---
 
 # QuartiCal LLM Wiki — Index
@@ -31,13 +31,14 @@ commit against which the page's claims were last checked).
 - [design-decisions.md](design-decisions.md) — decision ledger (context, decision,
   rationale, consequences) plus known debt and recurring gotchas. *Read when:* before
   proposing structural changes or "fixing" something surprising.
+- [config-system.md](config-system.md) — YAML schemas to runtime dataclasses, the
+  dynamic per-term sections, merge order, validation, and how an option reaches a gain
+  term. *Read when:* working under `quartical/config/` or adding an option.
 
 ## Stubs
 
 - [data-handling.md](data-handling.md) — MS I/O via dask-ms, chunking, selection,
   parallactic angles, BDA. *Read when:* working under `quartical/data_handling/`.
-- [config-system.md](config-system.md) — YAML schemas → runtime dataclasses, per-term
-  sections, validation. *Read when:* working under `quartical/config/`.
 - [weights.md](weights.md) — weight initialisation and robust reweighting. *Read when:*
   working under `quartical/weights/`.
 - [flagging.md](flagging.md) — flag init/propagation, MAD flagging, gain flagging vs data
