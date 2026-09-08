@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import re
+from loguru import logger
 
 
 def as_time(arg):
@@ -81,3 +82,75 @@ def as_freq(arg):
         arg = int(arg)
 
     return arg
+
+
+def as_antenna_index(arg, ant_names):
+    """Defines the custom argument type ANTENNA.
+
+    Resolves a user-specified antenna into an antenna index. The value may be
+    an antenna name, an integer index, or either of those disambiguated by an
+    explicit "name:" or "index:" prefix. A bare value which is simultaneously
+    a valid index and a valid name is interpreted as an index, with a
+    warning.
+
+    Args:
+        arg (str): A command line argument.
+        ant_names (list of str): Antenna names, ordered by antenna index.
+
+    Returns:
+        The integer index of the selected antenna.
+
+    Raises:
+        ValueError: If arg cannot be resolved to a valid antenna index.
+    """
+
+    ant_names = [str(name) for name in ant_names]
+    n_ant = len(ant_names)
+
+    def by_name(value):
+        if value not in ant_names:
+            raise ValueError(
+                f"Antenna name '{value}' not found in the antenna table. "
+                f"Valid names are {ant_names}."
+            )
+        return ant_names.index(value)
+
+    def by_index(value):
+        if not value.isdigit():
+            raise ValueError(
+                f"Antenna index '{value}' is not a non-negative integer."
+            )
+        index = int(value)
+        if index >= n_ant:
+            raise ValueError(
+                f"Antenna index {index} is out of range for the {n_ant} "
+                f"antennas in the antenna table."
+            )
+        return index
+
+    if arg.startswith("name:"):
+        return by_name(arg[len("name:"):])
+    elif arg.startswith("index:"):
+        return by_index(arg[len("index:"):])
+
+    is_name = arg in ant_names
+    is_index = arg.isdigit() and int(arg) < n_ant
+
+    if is_name and is_index:
+        logger.warning(
+            f"Antenna '{arg}' is ambiguous - it is both a valid antenna "
+            f"index and the name of antenna {ant_names.index(arg)}. "
+            f"Interpreting it as an index. Use 'index:{arg}' or "
+            f"'name:{arg}' to select explicitly and silence this warning."
+        )
+
+    if is_index:
+        return int(arg)
+    elif is_name:
+        return by_name(arg)
+
+    raise ValueError(
+        f"Antenna '{arg}' could not be resolved to an antenna index. It is "
+        f"neither a valid index for the {n_ant} antennas in the antenna "
+        f"table nor one of their names ({ant_names})."
+    )
