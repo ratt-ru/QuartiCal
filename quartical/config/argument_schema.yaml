@@ -401,15 +401,16 @@ solver:
       specified in solver.iter_recipe.
 
   reference_antenna:
-    dtype: str
-    default: "0"
-    info: >-
+    dtype: Union[int, str]
+    default: 0
+    info:
       A reference antenna to use for terms which require one. QuartiCal will
       also guarantee zero phase on the specified antenna for every term which
       has a referencing stage, unless that term sets referenced to false.
-      Specify either the name of the antenna or its integer index. If a value
-      is both a valid index and a valid name, it is taken as an index. Prefix
-      the value with name: or index: to select explicitly.
+      An integer selects the antenna by index and a string selects it by
+      name. An antenna whose name is itself an integer can only be selected
+      by quoting the name, remembering that the shell strips one level of
+      quotes.
 
 dask:
   threads:
