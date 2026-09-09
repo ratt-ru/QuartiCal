@@ -81,7 +81,7 @@ def assign_parangle_data(ms_path, data_xds_list):
             }
         )
         xds.attrs["FEED_TYPE"] = feed_type
-        if hasattr(xds, "FIELD_ID"):
+        if "FIELD_ID" in xds.attrs:
             field_id = int(xds.FIELD_ID)
         else:
             # The data was not partitioned by FIELD_ID (see

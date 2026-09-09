@@ -474,9 +474,11 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
         phase_dir = np.asarray(field_xds.PHASE_DIR.values[0][0])  # row, poly
         pointing_column, pointing_dir = get_pointing_dir(field_xds)
 
-        # A non-zero separation means that the measurement set has been
-        # rephased and that the pointing is no longer the phase centre. Report
-        # it, as getting this wrong is otherwise silent.
+        # Report which direction the beam and parallactic angles are
+        # referenced to, and how far it is from the phase centre. A non-zero
+        # separation means the measurement set has been rephased and that the
+        # pointing is no longer the phase centre; getting this wrong is
+        # otherwise silent.
         referenced = (
             "beam and parallactic angles" if model_opts.beam
             else "parallactic angles"
