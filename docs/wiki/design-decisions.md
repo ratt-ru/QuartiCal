@@ -3,7 +3,7 @@ type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
 timestamp: 2026-09-09
-last_verified_commit: 2b4e420
+last_verified_commit: f2ac75c
 ---
 
 # Design Decisions
@@ -979,6 +979,66 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   because it needs the antenna table. Covered by
   `testing/tests/config/test_converters.py`.
 - **Source:** branch v0.2.8-refant-name (2026-09-09).
+
+## The pointing, not the phase centre, drives the beam and the parallactic angles
+
+- **Context:** africanus' fused RIME derives one `lm` array from `phase_dir` (its
+  `LMTransformer`) and hands it to both the `Phase` term, where it must be referenced to the
+  visibilities' phase centre, and to `BeamCubeDDE`, where it is the point at which the beam
+  cube is sampled; its `ParallacticTransformer` reads `phase_dir` too. QuartiCal fed
+  `FIELD.PHASE_DIR` to all of them, and `data_handling/angles.py` set `FIELD_CENTRE` from
+  `PHASE_DIR` as well. Rephasing tools (`chgcentre`, `phaseshift`) move `PHASE_DIR` and rotate
+  the uvw coordinates to match, but leave `REFERENCE_DIR`/`DELAY_DIR` at the pointing, so on a
+  rephased MS the beam was applied around a point the dishes were never pointed at —
+  silently, and by up to a beam width (ratt-ru/QuartiCal#439 measured a model ~50x too bright
+  at the new centre) — and the parallactic angles described an orientation no antenna had.
+- **Decision:** select the pointing once, in `data_handling/pointing.py:get_pointing_dir`, as
+  the first populated column of `REFERENCE_DIR` -> `DELAY_DIR` -> `PHASE_DIR`, and use it for
+  everything that describes the dishes. `predict` supplies both lm arrays itself — `lm` about
+  `PHASE_DIR` for the fringe, `beam_lm` about the pointing for `PointedBeamCubeDDE`, a
+  `BeamCubeDDE` subclass registered through `RimeSpecification(terms={"E": ...})` — and passes
+  the pointing as africanus' `phase_dir`, which then reaches only the parallactic angle
+  transformer. `angles.py` sets `FIELD_CENTRE` to the same direction, covering
+  `input_model.apply_p_jones` on model columns, `output.apply_p_jones_inv` and the
+  `parallactic_angle` term.
+- **Rationale:** the beam and the parallactic angles are properties of where the dishes point;
+  the phase centre is a freely-shiftable convention, and the two coincide only on an
+  unrephased MS. Supplying `lm` is what frees `phase_dir` to mean the pointing: a transformer
+  only runs for arguments that are missing, and a hand-supplied `lm` is bit-identical to the
+  transformer's (verified, max abs difference 0.0). Shifting `beam_lm_extents` by the pointing
+  offset instead looks like a one-liner and is wrong: the term samples at `R(pa)·lm` and
+  *then* indexes the cube, so a shifted cube puts the beam centre at `R(-pa)·lm_p` — it orbits
+  the phase centre as the parallactic angle swings, an error as large as the offset itself for
+  alt-az dishes. Supplying `feed_parangle`/`beam_parangle` ready-made is not viable either: no
+  `dask_schema` declares dims for them, and africanus' dask wrapper sums over every dim
+  outside `(source, row, chan, corr)`, so a per-chunk lookup table cannot be expressed — they
+  would be broadcast whole while the samplers index them by the chunk's own unique times.
+  `POINTING.DIRECTION` is the better truth (it is the only one that captures on-the-fly
+  mosaicking) but is per-antenna and per-dump, and africanus' per-antenna hook
+  (`beam_point_errors`) is commented out upstream, so only a single field-level direction is
+  representable; it would have to be reduced, and that table is frequently empty or very
+  large. A candidate is skipped when absent or non-finite because some writers never populate
+  `REFERENCE_DIR`; `(0, 0)` is a real sky position and cannot serve as the sentinel.
+- **Consequences:** on an MS where all the FIELD directions agree the change is an exact
+  no-op — `test_predict` still reproduces the MeqTrees `MODEL_DATA` with a beam and
+  `apply_p_jones` both active. Repointing the parallactic angles is a second-order correction
+  next to the beam (a median of 0.2-2 degrees of angle error for a 1 degree offset at
+  MeerKAT's latitude, rising without bound for a field transiting near zenith, where the angle
+  flips through 180 degrees), but both parangle paths had to move together or the P-Jones
+  applied during the predict would disagree with the inverse applied on output. Two things are
+  now QuartiCal's to maintain: the lm projection itself, since `LMTransformer` no longer runs
+  (a future africanus change to that convention would not reach us), and the fact that
+  `extras["phase_dir"]` holds the pointing — africanus' name, our meaning, flagged at the
+  site. No `MEASINFO` frame check is performed: dask-ms does not surface column keywords, so
+  an AZEL `REFERENCE_DIR` — a time-dependent direction neither a fixed beam centre nor
+  `_make_parangles`' hardcoded J2000 can represent — would be used as though it were J2000.
+  `PointedBeamCubeDDE` leans on two africanus internals: that the constructor returned by
+  `init_fields` is called positionally, and that its signature is checked against the declared
+  inputs (hence the `co_varnames` rename, which avoids duplicating ~200 lines of jitted beam
+  sampling). An africanus release that accepts a beam centre and a pointing direction of its
+  own should retire both the subclass and the supplied `lm`.
+- **Source:** branch fix-beam-centre-on-rephased-ms (2026-08-31), addressing
+  ratt-ru/QuartiCal#439.
 
 ## Known debt (do not entrench)
 

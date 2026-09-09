@@ -6,9 +6,11 @@ from daskms import xds_from_storage_table
 import dask.array as da
 import threading
 from dask.graph_manipulation import clone
+from loguru import logger
 import xarray
 from numba import njit
 from numba.extending import overload
+from quartical.data_handling.pointing import get_pointing_dir
 from quartical.utils.numba import coerce_literal, JIT_OPTIONS
 from quartical.utils.dask import blockwise_unique
 import quartical.gains.general.factories as factories
@@ -50,7 +52,12 @@ def assign_parangle_data(ms_path, data_xds_list):
     else:
         raise ValueError("Unsupported feed type/configuration.")
 
-    phase_dirs = fieldtab.PHASE_DIR.values
+    # The parallactic angles describe how each antenna is oriented while
+    # tracking its target, so they belong at the pointing rather than at the
+    # phase centre - the two differ on a rephased measurement set. The FIELD
+    # subtable is small, so materialise it and look the pointing up per field.
+    fieldtab = fieldtab.compute()
+    pointing_columns = set()
 
     updated_data_xds_list = []
     for xds in data_xds_list:
@@ -74,23 +81,30 @@ def assign_parangle_data(ms_path, data_xds_list):
             }
         )
         xds.attrs["FEED_TYPE"] = feed_type
-        if hasattr(xds, "FIELD_ID"):
-            xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[xds.FIELD_ID, 0])
+        if "FIELD_ID" in xds.attrs:
+            field_id = int(xds.FIELD_ID)
         else:
             # The data was not partitioned by FIELD_ID (see
             # input_ms.group_by), so this dataset may span multiple fields
-            # with differing phase centres. The parallactic angle machinery
+            # with differing pointings. The parallactic angle machinery
             # assumes a single field centre per dataset (see _make_parangles),
             # so it cannot be supported here. We assign placeholder values so
             # that the unconditional - but lazy - parallactic angle graph
             # construction does not fail, and flag the dataset so that any
             # attempt to actually use the parallactic angles raises a clear
             # error. See assert_parangle_supported.
-            xds.attrs["FIELD_ID"] = 0
-            xds.attrs["FIELD_CENTRE"] = tuple(phase_dirs[0, 0])
+            field_id = 0
+            xds.attrs["FIELD_ID"] = field_id
             xds.attrs["MULTI_FIELD"] = True
 
+        pointing_column, pointing_dir = get_pointing_dir(fieldtab, field_id)
+        pointing_columns.add(pointing_column)
+        xds.attrs["FIELD_CENTRE"] = tuple(pointing_dir)
+
         updated_data_xds_list.append(xds)
+
+    for column in sorted(pointing_columns):
+        logger.info(f"Computing parallactic angles about FIELD.{column}.")
 
     return updated_data_xds_list
 

@@ -3,8 +3,8 @@ okf_version: "0.1"
 type: index
 title: LLM Wiki Index
 description: "Map of the QuartiCal LLM wiki — which page answers which task, plus the writing and verification conventions every page follows."
-timestamp: 2026-08-26
-last_verified_commit: 2cc9557
+timestamp: 2026-08-31
+last_verified_commit: b1a0cb0
 ---
 
 # QuartiCal LLM Wiki — Index
@@ -38,7 +38,9 @@ commit against which the page's claims were last checked).
 ## Stubs
 
 - [data-handling.md](data-handling.md) — MS I/O via dask-ms, chunking, selection,
-  parallactic angles, BDA. *Read when:* working under `quartical/data_handling/`.
+  parallactic angles, BDA. The predict section (fused RIME wiring, phase centre versus
+  beam centre, beams) is filled in. *Read when:* working under
+  `quartical/data_handling/`.
 - [weights.md](weights.md) — weight initialisation and robust reweighting. *Read when:*
   working under `quartical/weights/`.
 - [flagging.md](flagging.md) — flag init/propagation, MAD flagging, gain flagging vs data

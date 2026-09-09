@@ -2,7 +2,9 @@ from copy import deepcopy
 import pytest
 from quartical.data_handling.predict import (parse_sky_models,
                                              daskify_sky_model_dict,
-                                             get_support_tables)
+                                             get_support_tables,
+                                             build_rime_spec,
+                                             PointedBeamCubeDDE)
 import dask.array as da
 import numpy as np
 from numpy.testing import assert_array_almost_equal
@@ -158,6 +160,27 @@ def test_nonlazy_tables(support_tables, table):
     # Check that the expected tables are not lazily evaluated.
     assert all([isinstance(dvar.data, np.ndarray)
                 for dvar in support_tables[table][0].data_vars.values()])
+
+
+# ----------------------------build_rime_spec----------------------------------
+
+
+@pytest.mark.predict
+def test_beam_term_samples_beam_lm(model_opts):
+
+    # The beam term must consume its own lm coordinates so that the beam and
+    # the phase term can be centred on different directions.
+
+    spec = build_rime_spec(["I", "Q", "U", "V"],
+                           ["XX", "XY", "YX", "YY"],
+                           "point",
+                           model_opts)
+
+    beam_terms = [t for t in spec.terms
+                  if isinstance(t, PointedBeamCubeDDE)]
+
+    assert len(beam_terms) == 2  # One on either side of the onion.
+    assert all("beam_lm" in t.ALL_ARGS for t in beam_terms)
 
 
 # ---------------------------------predict-------------------------------------
