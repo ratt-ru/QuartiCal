@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-08-26
-last_verified_commit: 2cc9557
+timestamp: 2026-09-09
+last_verified_commit: 2b4e420
 ---
 
 # Design Decisions
@@ -945,6 +945,40 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   `testing/tests/gains/test_referencing.py`, which asserts the reference antenna is pinned with
   the option on and free with it off, for one gain-referenced and one parameter-referenced term.
 - **Source:** branch add-per-term-referenced-option (2026-08-26).
+
+## Reference antenna selection typed as a union, not a prefixed string
+
+- **Context:** `solver.reference_antenna` accepted only an integer index. Selecting by name
+  needs a second kind of value in one option, and the two kinds collide: an MS whose
+  `ANTENNA.NAME` values are integer strings (`'1'`..`'28'` is a real case) makes `5` both a
+  valid index and a valid name, meaning different antennas.
+- **Decision:** the schema types the option `Union[int, str]`. An int is an index, a str is a
+  name, and `converters.py:as_antenna_index` does nothing but dispatch on the type. The
+  rejected alternative was `dtype: str` plus `name:`/`index:` prefixes to disambiguate.
+- **Rationale:** the union pushes the disambiguation into the type system, where every config
+  layer already carries it: YAML separates `5` from `"5"`, `oc.from_cli()` separates `ref=5`
+  from `ref='"5"'`, and a fixture's `_opts.solver.reference_antenna = 0` is an int by
+  construction. A prefixed string has to re-derive that distinction by parsing, needs a
+  precedence rule for bare values, and — the decisive point — silently accepts a bare `5` on
+  an MS where it is ambiguous. The union also makes the option strictly better typed than the
+  int it replaces: `reference_antenna=5.0`, `=true` and `=null` now fail in OmegaConf with
+  QuartiCal's "value not understood" message instead of reaching the converter. Old configs
+  are unaffected, because an unquoted `5` is still an int and still means index 5.
+- **Consequences:** an antenna whose name is an integer can only be selected by quoting, and
+  on the command line the shell eats one level of quotes, so `ref="5"` is an index and
+  `ref='"5"'` is the name. That trap is real but confined: a sweep of MeerKAT, VLA, ALMA,
+  ASKAP, LOFAR, ATCA and GMRT naming conventions found none that need quoting, and the other
+  values OmegaConf's grammar claims (`true`, `false`, `on`, `off`, `yes`, `no`, `null`, `1e5`)
+  fail loudly rather than silently. The remaining silent case keeps a warning: an int index
+  which is also an antenna name says so and points at quoting, and an out-of-range int which
+  is a name says so in the error. `Union` in a schema `dtype` is safe because
+  `scabha/cargo.py` evaluates the dtype string against `vars(typing)` and `pyproject.toml`
+  pins `omegaconf>=2.3.0`; note that `scabha`'s `clickify_parameters` has no union branch and
+  degrades one to `str`, which matters only if QuartiCal is ever driven through that path.
+  Resolution runs in `calibration/calibrate.py:add_calibration_graph` rather than a post-init
+  because it needs the antenna table. Covered by
+  `testing/tests/config/test_converters.py`.
+- **Source:** branch v0.2.8-refant-name (2026-09-09).
 
 ## Known debt (do not entrench)
 

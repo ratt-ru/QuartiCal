@@ -2,8 +2,8 @@
 type: reference
 title: Config System
 description: "How YAML schemas become runtime dataclasses with dynamic per-term sections, in what order sources merge, and where per-term options are validated and consumed."
-timestamp: 2026-08-26
-last_verified_commit: 2cc9557
+timestamp: 2026-09-09
+last_verified_commit: 2b4e420
 ---
 
 # Config System
@@ -89,6 +89,25 @@ Cross-section validation lives in `internal.py:additional_validation`, which nee
 whole config: the output gain store must not already exist unless `output.overwrite`, no
 term's `load_from` may sit inside the output directory, and `mad_flags.whitening=robust`
 requires `solver.robust`.
+
+**A converter which cannot run at post-init time:** `solver.reference_antenna` is declared
+`Union[int, str]` — an int is an antenna index, a str is an antenna name — but
+`converters.py:as_antenna_index` needs the antenna names, which only exist once the MS has
+been read. It therefore runs in `calibration/calibrate.py:add_calibration_graph`, which
+resolves the value to an index and rebuilds the section with `dataclasses.replace`; the
+config object itself is never mutated, so the resolution is idempotent across the repeated
+`add_calibration_graph` calls the module-scoped test fixtures make. The solver kernels only
+ever see the integer index.
+
+The union is what keeps the two selections apart, and it survives every layer: YAML
+distinguishes `5` from `"5"`, `oc.from_cli()` distinguishes `ref=5` from `ref='"5"'` (the
+shell strips one level of quotes, so naive `ref="5"` is an int), and a direct
+`_opts.solver.reference_antenna = 0` in a test fixture is an int by construction. This is
+why the option is a union rather than a `str` carrying a disambiguating prefix. Only values
+which OmegaConf's grammar reads as a non-str scalar need quoting — integers, and the
+boolean/null literals, which fail loudly rather than silently. `Union` in a schema `dtype`
+works because `scabha/cargo.py` evaluates the string against `vars(typing)`, and because
+`pyproject.toml` pins `omegaconf>=2.3.0`.
 
 ## Config to gain terms
 

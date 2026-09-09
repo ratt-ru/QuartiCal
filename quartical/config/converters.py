@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import re
+from loguru import logger
 
 
 def as_time(arg):
@@ -79,5 +80,58 @@ def as_freq(arg):
 
     if arg == 0:
         arg = int(arg)
+
+    return arg
+
+
+
+def as_antenna_index(arg, ant_names):
+    """Defines the custom argument type ANTENNA.
+
+    Resolves a user-specified antenna into an antenna index. An integer is an
+    index and a string is a name. The schema types the option as
+    Union[int, str] so that the distinction survives config files, the command
+    line and direct assignment in Python.
+
+    Args:
+        arg (int or str): An antenna index or an antenna name.
+        ant_names (list of str): Antenna names, ordered by antenna index.
+
+    Returns:
+        The integer index of the selected antenna.
+
+    Raises:
+        ValueError: If arg is not a valid antenna index or antenna name.
+    """
+
+    ant_names = [str(name) for name in ant_names]
+    n_ant = len(ant_names)
+
+    if isinstance(arg, str):
+        if arg not in ant_names:
+            raise ValueError(
+                f"Antenna name '{arg}' not found in the antenna table. "
+                f"Valid names are {ant_names}."
+            )
+        return ant_names.index(arg)
+
+    # An antenna whose name is an integer can only be selected by quoting the
+    # name, so an unquoted integer which is also a name is worth flagging.
+    is_name = str(arg) in ant_names
+
+    if not 0 <= arg < n_ant:
+        hint = f" Quote the value to select the antenna named '{arg}'." \
+            if is_name else ""
+        raise ValueError(
+            f"Antenna index {arg} is out of range for the {n_ant} antennas "
+            f"in the antenna table.{hint}"
+        )
+
+    if is_name:
+        logger.warning(
+            f"Antenna {arg} is both a valid antenna index and the name of "
+            f"antenna {ant_names.index(str(arg))}. Interpreting it as an "
+            f"index. Quote the value to select the antenna by name."
+        )
 
     return arg
