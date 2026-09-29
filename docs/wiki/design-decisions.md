@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-08-25
-last_verified_commit: b0dc5c5
+timestamp: 2026-09-09
+last_verified_commit: f2ac75c
 ---
 
 # Design Decisions
@@ -908,6 +908,165 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   guards it: the check needs a cold kernel compile and asserts on numba's diagnostic text.
 - **Source:** branch followups/valloc-hoisting (2026-08-21), addressing item 9 of the second
   branch review.
+
+## Referencing made a per-term option, and extended to the 2x2 complex term
+
+- **Context:** referencing was wired in at build time and could not be turned off: `diag_complex`
+  and the parameterised phase/delay/tec terms always referenced, and the full 2x2 `complex` term
+  never did. There is no reason the gauge fix should be a property of the term type rather than of
+  the run: referencing is what a chain wants nearly always, and the exceptions are properties of
+  the run, not of the type.
+- **Decision:** `referenced` is a per-term option (`gain_schema.yaml`, default `true`), read into
+  `Gain.referenced`, carried into `meta_args_nt` and checked at runtime by the two solver-loop
+  builders. `complex` now passes `general/referencing.py:reference_gains`, the hook `diag_complex`
+  already used, which is hoisted out of `complex/diag_kernel.py` so both bind the same routine.
+  Terms with no referencing stage still resolve to a build-time no-op and discard the option
+  silently.
+- **Rationale:** the gauge freedom is `G_p -> G_p X` for a constant X, and V_pq = G_p M_pq G_q^H is
+  unchanged exactly when `X M_pq X^H = M_pq` for every baseline. Which X satisfy that is a property
+  of the *model*, not of the term, and the count is easy to get wrong. When the model is one
+  constant coherency on every baseline - an unresolved calibrator at phase centre - the stabiliser
+  is the M-unitary group `X = M^(1/2) U M^(-1/2)`, `U` in U(2), which is **four** real parameters
+  for any positive-definite M, not one. Only a model whose `M_pq` vary enough between baselines
+  narrows it towards `e^{i phi} I`. What matters here is not the size of that group but whether a
+  *diagonal unitary* lies in it: `diag(a, b) M diag(a, b)^H = M` needs `a b* M01 = M01`, so the
+  answer is yes exactly when `M01 = 0`, and otherwise only for `a = b`. Referencing is therefore
+  free whenever the model has no cross-hand coherency - every Stokes I model - and moves the fit
+  whenever it does, independent of how degenerate the solve already was.
+  The shared hook uses the conjugated unit-modulus diagonal of the reference antenna's gain, which
+  spends exactly those two parameters and no more. Three constraints follow and are worth stating
+  because each rules
+  out a plausible alternative. X must be a pure phase: `X = cI` with `|c| != 1` scales `M` by
+  `|c|^2`, and amplitude is fixed by the model, never gauge. X must discard the reference gain's
+  off-diagonal elements, because fixing the two remaining SU(2) directions is legitimate only for
+  an exactly unpolarised model, which is precisely the case where a full-Jones solve cannot
+  determine leakage at all. And X must not be the reference gain's inverse: polar decomposition
+  gives `G^-1 = H^-1 U^H`, whose Hermitian factor is not a symmetry of any model.
+  `testing/utils/gains.py:reference_gains` does use the inverse, but applies it to truth and
+  solution alike purely as a comparison device.
+
+  Referencing the 2x2 term is a deliberate choice, not a concession to the Stokes I case: pinning
+  both diagonal phases forces the cross-hand phase *out* of the complex term, which is what a real
+  chain wants, because that phase belongs to a dedicated `crosshand_phase` term rather than being
+  absorbed by G or B. `referenced=false` exists for the run that genuinely wants the complex term
+  to carry it. The two properties are mutually exclusive and no implementation reconciles them:
+  zeroing both reference-antenna phases is exactly the choice that makes `X = diag(a, b)` have
+  `a != b`, and `X M X^H = M` for a model with cross-hand power requires `a = b`. Forcing the
+  phase out is therefore the same act as moving the fit, whenever `M01 != 0`.
+- **Consequences:** `complex` solves are referenced by default, which changes their output - the
+  gauge is now pinned rather than wherever the iteration stopped, so results are reproducible
+  between runs. `solve_per="array"` needs no special case: the stabiliser condition does not
+  mention the antenna index, so an array-wide term's diagonal phases are gauge under exactly the
+  same condition and driving them real is the correct fix, not a loss.
+  `testing/tests/gains/test_complex.py` had to change its model from `[1, 0.1, 0.1, 1]` to
+  `[1, 0, 0, 0.8]` - still non-singular, which is all the original scaling was for, but now
+  diagonal, so the referencing transform is a symmetry of it and the residuals stay at zero. The
+  gains keep their leakage, so the module still tests full-Jones recovery, and it now does so on
+  the default referenced path. Two dead ends are worth not repeating. Setting the *truth's*
+  reference-antenna cross-hand phase to zero does not work: with a constant coherency the fit is
+  degenerate over that four-parameter group, the solve lands at an arbitrary point in it, and the
+  *solved* reference-antenna cross-hand phase was measured wandering up to 0.86 rad across
+  solution intervals regardless of the truth. Nor is scalar-phase referencing for the 2x2 term the
+  answer - it would keep every model safe, but it leaves the cross-hand phase in the term, which
+  is the thing referencing exists to remove. `test_diag_complex.py` needed no change: its model is
+  already diagonal, and a diagonal term discards cross-hand data by construction anyway. Covered by
+  `testing/tests/gains/test_referencing.py`, which asserts the reference antenna is pinned with
+  the option on and free with it off, for one gain-referenced and one parameter-referenced term.
+- **Source:** branch add-per-term-referenced-option (2026-08-26).
+
+## Reference antenna selection typed as a union, not a prefixed string
+
+- **Context:** `solver.reference_antenna` accepted only an integer index. Selecting by name
+  needs a second kind of value in one option, and the two kinds collide: an MS whose
+  `ANTENNA.NAME` values are integer strings (`'1'`..`'28'` is a real case) makes `5` both a
+  valid index and a valid name, meaning different antennas.
+- **Decision:** the schema types the option `Union[int, str]`. An int is an index, a str is a
+  name, and `converters.py:as_antenna_index` does nothing but dispatch on the type. The
+  rejected alternative was `dtype: str` plus `name:`/`index:` prefixes to disambiguate.
+- **Rationale:** the union pushes the disambiguation into the type system, where every config
+  layer already carries it: YAML separates `5` from `"5"`, `oc.from_cli()` separates `ref=5`
+  from `ref='"5"'`, and a fixture's `_opts.solver.reference_antenna = 0` is an int by
+  construction. A prefixed string has to re-derive that distinction by parsing, needs a
+  precedence rule for bare values, and — the decisive point — silently accepts a bare `5` on
+  an MS where it is ambiguous. The union also makes the option strictly better typed than the
+  int it replaces: `reference_antenna=5.0`, `=true` and `=null` now fail in OmegaConf with
+  QuartiCal's "value not understood" message instead of reaching the converter. Old configs
+  are unaffected, because an unquoted `5` is still an int and still means index 5.
+- **Consequences:** an antenna whose name is an integer can only be selected by quoting, and
+  on the command line the shell eats one level of quotes, so `ref="5"` is an index and
+  `ref='"5"'` is the name. That trap is real but confined: a sweep of MeerKAT, VLA, ALMA,
+  ASKAP, LOFAR, ATCA and GMRT naming conventions found none that need quoting, and the other
+  values OmegaConf's grammar claims (`true`, `false`, `on`, `off`, `yes`, `no`, `null`, `1e5`)
+  fail loudly rather than silently. The remaining silent case keeps a warning: an int index
+  which is also an antenna name says so and points at quoting, and an out-of-range int which
+  is a name says so in the error. `Union` in a schema `dtype` is safe because
+  `scabha/cargo.py` evaluates the dtype string against `vars(typing)` and `pyproject.toml`
+  pins `omegaconf>=2.3.0`; note that `scabha`'s `clickify_parameters` has no union branch and
+  degrades one to `str`, which matters only if QuartiCal is ever driven through that path.
+  Resolution runs in `calibration/calibrate.py:add_calibration_graph` rather than a post-init
+  because it needs the antenna table. Covered by
+  `testing/tests/config/test_converters.py`.
+- **Source:** branch v0.2.8-refant-name (2026-09-09).
+
+## The pointing, not the phase centre, drives the beam and the parallactic angles
+
+- **Context:** africanus' fused RIME derives one `lm` array from `phase_dir` (its
+  `LMTransformer`) and hands it to both the `Phase` term, where it must be referenced to the
+  visibilities' phase centre, and to `BeamCubeDDE`, where it is the point at which the beam
+  cube is sampled; its `ParallacticTransformer` reads `phase_dir` too. QuartiCal fed
+  `FIELD.PHASE_DIR` to all of them, and `data_handling/angles.py` set `FIELD_CENTRE` from
+  `PHASE_DIR` as well. Rephasing tools (`chgcentre`, `phaseshift`) move `PHASE_DIR` and rotate
+  the uvw coordinates to match, but leave `REFERENCE_DIR`/`DELAY_DIR` at the pointing, so on a
+  rephased MS the beam was applied around a point the dishes were never pointed at —
+  silently, and by up to a beam width (ratt-ru/QuartiCal#439 measured a model ~50x too bright
+  at the new centre) — and the parallactic angles described an orientation no antenna had.
+- **Decision:** select the pointing once, in `data_handling/pointing.py:get_pointing_dir`, as
+  the first populated column of `REFERENCE_DIR` -> `DELAY_DIR` -> `PHASE_DIR`, and use it for
+  everything that describes the dishes. `predict` supplies both lm arrays itself — `lm` about
+  `PHASE_DIR` for the fringe, `beam_lm` about the pointing for `PointedBeamCubeDDE`, a
+  `BeamCubeDDE` subclass registered through `RimeSpecification(terms={"E": ...})` — and passes
+  the pointing as africanus' `phase_dir`, which then reaches only the parallactic angle
+  transformer. `angles.py` sets `FIELD_CENTRE` to the same direction, covering
+  `input_model.apply_p_jones` on model columns, `output.apply_p_jones_inv` and the
+  `parallactic_angle` term.
+- **Rationale:** the beam and the parallactic angles are properties of where the dishes point;
+  the phase centre is a freely-shiftable convention, and the two coincide only on an
+  unrephased MS. Supplying `lm` is what frees `phase_dir` to mean the pointing: a transformer
+  only runs for arguments that are missing, and a hand-supplied `lm` is bit-identical to the
+  transformer's (verified, max abs difference 0.0). Shifting `beam_lm_extents` by the pointing
+  offset instead looks like a one-liner and is wrong: the term samples at `R(pa)·lm` and
+  *then* indexes the cube, so a shifted cube puts the beam centre at `R(-pa)·lm_p` — it orbits
+  the phase centre as the parallactic angle swings, an error as large as the offset itself for
+  alt-az dishes. Supplying `feed_parangle`/`beam_parangle` ready-made is not viable either: no
+  `dask_schema` declares dims for them, and africanus' dask wrapper sums over every dim
+  outside `(source, row, chan, corr)`, so a per-chunk lookup table cannot be expressed — they
+  would be broadcast whole while the samplers index them by the chunk's own unique times.
+  `POINTING.DIRECTION` is the better truth (it is the only one that captures on-the-fly
+  mosaicking) but is per-antenna and per-dump, and africanus' per-antenna hook
+  (`beam_point_errors`) is commented out upstream, so only a single field-level direction is
+  representable; it would have to be reduced, and that table is frequently empty or very
+  large. A candidate is skipped when absent or non-finite because some writers never populate
+  `REFERENCE_DIR`; `(0, 0)` is a real sky position and cannot serve as the sentinel.
+- **Consequences:** on an MS where all the FIELD directions agree the change is an exact
+  no-op — `test_predict` still reproduces the MeqTrees `MODEL_DATA` with a beam and
+  `apply_p_jones` both active. Repointing the parallactic angles is a second-order correction
+  next to the beam (a median of 0.2-2 degrees of angle error for a 1 degree offset at
+  MeerKAT's latitude, rising without bound for a field transiting near zenith, where the angle
+  flips through 180 degrees), but both parangle paths had to move together or the P-Jones
+  applied during the predict would disagree with the inverse applied on output. Two things are
+  now QuartiCal's to maintain: the lm projection itself, since `LMTransformer` no longer runs
+  (a future africanus change to that convention would not reach us), and the fact that
+  `extras["phase_dir"]` holds the pointing — africanus' name, our meaning, flagged at the
+  site. No `MEASINFO` frame check is performed: dask-ms does not surface column keywords, so
+  an AZEL `REFERENCE_DIR` — a time-dependent direction neither a fixed beam centre nor
+  `_make_parangles`' hardcoded J2000 can represent — would be used as though it were J2000.
+  `PointedBeamCubeDDE` leans on two africanus internals: that the constructor returned by
+  `init_fields` is called positionally, and that its signature is checked against the declared
+  inputs (hence the `co_varnames` rename, which avoids duplicating ~200 lines of jitted beam
+  sampling). An africanus release that accepts a beam centre and a pointing direction of its
+  own should retire both the subclass and the supplied `lm`.
+- **Source:** branch fix-beam-centre-on-rephased-ms (2026-08-31), addressing
+  ratt-ru/QuartiCal#439.
 
 ## Known debt (do not entrench)
 

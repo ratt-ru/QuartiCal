@@ -93,6 +93,7 @@ class Gain:
         self.freq_interval = term_opts.freq_interval
         self.respect_scan_boundaries = term_opts.respect_scan_boundaries
         self.initial_estimate = term_opts.initial_estimate
+        self.referenced = term_opts.referenced
         self.load_from = term_opts.load_from
         self.interp_mode = term_opts.interp_mode
         self.interp_method = term_opts.interp_method

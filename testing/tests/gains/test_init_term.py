@@ -78,6 +78,7 @@ def term_options(term_type, initial_estimate, load_from=None):
         load_from=load_from,
         interp_mode="reim",
         interp_method="2dlinear",
+        referenced=True,
     )
 
 

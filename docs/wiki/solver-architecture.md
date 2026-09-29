@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-08-24
-last_verified_commit: 8582ea0
+timestamp: 2026-08-26
+last_verified_commit: 2cc9557
 ---
 
 # Solver Architecture
@@ -56,7 +56,8 @@ scalar delay per correlation and maps that to a phase-slope gain.
 `Gain` (`quartical/gains/gain.py`) is the base class. It holds per-term config on `__init__`
 (`name`, `type`, `solve_per`, `scalar`, `direction_dependent`, `pinned_directions`,
 `time_interval`, `freq_interval`, `respect_scan_boundaries`, `initial_estimate`, `load_from`,
-`interp_mode`, `interp_method`) and provides the classmethods that build the time/freq/direction
+`interp_mode`, `interp_method`, `referenced`) and provides the classmethods that build the
+time/freq/direction
 mappings (`make_time_bins`, `make_time_map`, `make_freq_map`, `make_dir_map`, and the `_make_*`
 numpy internals plus `make_*_chunks`/`make_*_coords`). It defines `gain_axes = ("gain_time",
 "gain_freq", "antenna", "direction", "correlation")`, `is_parameterized = False`, and the
@@ -162,6 +163,33 @@ Invariants: gain-array shape along time/freq equals `time_bins.max()+1` / `freq_
 element and `freq_map` one per channel; `dir_map` length equals model `n_dir` and its max+1 equals
 the gain's stored direction count. For parameterised terms `Delay` forces
 `freq_map = arange(n_chan)` (gains evaluated per channel) while `param_freq_map` may bin coarsely.
+
+## Chain collapsing
+
+`solver.collapse_chain` (default on) makes `solver_wrapper` hand the kernels a chain of at most
+three terms instead of the full chain: the accumulated product of everything to the left of the
+active term, the active term itself, and the accumulated product of everything to its right.
+`get_collapsed_inputs` (`quartical/calibration/solver.py`) builds those inputs;
+`solver.collapse_chain=false` passes the whole chain and applies every term on the fly, which costs
+less memory and more arithmetic per iteration.
+
+Each half is evaluated by `combine_gains`/`combine_flags`
+(`quartical/gains/general/generics.py`) onto a *net* solution grid — one time bin per unique time,
+one freq bin per channel — so the halves come with synthesised identity mappings (`net_t_bins`,
+`net_t_map`, `net_f_map`) rather than the interval mappings of the terms they absorb. Only the
+active term keeps its own maps.
+
+Fewer than three slots are needed when the active term sits at either end of the chain, or when the
+chain has length one; `sel` trims every mapping and chain tuple accordingly, and `collapsed_term`
+is the active term's index in what survives (0 or 1). That index, not `active_term`, is what goes
+into `meta_args_nt.active_term`.
+
+A half's combined gain has as many directions as the widest term it absorbs, but its direction map
+is indexed by the *model's* direction, exactly as a real term's is. The map is therefore sized from
+the active term's own `dir_map` — which already spans the model — and is `arange` when the half is
+direction dependent and all-zeros when it is not. Sizing it from the gains instead makes it shorter
+than the kernels' `n_dir` loop whenever no term in the chain is direction dependent, breaking the
+`dir_map` invariant above.
 
 ## Numba kernel conventions
 
@@ -358,10 +386,16 @@ call site passes them by name, so the opaque positional
   scalar_error_message, finalize_update, reference_gains)` — non-parameterised terms
   (complex, diag_complex, leakage). The body is complex's historic impl. diag_complex
   differs only via the builder inputs: `identity_dims` (its jhj is gain-shaped rather than
-  `get_jhj_dims_factory`'s block shape), its own one-arg `collapse_to_scalar_jhj_jhr` (scalar
-  mode supported; `None` means unsupported and raises `scalar_error_message`, which the builder
-  requires to be non-`None` in that case), and a
-  `reference_gains(chain_inputs, meta_inputs, corr_mode)` stage after `finalize_gain_flags`.
+  `get_jhj_dims_factory`'s block shape) and its own one-arg `collapse_to_scalar_jhj_jhr`
+  (scalar mode supported; `None` means unsupported and raises `scalar_error_message`, which
+  the builder requires to be non-`None` in that case). The
+  `reference_gains(chain_inputs, meta_inputs, corr_mode)` stage after `finalize_gain_flags`
+  is shared by complex and diag_complex, which both pass
+  `general/referencing.py:reference_gains`; leakage passes `None`. Referencing right-multiplies
+  every antenna's gain by the conjugated unit-modulus diagonal of the reference antenna's gain,
+  discarding that gain's off-diagonal elements, so the reference antenna's diagonal ends up real
+  and positive and no gain modulus moves. See the ledger entry on the per-term referenced option
+  for why the transformation has to be unitary and diagonal.
   That collapse hook is deliberately separate from the generic two-arg
   `generics.scalar_jhj_jhr`: a gain-shaped jhj element is a flat correlation vector, so
   collapsing it is a sum along the correlation axis, whereas the generic routine indexes the
@@ -400,6 +434,14 @@ call site passes them by name, so the opaque positional
   come from `general/parameters.py:reference_params_factory(params_to_gains=)`, which works
   because their `*_params_to_gains` share one signature; phase states its own, as
   `phase_params_to_gains` takes no frequency arguments.
+
+Both referencing stages are gated at runtime on `meta_args_nt.referenced`, which carries the
+term's `referenced` config option (`gain_schema.yaml`, default `true`) through
+`Gain.__init__` and `calibration/solver.py`. The gate lives in the two builders, wrapped around
+the supplied hook — a term which passes `None` still gets a build-time no-op, so the option is
+discarded silently by every term with no referencing stage (amplitude, rotation,
+rotation_measure, crosshand_phase, crosshand_phase_null_v, leakage, and the solverless
+parallactic_angle and feed_flip).
   `pre_solve(ms_inputs, chain_inputs, meta_inputs)` and `post_solve(ms_inputs,
   chain_inputs, meta_inputs, native_imdry)` are opaque jitted closures owned by each
   kernel module — deliberately NOT a declarative rescaling abstraction — used to enter and

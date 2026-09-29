@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import dask.array as da
+from dataclasses import replace
 from quartical.calibration.mapping import make_mapping_datasets
+from quartical.config.converters import as_antenna_index
 from quartical.gains.general.generics import (compute_residual,
                                               compute_corrected_residual,
                                               compute_corrected_weights)
@@ -143,6 +145,17 @@ def add_calibration_graph(
             "has term.direction_dependent enabled. This is supported but may "
             "indicate user error."
         )
+
+    # The reference antenna may be specified by name, so it can only be
+    # resolved into the index the solvers expect once the antenna table has
+    # been read.
+    ant_names = data_xds_list[0].ant.values
+    ref_ant = as_antenna_index(solver_opts.reference_antenna, ant_names)
+    logger.info(
+        f"Using antenna {ant_names[ref_ant]} (index {ref_ant}) as the "
+        f"reference antenna."
+    )
+    solver_opts = replace(solver_opts, reference_antenna=ref_ant)
 
     # Create a list of dicts of xarray.Dataset objects which will describe the
     # gains per data xarray.Dataset.
