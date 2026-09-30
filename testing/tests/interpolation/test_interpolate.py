@@ -336,6 +336,29 @@ def test_alignment_flags(alignment_xds, alignment_case):
     )
 
 
+def test_disjoint_antennas_raise(alignment_opts):
+    """Solutions sharing no antenna with the target cannot be transferred."""
+
+    load_params, gain_params = GAIN_PROPERTIES["aligned"]
+
+    load_xds_list = mock_gain_xds_list(*load_params, antennas=[3, 4, 5])
+
+    path = '::'.join(alignment_opts.G.load_from.rsplit('/', maxsplit=1))
+    da.compute(xds_to_zarr(load_xds_list, path))
+
+    gain_xds_lod = [
+        {"G": xds} for xds in
+        mock_gain_xds_list(*gain_params, antennas=[0, 1, 2])
+    ]
+
+    with pytest.raises(ValueError, match="antenna"):
+        load_and_interpolate_gains(
+            gain_xds_lod,
+            gains_to_chain(alignment_opts),
+            alignment_opts.output.gain_directory
+        )
+
+
 # ------------------------------unsolved antennas------------------------------
 
 # An antenna whose loaded solutions are flagged at every time and frequency has
@@ -383,8 +406,8 @@ def test_fully_flagged_antenna_leaves_others_unflagged(fully_flagged_xds):
 # ---------------------------parameterised unsolved----------------------------
 
 # A parameterised term interpolates its parameters, so an antenna with nothing
-# to interpolate from must be flagged on the parameter grid and on the gain grid
-# which init_term merges its gain flags from.
+# to interpolate from must be flagged on the parameter grid and on the gain
+# grid which init_term merges its gain flags from.
 CORRELATIONS = ["XX", "XY", "YX", "YY"]
 
 UNSOLVED_CASES = {

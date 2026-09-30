@@ -3,7 +3,7 @@ type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
 timestamp: 2026-09-30
-last_verified_commit: ff732aa
+last_verified_commit: e3e9119
 ---
 
 # Design Decisions
@@ -674,7 +674,11 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   (apply-only) term. `unsolved_antenna_mask` is computed from the loaded flags rather than from NaNs
   surviving the interpolation, because `2dspline`'s cubic fit rejects non-finite input.
 - **Consequences:** Only whole (antenna, direction) slices are flagged; partially flagged
-  inputs are still filled from their neighbours, as before. See
+  inputs are still filled from their neighbours, as before. Loaded solutions sharing no
+  antenna with the target raise a `ValueError`, since flagging every antenna would hide a
+  mismatched store. Gain flags reach the data only for direction-independent terms, and a
+  term solved before a loaded term in the chain sees the loaded term's flags only once they
+  have been propagated — both deliberately left as they are. See
   [interpolation.md](interpolation.md).
 - **Source:** this repository, 2026-08-25; extended to fully flagged antennas 2026-09-30.
 

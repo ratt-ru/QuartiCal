@@ -84,6 +84,16 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
         )
         missing_antennas = np.setdiff1d(antennas, loaded_antennas)
 
+        # Solutions sharing no antenna with the target cannot have come from
+        # the same array - flagging every antenna would hide the mismatch.
+        if missing_antennas.size == antennas.size:
+            raise ValueError(
+                f"The solutions loaded for {term_name} from {term_path} "
+                f"share no antennas with the data being calibrated. Loaded "
+                f"antennas: {list(loaded_antennas)}. Target antennas: "
+                f"{list(antennas)}. Please check {term_name}.load_from."
+            )
+
         if missing_antennas.size:
             logger.warning(
                 f"Antennas {list(missing_antennas)} are missing from the "

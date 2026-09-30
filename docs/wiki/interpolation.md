@@ -3,7 +3,7 @@ type: architecture
 title: Gain Interpolation
 description: "Loading previously solved gains and interpolating them onto the current solution grid — the load path, grid mismatch handling, and how loaded values and flags reach the solver."
 timestamp: 2026-09-30
-last_verified_commit: ff732aa
+last_verified_commit: e3e9119
 ---
 
 # Gain Interpolation
@@ -92,9 +92,10 @@ class. `interp_method` (`2dlinear`/`2dspline`) is live and selects the interpola
   antenna axes. `align_antennas` reindexes each loaded dataset onto the target antenna
   names: antennas which are absent from the target are dropped, antennas which are absent
   from the loaded solutions are added with every flag raised (so `unsolved_antenna_mask` is
-  set for them), and
-  — because the reindex is by label — differently *ordered* antenna axes are aligned rather
-  than silently transposed.
+  set for them), and — because the reindex is by label — differently *ordered* antenna axes
+  are aligned rather than silently transposed. Loaded solutions which share no antenna with
+  the target raise a `ValueError` before any of this: they cannot belong to the same array,
+  and flagging every antenna would hide the mismatch.
 - **Directions**: not handled. A direction axis mismatch is not detected here.
 
 ## Flags
@@ -151,4 +152,7 @@ fully flagged, for a complex and a delay term). Neither needs a Measurement Set.
 flagged parameters, starting from the scaffold values, merging the scaffold flags, and
 each term's `param_identity_fill` producing identity gains.
 `testing/tests/gains/test_datasets.py` pins the scaffolds themselves, including that no two
-scaffold chunks share a dask task.
+scaffold chunks share a dask task. `testing/tests/interpolation/test_load_from_antennas.py`
+runs the whole calibration graph on the test MS against a perturbed gain store (antenna
+missing, fully flagged, extra, reordered) and checks that an antenna without loaded
+solutions is fully flagged in its gains and in the data, apply-only and solved.
