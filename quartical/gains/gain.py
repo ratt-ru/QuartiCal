@@ -352,12 +352,7 @@ class Gain:
 
         (_, _, gain_shape, _) = term_spec
 
-        if self.load_from:
-            gains = term_kwargs[f"{self.name}_initial_gain"].copy()
-        else:
-            gains = np.ones(gain_shape, dtype=np.complex128)
-            if gain_shape[-1] == 4:
-                gains[..., (1, 2)] = 0  # 2-by-2 identity.
+        gains = term_kwargs[f"{self.name}_initial_gain"].copy()
 
         gain_flags = init_flags(
             gain_shape,
@@ -369,8 +364,7 @@ class Gain:
             ms_kwargs["ROW_MAP"]
         )
 
-        if self.load_from:
-            gain_flags |= term_kwargs[f"{self.name}_initial_gain_flags"]
+        gain_flags |= term_kwargs[f"{self.name}_initial_gain_flags"]
 
         apply_gain_flags_to_gains(gain_flags, gains)
 

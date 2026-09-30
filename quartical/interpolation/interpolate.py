@@ -116,6 +116,12 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
         # Remove time/chan chunking and rechunk by antenna.
         merged_xds = merged_xds.chunk({**merged_xds.sizes, "antenna": 1})
 
+        # An antenna (per direction) whose loaded solutions are flagged at
+        # every time and frequency has nothing from which to interpolate. This
+        # includes the antennas which were missing from the loaded solutions.
+        loaded_flags = merged_xds[flag_field]
+        unsolved_antenna_mask = loaded_flags.all(dim=loaded_flags.dims[:2])
+
         # Create a converter object to handle moving between native and
         # interpolation representations.
         converter = Converter(term)
@@ -143,7 +149,9 @@ def load_and_interpolate_gains(gain_xds_lod, chain, output_directory):
         ]
 
         interpolated_xds_list = [
-            flag_missing_antennas(ixds, rxds, missing_antennas)
+            assign_interpolated_arrays(
+                ixds, rxds, unsolved_antenna_mask, data_field
+            )
             for ixds, rxds in zip(interpolated_xds_list, term_xds_list)
         ]
 
@@ -192,51 +200,49 @@ def align_antennas(xds, antennas, data_field, flag_field):
     )
 
 
-def flag_missing_antennas(interpolated_xds, reference_xds, missing_antennas):
-    """Add flags which fully flag antennas absent from the loaded solutions.
-
-    The interpolation machinery discards the loaded flags - values which
-    cannot be interpolated are simply zeroed. Antennas which were absent from
-    the loaded solutions carry no information whatsoever, so they are flagged
-    explicitly. The flags are assigned whether or not any antennas are
-    missing, as Gain.init_term expects them on every loaded term.
+def assign_interpolated_arrays(
+    interpolated_xds,
+    target_xds,
+    unsolved_antenna_mask,
+    data_field
+):
+    """Assign interpolated values and flags to the interpolation target.
 
     Args:
-        interpolated_xds: An xarray.Dataset containing interpolated solutions.
-        reference_xds: The xarray.Dataset onto which the interpolation was
-            performed. Supplies the axes and chunking of the flags.
-        missing_antennas: An array of antenna names which were absent from the
-            loaded solutions.
+        interpolated_xds: An xarray.Dataset containing solutions interpolated
+            onto the grid of target_xds.
+        target_xds: The xarray.Dataset onto which the solutions were
+            interpolated.
+        unsolved_antenna_mask: A boolean xarray.DataArray over antenna and
+            direction which is set where the loaded solutions are flagged
+            everywhere. The interpolated values there are meaningless, so
+            they are flagged on every grid target_xds carries.
+        data_field: Name of the data variable containing the solutions.
 
     Returns:
-        The interpolated xarray.Dataset with flags assigned.
+        target_xds with its values replaced by the interpolated values and its
+        flags raised wherever unsolved_antenna_mask is set.
     """
 
-    missing = np.isin(reference_xds.antenna.values, missing_antennas)
-
-    # A missing antenna is missing on every grid, so a parameterised term is
-    # flagged on both its gain and its parameter grid.
-    grids = [("GAIN_SPEC", "GAIN_AXES", "gain_flags")]
-
-    if hasattr(reference_xds, "PARAM_SPEC"):
-        grids.append(("PARAM_SPEC", "PARAM_AXES", "param_flags"))
-
-    flag_vars = {}
-
-    for spec_field, axes_field, field in grids:
-
-        spec = getattr(reference_xds, spec_field)
-        axes = getattr(reference_xds, axes_field)[:-1]  # Omit the last axis.
-        chunks = (spec.tchunk, spec.fchunk, spec.achunk, spec.dchunk)
-
-        flags = np.zeros(
-            tuple(reference_xds.sizes[ax] for ax in axes), dtype=np.int8
+    assigned_vars = {
+        data_field: (
+            target_xds[data_field].dims,
+            interpolated_xds[data_field].data
         )
-        flags[:, :, missing] = 1
+    }
 
-        flag_vars[field] = (axes, da.from_array(flags, chunks=chunks))
+    # A single chunk broadcasts over time and frequency without splitting the
+    # antenna chunks of the target flags.
+    broadcast_mask = unsolved_antenna_mask.data.rechunk(-1)[None, None]
 
-    return interpolated_xds.assign(flag_vars)
+    for flag_field in ("gain_flags", "param_flags"):
+        if flag_field in target_xds.data_vars:
+            flags = target_xds[flag_field]
+            assigned_vars[flag_field] = (
+                flags.dims, flags.data | broadcast_mask
+            )
+
+    return target_xds.assign(assigned_vars)
 
 
 def convert_native_to_interp(xds, converter):

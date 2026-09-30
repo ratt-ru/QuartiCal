@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-08-26
-last_verified_commit: 2cc9557
+timestamp: 2026-09-30
+last_verified_commit: ff732aa
 ---
 
 # Solver Architecture
@@ -62,8 +62,10 @@ mappings (`make_time_bins`, `make_time_map`, `make_freq_map`, `make_dir_map`, an
 numpy internals plus `make_*_chunks`/`make_*_coords`). It defines `gain_axes = ("gain_time",
 "gain_freq", "antenna", "direction", "correlation")`, `is_parameterized = False`, and the
 `ms_inputs`/`mapping_inputs`/`chain_inputs` namedtuple classes used to marshal kernel arguments.
-`Gain.init_term` allocates a complex128 gain array (2×2 identity when `n_corr == 4`) and initial
-gain flags via `init_flags`, returning `(gains, gain_flags)`.
+`Gain.init_term` copies the scaffold's gains (`{name}_initial_gain`, identity unless the term was
+loaded — see `gains/datasets.py:assign_identity_values`), ORs the scaffold's
+`{name}_initial_gain_flags` into the flags `init_flags` derives from the data, applies the flags,
+and returns `(gains, gain_flags)`. It does not branch on `load_from`.
 
 `ParameterizedGain` (`quartical/gains/parameterized_gain.py`) subclasses `Gain`, sets
 `is_parameterized = True`, adds `param_axes = ("param_time", "param_freq", "antenna", "direction",
@@ -71,10 +73,14 @@ gain flags via `init_flags`, returning `(gains, gain_flags)`.
 `param_time_maps`, `param_freq_maps`; `chain_inputs` gains `params` and `param_flags`. It adds the
 parameter mapping builders (`make_param_time_bins`, `make_param_time_map`, `make_param_freq_map`,
 etc., which delegate to the base `_make_*` implementations) and declares `make_param_names` as
-`NotImplementedError` (each term must supply it). Its `init_term` returns
-`(gains, gain_flags, params, param_flags)`: it allocates a float64 `params` array (shape
-`param_shape`), inits `param_flags` and `gain_flags` from data coverage, and expects the subclass to
-convert params→gains. `Delay.init_term` calls `super().init_term` then `delay_params_to_gains`, and
+`NotImplementedError` (each term must supply it). Every subclass also declares
+`param_identity_fill`, the parameter value which produces an identity gain (amplitude:
+`amplitude/kernel.py:IDENTITY_FILL`, 1.0; every other term 0.0); there is deliberately no default
+on the base class, and `testing/tests/gains/test_init_term.py` checks that each declared fill
+yields identity gains. Its `init_term` returns `(gains, gain_flags, params, param_flags)`: it copies
+the scaffold's `{name}_initial_params` and `{name}_initial_gain`, ORs the scaffold's flags into the
+`param_flags` and `gain_flags` derived from data coverage, and expects the subclass to convert
+params→gains. `Delay.init_term` calls `super().init_term` then `delay_params_to_gains`, and
 (unless `load_from`/`not initial_estimate`) runs an FFT-based initial delay estimate against the
 reference antenna.
 
@@ -501,7 +507,13 @@ by term name), assembled in `construct_solver`. Data variables on a solved term 
 (per `(time_chunk, freq_chunk)`), `jhj`, and — for parameterised terms — `params`, `param_flags`
 (dims `PARAM_AXES`). The scaffold (coords/attrs incl. `NAME`, `TYPE`, `GAIN_SPEC`, `GAIN_AXES`, and
 for parameterised terms `PARAM_SPEC`, `PARAM_AXES`, `param_name`) is built by
-`quartical/gains/datasets.py:scaffold_from_data_xds`.
+`quartical/gains/datasets.py:scaffold_from_data_xds`. After the early compute which reifies those
+coords, `make_gain_xds_lod` passes every scaffold through `assign_identity_values`, which attaches
+lazy identity `gains`, unraised `gain_flags` and — for parameterised terms — `params` filled with
+the term's `param_identity_fill` and unraised `param_flags`, chunked by `GAIN_SPEC`/`PARAM_SPEC`.
+Every scaffold therefore has the same variables whether or not its term is loaded;
+`construct_solver` passes them to the solver as `{name}_initial_*` inputs and overwrites them with
+the solved values afterwards.
 
 `jhj` is declared per term in `construct_solver`, and the declaration differs by family: a
 parameterised term gets `("row", "chan", "ant", "dir", "param")` chunked by its own `PARAM_SPEC`

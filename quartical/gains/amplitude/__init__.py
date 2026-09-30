@@ -24,6 +24,7 @@ class Amplitude(ParameterizedGain):
     )
     converted_dtype = np.float64
     native_dtype = np.float64
+    param_identity_fill = IDENTITY_FILL
 
     def __init__(self, term_name, term_opts):
 
@@ -45,10 +46,6 @@ class Amplitude(ParameterizedGain):
         gains, gain_flags, params, param_flags = super().init_term(
             term_spec, ref_ant, ms_kwargs, term_kwargs
         )
-
-        if not self.load_from:
-            # Amplitudes start at the identity unless loaded.
-            params[...] = IDENTITY_FILL
 
         # Convert the parameters into gains.
         amplitude_params_to_gains(params, gains)

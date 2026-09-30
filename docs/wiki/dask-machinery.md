@@ -2,8 +2,8 @@
 type: architecture
 title: Dask Machinery
 description: "How QuartiCal builds and executes its dask graphs — chunking, Blocker, single-compute, AutoRestrictor, and why the dask/bokeh pins exist."
-timestamp: 2026-07-07
-last_verified_commit: 50207c9
+timestamp: 2026-09-30
+last_verified_commit: ff732aa
 ---
 
 # Dask Machinery
@@ -162,6 +162,13 @@ Mechanism — it implements the plugin's `update_graph(self, scheduler, dsk, key
   least-loaded worker (`min(worker_loads, key=worker_loads.get)`). For every task in the group it
   sets `task.worker_restrictions |= {assignee}` and `task.loose_restrictions = False` (a **hard**
   restriction).
+
+Gain scaffolds add root tasks of their own: every chunk of a scaffold's identity values and
+flags (`gains/datasets.py:assign_identity_values`) is a root which feeds only the matching solver
+task, so each chunk's subtree stays separable. This relies on the uuid-based names given to those
+arrays — `da.zeros`/`da.full` otherwise name tasks deterministically from shape, chunks and dtype,
+and scaffolds of the same shape would share roots, merging their subtrees into one group
+(`testing/tests/gains/test_datasets.py:test_scaffold_chunks_share_no_tasks`).
 
 Limitations, per the code's own comments and structure: root-set matching is by exact tokenization
 (`# This is very strict. What about nodes with very similar roots?`), so subtrees with only

@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-09-09
-last_verified_commit: f2ac75c
+timestamp: 2026-09-30
+last_verified_commit: ff732aa
 ---
 
 # Design Decisions
@@ -650,33 +650,69 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   (pfb-imaging already consumes it). Loading machinery lives in `quartical/interpolation/`.
 - **Source:** interview 2026-07-07; Kenyon et al. 2025, Sections 3.3 and 4.4.
 
-## Antenna alignment on load, with missing antennas flagged rather than interpolated
+## Antenna alignment on load, with unsolved antennas flagged rather than interpolated
 
 - **Context:** Solutions are transferred between observations whose `ANTENNA` subtables
   need not agree — a subarray, a dish added or dropped between epochs. The gain axis is
   labelled with antenna names, so the loaded and target antenna axes can differ in
-  content and in order.
+  content and in order. An antenna can also be present in the loaded solutions but
+  flagged throughout.
 - **Decision:** `interpolation/interpolate.py:align_antennas` reindexes the loaded
   datasets onto the target antenna names, discarding antennas which the target does not
-  have and adding those it does with a raised flag. `flag_missing_antennas` then fully
-  flags the added antennas on both the gain and parameter grids, and `init_term` merges
-  those flags into the ones derived from the data.
+  have and adding those it does with every flag raised. Any (antenna, direction) whose
+  loaded flags are raised at every time and frequency — added, or flagged throughout — is
+  marked in `unsolved_antenna_mask`, and `assign_interpolated_arrays` raises its flags on
+  every grid of the target dataset.
+  `init_term` merges those flags into the ones derived from the data.
 - **Rationale:** A label-based reindex is the only alignment that is correct when the axes
   differ in order as well as in content; positional alignment silently transposed
-  solutions between antennas. An antenna with no loaded solutions cannot be interpolated
-  from anything, and the alternative fills — the interpolation's "no information" zero (a
-  null Jones matrix) or a bare identity — are both applied to real data without saying so.
-  Flagging is the only outcome that propagates: gain flags reach the MS `FLAG` column
-  through `apply_gain_flags_to_flag_col`, which the solver loop runs even for a
-  zero-iteration (apply-only) term.
-- **Consequences:** Loaded gain datasets now carry flags into the solve, which needed two
-  new `Blocker` inputs per term (`{term}_initial_gain_flags`,
-  `{term}_initial_param_flags`) and made `Gain.init_term` a consumer of loaded flags. Only
-  whole-antenna absence is honoured; the loaded flags are otherwise still discarded, so an
-  antenna which was flagged *everywhere* in the input (as opposed to absent) is still
-  filled with the "no information" zero and left unflagged. See
+  solutions between antennas. An unsolved antenna cannot be interpolated from anything,
+  and the alternative fills — the interpolation's "no information" zero (a null Jones
+  matrix) or a bare identity — are both applied to real data without saying so. Flagging
+  is the only outcome that propagates: gain flags reach the MS `FLAG` column through
+  `apply_gain_flags_to_flag_col`, which the solver loop runs even for a zero-iteration
+  (apply-only) term. `unsolved_antenna_mask` is computed from the loaded flags rather than from NaNs
+  surviving the interpolation, because `2dspline`'s cubic fit rejects non-finite input.
+- **Consequences:** Only whole (antenna, direction) slices are flagged; partially flagged
+  inputs are still filled from their neighbours, as before. See
   [interpolation.md](interpolation.md).
-- **Source:** this repository, 2026-08-25.
+- **Source:** this repository, 2026-08-25; extended to fully flagged antennas 2026-09-30.
+
+## Every gain scaffold carries identity values and unraised flags
+
+- **Context:** The interpolation needs arrays to write loaded values and flags into. The
+  scaffolds from `make_gain_xds_lod` held only coords and attrs, so a loaded term's
+  datasets differed in shape from an unloaded term's, and `construct_solver` and both base
+  `init_term`s branched on which variables existed or on `load_from`.
+- **Decision:** `gains/datasets.py:assign_identity_values` gives every scaffold lazy
+  identity `gains` (via `utils/array.py:flat_ident_like`) and unraised `gain_flags`, plus,
+  for a parameterised term, `params` filled with the class's `param_identity_fill` and
+  unraised `param_flags`, chunked by `GAIN_SPEC`/`PARAM_SPEC`. `construct_solver` always
+  passes them to the solver and both base `init_term`s always start from them.
+  `param_identity_fill` is declared on every parameterised class (amplitude:
+  `IDENTITY_FILL`, 1.0; the rest 0.0) with no default on `ParameterizedGain`.
+- **Rationale:** One path through `init_term` for loaded and unloaded terms, and the
+  interpolation updates existing arrays rather than constructing flag arrays itself. No
+  default fill, because 0 is exactly what a new amplitude-like term would silently
+  inherit; `test_init_term.py:test_param_identity_fill_yields_identity_gains` pins the
+  property that matters (identity parameters give identity gains) for every term in
+  `TERM_TYPES` except `parallactic_angle`.
+- **Consequences:** Every solver task gains two root tasks per term (four for a
+  parameterised term). Their names must be unique (`uuid4`): `da.zeros`/`da.full` name
+  tasks deterministically from shape, chunks and dtype, so scaffolds of the same shape
+  (two terms with equal intervals, or datasets of equal size) would share roots and
+  `AutoRestrictor` would merge their otherwise independent subtrees.
+  `test_datasets.py:test_scaffold_chunks_share_no_tasks` guards this. The declared
+  identity is now the starting point of every solve, not only of transfers. A scaffold
+  read before it is solved yields identity gains rather than failing on a missing
+  variable. Measured on a 10-scan real-data 3C147 subset (444 solver chunks, runs pinned to
+  identical cores and alternated with the baseline): about +1.2% wall time for a short
+  `complex` solve under both the threaded and distributed schedulers, and within noise
+  (±2-3%) for a `complex` + `delay` chain, with zero inter-worker transfers, identical
+  `AutoRestrictor` worker assignment, unchanged peak memory and bit-identical outputs. The
+  scaffold tasks are ordered immediately before their solver task, so they are not held in
+  memory.
+- **Source:** this repository, 2026-09-30.
 
 ## Zarr-backed Measurement Sets as a CTDS escape hatch
 

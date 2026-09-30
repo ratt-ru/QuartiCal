@@ -52,6 +52,9 @@ class ParameterizedGain(Gain):
 
     is_parameterized = True
 
+    # NB: Every subclass declares param_identity_fill, the parameter value
+    # which produces an identity gain. There is deliberately no default.
+
     param_axes = (
         "param_time",
         "param_freq",
@@ -180,10 +183,7 @@ class ParameterizedGain(Gain):
 
         (_, _, gain_shape, param_shape) = term_spec
 
-        if self.load_from:
-            params = term_kwargs[f"{self.name}_initial_params"].copy()
-        else:
-            params = np.zeros(param_shape, dtype=np.float64)
+        params = term_kwargs[f"{self.name}_initial_params"].copy()
 
         # Init parameter flags by looking for intervals with no data.
         param_flags = init_flags(
@@ -196,12 +196,9 @@ class ParameterizedGain(Gain):
             ms_kwargs["ROW_MAP"]
         )
 
-        if self.load_from:
-            param_flags |= term_kwargs[f"{self.name}_initial_param_flags"]
+        param_flags |= term_kwargs[f"{self.name}_initial_param_flags"]
 
-        gains = np.ones(gain_shape, dtype=np.complex128)
-        if gain_shape[-1] == 4:
-            gains[..., (1, 2)] = 0  # 2-by-2 identity.
+        gains = term_kwargs[f"{self.name}_initial_gain"].copy()
 
         # Init gain flags by looking for intervals with no data.
         gain_flags = init_flags(
@@ -214,7 +211,6 @@ class ParameterizedGain(Gain):
             ms_kwargs["ROW_MAP"]
         )
 
-        if self.load_from:
-            gain_flags |= term_kwargs[f"{self.name}_initial_gain_flags"]
+        gain_flags |= term_kwargs[f"{self.name}_initial_gain_flags"]
 
         return gains, gain_flags, params, param_flags
