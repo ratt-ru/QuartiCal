@@ -97,7 +97,15 @@ objects. Validation hooks live in `config_classes.py`.
 
 ### Supporting modules
 
-- `data_handling/` — MS I/O, chunking, selection, parallactic angles, BDA.
+- `data_handling/` — MS I/O, chunking, selection, parallactic angles, BDA. Table access
+  goes through casacure: `data_handling/backend.py` aliases `casacore.{tables,measures,
+  quanta}` onto casacure, and `quartical/__init__.py` activates that alias before
+  anything imports dask-ms. Import quartical before opening a casacore table, otherwise
+  the tables come from python-casacore and the measures from casacure. Parallactic
+  angles use `casacure.measures`, which builds both its AZEL and AZELGEO horizons from the
+  geodetic (WGS84) latitude, the vertical astropy's `AltAz` uses; casacore's AZEL uses the
+  geocentric latitude instead, so the two disagree about AZEL by ~2 deg at MeerKAT.
+  casacure matches casacore's AZELGEO.
 - `flagging/` — flag init/propagation and MAD-based flagging kernels.
 - `weights/` — weight init and robust (residual-based) reweighting.
 - `interpolation/` — load previously solved gains and interpolate onto the current grid.

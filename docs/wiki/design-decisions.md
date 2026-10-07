@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-09-09
-last_verified_commit: f2ac75c
+timestamp: 2026-10-07
+last_verified_commit: 2c24468
 ---
 
 # Design Decisions
@@ -1039,6 +1039,44 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   own should retire both the subclass and the supplied `lm`.
 - **Source:** branch fix-beam-centre-on-rephased-ms (2026-08-31), addressing
   ratt-ru/QuartiCal#439.
+
+## casacure as the table and measures backend
+
+- **Context:** casacore reached QuartiCal through three separate routes —
+  `angles.py`'s `casacore.measures`/`casacore.quanta` import, dask-ms's
+  `lazy_import("casacore.tables")`, and the `python-casacore` extra on the
+  `codex-africanus` dependency. Each needs a C++ casacore build and, for the measures path,
+  a CASA `casadata` installation (`~/measures` plus `~/.casarc`), which is what
+  ratt-ru/QuartiCal#330 is about. casacure implements the same table surface in Rust and the
+  measures subset QuartiCal uses on top of the IAU SOFA stack, with the IERS
+  Earth-orientation data compiled in.
+- **Decision:** make casacure the backend. `data_handling/backend.py:activate_backend`,
+  called from `quartical/__init__.py`, aliases `casacore`, `casacore.tables`,
+  `casacore.measures` and `casacore.quanta` onto the matching casacure modules in
+  `sys.modules` (and as attributes) before anything imports dask-ms; `angles.py` imports
+  `casacure.measures` and `casacure.quanta` directly. `casacure>=3.8.25` becomes a direct
+  dependency, the `python-casacore` extra goes, and CI stops provisioning CASA measures data.
+- **Rationale:** dask-ms 0.2.x reaches its backend through `lazy_import("casacore.tables")`
+  and has no selector, so the alias is the only integration point that works with the
+  pinned dask-ms (dask-ms 0.3 replaces `casacore.tables` with arcae, which has nothing to
+  intercept — that is a separate migration). The alias is also how the package keeps
+  working when both backends are installed: a table handle and a measures server from
+  different backends must not be mixed, so `activate_backend` warns and keeps the existing
+  backend if `casacore.tables` was already imported, and warns and falls back to
+  python-casacore if casacure is absent. Because `quartical/__init__.py` runs before any
+  submodule, importing QuartiCal at all is enough to set it up.
+- **Consequences:** the parallactic angles change. casacure builds its AZEL and AZELGEO
+  horizons from the geodetic (WGS84) latitude — the vertical astropy's `AltAz` uses —
+  whereas casacore's AZEL uses the geocentric latitude, so the same call chain returns
+  angles ~2 deg higher at MeerKAT (`133.5507` vs `131.1922 deg` for the 3C147-like case).
+  Against casacore's AZELGEO, casacure agrees to a few arcsec over a MeerKAT field/epoch
+  grid, which `testing/tests/data_handling/test_backend.py` asserts. Gains and residual
+  diagnostics from this version are therefore not directly comparable with earlier
+  casacore-backed runs, and the casacure measures implementation must stay above 3.8.25:
+  3.8.24's analytic conversion was ~2 deg out at the same geometry (reported as
+  tmolteno/casacure#15). Pinning dask-ms to 0.2.x is now load-bearing for the swap, and
+  python-casacore can still be present (dask-ms 0.2.32 depends on it) without being used.
+- **Source:** branch casacure-backend (2026-10-07), replacing python-casacore.
 
 ## Known debt (do not entrench)
 

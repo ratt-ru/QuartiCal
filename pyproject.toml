@@ -28,7 +28,13 @@ dependencies = [
     # The mismatch raises TemplateNotFound('file.html') when compute_context's
     # performance_report writes its HTML report on exit.
     "bokeh>=2.4.2,<3.7",
-    "codex-africanus[dask,scipy,astropy,python-casacore]>=0.4.1,<=0.4.4",
+    # casacure mirrors the casacore table/measures/quanta surface in pure Rust.
+    # quartical/data_handling/backend.py aliases casacore onto it at import, so
+    # no C++ casacore build or CASA measures data is needed. 3.8.25 is the
+    # first release whose measures conversion (IAU SOFA) tracks casacore's
+    # azimuth/altitude frame to an arcsecond.
+    "casacure>=3.8.25",
+    "codex-africanus[dask,scipy,astropy]>=0.4.1,<=0.4.4",
     "colorama>=0.4.6,<=0.4.6",
     "columnar>=1.4.1,<=1.4.1",
     # dask is capped at 2024.10.0: dask 2024.12.0 introduced a
@@ -36,6 +42,10 @@ dependencies = [
     # (clone()[0] in ms_handler), and 2024.11.x is incompatible with dask-ms's
     # task inlining. See the failing graph fusion in make_gain_xds_lod.
     "dask[diagnostics]>=2023.5.0,<=2024.10.0",
+    # dask-ms is capped at 0.2.x: it reaches the table backend through
+    # lazy_import("casacore.tables"), which the casacure alias intercepts.
+    # dask-ms 0.3 opens tables through arcae instead, leaving nothing to
+    # intercept.
     "dask-ms[s3,xarray,zarr]>=0.2.23,<=0.2.32",
     "distributed>=2023.5.0,<=2024.10.0",
     "loguru>=0.7.0,<=0.7.3",
