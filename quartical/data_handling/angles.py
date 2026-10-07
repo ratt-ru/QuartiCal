@@ -135,13 +135,26 @@ def assert_parangle_supported(data_xds_list):
 
 
 def make_parangle_xds_list(ms_path, data_xds_list):
-    """Create a list of xarray.Datasets containing the parallactic angles."""
+    """Create a list of xarray.Datasets containing the parallactic angles.
+
+    The angles are computed about each dataset's FIELD_CENTRE, the pointing
+    selected by assign_parangle_data, which the parallactic_angle gain term
+    also uses.
+
+    Args:
+        ms_path: Path to the input measurement set.
+        data_xds_list: A list of xarray.Dataset objects which have been
+            through assign_parangle_data.
+
+    Returns:
+        parangle_xds_list: A list of xarray.Dataset objects containing the
+            parallactic angles per unique time, antenna and receptor.
+    """
 
     # This may need to be more sophisticated. TODO: Can we guarantee that
     # these only ever have one element?
     anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
     feedtab = xds_from_storage_table(ms_path + "::FEED")[0]
-    fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
 
     # We do this eagerly to make life easier.
     feeds = feedtab.POLARIZATION_TYPE.values
@@ -154,10 +167,6 @@ def make_parangle_xds_list(ms_path, data_xds_list):
     else:
         raise ValueError("Unsupported feed type/configuration.")
 
-    phase_dirs = fieldtab.PHASE_DIR.data
-
-    field_centres = [phase_dirs[xds.FIELD_ID, 0] for xds in data_xds_list]
-
     ant_names = anttab.NAME.data
 
     ant_positions_ecef = anttab.POSITION.data  # ECEF coordinates.
@@ -166,22 +175,17 @@ def make_parangle_xds_list(ms_path, data_xds_list):
 
     parangle_xds_list = []
 
-    for xds, field_centre in zip(data_xds_list, field_centres):
+    for xds in data_xds_list:
 
         receptor_angles = xds.RECEPTOR_ANGLE.data
-
-        # TODO: This is unnecessary - we should just reify the field centres
-        # and pass them in.
-        cloned_field_centre = da.concatenate(
-            [clone(field_centre) for _ in xds.chunksizes["row"]]
-        )
+        field_centre = np.array(xds.FIELD_CENTRE)
 
         parangles = da.blockwise(_make_parangles, "tar",
                                  xds.TIME.data, "t",
                                  clone(ant_names), "a",
                                  clone(ant_positions_ecef), "a3",
                                  clone(receptor_angles), "ar",
-                                 cloned_field_centre, "t",
+                                 field_centre, None,
                                  epoch, None,
                                  align_arrays=False,
                                  concatenate=True,
