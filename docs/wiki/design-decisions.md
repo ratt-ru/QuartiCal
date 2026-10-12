@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-09-09
-last_verified_commit: f2ac75c
+timestamp: 2026-10-07
+last_verified_commit: 2c24468
 ---
 
 # Design Decisions
@@ -998,9 +998,9 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   `PHASE_DIR` for the fringe, `beam_lm` about the pointing for `PointedBeamCubeDDE`, a
   `BeamCubeDDE` subclass registered through `RimeSpecification(terms={"E": ...})` — and passes
   the pointing as africanus' `phase_dir`, which then reaches only the parallactic angle
-  transformer. `angles.py` sets `FIELD_CENTRE` to the same direction, covering
-  `input_model.apply_p_jones` on model columns, `output.apply_p_jones_inv` and the
-  `parallactic_angle` term.
+  transformer. `angles.py` sets `FIELD_CENTRE` to the same direction and computes about it both
+  `PARALLACTIC_ANGLES` (behind `input_model.apply_p_jones` on model columns and
+  `output.apply_p_jones_inv`) and the `parallactic_angle` term's angles.
 - **Rationale:** the beam and the parallactic angles are properties of where the dishes point;
   the phase centre is a freely-shiftable convention, and the two coincide only on an
   unrephased MS. Supplying `lm` is what frees `phase_dir` to mean the pointing: a transformer
@@ -1025,7 +1025,10 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   next to the beam (a median of 0.2-2 degrees of angle error for a 1 degree offset at
   MeerKAT's latitude, rising without bound for a field transiting near zenith, where the angle
   flips through 180 degrees), but both parangle paths had to move together or the P-Jones
-  applied during the predict would disagree with the inverse applied on output. Two things are
+  applied during the predict would disagree with the inverse applied on output. The test MS's
+  FIELD directions all agree, so no integration test can see a path left on `PHASE_DIR` (one
+  was, ratt-ru/QuartiCal#446); `test_angles.py` pins the array and the gain term to africanus'
+  angles about the pointing on a synthetic rephased FIELD table. Two things are
   now QuartiCal's to maintain: the lm projection itself, since `LMTransformer` no longer runs
   (a future africanus change to that convention would not reach us), and the fact that
   `extras["phase_dir"]` holds the pointing — africanus' name, our meaning, flagged at the
@@ -1038,7 +1041,8 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   sampling). An africanus release that accepts a beam centre and a pointing direction of its
   own should retire both the subclass and the supplied `lm`.
 - **Source:** branch fix-beam-centre-on-rephased-ms (2026-08-31), addressing
-  ratt-ru/QuartiCal#439.
+  ratt-ru/QuartiCal#439; branch issue-446 (2026-10-07) moved `PARALLACTIC_ANGLES` onto the
+  pointing, addressing ratt-ru/QuartiCal#446.
 
 ## Known debt (do not entrench)
 
