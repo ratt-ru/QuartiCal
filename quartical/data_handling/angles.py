@@ -1,6 +1,6 @@
 import numpy as np
-import casacore.measures
-import casacore.quanta as pq
+import casacure.measures
+import casacure.quanta as pq
 
 from daskms import xds_from_storage_table
 import dask.array as da
@@ -232,7 +232,7 @@ def _make_parangles(time_col, ant_names, ant_positions_ecef, receptor_angles,
         cms = _thread_local.cms
     except AttributeError:
         # Create a measures server.
-        _thread_local.cms = cms = casacore.measures.measures()
+        _thread_local.cms = cms = casacure.measures.measures()
 
     if not np.all(np.equal(receptor_angles, receptor_angles[:, :1])):
         raise ValueError("FEED table indicates that some receptors "
