@@ -9,6 +9,7 @@ from daskms.experimental.zarr import xds_to_zarr
 from quartical.gains.gain import gain_spec_tup, param_spec_tup
 from quartical.gains import TERM_TYPES
 from quartical.gains.general.generics import combine_gains, combine_flags
+from quartical.utils.array import flat_ident_like
 
 
 def make_gain_xds_lod(data_xds_list, chain):
@@ -58,7 +59,88 @@ def make_gain_xds_lod(data_xds_list, chain):
                 gain_xds.attrs["PARAM_SPEC"] = \
                     param_spec_tup(*list(map(tuple, gain_xds.PARAM_SPEC)))
 
+    # Every scaffold carries identity values and unraised flags. These are the
+    # starting point of every solve and are updated by the interpolation when
+    # a term is loaded from disk.
+    gain_xds_lod = [
+        {
+            gain_obj.name: assign_identity_values(
+                gain_xdss[gain_obj.name], gain_obj
+            )
+            for gain_obj in chain
+        }
+        for gain_xdss in gain_xds_lod
+    ]
+
     return gain_xds_lod
+
+
+def assign_identity_values(gain_xds, gain_obj):
+    """Assign identity values and unraised flags to a gain dataset scaffold.
+
+    Args:
+        gain_xds: An xarray.Dataset scaffold describing a gain term.
+        gain_obj: The Gain object which the scaffold describes.
+
+    Returns:
+        The scaffold with identity gains (and parameters) and unraised flags.
+    """
+
+    # NB: The names must be unique. Otherwise, scaffolds of the same shape
+    # share tasks, which merges their subtrees in the scheduler plugin.
+
+    gain_axes = gain_xds.GAIN_AXES
+    gain_chunks = tuple(gain_xds.GAIN_SPEC)
+    gain_shape = tuple(gain_xds.sizes[ax] for ax in gain_axes)
+
+    gains = flat_ident_like(
+        da.zeros(
+            gain_shape,
+            chunks=gain_chunks,
+            dtype=np.complex128,
+            name="gains-" + uuid4().hex
+        )
+    )
+    gain_flags = da.zeros(
+        gain_shape[:-1],
+        chunks=gain_chunks[:-1],
+        dtype=np.int8,
+        name="gain_flags-" + uuid4().hex
+    )
+
+    identity_vars = {
+        "gains": (gain_axes, gains),
+        "gain_flags": (gain_axes[:-1], gain_flags)
+    }
+
+    if hasattr(gain_xds, "PARAM_SPEC"):
+
+        param_axes = gain_xds.PARAM_AXES
+        param_chunks = tuple(gain_xds.PARAM_SPEC)
+        param_shape = tuple(gain_xds.sizes[ax] for ax in param_axes)
+
+        params = da.full(
+            param_shape,
+            gain_obj.param_identity_fill,
+            chunks=param_chunks,
+            dtype=np.float64,
+            name="params-" + uuid4().hex
+        )
+        param_flags = da.zeros(
+            param_shape[:-1],
+            chunks=param_chunks[:-1],
+            dtype=np.int8,
+            name="param_flags-" + uuid4().hex
+        )
+
+        identity_vars.update(
+            {
+                "params": (param_axes, params),
+                "param_flags": (param_axes[:-1], param_flags)
+            }
+        )
+
+    return gain_xds.assign(identity_vars)
 
 
 def make_net_xds_lod(data_xds_list, chain, output_opts):

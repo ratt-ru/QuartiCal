@@ -31,6 +31,10 @@ commit against which the page's claims were last checked).
 - [design-decisions.md](design-decisions.md) — decision ledger (context, decision,
   rationale, consequences) plus known debt and recurring gotchas. *Read when:* before
   proposing structural changes or "fixing" something surprising.
+- [interpolation.md](interpolation.md) — transfer calibration: loading solved gains,
+  interpolating them onto the current grid, grid mismatch handling, how loaded values and
+  flags reach the solver. *Read when:* working under `quartical/interpolation/` or on
+  anything driven by `load_from`.
 - [config-system.md](config-system.md) — YAML schemas to runtime dataclasses, the
   dynamic per-term sections, merge order, validation, and how an option reaches a gain
   term. *Read when:* working under `quartical/config/` or adding an option.
@@ -46,8 +50,6 @@ commit against which the page's claims were last checked).
 - [flagging.md](flagging.md) — flag init/propagation, MAD flagging, gain flagging vs data
   flagging. *Read when:* working under `quartical/flagging/` or
   `quartical/gains/general/flagging.py`.
-- [interpolation.md](interpolation.md) — loading solved gains, interpolating onto new
-  grids. *Read when:* working under `quartical/interpolation/`.
 - [statistics.md](statistics.md) — chi-squared tracking and post-solve logging. *Read
   when:* working under `quartical/statistics/`.
 - [apps.md](apps.md) — backup/restore, summary, plotter CLIs. *Read when:* working under

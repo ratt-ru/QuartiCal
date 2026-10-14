@@ -24,6 +24,7 @@ class Rotation(ParameterizedGain):
     )
     converted_dtype = np.float64
     native_dtype = np.float64
+    param_identity_fill = 0.0
 
     def __init__(self, term_name, term_opts):
 
