@@ -2,8 +2,8 @@
 type: stub
 title: Data Handling
 description: "Measurement Set I/O, chunking, selection, and derived quantities."
-timestamp: 2026-08-31
-last_verified_commit: b1a0cb0
+timestamp: 2026-10-07
+last_verified_commit: 2c24468
 ---
 
 # Data Handling
@@ -66,13 +66,18 @@ absent or non-finite ones). `predict` logs its separation from the phase centre
 so supplying `lm` stops `LMTransformer` running and leaves `phase_dir` reaching only
 `ParallacticTransformer` — which is why `extras["phase_dir"]` holds the *pointing*.
 
-`angles.py:assign_parangle_data` uses the same selection for `FIELD_CENTRE`, which drives
-QuartiCal's own parallactic angle machinery: `apply_parangles` for model columns under
-`input_model.apply_p_jones`, `output.apply_p_jones_inv`, and the `parallactic_angle` gain
-term (via `meta["FIELD_CENTRE"]`). Both parangle paths must agree, so they share the
-helper. See the design-decisions entry "The pointing, not the phase centre, drives the
-beam and the parallactic angles" for the rejected alternatives and the africanus internals
-this leans on.
+`angles.py:assign_parangle_data` uses the same selection for `FIELD_CENTRE`, the one
+direction QuartiCal's own parallactic angle machinery reads. `make_parangle_xds_list`
+computes `PARALLACTIC_ANGLES` about it, which `apply_parangles` uses for model columns under
+`input_model.apply_p_jones` and for `output.apply_p_jones_inv`. The `parallactic_angle`
+gain term computes its angles about it too, via `meta["FIELD_CENTRE"]`. Both call
+`_make_parangles`, which uses the same casacore measures chain as the africanus
+`casa_parallactic_angles` behind the predict's P-Jones, so all three P-Jones paths agree.
+The test MS's FIELD directions all coincide, so no integration test can tell the pointing
+from the phase centre. `test_angles.py` therefore pins the agreement on a synthetic
+rephased FIELD table. See the design-decisions entry "The pointing, not the phase centre,
+drives the beam and the parallactic angles" for the rejected alternatives and the africanus
+internals this leans on.
 
 ### Beams
 

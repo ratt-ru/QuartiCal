@@ -1,16 +1,44 @@
+from types import SimpleNamespace
+
 import dask.array as da
 import numpy as np
 import pytest
 import xarray
+from africanus.rime import parallactic_angles
 
+from quartical.calibration.constructor import term_spec_tup
 from quartical.data_handling import angles
 from quartical.data_handling.angles import (
     assert_parangle_supported,
     assign_parangle_data,
+    make_parangle_xds_list,
 )
+from quartical.gains import TERM_TYPES
 
 N_ANT = 3
 N_RECEPTOR = 2
+
+# ITRF antenna positions in metres, near MeerKAT, so that the measures behind
+# the parallactic angles see a real site.
+ANT_POSITIONS = np.array([5109224.0, 2006790.0, -3239100.0]) + np.array(
+    [[0.0, 0.0, 0.0], [100.0, -50.0, 30.0], [-80.0, 120.0, 60.0]]
+)
+
+# Three hours of unique times, in UTC seconds since MJD 0. Every baseline is
+# present at each, and the rows split into chunks along time boundaries.
+UTIMES = 5.0e9 + 1800.0 * np.arange(6)
+UTIME_CHUNKS = (3, 3)
+BASELINES = [(0, 1), (0, 2), (1, 2)]
+
+# A rephased field: the phase centre has moved one degree away from the
+# pointing, which REFERENCE_DIR keeps.
+POINTING = (np.deg2rad(80.0), np.deg2rad(-45.0))
+PHASE_CENTRE = (np.deg2rad(80.0), np.deg2rad(-44.0))
+
+# Radians. A casacore measures server caches precession and nutation between
+# calls, so angles for the same time differ by a few nanoradians depending on
+# which times the server saw before. The rephase above moves them by ~1e-2.
+ANGLE_TOLERANCE = 1e-7
 
 
 def _make_xds(multi_field=None):
@@ -33,22 +61,29 @@ def test_assert_parangle_supported_multi_field():
 
 
 def _antenna_table():
-    """A minimal ANTENNA subtable carrying only POSITION."""
+    """A minimal ANTENNA subtable carrying only NAME and POSITION."""
+    names = np.array([f"m{a:03d}" for a in range(N_ANT)])
     return [
         xarray.Dataset(
-            {"POSITION": (("ant", "xyz"), da.zeros((N_ANT, 3), chunks=-1))}
+            {
+                "NAME": (("ant",), da.from_array(names)),
+                "POSITION": (("ant", "xyz"), da.from_array(ANT_POSITIONS)),
+            }
         )
     ]
 
 
-def _field_table(n_field=2, reference_dirs=None):
+def _field_table(n_field=2, reference_dirs=None, phase_dirs=None):
     """A minimal FIELD subtable with one direction per field.
 
     The direction columns have shape (field, poly, radec); a single polynomial
-    coefficient. REFERENCE_DIR is only present when supplied, mimicking the
-    writers which do not populate it.
+    coefficient. PHASE_DIR defaults to distinct placeholder values per field.
+    REFERENCE_DIR is only present when supplied, mimicking the writers which
+    do not populate it.
     """
-    phase_dirs = np.arange(n_field * 2, dtype=float).reshape(n_field, 1, 2)
+    if phase_dirs is None:
+        phase_dirs = np.arange(n_field * 2, dtype=float)
+    phase_dirs = np.array(phase_dirs, dtype=float).reshape(n_field, 1, 2)
     data_vars = {"PHASE_DIR": (("field", "poly", "radec"), phase_dirs)}
 
     if reference_dirs is not None:
@@ -79,7 +114,13 @@ def _feed_group(spw_id, receptor_angle):
     )
 
 
-def _patch_tables(monkeypatch, feed_groups, n_field=2, reference_dirs=None):
+def _patch_tables(
+    monkeypatch,
+    feed_groups,
+    n_field=2,
+    reference_dirs=None,
+    phase_dirs=None,
+):
     """Patch xds_from_storage_table to serve in-memory subtables."""
 
     def fake_xds_from_storage_table(path, columns=None, group_cols=None):
@@ -88,7 +129,7 @@ def _patch_tables(monkeypatch, feed_groups, n_field=2, reference_dirs=None):
         if path.endswith("::FEED"):
             return feed_groups
         if path.endswith("::FIELD"):
-            return _field_table(n_field, reference_dirs)
+            return _field_table(n_field, reference_dirs, phase_dirs)
         raise ValueError(f"Unexpected table request: {path}")
 
     monkeypatch.setattr(
@@ -97,11 +138,26 @@ def _patch_tables(monkeypatch, feed_groups, n_field=2, reference_dirs=None):
 
 
 def _data_xds(spw_id, field_id=None):
-    """A data xds carrying only the attrs assign_parangle_data consumes."""
-    attrs = {"SPECTRAL_WINDOW_ID": spw_id}
+    """A data xds carrying only what the parallactic angle code reads."""
+    attrs = {"SPECTRAL_WINDOW_ID": spw_id, "UTIME_CHUNKS": UTIME_CHUNKS}
     if field_id is not None:
         attrs["FIELD_ID"] = field_id
-    return xarray.Dataset(attrs=attrs)
+
+    ant1, ant2 = np.array(BASELINES).T
+    row_chunks = (tuple(len(BASELINES) * n for n in UTIME_CHUNKS),)
+
+    def row_column(values):
+        return (("row",), da.from_array(values, chunks=row_chunks))
+
+    return xarray.Dataset(
+        {
+            "TIME": row_column(np.repeat(UTIMES, len(BASELINES))),
+            "ANTENNA1": row_column(np.tile(ant1, UTIMES.size)),
+            "ANTENNA2": row_column(np.tile(ant2, UTIMES.size)),
+        },
+        coords={"ant": np.arange(N_ANT)},
+        attrs=attrs,
+    )
 
 
 def test_assign_parangle_data_selects_per_spw(monkeypatch):
@@ -197,3 +253,120 @@ def test_assign_parangle_data_flags_multi_field(monkeypatch):
     assert xds.attrs["FIELD_ID"] == 0
     # The placeholder field centre is taken from the first field's PHASE_DIR.
     assert xds.attrs["FIELD_CENTRE"] == tuple(np.arange(2, dtype=float))
+
+
+@pytest.fixture
+def rephased_xds(monkeypatch):
+    """A data xds for a rephased field, after assign_parangle_data."""
+    # Zero receptor angles leave the bare parallactic angles.
+    _patch_tables(
+        monkeypatch,
+        [_feed_group(0, 0.0)],
+        n_field=1,
+        reference_dirs=[POINTING],
+        phase_dirs=[PHASE_CENTRE],
+    )
+    [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=0, field_id=0)])
+    return xds
+
+
+@pytest.fixture
+def rephased_parangles(rephased_xds):
+    """PARALLACTIC_ANGLES for the rephased field, as (utime, ant, receptor)."""
+    [parangle_xds] = make_parangle_xds_list("fake.ms", [rephased_xds])
+    return parangle_xds.PARALLACTIC_ANGLES.values
+
+
+def test_make_parangle_xds_list_uses_pointing(rephased_parangles):
+    """PARALLACTIC_ANGLES are computed about the pointing, not the phase centre.
+
+    The expected angles come from africanus, which computes the P-Jones the
+    predict applies to sky model components.
+    """
+    about_pointing = parallactic_angles(
+        UTIMES, ANT_POSITIONS, np.array(POINTING)
+    )
+    about_phase_centre = parallactic_angles(
+        UTIMES, ANT_POSITIONS, np.array(PHASE_CENTRE)
+    )
+
+    # The rephase must move the angles, or this test cannot tell the two
+    # directions apart.
+    assert not np.allclose(
+        about_phase_centre, about_pointing, rtol=0, atol=ANGLE_TOLERANCE
+    )
+
+    for receptor in range(N_RECEPTOR):
+        np.testing.assert_allclose(
+            rephased_parangles[..., receptor],
+            about_pointing,
+            rtol=0,
+            atol=ANGLE_TOLERANCE,
+        )
+
+
+def _parallactic_angle_term():
+    """A parallactic_angle term built from the options its constructor reads."""
+    options = SimpleNamespace(
+        type="parallactic_angle",
+        solve_per="antenna",
+        scalar=False,
+        direction_dependent=False,
+        pinned_directions=[],
+        time_interval=1,
+        freq_interval=0,
+        respect_scan_boundaries=False,
+        initial_estimate=False,
+        load_from=None,
+        interp_mode="reim",
+        interp_method="2dlinear",
+        referenced=False,
+    )
+    return TERM_TYPES["parallactic_angle"]("P", options)
+
+
+def test_parallactic_angle_term_matches_parangle_array(
+    rephased_xds, rephased_parangles
+):
+    """The parallactic_angle term uses the angles in PARALLACTIC_ANGLES.
+
+    The term and input_model.apply_p_jones describe the same rotation, so they
+    must agree on a rephased field.
+    """
+    n_utime, n_row = UTIMES.size, rephased_xds.sizes["row"]
+    time_map = np.unique(rephased_xds.TIME.values, return_inverse=True)[1]
+    freq_map = np.zeros(1, dtype=np.int32)
+
+    spec = term_spec_tup(
+        "P",
+        "parallactic_angle",
+        (n_utime, 1, N_ANT, 1, 4),
+        (n_utime, 1, N_ANT, 1, 1),
+    )
+    ms_kwargs = {
+        "TIME": rephased_xds.TIME.values,
+        "FLAG": np.zeros((n_row, 1), dtype=np.int8),
+        "ANTENNA1": rephased_xds.ANTENNA1.values,
+        "ANTENNA2": rephased_xds.ANTENNA2.values,
+        "ROW_MAP": None,
+        "POSITION": rephased_xds.POSITION.values,
+        "RECEPTOR_ANGLE": rephased_xds.RECEPTOR_ANGLE.values,
+    }
+    term_kwargs = {
+        "P_time_map": time_map,
+        "P_freq_map": freq_map,
+        "P_param_time_map": time_map,
+        "P_param_freq_map": freq_map,
+    }
+
+    _, _, params, _ = _parallactic_angle_term().init_term(
+        spec, 0, ms_kwargs, term_kwargs, meta=dict(rephased_xds.attrs)
+    )
+
+    # The term keeps a single angle per antenna, from the first receptor.
+    np.testing.assert_allclose(
+        params[:, 0, :, 0, 0],
+        rephased_parangles[..., 0],
+        rtol=0,
+        atol=ANGLE_TOLERANCE,
+    )
