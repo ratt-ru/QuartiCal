@@ -3,7 +3,7 @@ type: stub
 title: Data Handling
 description: "Measurement Set I/O, chunking, selection, and derived quantities."
 timestamp: 2026-10-27
-last_verified_commit: 6b0c4ab
+last_verified_commit: 0673668
 ---
 
 # Data Handling
@@ -85,7 +85,9 @@ ordered by `ANTENNA_ID`, from the FEED rows for its spectral window, or from the
 partitions are joined, because the zarr reader ignores `group_cols` and `dask-ms convert`
 writes FEED with one row per partition; `predict` joins them the same way. Joining needs
 every feed to have the same `NUM_RECEPTORS`, so a table that mixes receptor counts raises
-before the join. See the design-decisions entry "FEED rows are selected by QuartiCal, not grouped by dask-ms".
+before the join. `make_parangle_xds_list` does not read FEED; it takes `FEED_TYPE` and the
+receptor count from these datasets. See the design-decisions entry "FEED rows are selected
+by QuartiCal, not grouped by dask-ms".
 
 ### Beams
 

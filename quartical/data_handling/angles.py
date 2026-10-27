@@ -54,9 +54,9 @@ def _select_receptor_angles(feedtab, spw_id, n_ant):
 
     if not np.array_equal(np.sort(ant_ids), np.arange(n_ant)):
         raise ValueError(
-            f"The FEED table entries for SPECTRAL_WINDOW_ID {spw_id} do not "
-            "hold exactly one row per antenna. Time-dependent and multi-feed "
-            "FEED tables are not supported."
+            "The FEED table entries which apply to SPECTRAL_WINDOW_ID "
+            f"{spw_id} do not hold exactly one row per antenna. "
+            "Time-dependent and multi-feed FEED tables are not supported."
         )
 
     receptor_angles = np.empty((n_ant, feedtab.sizes["receptors"]))
@@ -66,6 +66,26 @@ def _select_receptor_angles(feedtab, spw_id, n_ant):
 
 
 def assign_parangle_data(ms_path, data_xds_list):
+    """Assign the inputs of the parallactic angle calculation to each dataset.
+
+    Each dataset gains its antenna POSITION and its RECEPTOR_ANGLE, selected
+    from the FEED rows which apply to its spectral window, along with the
+    FEED_TYPE and FIELD_CENTRE attributes. A dataset which is not partitioned
+    by FIELD_ID is flagged as MULTI_FIELD (see assert_parangle_supported).
+
+    Args:
+        ms_path: Path to the input measurement set.
+        data_xds_list: A list of xarray.Dataset objects.
+
+    Returns:
+        updated_data_xds_list: A list of xarray.Dataset objects carrying the
+            parallactic angle inputs.
+
+    Raises:
+        ValueError: If the FEED table is empty, mixes receptor counts, holds
+            unsupported or mixed feed types, or does not hold exactly one row
+            per antenna which applies to a dataset's spectral window.
+    """
 
     anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
     fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
@@ -73,7 +93,6 @@ def assign_parangle_data(ms_path, data_xds_list):
     # dask-ms ignores group_cols when reading zarr, and dask-ms convert writes
     # the FEED subtable to zarr with one row per partition. Join whatever
     # partitions are present and select rows per spectral window ourselves.
-    # The table is small, so materialise it.
     feed_partitions = xds_from_storage_table(
         ms_path + "::FEED",
         columns=[
@@ -84,6 +103,9 @@ def assign_parangle_data(ms_path, data_xds_list):
             "RECEPTOR_ANGLE",
         ],
     )
+
+    if sum(xds.sizes["row"] for xds in feed_partitions) == 0:
+        raise ValueError(f"The FEED table in {ms_path} is empty.")
 
     # The receptor columns are shaped by NUM_RECEPTORS, so a table which mixes
     # receptor counts fails to read or join with an obscure error. Check the
@@ -100,6 +122,7 @@ def assign_parangle_data(ms_path, data_xds_list):
             f"{receptor_counts.tolist()}."
         )
 
+    # The table is small, so materialise it.
     feedtab = xarray.concat(feed_partitions, dim="row").compute()
 
     unique_feeds = set(feedtab.POLARIZATION_TYPE.values.ravel())
@@ -209,20 +232,8 @@ def make_parangle_xds_list(ms_path, data_xds_list):
     """
 
     # This may need to be more sophisticated. TODO: Can we guarantee that
-    # these only ever have one element?
+    # this only ever has one element?
     anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
-    feedtab = xds_from_storage_table(ms_path + "::FEED")[0]
-
-    # We do this eagerly to make life easier.
-    feeds = feedtab.POLARIZATION_TYPE.values
-    unique_feeds = np.unique(feeds)
-
-    if np.all([feed in "XxYy" for feed in unique_feeds]):
-        feed_type = "linear"
-    elif np.all([feed in "LlRr" for feed in unique_feeds]):
-        feed_type = "circular"
-    else:
-        raise ValueError("Unsupported feed type/configuration.")
 
     ant_names = anttab.NAME.data
 
@@ -256,10 +267,10 @@ def make_parangle_xds_list(ms_path, data_xds_list):
             coords={
                 "utime": np.arange(sum(xds.UTIME_CHUNKS)),
                 "ant": xds.ant,
-                "receptor": np.arange(feedtab.sizes['receptors'])
+                "receptor": np.arange(receptor_angles.shape[1])
             },
             attrs={
-                "FEED_TYPE": feed_type,
+                "FEED_TYPE": xds.FEED_TYPE,
                 "UTIME_CHUNKS": xds.UTIME_CHUNKS
             }
         )

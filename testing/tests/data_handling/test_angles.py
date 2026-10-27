@@ -224,6 +224,22 @@ def test_assign_parangle_data_missing_spw_raises(monkeypatch):
         assign_parangle_data("fake.ms", [_data_xds(spw_id=3, field_id=0)])
 
 
+@pytest.mark.parametrize(
+    "feed_partitions",
+    [[], [_feed_rows(0, 0.0).isel(row=[])]],
+    ids=["no_partitions", "no_rows"],
+)
+def test_assign_parangle_data_empty_feed_raises(monkeypatch, feed_partitions):
+    """An empty FEED table must raise a clear error.
+
+    dask-ms reads an empty CASA FEED table as a single dataset with no rows.
+    """
+    _patch_tables(monkeypatch, feed_partitions)
+
+    with pytest.raises(ValueError, match="FEED table in fake.ms is empty"):
+        assign_parangle_data("fake.ms", [_data_xds(spw_id=0, field_id=0)])
+
+
 def test_assign_parangle_data_row_partitioned_feed(monkeypatch):
     """A FEED table stored with one row per partition is joined before use.
 

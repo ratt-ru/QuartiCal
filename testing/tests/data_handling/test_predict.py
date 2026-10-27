@@ -7,6 +7,7 @@ from quartical.data_handling.predict import (parse_sky_models,
                                              PointedBeamCubeDDE)
 import dask.array as da
 import numpy as np
+import xarray
 from numpy.testing import assert_array_almost_equal
 
 
@@ -160,6 +161,36 @@ def test_nonlazy_tables(support_tables, table):
     # Check that the expected tables are not lazily evaluated.
     assert all([isinstance(dvar.data, np.ndarray)
                 for dvar in support_tables[table][0].data_vars.values()])
+
+
+@pytest.mark.predict
+def test_support_tables_join_feed_partitions(monkeypatch):
+    # dask-ms convert writes the FEED subtable to zarr with one row per
+    # partition, which must be joined into the single dataset predict uses.
+    # See ratt-ru/QuartiCal#352.
+    receptor_angles = np.arange(6, dtype=np.float64).reshape(3, 2)
+    feed_partitions = [
+        xarray.Dataset(
+            {"RECEPTOR_ANGLE": (("row", "receptors"), row_angles[None])}
+        )
+        for row_angles in receptor_angles
+    ]
+
+    def fake_xds_from_storage_table(path, columns=None, group_cols=None):
+        if path.endswith("::FEED"):
+            return [xds[columns] if columns else xds for xds in feed_partitions]
+        return [xarray.Dataset()]
+
+    monkeypatch.setattr(
+        "quartical.data_handling.predict.xds_from_storage_table",
+        fake_xds_from_storage_table
+    )
+
+    [feed_xds] = get_support_tables("fake.ms")["FEED"]
+
+    np.testing.assert_array_equal(
+        feed_xds.RECEPTOR_ANGLE.values, receptor_angles
+    )
 
 
 # ----------------------------build_rime_spec----------------------------------
