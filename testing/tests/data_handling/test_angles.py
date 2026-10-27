@@ -66,8 +66,8 @@ def _antenna_table():
     return [
         xarray.Dataset(
             {
-                "NAME": (("ant",), da.from_array(names)),
-                "POSITION": (("ant", "xyz"), da.from_array(ANT_POSITIONS)),
+                "NAME": (("row",), da.from_array(names)),
+                "POSITION": (("row", "xyz"), da.from_array(ANT_POSITIONS)),
             }
         )
     ]
@@ -95,39 +95,46 @@ def _field_table(n_field=2, reference_dirs=None, phase_dirs=None):
     return [xarray.Dataset(data_vars)]
 
 
-def _feed_group(spw_id, receptor_angle):
-    """A minimal FEED group for a single spectral window.
+def _feed_rows(spw_id, receptor_angle, n_receptor=N_RECEPTOR):
+    """Minimal FEED rows for a single spectral window, one per antenna.
 
-    daskms groups the FEED table by SPECTRAL_WINDOW_ID, exposing the group key
-    as a scalar coordinate on each returned dataset.
+    The receptor angle is either one value for every antenna or one value per
+    antenna, and is shared by all of its receptors.
     """
-    angle = da.full((N_ANT, N_RECEPTOR), receptor_angle, chunks=-1)
+    angle = np.broadcast_to(
+        np.reshape(receptor_angle, (-1, 1)), (N_ANT, n_receptor)
+    )
     return xarray.Dataset(
         {
+            "ANTENNA_ID": (("row",), np.arange(N_ANT)),
+            "SPECTRAL_WINDOW_ID": (("row",), np.full(N_ANT, spw_id)),
+            "NUM_RECEPTORS": (("row",), np.full(N_ANT, n_receptor)),
             "POLARIZATION_TYPE": (
-                ("ant", "receptors"),
-                np.array([["X", "Y"]] * N_ANT),
+                ("row", "receptors"),
+                np.array([["X", "Y"][:n_receptor]] * N_ANT),
             ),
-            "RECEPTOR_ANGLE": (("ant", "receptors"), angle),
-        },
-        coords={"SPECTRAL_WINDOW_ID": spw_id},
+            "RECEPTOR_ANGLE": (
+                ("row", "receptors"),
+                da.from_array(angle, chunks=-1),
+            ),
+        }
     )
 
 
 def _patch_tables(
     monkeypatch,
-    feed_groups,
+    feed_partitions,
     n_field=2,
     reference_dirs=None,
     phase_dirs=None,
 ):
     """Patch xds_from_storage_table to serve in-memory subtables."""
 
-    def fake_xds_from_storage_table(path, columns=None, group_cols=None):
+    def fake_xds_from_storage_table(path, columns=None):
         if path.endswith("::ANTENNA"):
             return _antenna_table()
         if path.endswith("::FEED"):
-            return feed_groups
+            return [xds[columns] if columns else xds for xds in feed_partitions]
         if path.endswith("::FIELD"):
             return _field_table(n_field, reference_dirs, phase_dirs)
         raise ValueError(f"Unexpected table request: {path}")
@@ -162,12 +169,12 @@ def _data_xds(spw_id, field_id=None):
 
 def test_assign_parangle_data_selects_per_spw(monkeypatch):
     """Receptor angles are selected from the matching SPECTRAL_WINDOW_ID."""
-    feed_groups = [_feed_group(0, 0.5), _feed_group(1, 1.5)]
-    _patch_tables(monkeypatch, feed_groups)
+    feed_partitions = [_feed_rows(0, 0.5), _feed_rows(1, 1.5)]
+    _patch_tables(monkeypatch, feed_partitions)
 
     [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=1, field_id=0)])
 
-    # The angles must come from the SPW-1 FEED group, not the SPW-0 group.
+    # The angles must come from the SPW-1 FEED rows, not the SPW-0 rows.
     np.testing.assert_array_equal(
         xds.RECEPTOR_ANGLE.data.compute(),
         np.full((N_ANT, N_RECEPTOR), 1.5),
@@ -177,11 +184,11 @@ def test_assign_parangle_data_selects_per_spw(monkeypatch):
 
 
 def test_assign_parangle_data_global_feeds(monkeypatch):
-    """A SPECTRAL_WINDOW_ID == -1 FEED group applies to every spectral window."""
-    feed_groups = [_feed_group(-1, 2.0)]
-    _patch_tables(monkeypatch, feed_groups)
+    """FEED rows with SPECTRAL_WINDOW_ID == -1 apply to every spectral window."""
+    feed_partitions = [_feed_rows(-1, 2.0)]
+    _patch_tables(monkeypatch, feed_partitions)
 
-    # The dataset's SPW (5) has no matching FEED group; the global group is used.
+    # The dataset's SPW (5) has no FEED rows of its own; the global rows apply.
     [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=5, field_id=1)])
 
     np.testing.assert_array_equal(
@@ -191,14 +198,14 @@ def test_assign_parangle_data_global_feeds(monkeypatch):
 
 
 def test_assign_parangle_data_sparse_unordered_spw(monkeypatch):
-    """Selection is keyed by SPECTRAL_WINDOW_ID, not group position.
+    """Selection is keyed by SPECTRAL_WINDOW_ID, not partition position.
 
-    The FEED groups are deliberately sparse (no SPWs 0-4) and out of order, so
-    positional indexing (the previous behaviour) would either select the wrong
-    group or raise IndexError. Keyed lookup must still return the SPW-5 group.
+    The FEED rows are deliberately sparse (no SPWs 0-4) and out of order, so
+    positional indexing would either select the wrong rows or raise
+    IndexError. Keyed selection must still return the SPW-5 rows.
     """
-    feed_groups = [_feed_group(5, 5.5), _feed_group(2, 2.5)]
-    _patch_tables(monkeypatch, feed_groups)
+    feed_partitions = [_feed_rows(5, 5.5), _feed_rows(2, 2.5)]
+    _patch_tables(monkeypatch, feed_partitions)
 
     [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=5, field_id=0)])
 
@@ -209,12 +216,80 @@ def test_assign_parangle_data_sparse_unordered_spw(monkeypatch):
 
 
 def test_assign_parangle_data_missing_spw_raises(monkeypatch):
-    """A SPW with no matching FEED group and no global (-1) entry must raise."""
-    feed_groups = [_feed_group(0, 0.0)]
-    _patch_tables(monkeypatch, feed_groups)
+    """A SPW with no FEED rows and no global (-1) rows must raise."""
+    feed_partitions = [_feed_rows(0, 0.0)]
+    _patch_tables(monkeypatch, feed_partitions)
 
     with pytest.raises(ValueError, match="No FEED table entry"):
         assign_parangle_data("fake.ms", [_data_xds(spw_id=3, field_id=0)])
+
+
+def test_assign_parangle_data_row_partitioned_feed(monkeypatch):
+    """A FEED table stored with one row per partition is joined before use.
+
+    dask-ms convert writes the FEED subtable to zarr this way, and the zarr
+    reader ignores group_cols. See ratt-ru/QuartiCal#352.
+    """
+    feed_rows = xarray.concat(
+        [_feed_rows(0, 0.5), _feed_rows(1, 1.5)], dim="row"
+    )
+    feed_partitions = [
+        feed_rows.isel(row=[i]) for i in range(feed_rows.sizes["row"])
+    ]
+    _patch_tables(monkeypatch, feed_partitions)
+
+    [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=1, field_id=0)])
+
+    np.testing.assert_array_equal(
+        xds.RECEPTOR_ANGLE.data.compute(),
+        np.full((N_ANT, N_RECEPTOR), 1.5),
+    )
+
+
+def test_assign_parangle_data_orders_by_antenna_id(monkeypatch):
+    """Receptor angles are placed by ANTENNA_ID, not by row position."""
+    angles_per_antenna = 0.1 * np.arange(N_ANT)
+    reversed_rows = np.arange(N_ANT)[::-1]
+    feed_partitions = [
+        _feed_rows(0, angles_per_antenna).isel(row=reversed_rows)
+    ]
+    _patch_tables(monkeypatch, feed_partitions)
+
+    [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=0, field_id=0)])
+
+    np.testing.assert_array_equal(
+        xds.RECEPTOR_ANGLE.data.compute()[:, 0], angles_per_antenna
+    )
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [[0, 1], [0, 1, 2, 0]],
+    ids=["missing_antenna", "repeated_antenna"],
+)
+def test_assign_parangle_data_needs_one_row_per_antenna(monkeypatch, rows):
+    """The FEED rows for a SPW must hold exactly one row per antenna.
+
+    A time-dependent or multi-feed FEED table repeats antennas.
+    """
+    feed_partitions = [_feed_rows(0, 0.0).isel(row=rows)]
+    _patch_tables(monkeypatch, feed_partitions)
+
+    with pytest.raises(ValueError, match="exactly one row per antenna"):
+        assign_parangle_data("fake.ms", [_data_xds(spw_id=0, field_id=0)])
+
+
+def test_assign_parangle_data_mixed_receptor_counts_raise(monkeypatch):
+    """A FEED table whose feeds differ in receptor count must raise.
+
+    Its receptor columns cannot be read or joined as a single table, even when
+    the count only changes between spectral windows.
+    """
+    feed_partitions = [_feed_rows(0, 0.0), _feed_rows(1, 0.0, n_receptor=1)]
+    _patch_tables(monkeypatch, feed_partitions)
+
+    with pytest.raises(ValueError, match="same number of receptors"):
+        assign_parangle_data("fake.ms", [_data_xds(spw_id=0, field_id=0)])
 
 
 def test_assign_parangle_data_uses_pointing(monkeypatch):
@@ -223,9 +298,9 @@ def test_assign_parangle_data_uses_pointing(monkeypatch):
     The parallactic angles describe antenna orientation, so they must follow
     REFERENCE_DIR rather than the freely-shiftable PHASE_DIR.
     """
-    feed_groups = [_feed_group(0, 0.0)]
+    feed_partitions = [_feed_rows(0, 0.0)]
     reference_dirs = [(0.5, 0.6), (0.7, 0.8)]
-    _patch_tables(monkeypatch, feed_groups, reference_dirs=reference_dirs)
+    _patch_tables(monkeypatch, feed_partitions, reference_dirs=reference_dirs)
 
     [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=0, field_id=1)])
 
@@ -234,8 +309,8 @@ def test_assign_parangle_data_uses_pointing(monkeypatch):
 
 def test_assign_parangle_data_pointing_falls_back(monkeypatch):
     """With no REFERENCE_DIR, PHASE_DIR remains the field centre."""
-    feed_groups = [_feed_group(0, 0.0)]
-    _patch_tables(monkeypatch, feed_groups)
+    feed_partitions = [_feed_rows(0, 0.0)]
+    _patch_tables(monkeypatch, feed_partitions)
 
     [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=0, field_id=1)])
 
@@ -244,8 +319,8 @@ def test_assign_parangle_data_pointing_falls_back(monkeypatch):
 
 def test_assign_parangle_data_flags_multi_field(monkeypatch):
     """Data not partitioned by FIELD_ID is flagged and given placeholders."""
-    feed_groups = [_feed_group(0, 0.0)]
-    _patch_tables(monkeypatch, feed_groups)
+    feed_partitions = [_feed_rows(0, 0.0)]
+    _patch_tables(monkeypatch, feed_partitions)
 
     [xds] = assign_parangle_data("fake.ms", [_data_xds(spw_id=0)])  # No FIELD_ID.
 
@@ -261,7 +336,7 @@ def rephased_xds(monkeypatch):
     # Zero receptor angles leave the bare parallactic angles.
     _patch_tables(
         monkeypatch,
-        [_feed_group(0, 0.0)],
+        [_feed_rows(0, 0.0)],
         n_field=1,
         reference_dirs=[POINTING],
         phase_dirs=[PHASE_CENTRE],

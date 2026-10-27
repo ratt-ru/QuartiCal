@@ -6,7 +6,7 @@ from astropy.coordinates import angular_separation
 from astropy.io import fits
 import dask.array as da
 import dask
-from xarray import DataArray, Dataset
+from xarray import DataArray, Dataset, concat
 from dask.graph_manipulation import clone
 from daskms import xds_from_storage_table
 from loguru import logger
@@ -313,9 +313,14 @@ def get_support_tables(ms_path):
          in ("ANTENNA", "DATA_DESCRIPTION", "FIELD",
              "SPECTRAL_WINDOW", "POLARIZATION", "FEED")}
 
-    # All rows at once
+    # All rows at once. dask-ms convert writes the FEED subtable to zarr with
+    # one row per partition, so join whatever partitions are present.
+    feed_xds = concat(
+        xds_from_storage_table(n["FEED"], columns=["RECEPTOR_ANGLE"]),
+        dim="row"
+    )
     lazy_tables = {"ANTENNA": xds_from_storage_table(n["ANTENNA"]),
-                   "FEED": xds_from_storage_table(n["FEED"])}
+                   "FEED": [feed_xds]}
 
     compute_tables = {
         # NOTE: Even though this has a fixed shape, I have ammended it to
@@ -452,7 +457,6 @@ def predict(data_xds_list, model_vis_recipe, ms_path, model_opts):
     feed_xds_list = tables["FEED"]
 
     assert len(ant_xds_list) == 1
-    assert len(feed_xds_list) == 1
 
     # List of predict operations
     predict_list = []

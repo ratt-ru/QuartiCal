@@ -21,29 +21,88 @@ import quartical.gains.general.factories as factories
 _thread_local = threading.local()
 
 
+def _select_receptor_angles(feedtab, spw_id, n_ant):
+    """Select the receptor angles which apply to a spectral window.
+
+    Args:
+        feedtab: The FEED subtable as a single, computed xarray.Dataset.
+        spw_id: The SPECTRAL_WINDOW_ID of the data.
+        n_ant: The number of antennas in the ANTENNA subtable.
+
+    Returns:
+        An (n_ant, n_receptor) array of receptor angles in radians, ordered
+        by ANTENNA_ID.
+
+    Raises:
+        ValueError: If no FEED rows apply to the spectral window, or if they
+            do not hold exactly one row per antenna.
+    """
+    feed_spw_ids = feedtab.SPECTRAL_WINDOW_ID.values
+
+    # Rows with a SPECTRAL_WINDOW_ID of -1 apply to every spectral window
+    # which has no rows of its own.
+    applicable_rows = feed_spw_ids == spw_id
+    if not applicable_rows.any():
+        applicable_rows = feed_spw_ids == -1
+    if not applicable_rows.any():
+        raise ValueError(
+            f"No FEED table entry found for SPECTRAL_WINDOW_ID {spw_id} "
+            "and no global (-1) entry is present."
+        )
+
+    ant_ids = feedtab.ANTENNA_ID.values[applicable_rows]
+
+    if not np.array_equal(np.sort(ant_ids), np.arange(n_ant)):
+        raise ValueError(
+            f"The FEED table entries for SPECTRAL_WINDOW_ID {spw_id} do not "
+            "hold exactly one row per antenna. Time-dependent and multi-feed "
+            "FEED tables are not supported."
+        )
+
+    receptor_angles = np.empty((n_ant, feedtab.sizes["receptors"]))
+    receptor_angles[ant_ids] = feedtab.RECEPTOR_ANGLE.values[applicable_rows]
+
+    return receptor_angles
+
+
 def assign_parangle_data(ms_path, data_xds_list):
 
     anttab = xds_from_storage_table(ms_path + "::ANTENNA")[0]
-    feedtab_xdsl = xds_from_storage_table(
-        ms_path + "::FEED",
-        columns=["POLARIZATION_TYPE", "RECEPTOR_ANGLE"],
-        group_cols=["SPECTRAL_WINDOW_ID"]
-    )
     fieldtab = xds_from_storage_table(ms_path + "::FIELD")[0]
 
-    # Build a lookup from SPECTRAL_WINDOW_ID to its FEED dataset. The grouped
-    # datasets are neither guaranteed to be ordered by SPECTRAL_WINDOW_ID nor
-    # to contain an entry for every spectral window, so we cannot index by
-    # position. A SPECTRAL_WINDOW_ID of -1 is a global entry which applies to
-    # all spectral windows.
-    feeds_by_spw = {int(xds.SPECTRAL_WINDOW_ID): xds for xds in feedtab_xdsl}
+    # dask-ms ignores group_cols when reading zarr, and dask-ms convert writes
+    # the FEED subtable to zarr with one row per partition. Join whatever
+    # partitions are present and select rows per spectral window ourselves.
+    # The table is small, so materialise it.
+    feed_partitions = xds_from_storage_table(
+        ms_path + "::FEED",
+        columns=[
+            "ANTENNA_ID",
+            "SPECTRAL_WINDOW_ID",
+            "NUM_RECEPTORS",
+            "POLARIZATION_TYPE",
+            "RECEPTOR_ANGLE",
+        ],
+    )
 
-    # We do the following eagerly to reduce graph complexity.
-    unique_feeds = {
-        pt
-        for xds in feedtab_xdsl
-        for pt in xds.POLARIZATION_TYPE.values.ravel()
-    }
+    # The receptor columns are shaped by NUM_RECEPTORS, so a table which mixes
+    # receptor counts fails to read or join with an obscure error. Check the
+    # counts first, as NUM_RECEPTORS is a scalar column and always reads.
+    receptor_counts = np.unique(
+        xarray.concat(
+            [xds.NUM_RECEPTORS for xds in feed_partitions], dim="row"
+        ).values
+    )
+    if receptor_counts.size > 1:
+        raise ValueError(
+            "QuartiCal requires every feed to have the same number of "
+            "receptors, but FEED.NUM_RECEPTORS holds "
+            f"{receptor_counts.tolist()}."
+        )
+
+    feedtab = xarray.concat(feed_partitions, dim="row").compute()
+
+    unique_feeds = set(feedtab.POLARIZATION_TYPE.values.ravel())
 
     if np.all([feed in "XxYy" for feed in unique_feeds]):
         feed_type = "linear"
@@ -59,20 +118,18 @@ def assign_parangle_data(ms_path, data_xds_list):
     fieldtab = fieldtab.compute()
     pointing_columns = set()
 
+    n_ant = anttab.sizes["row"]
+
     updated_data_xds_list = []
     for xds in data_xds_list:
-        spw_id = int(xds.SPECTRAL_WINDOW_ID)
-        feed_xds = feeds_by_spw.get(spw_id, feeds_by_spw.get(-1))
-        if feed_xds is None:
-            raise ValueError(
-                f"No FEED table entry found for SPECTRAL_WINDOW_ID {spw_id} "
-                "and no global (-1) entry is present."
-            )
-        receptor_angles = feed_xds.RECEPTOR_ANGLE.data
+        receptor_angles = _select_receptor_angles(
+            feedtab, int(xds.SPECTRAL_WINDOW_ID), n_ant
+        )
         xds = xds.assign(
             {
                 "RECEPTOR_ANGLE": (
-                    ("ant", "feed"), clone(receptor_angles)
+                    ("ant", "feed"),
+                    clone(da.from_array(receptor_angles, chunks=-1))
                 ),
                 "POSITION": (
                     ("ant", "xyz"),
