@@ -3,7 +3,7 @@ type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
 timestamp: 2026-10-27
-last_verified_commit: 0673668
+last_verified_commit: 43e8776
 ---
 
 # Design Decisions
@@ -1055,7 +1055,8 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Decision:** read FEED without `group_cols`, join whatever partitions come back along
   `row`, materialise it, and select each spectral window's rows in numpy
   (`angles.py:_select_receptor_angles`), placing each row by `ANTENNA_ID`.
-  `predict.py:get_support_tables` joins the FEED partitions the same way, and
+  `predict.py:get_support_tables` joins the FEED partitions the same way and holds the
+  result as one chunk, since predict clones it per dataset, and
   `make_parangle_xds_list` takes the feed type and receptor count from the datasets
   `assign_parangle_data` produced rather than reading FEED again.
 - **Rationale:** joining is correct for any partitioning, so the result no longer depends on

@@ -314,11 +314,13 @@ def get_support_tables(ms_path):
              "SPECTRAL_WINDOW", "POLARIZATION", "FEED")}
 
     # All rows at once. dask-ms convert writes the FEED subtable to zarr with
-    # one row per partition, so join whatever partitions are present.
+    # one row per partition, so join whatever partitions are present. predict
+    # clones FEED for every dataset, so materialise it and hold it as a single
+    # chunk rather than cloning one read per row.
     feed_xds = concat(
         xds_from_storage_table(n["FEED"], columns=["RECEPTOR_ANGLE"]),
         dim="row"
-    )
+    ).compute().chunk({"row": -1})
     lazy_tables = {"ANTENNA": xds_from_storage_table(n["ANTENNA"]),
                    "FEED": [feed_xds]}
 

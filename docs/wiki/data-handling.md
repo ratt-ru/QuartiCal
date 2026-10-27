@@ -3,7 +3,7 @@ type: stub
 title: Data Handling
 description: "Measurement Set I/O, chunking, selection, and derived quantities."
 timestamp: 2026-10-27
-last_verified_commit: 0673668
+last_verified_commit: 43e8776
 ---
 
 # Data Handling
@@ -30,8 +30,11 @@ source.
   parameters; `daskify_sky_model_dict` turns each into an `xarray.Dataset` of dask arrays
   chunked over `source` (`input_model.source_chunks`).
 - `get_support_tables` reads ANTENNA, DATA_DESCRIPTION, FIELD, SPECTRAL_WINDOW,
-  POLARIZATION and FEED. Only ANTENNA and FEED stay lazy; the rest are computed eagerly,
-  so their variables hold numpy arrays and can be inspected while the graph is built.
+  POLARIZATION and FEED. Only ANTENNA stays lazy. FEED is joined across its partitions,
+  computed and held as a single dask chunk, because predict clones it for every dataset
+  and one chunk per partition would clone a read per FEED row. The rest are computed
+  eagerly, so their variables hold numpy arrays and can be inspected while the graph is
+  built.
 - `build_rime_spec` assembles the RIME string per source type — `Kpq`/`Bpq` always,
   `Cpq` for gaussians, `Lp`/`Lq` for parallactic-angle feed rotation
   (`input_model.apply_p_jones`), `Ep`/`Eq` for the beam — and returns a
