@@ -7,6 +7,7 @@ from quartical.data_handling.predict import (parse_sky_models,
                                              PointedBeamCubeDDE)
 import dask.array as da
 import numpy as np
+import xarray
 from numpy.testing import assert_array_almost_equal
 
 
@@ -160,6 +161,61 @@ def test_nonlazy_tables(support_tables, table):
     # Check that the expected tables are not lazily evaluated.
     assert all([isinstance(dvar.data, np.ndarray)
                 for dvar in support_tables[table][0].data_vars.values()])
+
+
+@pytest.fixture
+def feed_receptor_angles():
+    # One pair of receptor angles per FEED row.
+    return np.arange(6, dtype=np.float64).reshape(3, 2)
+
+
+@pytest.fixture
+def row_partitioned_feed_xds(monkeypatch, feed_receptor_angles):
+    # The FEED dataset get_support_tables returns for a table stored with one
+    # row per partition, as dask-ms convert writes it to zarr. See
+    # ratt-ru/QuartiCal#352.
+    feed_partitions = [
+        xarray.Dataset(
+            {
+                "RECEPTOR_ANGLE": (
+                    ("row", "receptors"),
+                    da.from_array(row_angles[None], chunks=-1)
+                )
+            }
+        )
+        for row_angles in feed_receptor_angles
+    ]
+
+    def fake_xds_from_storage_table(path, columns=None, group_cols=None):
+        if path.endswith("::FEED"):
+            return [xds[columns] if columns else xds for xds in feed_partitions]
+        return [xarray.Dataset()]
+
+    monkeypatch.setattr(
+        "quartical.data_handling.predict.xds_from_storage_table",
+        fake_xds_from_storage_table
+    )
+
+    [feed_xds] = get_support_tables("fake.ms")["FEED"]
+
+    return feed_xds
+
+
+@pytest.mark.predict
+def test_support_tables_join_feed_partitions(
+    row_partitioned_feed_xds, feed_receptor_angles
+):
+    # The partitions are joined into the single dataset predict uses.
+    np.testing.assert_array_equal(
+        row_partitioned_feed_xds.RECEPTOR_ANGLE.values, feed_receptor_angles
+    )
+
+
+@pytest.mark.predict
+def test_support_tables_hold_feed_in_one_chunk(row_partitioned_feed_xds):
+    # predict clones the receptor angles for every dataset, which would clone
+    # a read per FEED row if the joined table kept one chunk per partition.
+    assert row_partitioned_feed_xds.RECEPTOR_ANGLE.data.numblocks == (1, 1)
 
 
 # ----------------------------build_rime_spec----------------------------------

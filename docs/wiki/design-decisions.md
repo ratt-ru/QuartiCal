@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-10-07
-last_verified_commit: 2c24468
+timestamp: 2026-10-27
+last_verified_commit: 43e8776
 ---
 
 # Design Decisions
@@ -1111,6 +1111,37 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
 - **Source:** branch fix-beam-centre-on-rephased-ms (2026-08-31), addressing
   ratt-ru/QuartiCal#439; branch issue-446 (2026-10-07) moved `PARALLACTIC_ANGLES` onto the
   pointing, addressing ratt-ru/QuartiCal#446.
+
+## FEED rows are selected by QuartiCal, not grouped by dask-ms
+
+- **Context:** the FEED subtable holds receptor angles per antenna and, optionally, per
+  spectral window (`SPECTRAL_WINDOW_ID == -1` applies to every window). Reading it with
+  `group_cols=["SPECTRAL_WINDOW_ID"]` only works for CASA tables: `xds_from_zarr` ignores
+  `group_cols` with a warning, and `dask-ms convert` writes FEED, one of its non-uniform
+  subtables, with one row per partition. A converted zarr MS therefore failed to read
+  (ratt-ru/QuartiCal#352).
+- **Decision:** read FEED without `group_cols`, join whatever partitions come back along
+  `row`, materialise it, and select each spectral window's rows in numpy
+  (`angles.py:_select_receptor_angles`), placing each row by `ANTENNA_ID`.
+  `predict.py:get_support_tables` joins the FEED partitions the same way and holds the
+  result as one chunk, since predict clones it per dataset, and
+  `make_parangle_xds_list` takes the feed type and receptor count from the datasets
+  `assign_parangle_data` produced rather than reading FEED again.
+- **Rationale:** joining is correct for any partitioning, so the result no longer depends on
+  which backend honours `group_cols`. The table is small, and the same function already
+  materialises FIELD. Placing rows by `ANTENNA_ID` rather than by position means an
+  unordered table cannot put an angle on the wrong antenna.
+- **Consequences:** FEED is read while the graph is built. An empty table, or a spectral
+  window whose rows do not hold exactly one row per antenna (a time-dependent or multi-feed
+  table, or a missing antenna), raises a `ValueError` naming the problem. Joining requires
+  every row to have the same `NUM_RECEPTORS`, which shapes the receptor columns; grouping by
+  SPW tolerated counts that differed only between windows, but the ungrouped FEED read then
+  made by `make_parangle_xds_list` never did, so no such table ever ran end to end. Mixed counts would otherwise fail with an
+  obscure casacore or xarray error, so `assign_parangle_data` checks `NUM_RECEPTORS` (a
+  scalar column, always readable) first and raises. Do not reintroduce `group_cols` for
+  this read. `test_angles.py` serves FEED as per-SPW partitions and as one row per
+  partition.
+- **Source:** branch issue-352 (2026-10-27), addressing ratt-ru/QuartiCal#352.
 
 ## Known debt (do not entrench)
 
