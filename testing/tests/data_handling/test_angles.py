@@ -443,14 +443,24 @@ def test_parallactic_angle_term_matches_parangle_array(
         "POSITION": rephased_xds.POSITION.values,
         "RECEPTOR_ANGLE": rephased_xds.RECEPTOR_ANGLE.values,
     }
+    term = _parallactic_angle_term()
+
+    # init_term starts from the scaffold, which holds identity values and no
+    # raised flags.
+    identity_gains = np.zeros(spec.shape, dtype=np.complex128)
+    identity_gains[..., (0, 3)] = 1
     term_kwargs = {
         "P_time_map": time_map,
         "P_freq_map": freq_map,
         "P_param_time_map": time_map,
         "P_param_freq_map": freq_map,
+        "P_initial_gain": identity_gains,
+        "P_initial_gain_flags": np.zeros(spec.shape[:-1], dtype=np.int8),
+        "P_initial_params": np.full(spec.pshape, term.param_identity_fill),
+        "P_initial_param_flags": np.zeros(spec.pshape[:-1], dtype=np.int8),
     }
 
-    _, _, params, _ = _parallactic_angle_term().init_term(
+    _, _, params, _ = term.init_term(
         spec, 0, ms_kwargs, term_kwargs, meta=dict(rephased_xds.attrs)
     )
 
