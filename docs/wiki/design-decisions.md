@@ -2,8 +2,8 @@
 type: decision-ledger
 title: Design Decisions
 description: "Why QuartiCal is built the way it is — a ledger of decisions, their rationale, and their consequences. Append new entries as decisions land."
-timestamp: 2026-10-27
-last_verified_commit: 43e8776
+timestamp: 2026-10-29
+last_verified_commit: 21141b1
 ---
 
 # Design Decisions
@@ -709,14 +709,17 @@ here: they mark what should *not* be entrenched and what repeatedly bites contri
   `test_datasets.py:test_scaffold_chunks_share_no_tasks` guards this. The declared
   identity is now the starting point of every solve, not only of transfers. A scaffold
   read before it is solved yields identity gains rather than failing on a missing
-  variable. Measured on a 10-scan real-data 3C147 subset (444 solver chunks, runs pinned to
-  identical cores and alternated with the baseline): about +1.2% wall time for a short
-  `complex` solve under both the threaded and distributed schedulers, and within noise
-  (±2-3%) for a `complex` + `delay` chain, with zero inter-worker transfers, identical
-  `AutoRestrictor` worker assignment, unchanged peak memory and bit-identical outputs. The
-  scaffold tasks are ordered immediately before their solver task, so they are not held in
-  memory.
-- **Source:** this repository, 2026-09-30.
+  variable. The cost is per task, so it grows with the number of solver chunks: the graph
+  gains 6-16% more tasks. Measured on a real-data 3C147 subset (146 to 651 solver chunks,
+  chunks that do not divide the scans evenly, runs pinned to identical cores and alternated
+  with the baseline), wall time rises by 1-2% under the threaded scheduler and by 2-3%
+  under the distributed scheduler, reaching 4-5% with small chunks, where each extra task
+  costs milliseconds of event-loop time competing with the solver threads. The scaffold
+  tasks are ordered immediately before their solver task and the solver order is
+  unchanged, so the only extra live memory is a gain-sized copy per term in each running
+  solver. Peak RSS rises by about 1%, and by up to 2% under the distributed scheduler,
+  whose bookkeeping costs about 8 KB per task. Outputs are bit-identical.
+- **Source:** this repository, 2026-09-30; costs measured 2026-10-28.
 
 ## Zarr-backed Measurement Sets as a CTDS escape hatch
 
