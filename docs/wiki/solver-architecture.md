@@ -2,8 +2,8 @@
 type: architecture
 title: Solver Architecture
 description: "How gain terms, mappings, and the calibration graph fit together — read before touching quartical/gains/ or quartical/calibration/."
-timestamp: 2026-09-30
-last_verified_commit: ff732aa
+timestamp: 2026-10-30
+last_verified_commit: 059c806
 ---
 
 # Solver Architecture
@@ -225,8 +225,8 @@ the shared accumulation loop (below) for measured 1.4-2.8x speedups (see design-
 **array-buffer style** (`iunpack_factory`, `v1_imul_v2_factory`, `valloc_factory`, ...) writes
 results into small array buffers. The tuple style displaced it from the per-visibility maths but
 did not retire it: the shared accumulation loop still `valloc`s the four per-direction operator
-buffers (`lop_pq_arr`/`rop_pq_arr`/`lop_qp_arr`/`rop_qp_arr`, `solver_components.py:252-255`) and
-writes them with `iunpack`/`iadd` (`:481-485`), because a direction loop may accumulate several
+buffers (`lop_pq_arr`/`rop_pq_arr`/`lop_qp_arr`/`rop_qp_arr`, `solver_components.py:271-274`) and
+writes them with `iunpack`/`iadd` (`:504-508`), because a direction loop may accumulate several
 model directions into one gain direction — they are the only per-visibility intermediaries that
 have to live in memory rather than in registers. The single-direction fast path skips them
 entirely. Outside the accumulation loops the array-buffer style remains the norm: residual
@@ -295,7 +295,11 @@ labelled hook table rather than a run of positional factories.
   which packs the JHJ block first and the JHr block after it. `gain` is the active-term gain
   tuple for the relevant antenna (parameterised terms need it for the chain rule; the complex
   hook ignores it and LLVM eliminates the fetch). `channel_coeffs` is the per-channel coefficient
-  tuple (empty for terms with no channel-coefficient hook).
+  tuple (empty for terms with no channel-coefficient hook). `w` and `wres` belong to the
+  visibility that `lop`/`rop` describe. For ANTENNA2 that is V_qp, the conjugate transpose of
+  V_pq, so the loop passes the transposed weights (XY and YX swapped) beside the conjugate
+  transposed weighted residual. `testing/tests/gains/test_baseline_orientation.py` checks this for
+  every solvable term.
 - `zero_jhj_jhr_factory(corr_mode) -> zero_jhj_jhr(ref_elem)` — the zero accumulator tuple (JHJ
   block first, then JHr).
 - `flush_jhj_jhr_factory(corr_mode) -> flush_jhj_jhr(jhj_el, jhr_el, jhj_jhr)` — adds an
