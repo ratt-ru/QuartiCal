@@ -121,7 +121,9 @@ def build_jhj_jhr_impl(
             accumulate_jhj_jhr(lop, rop, w, gain, channel_coeffs, wres,
             jhj_jhr) -> jhj_jhr``. Accumulates one weighted jhj/jhr element
             into the register-resident flat accumulator tuple, which packs the
-            jhj block first and the jhr block after it.
+            jhj block first and the jhr block after it. ``w`` and ``wres``
+            belong to the visibility which ``lop`` and ``rop`` describe: V_qp
+            for ANTENNA2, whose weights are the transpose of V_pq's.
         zero_jhj_jhr_factory: ``zero_jhj_jhr_factory(corr_mode) ->
             zero_jhj_jhr(ref_elem) -> flat zero tuple``. Produces the zero
             accumulator tuple in the (promoted) dtype of the reference element.
@@ -149,6 +151,7 @@ def build_jhj_jhr_impl(
 
     tuple_unpack = factories.tuple_unpack_factory(corr_mode)
     tuple_unpackct = factories.tuple_unpackct_factory(corr_mode)
+    tuple_unpackt = factories.tuple_unpackt_factory(corr_mode)
     tuple_unpack_rweight = factories.tuple_unpack_rweight_factory(
         corr_mode, row_weights_type
     )
@@ -312,9 +315,12 @@ def build_jhj_jhr_impl(
                         )
 
                         # Apply row weights in the BDA case, else a no-op.
-                        w = tuple_unpack_rweight(
+                        w_pq = tuple_unpack_rweight(
                             weights[row, f], row_weights, row_ind
                         )
+                        # V_qp is the conjugate transpose of V_pq, so its XY
+                        # correlation carries the YX weight.
+                        w_qp = tuple_unpackt(w_pq)
                         r_pq = tuple_unpack(data[row, f])
 
                         # NOTE: This block is duplicated in the general path
@@ -389,15 +395,15 @@ def build_jhj_jhr_impl(
                         # Residual for this visibility.
                         r_pq = compute_residual(r_pq, v_pq)
 
-                        wr_pq = tuple_wmul(r_pq, w)
+                        wr_pq = tuple_wmul(r_pq, w_pq)
                         wr_qp = tuple_unpackct(wr_pq)
 
                         jhj_jhr_p = accumulate_jhj_jhr(
-                            lop_pq, rop_pq, w, g_active_p, channel_coeffs,
+                            lop_pq, rop_pq, w_pq, g_active_p, channel_coeffs,
                             wr_pq, jhj_jhr_p
                         )
                         jhj_jhr_q = accumulate_jhj_jhr(
-                            lop_qp, rop_qp, w, g_active_q, channel_coeffs,
+                            lop_qp, rop_qp, w_qp, g_active_q, channel_coeffs,
                             wr_qp, jhj_jhr_q
                         )
 
@@ -425,9 +431,12 @@ def build_jhj_jhr_impl(
                     )
 
                     # Apply row weights in the BDA case, otherwise a no-op.
-                    w = tuple_unpack_rweight(
+                    w_pq = tuple_unpack_rweight(
                         weights[row, f], row_weights, row_ind
                     )
+                    # V_qp is the conjugate transpose of V_pq, so its XY
+                    # correlation carries the YX weight.
+                    w_qp = tuple_unpackt(w_pq)
                     r_pq = tuple_unpack(data[row, f])
 
                     active_gain_tifi = gains[active_term][
@@ -510,7 +519,7 @@ def build_jhj_jhr_impl(
 
                     # Weighted residual and its conjugate transpose. These
                     # are direction independent and can be computed once.
-                    wr_pq = tuple_wmul(r_pq, w)
+                    wr_pq = tuple_wmul(r_pq, w_pq)
                     wr_qp = tuple_unpackct(wr_pq)
 
                     for d in range(n_gdir):
@@ -522,8 +531,8 @@ def build_jhj_jhr_impl(
                         rop_pq_d = tuple_unpack(rop_pq_arr[d])
 
                         jhj_jhr = accumulate_jhj_jhr(
-                            lop_pq_d, rop_pq_d, w, g_active_p, channel_coeffs,
-                            wr_pq, jhj_jhr_zero
+                            lop_pq_d, rop_pq_d, w_pq, g_active_p,
+                            channel_coeffs, wr_pq, jhj_jhr_zero
                         )
                         flush_jhj_jhr(
                             jhj_tifi[a1_m, d], jhr_tifi[a1_m, d], jhj_jhr
@@ -533,8 +542,8 @@ def build_jhj_jhr_impl(
                         rop_qp_d = tuple_unpack(rop_qp_arr[d])
 
                         jhj_jhr = accumulate_jhj_jhr(
-                            lop_qp_d, rop_qp_d, w, g_active_q, channel_coeffs,
-                            wr_qp, jhj_jhr_zero
+                            lop_qp_d, rop_qp_d, w_qp, g_active_q,
+                            channel_coeffs, wr_qp, jhj_jhr_zero
                         )
                         flush_jhj_jhr(
                             jhj_tifi[a2_m, d], jhr_tifi[a2_m, d], jhj_jhr

@@ -837,6 +837,24 @@ def tuple_unpackct_factory(mode):
     return unpackct_factory(mode)
 
 
+def tuple_unpackt_factory(mode):
+    """Load the transpose of a correlation vector into a tuple."""
+
+    if mode.literal_value == 4:
+        def impl(invec):
+            return invec[0], invec[2], invec[1], invec[3]
+    elif mode.literal_value == 2:
+        def impl(invec):
+            return invec[0], invec[1]
+    elif mode.literal_value == 1:
+        def impl(invec):
+            return (invec[0],)
+    else:
+        raise ValueError("Unsupported number of correlations.")
+
+    return qcjit(impl)
+
+
 def tuple_unpack_rweight_factory(mode, weight):
     """Load a weight vector into a tuple, applying row weights (BDA)."""
 
