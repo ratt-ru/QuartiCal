@@ -31,6 +31,21 @@ Test-data caveat: `testing/conftest.py` downloads test Measurement Sets and beam
 pytest session re-downloads. The data lands in `testing/data/`. Most tests are
 integration-style and need this data; there is no way to run them offline the first time.
 
+Numba cache caveat: kernels are jitted with `cache=True`, and numba invalidates a cached
+function only when its own source file changes. Each kernel's cache entry also holds the
+jitted code it calls from other modules, chiefly `quartical/gains/general/`
+(`solver_components.py`, `solver_loop.py`, `factories.py`, ...), so an edit there leaves
+the kernels stale and tests run the old code. A solver test that finishes in seconds after
+such an edit is the tell. Give every run after such an edit (tests, benchmarks,
+`goquartical`) a fresh cache, which recompiles every solver it reaches (minutes per run):
+
+```bash
+NUMBA_CACHE_DIR=$(mktemp -d) python -m pytest testing/tests/gains
+```
+
+The same goes for anyone who pulls such a change into an editable install: deleting the
+`*.nbi`/`*.nbc` files under `quartical/` picks it up.
+
 CLI entry points (defined in `pyproject.toml`): `goquartical` (main),
 `goquartical-config`, `goquartical-backup`, `goquartical-restore`,
 `goquartical-summary`, `goquartical-plot`.
