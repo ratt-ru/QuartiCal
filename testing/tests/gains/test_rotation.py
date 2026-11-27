@@ -21,6 +21,9 @@ def opts(base_opts, solve_per):
     _opts.solver.convergence_fraction = 1
     _opts.G.type = "rotation"
     _opts.G.solve_per = solve_per
+    # An empty list in the config arrives as an empty tuple. A DI term
+    # ignores it, but the kernel must still compile with it.
+    _opts.G.pinned_directions = ()
 
     return _opts
 

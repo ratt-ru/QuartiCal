@@ -23,6 +23,9 @@ def opts(base_opts, solve_per):
     _opts.G.type = "rotation_measure"
     _opts.G.freq_interval = 0
     _opts.G.solve_per = solve_per
+    # An empty list in the config arrives as an empty tuple. A DI term
+    # ignores it, but the kernel must still compile with it.
+    _opts.G.pinned_directions = ()
 
     return _opts
 
