@@ -224,8 +224,11 @@ def nb_finalize_update(
             n_time, n_freq, n_ant, n_dir, _ = gain.shape
 
             if dd_term:
-                for pd in pinned_directions:
-                    params[..., pd, :] = 0
+                # Numba cannot iterate over an empty tuple, so test each
+                # direction for membership instead.
+                for d in range(n_dir):
+                    if d in pinned_directions:
+                        params[..., d, :] = 0
 
             for t in range(n_time):
                 for f in range(n_freq):

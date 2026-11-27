@@ -31,6 +31,9 @@ def opts(base_opts, select_corr):
     _opts.G.type = "delay_and_tec"
     _opts.G.freq_interval = 0
     _opts.G.initial_estimate = True
+    # An empty list in the config arrives as an empty tuple. A DI term
+    # ignores it, but the kernel must still compile with it.
+    _opts.G.pinned_directions = ()
 
     return _opts
 
